@@ -19,6 +19,9 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %     magnitudes allocated equally, and two-element vectors are per-axis.
 %   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
 %     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
+%     PathLengthTimeAllowance_s (default 0.49, range [0,0.5)) permits static
+%     monotone corridor refinement to spend arrival time for at least 1% shorter
+%     motion. Set zero to shorten only at the earliest feasible corridor clock.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
@@ -246,7 +249,7 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
         "CollisionClearanceTolerance_units", 1e-7, ...
         "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
         "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
-        "TemporalResolution_s",0.5,"MaxArrivalTrials",100);
+        "TemporalResolution_s",0.5,"MaxArrivalTrials",100,"PathLengthTimeAllowance_s",0.49);
 end
 
 function state = normalizeState(state, defaults, argumentName)
@@ -343,6 +346,13 @@ function options = resolveOptions(options, defaults)
     for name = ["WrapX","WrapY","MatchTargetVelocity","MatchTargetAcceleration"]
         options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name),name,"planner:InvalidLogicalOption");
     end
+    allowance_s = options.PathLengthTimeAllowance_s;
+    if ~isnumeric(allowance_s) || ~isreal(allowance_s) || ~isscalar(allowance_s) || ...
+            ~isfinite(allowance_s) || allowance_s<0 || allowance_s>=0.5
+        error('planner:InvalidPathLengthTimeAllowance', ...
+            'PathLengthTimeAllowance_s must be a finite scalar in [0,0.5).');
+    end
+    options.PathLengthTimeAllowance_s = double(allowance_s);
     validateattributes(options.MaxArrivalTrials,{'numeric'},{'scalar','finite','integer','positive'});
 end
 

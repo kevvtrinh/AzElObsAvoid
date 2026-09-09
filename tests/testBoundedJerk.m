@@ -18,7 +18,9 @@ function testQuinticTimingAndContinuousJerk(testCase)
     r = testCase.TestData.Result;
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-    verifyEqual(testCase,r.TrajectoryDuration_s,(120)^(1/3),'AbsTol',1e-8);
+    % Acceleration-limited S-curve: 0.5 s jerk ramps, no cruise; the
+    % two smoothing windows add 0.1 s while preserving displacement.
+    verifyEqual(testCase,r.TrajectoryDuration_s,sqrt(16.25)+0.6,'AbsTol',1e-8);
     verifyEqual(testCase,r.MotionLength_units,sqrt(20),'AbsTol',1e-10);
     verifyEqual(testCase,r.SolverDiagnostics.TrajectorySocpCount,0);
     jerk = r.Polynomial.jerkPower_units_s3;
@@ -60,9 +62,8 @@ function testProfileRegimesAndAxes(testCase)
     velocity = [2,2;0.25,2;2,2;4,2];
     acceleration = [1,1;10,10;1,1;2,1];
     jerk = [2,2;2,2;2,2;4,2];
-    expected_s = max([1.875*abs(displacements)./velocity, ...
-        sqrt((10/sqrt(3))*abs(displacements)./acceleration), ...
-        (60*abs(displacements)./jerk).^(1/3)],[],2);
+    % Closed-form S-curve phase sums plus the two triangular-kernel windows.
+    expected_s = [4.2*(0.1/4)^(1/3);16+2.2*sqrt(0.25/2);8.6;5.6];
     for k = 1:4
         initial = struct('time_s',7,'position_units',[1,-2]);
         goal = struct('time_s',40,'position_units',initial.position_units+displacements(k,:));
@@ -71,6 +72,7 @@ function testProfileRegimesAndAxes(testCase)
         r = planner([],initial,goal,limits,struct('GoalTimeMode','earliestArrival'));
         verifyTrue(testCase,r.Success,r.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
+        verifyTrue(testCase,all(diff(r.time_s)>0));
         verifyEqual(testCase,r.TrajectoryDuration_s,expected_s(k),'AbsTol',1e-8);
         verifyEqual(testCase,r.MotionLength_units,norm(displacements(k,:)),'AbsTol',1e-8);
     end

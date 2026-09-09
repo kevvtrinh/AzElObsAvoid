@@ -70,21 +70,23 @@ obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_uni
 
 %% Section 2: Solve The Direct Curve Or Alternating Convex Problem
 
-% The unconstrained fixed-time minimum-jerk solution is a quintic on the
-% endpoint chord. Degree elevation preserves it exactly in the shared basis.
+% Earliest arrival tries the C3 jerk-limited chord. Fixed arrival retains
+% the minimum-jerk quintic at the requested physical horizon.
 preparedMotion = struct('Success',false);
 certificateEventTime_s=[];
 certificate = struct('Passed',false); certificateCache=[];
 analyticIdentifier = "minimumJerkQuintic";
 analyticRepresentation = "analyticQuinticClock";
-if size(route_units,1)==2 && (options.GoalTimeMode=="fixedArrival" || request.IsRest)
-    directDuration_s = request.MotionHorizon_s;
-    if options.GoalTimeMode=="earliestArrival"
-        displacement_units = abs(goalState.position_units-initialState.position_units);
-        directDuration_s = max([1.875*displacement_units./limits.maxVelocity_units_s, ...
-            sqrt((10/sqrt(3))*displacement_units./limits.maxAcceleration_units_s2), ...
-            (60*displacement_units./limits.maxJerk_units_s3).^(1/3)]);
+if size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.IsRest
+    [controls_units,times_s,powers_units] = bmtpEngine.createC3Chord(initialState.position_units,goalState.position_units,limits);
+    preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,times_s,powers_units);
+    if preparedMotion.Success
+        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
     end
+    analyticIdentifier = "c3JerkLimitedChord";
+    analyticRepresentation = "analyticC3Clock";
+elseif size(route_units,1)==2 && options.GoalTimeMode=="fixedArrival"
+    directDuration_s = request.MotionHorizon_s;
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
     for k = 0:degree

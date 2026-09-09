@@ -38,6 +38,28 @@ Legacy seed-path, swept-surface, and snapshot-count controls remain accepted
 for example compatibility but have no effect because the core does not return
 those diagnostic histories.
 
+## Interactive sandboxes
+
+The HTML and MATLAB sandboxes are ported from `bmtp-cleanup-codex` (`c04f3b2`)
+and use this branch's `planner` and independent validator. Run from the root:
+
+```matlab
+% MATLAB figure sandbox
+addpath(fullfile(pwd, 'sandbox'));
+ui = obstacleAvoidanceSandbox();
+
+% HTML sandbox: run in a MATLAB session, then open the printed loopback URL
+addpath(fullfile(pwd, 'offlinesandbox'));
+offlineSandbox.serveSandbox();
+```
+
+The server blocks that MATLAB session until Ctrl+C or its printed stop file.
+The HTML file also supports offline JSON handoff. Both retain drawing, moving
+obstacle histories, replay bundles, and core-result plots. Their initial
+arrival choice is earliest arrival; core tolerances remain unchanged.
+See the [MATLAB sandbox guide](sandbox/README.md) and
+[HTML sandbox guide](offlinesandbox/README.md) for controls and reproduction.
+
 ## Endpoint states, limits, and optional capabilities
 
 Omitted or empty `velocity_units_s` and `acceleration_units_s2` default to
@@ -110,11 +132,19 @@ velocity, acceleration, and jerk at every internal join. Endpoint position,
 velocity, and acceleration remain prescribed; endpoint jerk is free unless
 joining a stationary wait. No new snap limit is imposed.
 
-Direct rest motion uses a minimum-jerk quintic with duration determined by its
-exact velocity, acceleration, and jerk peaks. This optimizes duration within
-that family, not over all C3 splines. Static monotone detours reuse exact source
-facet corridors with a smoothed quintic locked coordinate and integrated quadratic jerk
-in the free coordinate. Other static detours jointly optimize quadratic jerk
+Direct earliest-arrival rest motion uses the jerk-limited chord with continuous
+jerk smoothing. Fixed-arrival direct motion retains its minimum-jerk quintic.
+Static monotone detours reuse exact source facet corridors with a smoothed
+quintic locked coordinate and integrated quadratic jerk in the free coordinate.
+Additional phase knots near guide turns let the free coordinate turn locally.
+The solver first finds a feasible arrival, then shortens at that clock. It may
+also try `PathLengthTimeAllowance_s` later (default 0.49 s, range `[0,0.5)`) and
+accept that delay only for at least a further 1% reduction in continuous arc
+length. Set this option to zero to keep the earliest feasible corridor clock.
+The bounded refinement keeps all source facets and physical constraints;
+`SolverDiagnostics.PathLengthRefinement` records its outcome and solver exits.
+It does not establish globally optimal arrival or length, and can increase
+planning runtime. Other static detours jointly optimize quadratic jerk
 and phase durations, followed by a conic repair. Fixed-arrival motion enforces
 C3 joins in the shared Bernstein equations. Timed obstacles retain their exact
 affine cells and absolute activity intervals. No example identity selects a

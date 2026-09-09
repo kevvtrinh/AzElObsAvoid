@@ -10,12 +10,64 @@ function [result,diagnostics] = solveStaticCorridor(request,warmStart,diagnostic
 %   validate every output against the complete source geometry.
 % UNITS: Coordinate units and seconds; powers use normalized local time.
 
-%% Section 1: Integrate The Free Coordinate Through Shared Physical States
+%% Section 1: Refine The Analytic Clock Near Guide Turns
 assert(~isfield(request.Coverage,'ActiveTimeInterval_s'), ...
     'bmtpEngine:InvalidCorridorRequest','The monotone corridor requires static geometry.');
 % Keep solver feasibility residuals inside an additional numerical reserve.
 % The public clearance and validation tolerance remain unchanged.
 reserve_units=reserve_units+10*request.Options.ConstraintTolerance;
+% Resolve guide turns on the analytic clock before optimizing the free axis.
+% These knots add motion degrees of freedom; they do not alter source geometry.
+originalTimes_s=warmStart.SegmentTime_s; originalPowers_units=warmStart.FixedPower_units;
+breaks_s=[0;cumsum(originalTimes_s)];
+[~,axisIndex]=max(warmStart.AxisMinimumTime_s);
+guide_units=warmStart.ClockGuide.Route_units;
+guideEvents_units=guide_units(2:end-1,axisIndex);
+direction=sign(guide_units(end,axisIndex)-guide_units(1,axisIndex));
+lowerTime_s=zeros(size(guideEvents_units)); upperTime_s=repmat(breaks_s(end),size(guideEvents_units));
+axisPowers_units=reshape(originalPowers_units(:,axisIndex,:),numel(originalTimes_s),6);
+for iteration=1:48
+    middleTime_s=(lowerTime_s+upperTime_s)/2;
+    span=max(1,min(numel(originalTimes_s),sum(middleTime_s>=breaks_s(1:end-1).',2)));
+    tau=(middleTime_s-breaks_s(span))./originalTimes_s(span);
+    coordinate_units=sum(axisPowers_units(span,:).*tau.^(0:5),2);
+    before=direction*coordinate_units<direction*guideEvents_units;
+    lowerTime_s(before)=middleTime_s(before); upperTime_s(~before)=middleTime_s(~before);
+end
+response_s=max(request.Limits.maxVelocity_units_s./request.Limits.maxAcceleration_units_s2 + ...
+    request.Limits.maxAcceleration_units_s2./request.Limits.maxJerk_units_s3);
+extraTimes_s=sort(reshape((lowerTime_s+upperTime_s)/2+[-response_s,0,response_s],[],1));
+minimumGap_s=min(0.5,response_s/4);
+refinedBreaks_s=breaks_s;
+% Bound refinement cost for detailed coastlines. Every original exclusion
+% facet still participates in the corridor and independent certificate.
+if numel(extraTimes_s)>24
+    extraTimes_s=extraTimes_s(unique(round(linspace(1,numel(extraTimes_s),24))));
+end
+for eventTime_s=extraTimes_s.'
+    if eventTime_s>0 && eventTime_s<breaks_s(end) && min(abs(refinedBreaks_s-eventTime_s))>=minimumGap_s
+        refinedBreaks_s(end+1,1)=eventTime_s; %#ok<AGROW>
+    end
+end
+refinedBreaks_s=sort(refinedBreaks_s);
+refinedTimes_s=diff(refinedBreaks_s); refinedPowers_units=zeros(numel(refinedTimes_s),2,6);
+for part=1:numel(refinedTimes_s)
+    span=find(breaks_s<=refinedBreaks_s(part)+64*eps(breaks_s(end)),1,'last');
+    span=min(span,numel(originalTimes_s));
+    startTau=(refinedBreaks_s(part)-breaks_s(span))/originalTimes_s(span);
+    tauWidth=refinedTimes_s(part)/originalTimes_s(span);
+    for k=0:5
+        for j=k:5
+            refinedPowers_units(part,:,k+1)=refinedPowers_units(part,:,k+1)+ ...
+                nchoosek(j,k)*originalPowers_units(span,:,j+1)*startTau^(j-k)*tauWidth^k;
+        end
+    end
+end
+warmStart.SegmentCount=numel(refinedTimes_s);
+warmStart.SegmentTime_s=refinedTimes_s;
+warmStart.FixedPower_units=refinedPowers_units;
+
+%% Section 2: Integrate The Free Coordinate Through Shared Physical States
 degree = 5; segmentCount = warmStart.SegmentCount;
 diagnostics.OptimizerSpanCount=segmentCount;
 jerkCount = segmentCount*(degree-2);
@@ -53,7 +105,7 @@ axisPower_units = reshape(warmStart.FixedPower_units(:,axisIndex,1:6),segmentCou
 axisPower_units(:,1) = axisPower_units(:,1)-origin_units(axisIndex);
 axisControls_units = axisPower_units*conversion.';
 
-%% Section 2: Pull Every Facet Interval Back To The Analytic Clock
+%% Section 3: Pull Every Facet Interval Back To The Analytic Clock
 events_units = unique(corridor.Intervals_units(:,1:2));
 direction = sign(request.GoalState.position_units(axisIndex)-origin_units(axisIndex));
 lower_s = zeros(size(events_units)); upper_s = repmat(breaks_s(end),size(events_units));
@@ -110,7 +162,7 @@ lower(powerIndex) = 1;
 upper(powerIndex) = (request.MotionHorizon_s/breaks_s(end)).^(0:3);
 lower(lengthIndex) = 0;
 
-%% Section 3: Minimize Length At The Bound, Or Solve The Required Dilation
+%% Section 4: Minimize Length At The Bound, Or Solve The Required Dilation
 emptyCone = secondordercone(sparse(2,variableCount),zeros(2,1),sparse(variableCount,1),0);
 timeCones = repmat(emptyCone,2,1);
 for k = 1:2
@@ -161,6 +213,65 @@ if ~linearFeasible(x,A,b,Aeq,beq,lower,fixedUpper,request.Options.ConstraintTole
         end
     end
 end
+% Refine actual speed-length from a feasible clock. The conic time solution
+% can be feasible without satisfying its path-length optimality conditions.
+refinement=struct('Attempted',false,'Accepted',false,'Allowance_s',0, ...
+    'ArrivalCost_s',0,'InitialLength_units',NaN,'FinalLength_units',NaN, ...
+    'ElapsedTime_s',0,'ExitFlags',zeros(0,1),'Iterations',zeros(0,1));
+if linearFeasible(x,A,b,Aeq,beq,lower,upper,request.Options.ConstraintTolerance)
+    refinement.Attempted=true;
+    refinementTimer=tic;
+    allowance_s=0;
+    if isfield(request.Options,'PathLengthTimeAllowance_s')
+        allowance_s=request.Options.PathLengthTimeAllowance_s;
+    end
+    refinement.Allowance_s=allowance_s;
+    earliestDuration_s=x(powerIndex(4))^(1/3)*breaks_s(end);
+    speedBasis=zeros(segmentCount*quadratureCount,jerkCount);
+    fixedSpeed=zeros(segmentCount*quadratureCount,1);
+    for segment=1:segmentCount
+        indices=(segment-1)*quadratureCount+(1:quadratureCount);
+        speedBasis(indices,:)=referenceTimes_s(segment)*velocityBasis*basis{2,segment};
+        fixedSpeed(indices)=degree*velocityBasis*diff(axisControls_units(segment,:)).';
+    end
+    objective=@(z) lengthObjective(z,speedBasis,fixedSpeed,repmat(weights,segmentCount,1));
+    settings=optimoptions('fmincon','Algorithm','sqp','Display','none', ...
+        'SpecifyObjectiveGradient',true,'ConstraintTolerance',1e-10, ...
+        'OptimalityTolerance',1e-9,'StepTolerance',1e-12,'MaxIterations',200, ...
+        'MaxFunctionEvaluations',500);
+    validRows=any(Aeq(:,1:jerkCount)~=0,2);
+    initialLength_units=curveLength(x(1:jerkCount),basis,axisControls_units,referenceTimes_s);
+    bestLength_units=initialLength_units;
+    refinement.InitialLength_units=initialLength_units;
+    % First shorten at the earliest feasible clock. Spend additional arrival
+    % time only for at least a one-percent further length reduction.
+    durations_s=unique([earliestDuration_s,min(request.MotionHorizon_s,earliestDuration_s+allowance_s)]);
+    for duration_s=durations_s
+        scale=duration_s/breaks_s(end);
+        fixedPower=scale.^(0:3).';
+        [z,~,polishFlag,polishOutput]=fmincon(objective,x(1:jerkCount),full(A(:,1:jerkCount)), ...
+            b-A(:,powerIndex)*fixedPower,full(Aeq(validRows,1:jerkCount)),beq(validRows), ...
+            [],[],[],settings);
+        refinement.ExitFlags(end+1,1)=polishFlag;
+        refinement.Iterations(end+1,1)=polishOutput.iterations;
+        trial=x; trial(1:jerkCount)=z; trial(powerIndex)=fixedPower;
+        trial(lengthIndex)=hypot(speedBasis*z,fixedSpeed);
+        trialUpper=upper; trialUpper(powerIndex(4))=fixedPower(4);
+        if ~linearFeasible(trial,A,b,Aeq,beq,lower,trialUpper,request.Options.ConstraintTolerance), continue; end
+        length_units=curveLength(z,basis,axisControls_units,referenceTimes_s);
+        spendingTime=duration_s>earliestDuration_s+request.Options.ConstraintTolerance;
+        requiredGain_units=max(1e-8,1e-8*bestLength_units);
+        if spendingTime, requiredGain_units=0.01*bestLength_units; end
+        if length_units<bestLength_units-requiredGain_units
+            x=trial; upper=trialUpper; bestLength_units=length_units;
+            refinement.Accepted=true;
+        end
+    end
+    refinement.ArrivalCost_s=x(powerIndex(4))^(1/3)*breaks_s(end)-earliestDuration_s;
+    refinement.FinalLength_units=bestLength_units;
+    refinement.ElapsedTime_s=toc(refinementTimer);
+end
+diagnostics.PathLengthRefinement=refinement;
 diagnostics.TrajectorySocpCount = diagnostics.ConicSolver.CallCount;
 diagnostics.FinalTrajectoryExitFlag = exitFlag;
 diagnostics.Converged = exitFlag>0;
@@ -170,7 +281,7 @@ diagnostics.Identifier = "monotoneStaticCorridor";
 diagnostics.ConstraintRepresentation = "integratedQuinticCorridor";
 if ~linearFeasible(x,A,b,Aeq,beq,lower,upper,request.Options.ConstraintTolerance), return; end
 
-%% Section 4: Preserve Integrated Continuity And Export Exact Powers
+%% Section 5: Preserve Integrated Continuity And Export Exact Powers
 % Correct solver endpoint roundoff globally in the integrated jerk variables.
 % The complete final polynomial and all original obstacle pairs are checked.
 continuityRows=[1:3,5:size(Aeq,1)];
@@ -203,7 +314,36 @@ result.CertificateEventTime_s=x(powerIndex(4))^(1/3)*eventTimes_s;
 result.SolverMessage = "The exact monotone corridor returned an integrated quintic proposal.";
 end
 
+%% Section 6: Local Functions
 function feasible = linearFeasible(x,A,b,Aeq,beq,lower,upper,tolerance)
     feasible = ~isempty(x) && all(isfinite(x)) && ...
         max([A*x-b;abs(Aeq*x-beq);lower-x;x-upper])<=tolerance;
+end
+
+function [value,gradient]=lengthObjective(z,basis,fixed,weights)
+    free=basis*z;
+    speed=hypot(free,fixed);
+    value=weights.'*speed;
+    ratio=zeros(size(free)); moving=speed>0;
+    ratio(moving)=free(moving)./speed(moving);
+    gradient=basis.'*(weights.*ratio);
+end
+
+function length_units=curveLength(jerk,basis,axisControls_units,times_s)
+    % Measure the continuous curve for selection, independent of plot sampling
+    % and of the quadrature used by the convex optimization objective.
+    degree=4;
+    conversion=zeros(degree+1);
+    for k=0:degree
+        for j=0:k
+            conversion(k+1,j+1)=nchoosek(degree,k)*nchoosek(k,j)*(-1)^(k-j);
+        end
+    end
+    length_units=0;
+    for segment=1:numel(times_s)
+        freePower=conversion*(times_s(segment)*basis{2,segment}*jerk);
+        fixedPower=conversion*(5*diff(axisControls_units(segment,:)).');
+        speed=@(tau) hypot(polyval(flipud(freePower),tau),polyval(flipud(fixedPower),tau));
+        length_units=length_units+integral(speed,0,1,'AbsTol',1e-10,'RelTol',1e-10);
+    end
 end
