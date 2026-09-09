@@ -22,8 +22,13 @@ function testBenchmarkQuality(testCase)
     verifyEqual(testCase,r.ArrivalTime_s,30,'AbsTol',1e-8);
     verifyLessThanOrEqual(testCase,r.MotionLength_units,17.3053746209);
     verifyLessThanOrEqual(testCase,sum(vecnorm(diff(r.Route_units),2,2)),17.2979913158);
-    verifyEqual(testCase,r.PlaneCertificate.AllPairCount,1920);
-    verifyEqual(testCase,r.SolverDiagnostics.ApplicablePairCount,960);
+    intervals=r.PlaneCertificate.Coverage.ActiveTimeInterval_s;
+    active=r.Polynomial.SegmentStartTime_s < intervals(:,2).' & ...
+        r.Polynomial.SegmentStartTime_s+r.Polynomial.SegmentDuration_s > intervals(:,1).';
+    verifyEqual(testCase,r.PlaneCertificate.RegionActiveBySegment,active);
+    verifyEqual(testCase,r.PlaneCertificate.AllPairCount,nnz(active));
+    verifyLessThan(testCase,sum(totalJerkVariation(r)),22);
+    verifyLessThanOrEqual(testCase,r.MotionLength_units,17.1413446762211*1.005);
 end
 
 function testOmittedActivePairRejected(testCase)

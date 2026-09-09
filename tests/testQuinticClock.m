@@ -23,6 +23,9 @@ function testStaticDetourHasContinuousJerk(testCase)
     jerk=r.Polynomial.jerkPower_units_s3;
     verifyLessThanOrEqual(testCase,max(abs(sum(jerk(1:end-1,:,:),3)-jerk(2:end,:,1)),[],'all'),1e-8);
     verifyLessThanOrEqual(testCase,r.TrajectoryDuration_s,r.Inputs.goalState.time_s);
+    verifyLessThan(testCase,r.ArrivalTime_s,20.7567067086728+0.5);
+    verifyLessThan(testCase,r.MotionLength_units,39.5418723967022*1.005);
+    verifyLessThan(testCase,sum(totalJerkVariation(r)),19.5);
 
 end
 

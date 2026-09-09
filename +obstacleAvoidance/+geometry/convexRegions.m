@@ -49,7 +49,13 @@ function faces = mergeConvexFaces(mesh)
             while owner(right)~=right, right = owner(right); end
             if left==right, continue; end
             a = faces{left}; b = faces{right};
-            shared = intersect(a,b);
+            % Face indices are unique. Avoid general set-operation setup for
+            % short faces, while bounding the temporary comparison array.
+            if numel(a)*numel(b)<=1024
+                shared = sort(a(any(a(:)==b(:).',2)));
+            else
+                shared = intersect(a,b);
+            end
             if numel(shared)~=2, continue; end
             index = find(a==shared(1));
             if a(mod(index,numel(a))+1)~=shared(2)

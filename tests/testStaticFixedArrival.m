@@ -16,6 +16,7 @@ function testAlternatingTargetOcclusion(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyEqual(testCase,r.TrajectoryDuration_s,20.8695652173913,'AbsTol',1e-8);
     verifyLessThanOrEqual(testCase,r.MotionLength_units,13.6104156606847);
+    verifyLessThan(testCase,sum(totalJerkVariation(r)),6);
 end
 
 function testTargetExitsObstacle(testCase)
@@ -26,6 +27,7 @@ function testTargetExitsObstacle(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyEqual(testCase,r.TrajectoryDuration_s,24,'AbsTol',1e-8);
     verifyLessThanOrEqual(testCase,r.MotionLength_units,20.685146756819);
+    verifyLessThan(testCase,sum(totalJerkVariation(r)),7);
     verifyEqual(testCase,r.SolverDiagnostics.ConstraintRepresentation,"fixedClockElasticSocp");
     verifyGreaterThan(testCase,sum(vecnorm(diff(r.Route_units),2,2)),norm(r.Route_units(end,:)-r.Route_units(1,:)));
 end

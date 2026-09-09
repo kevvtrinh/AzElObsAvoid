@@ -59,7 +59,11 @@ warmStart.OriginalSeedSegmentCount = originalSegmentCount;
 warmStart.WarmRouteResampled = false;
 if isfield(request.Coverage,'BreakTime_s')
     sourceBreaks_s = request.Coverage.BreakTime_s;
-    breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:request.SplitCount)/request.SplitCount,[],1));
+    % Natural obstacle events already supply phases on a detailed clock.
+    % Keep at least eight spans (up to four per interval) on sparse clocks
+    % so the endpoint constraints do not consume the steering freedom.
+    subdivisions = min(4,max(1,ceil(8/(numel(sourceBreaks_s)-1))));
+    breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:subdivisions)/subdivisions,[],1));
     segmentTime_s = diff(breakTime_s);
     segmentCount = numel(segmentTime_s);
     tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
@@ -81,7 +85,7 @@ end
 if request.Options.GoalTimeMode=="fixedArrival" && ~isfield(request.Coverage,'BreakTime_s')
     % Uniform physical spans avoid derivative amplification on tiny polygon
     % guide edges while retaining that route as the initialization.
-    segmentCount=max(8,request.SplitCount*originalSegmentCount);
+    segmentCount=max(8,originalSegmentCount);
     tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
     controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
     warmStart.ControlPoint_units=reshape(controls,segmentCount,degree+1,2);

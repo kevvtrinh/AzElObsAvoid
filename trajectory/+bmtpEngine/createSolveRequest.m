@@ -42,10 +42,11 @@ validateKernelInputs(seed, regions_units, coverage, initialState, goalState, lim
 
 %% Section 2: Select The Polynomial Representation
 
-% Four quintic subspans per guide edge or source interval provide freedom
-% for continuous jerk while preserving endpoint position, velocity, and acceleration.
+% Start static guide edges with three quintic subspans to limit model size
+% while retaining continuous-jerk steering freedom.
+% Fixed-arrival clocks use their natural events and a minimum steering mesh.
 
-[degree, splitCount] = deal(5, 4);
+[degree, splitCount] = deal(5, 3);
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");

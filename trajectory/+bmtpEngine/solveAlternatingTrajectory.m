@@ -45,6 +45,7 @@ if allPlanesActive
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.FinalTrajectoryExitFlag = exitFlag;
+        diagnostics.PlaneReduction=[output.OriginalPlaneCount,output.RetainedPlaneCount];
         if isfield(output,'MaximumClearanceSlack_units')
             diagnostics.MaximumClearanceSlack_units = output.MaximumClearanceSlack_units;
         end

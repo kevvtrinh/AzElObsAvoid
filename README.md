@@ -21,6 +21,11 @@ a fixed-arrival static detour. MATLAB and Optimization Toolbox are required.
 Expected no-path and infeasible outcomes use stable `Success`, `Message`, and
 `TerminationReason` fields.
 
+The planner prioritizes its own root and `trajectory` folders on the MATLAB
+path. This keeps archived benchmark engines out of active planning when a
+session has used `addpath(genpath(pwd))`. Prefer the explicit paths above;
+for the graphical examples, also add `fullfile(pwd,'examples')`.
+
 The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
 workspace/visibility, four kinematic panels, animation, GIF export, and paired
 wrapped/continuous views using this branch's retained results. Query its display
@@ -149,6 +154,13 @@ and phase durations, followed by a conic repair. Fixed-arrival motion enforces
 C3 joins in the shared Bernstein equations. Timed obstacles retain their exact
 affine cells and absolute activity intervals. No example identity selects a
 production method.
+
+The general static variable-clock generator also uses `PathLengthTimeAllowance_s`
+as a bounded jerk-variation penalty during phase optimization. Larger fixed-clock
+models minimize length with a small intrinsic snap penalty and use fewer artificial
+phases. These are local optimization heuristics; the measured arrival/path trade,
+conditioning checks, and profile-precomputation opportunities are documented in
+[BMTP_GENERATION.md](BMTP_GENERATION.md).
 
 Export preserves the physical clock. A global continuity projection stays in
 the quintic spline space, and every corrected motion is checked again. Exact

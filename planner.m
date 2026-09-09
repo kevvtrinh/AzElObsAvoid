@@ -34,6 +34,15 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 
 %% Section 1: Resolve The Independent Defaults
 
+% Recursive user path setup can put archived benchmark packages ahead of this
+% checkout's engine. Keep planning and validation bound to the same checkout.
+plannerFolder = fileparts(mfilename('fullpath'));
+engineFolder = fullfile(plannerFolder,'trajectory');
+productionPath = [plannerFolder pathsep engineFolder];
+if ~startsWith(path,[productionPath pathsep])
+    addpath(productionPath,'-begin');
+end
+
 useIndependentDefaults = nargin == 0;
 diagnosis = struct();
 [defaultObstacles, defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();

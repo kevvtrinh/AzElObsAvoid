@@ -197,6 +197,12 @@ function [verified, alignedUpper_units] = alignVerifiedSingleRing(lowerX_units, 
     if ~isSingleRing
         return;
     end
+    % Identical rings already attain the first possible zero-distance match.
+    if isequal(lower_units,upper_units)
+        alignedUpper_units = upper_units;
+        verified = true;
+        return;
+    end
     vertexCount   = size(lower_units, 1);
     bestCost_units2 = Inf;
     % Process each orientation needed to complete align verified single ring.

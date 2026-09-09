@@ -58,9 +58,18 @@ function testWaitingPointMustRemainFree(testCase)
     box = [-5.1,-0.1;-4.9,-0.1;-4.9,0.1;-5.1,0.1];
     incoming = obstacleAvoidance.obstacles.createObstacle('occupies waiting point',[0;1;12], ...
         {box(:,1);box(:,1);box(:,1)},{box(:,2)+8;box(:,2);box(:,2)},0);
-    rejected = planner([r.Inputs.obstacles;incoming],r.Inputs.initialState,r.Inputs.goalState,r.Limits,r.Options);
-    verifyFalse(testCase,rejected.Success);
-    verifyEmpty(testCase,rejected.time_s);
+    result = planner([r.Inputs.obstacles;incoming],r.Inputs.initialState,r.Inputs.goalState,r.Limits,r.Options);
+    if result.Success
+        % Occupation invalidates waiting here, but does not prove that every
+        % motion is infeasible: the robot can depart before the box arrives.
+        verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+        verifyNotEqual(testCase,result.SolverDiagnostics.Identifier,"c3DepartureSchedule");
+        occupied=result.time_s>=1;
+        distance_units=max(abs(result.position_units(occupied,:)-r.Inputs.initialState.position_units),[],2);
+        verifyGreaterThan(testCase,distance_units,0.1);
+    else
+        verifyEmpty(testCase,result.time_s);
+    end
 end
 
 function testStationaryIntervalsPreserveNonconvexGeometry(testCase)

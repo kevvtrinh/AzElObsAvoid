@@ -243,10 +243,25 @@ if linearFeasible(x,A,b,Aeq,beq,lower,upper,request.Options.ConstraintTolerance)
     initialLength_units=curveLength(x(1:jerkCount),basis,axisControls_units,referenceTimes_s);
     bestLength_units=initialLength_units;
     refinement.InitialLength_units=initialLength_units;
+    lengthLowerBound_units=norm(request.GoalState.position_units-request.InitialState.position_units);
+    if isfield(request.Seed,'Source') && string(request.Seed.Source)=="initialSpatialSnapshot"
+        lengthLowerBound_units=sum(vecnorm(diff(request.Seed.position_units),2,2));
+    end
+    % The static visibility route is a geometric lower bound. Keep a guard
+    % for coordinate comparisons and summation before ruling out a trade.
+    lengthLowerBound_units=max(0,lengthLowerBound_units- ...
+        16*size(request.Seed.position_units,1)*request.Options.ConstraintTolerance);
+    refinement.GeometricLowerBound_units=lengthLowerBound_units;
+    refinement.TimeTradeSkippedByLengthBound=false;
     % First shorten at the earliest feasible clock. Spend additional arrival
     % time only for at least a one-percent further length reduction.
     durations_s=unique([earliestDuration_s,min(request.MotionHorizon_s,earliestDuration_s+allowance_s)]);
     for duration_s=durations_s
+        spendingTime=duration_s>earliestDuration_s+request.Options.ConstraintTolerance;
+        if spendingTime && lengthLowerBound_units>=0.99*bestLength_units
+            refinement.TimeTradeSkippedByLengthBound=true;
+            continue;
+        end
         scale=duration_s/breaks_s(end);
         fixedPower=scale.^(0:3).';
         [z,~,polishFlag,polishOutput]=fmincon(objective,x(1:jerkCount),full(A(:,1:jerkCount)), ...
@@ -259,7 +274,6 @@ if linearFeasible(x,A,b,Aeq,beq,lower,upper,request.Options.ConstraintTolerance)
         trialUpper=upper; trialUpper(powerIndex(4))=fixedPower(4);
         if ~linearFeasible(trial,A,b,Aeq,beq,lower,trialUpper,request.Options.ConstraintTolerance), continue; end
         length_units=curveLength(z,basis,axisControls_units,referenceTimes_s);
-        spendingTime=duration_s>earliestDuration_s+request.Options.ConstraintTolerance;
         requiredGain_units=max(1e-8,1e-8*bestLength_units);
         if spendingTime, requiredGain_units=0.01*bestLength_units; end
         if length_units<bestLength_units-requiredGain_units

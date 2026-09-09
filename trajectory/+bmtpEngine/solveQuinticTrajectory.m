@@ -3,7 +3,7 @@ function [result,diagnostics] = solveQuinticTrajectory(request,warmStart,diagnos
 % SYNTAX: [motion,diagnostics] = bmtpEngine.solveQuinticTrajectory(request,warm,diagnostics,target,reserve)
 % PURPOSE: Optimize a static detour using integrated quadratic-jerk phases.
 %   Initialize the clock conically, vary local knot states, durations, and jerk,
-%   then repair on the final physical clock while minimizing control-polygon length.
+%   then repair on the final clock with length and bounded jerk-variation cost.
 % INPUTS: Validated earliest-arrival static request, visibility warm start,
 %   diagnostic record, obstacle target, and numerical reserve.
 % OUTPUTS: A polynomial proposal and full solver diagnostics. The caller must
@@ -81,6 +81,7 @@ end
 %% Section 3: Convex Integrated-Jerk Subproblem
 function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,planes,ratios,reserve_units,minimizeLength,fixedDuration_s)
     segmentCount=size(planes,1); degree=5; limits=request.Limits;
+    if minimizeLength, planes=bmtpEngine.removeRedundantPlanes(planes,limits,reserve_units); end
     start_units=request.InitialState.position_units; goal_units=request.GoalState.position_units;
     horizon_s=request.MotionHorizon_s; options=request.TrajectoryOptions;
     %% Section 1: Construct The Integrated Polynomial Basis
@@ -98,7 +99,7 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     powerIndex=stateCount+(1:4);
     lengthCount=segmentCount*degree;
     planeCount=nnz([planes.Active]);
-    variableCount=stateCount+4+lengthCount;
+    variableCount=stateCount+4+lengthCount+minimizeLength*segmentCount;
     lengthIndex=stateCount+4+(1:lengthCount);
     basis=cell(4,segmentCount);
     stateMaps=zeros(3,jerkCount);
@@ -202,6 +203,15 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     end
     f=zeros(variableCount,1); f(powerIndex(4))=1;
     if fixedPhysicalClock, cones=lengthCones; f(:)=0; f(lengthIndex)=1; end
+    if minimizeLength
+        jerkMap=sparse(6*segmentCount,variableCount);
+        for span=1:segmentCount
+            jerkMap((span-1)*6+(1:6),1:stateCount)=kron(basis{4,span},speye(2));
+        end
+        smoothIndices=variableCount-segmentCount+(1:segmentCount);
+        cones=[cones;bmtpEngine.createVariationCone(jerkMap,referenceTimes_s,limits,smoothIndices)];
+        lb(smoothIndices)=0; f(smoothIndices)=0.005*norm(goal_units-start_units);
+    end
     timer=tic;
     [x,~,exitFlag,output]=coneprog(f,cones,A,b,Aeq,beq,lb,ub,options);
     output.TotalTime_s=toc(timer); output.SolveCount=1; output.OptimizationConverged=exitFlag>0;
@@ -215,6 +225,11 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     residual=beq(1:end-1)-terminal*x(1:stateCount);
     x(1:stateCount)=x(1:stateCount)+terminal.'*((terminal*terminal.')\residual);
     output.ProjectedEndpointResidual=norm(beq(1:end-1)-terminal*x(1:stateCount),Inf);
+    % A stalled conic solve can return a finite but unusable initialization.
+    % Check after endpoint roundoff correction, before spending nonlinear
+    % iterations on it. Final motion validation remains separate and exact.
+    output.InitializationResidual=max([0;A*x-b;abs(Aeq*x-beq);lb-x;x-ub]);
+    if ~minimizeLength && output.InitializationResidual>request.Options.ConstraintTolerance, return; end
     times_s=x(powerIndex(4))^(1/3)*referenceTimes_s;
     states=reshape(x(1:stateCount),2,jerkCount).';
     controls_units=zeros(segmentCount,degree+1,2); powers_units=zeros(segmentCount,2,degree+1);
@@ -325,6 +340,15 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
     lb=[-Inf(stateCount,1);-ones(jerkCount,1);eps*ones(segmentCount,1)];
     ub=[Inf(stateCount,1);ones(jerkCount,1);repmat(request.MotionHorizon_s,segmentCount,1)];
     totalTimeRow=sparse(ones(1,segmentCount),timeIndex,ones(1,segmentCount),1,variableCount);
+    difference=sparse(4*segmentCount,variableCount);
+    for span=1:segmentCount
+        difference((span-1)*4+(1:4),stateCount+4*(span-1)+(1:6))=kron([-1,1,0;0,-1,1],speye(2));
+    end
+    variationGram=(difference.'*difference)/(16*segmentCount);
+    % Each normalized jerk difference is in [-2,2], so this entire penalty
+    % is between zero and the single arrival allowance. This regularizes
+    % phase generation itself; the final repair does not add another delay.
+    variationAllowance_s=request.Options.PathLengthTimeAllowance_s;
     lastJacobian=sparse(0,variableCount);
     settings=optimoptions('fmincon','Algorithm','interior-point','Display','none', ...
         'SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true, ...
@@ -335,10 +359,12 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
     [x,~,exitFlag,output]=fmincon(@objective,x0,totalTimeRow,request.MotionHorizon_s,[],[],lb,ub,@constraints,settings);
     output.TotalTime_s=toc(timer); output.VariableCount=variableCount;
     output.ConstraintJacobianNonzeros=nnz(lastJacobian);
+    output.JerkVariationPenalty_s=variationAllowance_s*(x.'*variationGram*x);
     times_s=x(timeIndex);
 
     function [value,gradient]=objective(x)
-        value=sum(x(timeIndex)); gradient=full(totalTimeRow.');
+        value=sum(x(timeIndex))+variationAllowance_s*(x.'*variationGram*x);
+        gradient=full(totalTimeRow.'+2*variationAllowance_s*variationGram*x);
     end
     function [residual,equality,gradient,equalityGradient]=constraints(x)
         residual=zeros(starts(end),1); equality=zeros(6*segmentCount,1);
@@ -367,7 +393,7 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
         gradient=lastJacobian.'; equalityGradient=vertcat(endpointBlocks{:}).';
     end
     function curvature=hessian(x,lambda)
-        curvature=sparse(variableCount,variableCount);
+        curvature=2*variationAllowance_s*variationGram;
         for span=1:segmentCount
             ti=timeIndex(span); h=x(ti); map=stateMaps{span}; local=reshape(map*x,6,2);
             if span==1, local(1:3,:)=initial; end
