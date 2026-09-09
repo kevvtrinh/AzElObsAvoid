@@ -21,6 +21,23 @@ a fixed-arrival static detour. MATLAB and Optimization Toolbox are required.
 Expected no-path and infeasible outcomes use stable `Success`, `Message`, and
 `TerminationReason` fields.
 
+The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
+workspace/visibility, four kinematic panels, animation, GIF export, and paired
+wrapped/continuous views using this branch's retained results. Query its display
+defaults with `obstacleAvoidance.plotting.plotTrajectory()`, or select views:
+
+```matlab
+handles = obstacleAvoidance.plotting.plotTrajectory(result, ...
+    struct('ShowAnimation', false, 'FigureVisible', 'off'));
+```
+
+Passing Cartesian axes as the second argument keeps the existing single-view
+call. The core `Axes`, `Trajectory`, and geometry handles remain available.
+Moving targets use `targetMotion`; obstacle margins are not reapplied.
+Legacy seed-path, swept-surface, and snapshot-count controls remain accepted
+for example compatibility but have no effect because the core does not return
+those diagnostic histories.
+
 ## Endpoint states, limits, and optional capabilities
 
 Omitted or empty `velocity_units_s` and `acceleration_units_s2` default to
