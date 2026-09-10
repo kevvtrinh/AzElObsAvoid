@@ -381,6 +381,37 @@ for one span to 2,767,104 bytes for sixteen spans; these are array sizes, not
 measured peak process memory. The original sampler is retained without any
 production change.
 
+## Rejected endpoint-variable elimination
+
+An experimental conic formulation substituted the twelve endpoint-control
+coordinates already fixed by endpoint position, velocity, and acceleration
+equalities. It shifted linear right-hand sides and affine cone offsets, removed
+the resulting zero equalities, and reconstructed the full control vector after
+solving. Solver tolerances and the mathematical constraints were unchanged.
+
+With both implementations warmed, three paired full BMTP runs had medians of
+2.696318 seconds for the retained formulation and 2.421058 seconds when substitution
+was used in both alternating optimization and final refinement. Arrival remained
+117 seconds and each engine collision certificate passed. However, motion length
+increased from 229.959020398834 to 229.964562511439 units, and integrated squared
+jerk increased from 0.991397232846 to 0.993329047218 units squared per second to the
+fifth power. The alternating process performed ten trajectory solves and 65 plane
+solves instead of eleven and 78; the numerical reformulation changed its path and
+stopping behavior.
+
+A second paired comparison isolated the two phases:
+
+| Endpoint substitution | Full BMTP median (s) | Motion length (units) |
+| --- | ---: | ---: |
+| None, paired reference | 2.647535 | 229.959020398834 |
+| Alternating phase only | 2.397155 | 229.982241836290 |
+| Final refinement only | 2.637803 | 229.959768507023 |
+
+Every variant returned a longer path. Refinement-only substitution slightly
+reduced squared jerk, but did not provide a useful runtime improvement. None is
+retained: the faster variants trade away motion quality and require additional
+reduction/reconstruction code. Production remains unchanged.
+
 ## Regression coverage and code size
 
 The suite now contains 36 MATLAB tests. The saved-request regression checks arrival 117,
