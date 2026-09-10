@@ -699,6 +699,41 @@ violating control point. The existing moving-obstacle interior-violation case
 still rejects clear endpoints with an intervening collision, and the maintained
 220-vertex path-length regression remains unchanged.
 
+## Rejected plane-result caching and block solves
+
+An instrumented replay captured the complete inputs to all 78 timed
+separating-plane solves, including control points, vertices, target, reserve,
+and solver options. No two input lists were exactly equal. Their recorded
+solver time totaled 0.274087 seconds in that replay, with zero attributable
+to exact repeats. An exact-result cache would therefore add overhead without
+eliminating a solve in this request; none was implemented.
+
+The captured independent problems were then replayed individually and in
+block-diagonal conic programs. Each block retained the original seven variables,
+maximum-margin objective, inequalities, and two unit-normal cones per problem.
+The resulting individual planes were verified with the unchanged shared
+verifier. Common solver options were checked outside the timed loop. All
+implementations were warmed before three repetitions with rotated execution order.
+
+| Plane problems per conic call | Median time for all 78 problems (s) |
+| --- | ---: |
+| 1, retained | 0.228343 |
+| 2 | 0.256500 |
+| 4 | 0.280584 |
+| 13 | 0.411757 |
+
+These times include assembly, solving, and plane verification, but exclude
+trajectory optimization and public-planner work. Every conic call returned a
+positive exit flag. Each method produced 77 verified intermediate planes, the
+same count as the individual reference; these initialization-plane counts are
+not a final motion certificate. The original instrumented BMTP replay returned
+a passing final engine certificate.
+
+Even this offline replay, which can group known problems without waiting for
+the intervening trajectory iterations, showed no batching benefit. The larger
+programs cost more than the saved call overhead. No block solver was integrated
+into the planner, and production remains unchanged.
+
 ## Regression coverage and code size
 
 The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,
