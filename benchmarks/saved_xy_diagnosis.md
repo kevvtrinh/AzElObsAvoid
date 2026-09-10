@@ -871,6 +871,51 @@ are not counted as speedups. No mesh-selection heuristic, retry schedule,
 production change, or additional test was retained. The previous paired public
 planner median of 3.525495 seconds remains the latest retained measurement.
 
+## Rejected fixed-time cone removal and sampling allocation reduction
+
+Two further experiments kept the original 16-span, degree-eight representation,
+the same route and arrival, and all validation predicates. Each implementation
+was warmed before three paired BMTP runs with alternating execution order.
+
+The first removed the two time-power cones only during fixed-arrival travel
+refinement. Their variables are already fixed to the selected time powers by
+equal lower and upper bounds. This one-line candidate did not improve runtime:
+
+| Repetition | Original BMTP (s) | Without fixed-time cones (s) |
+| --- | ---: | ---: |
+| 1 | 2.703082 | 2.741371 |
+| 2 | 2.672066 | 2.695066 |
+| 3 | 2.686239 | 2.647646 |
+| Median | 2.686239 | 2.695066 |
+
+All candidate engine certificates passed, but the numerical solution changed.
+Length increased from 229.959020398834 to 229.959347971727 units while squared
+jerk decreased from 0.991397232846 to 0.991323543230 units²/s⁵. Arrival remained
+117 seconds with 11 trajectory and 78 plane solves. The absent speed benefit
+and increased path length reject this variant.
+
+The second delayed expansion of the de Casteljau work array until its first
+arithmetic operation. Constant curves retained explicit replication, and all
+recurrence expressions and sample locations were unchanged. For 1,201 samples
+of a planar degree-eight curve, the initial replicated array contains 172,944
+bytes of doubles; the candidate initially stores only the 144-byte control
+array. These are initial array sizes, not measured peak process memory.
+
+| Repetition | Original BMTP (s) | Delayed sampling expansion (s) |
+| --- | ---: | ---: |
+| 1 | 2.698141 | 2.800366 |
+| 2 | 2.711762 | 2.745254 |
+| 3 | 2.738897 | 2.659652 |
+| Median | 2.711762 | 2.745254 |
+
+Every measured motion matched the reference polynomial exactly and passed its
+engine certificate. The saved results also matched the complete certificate,
+trial-duration and collision histories, and solve counts exactly.
+The smaller initial allocation did not translate into a
+runtime improvement, so its extra production line is also rejected. Neither
+experiment was promoted to the public planner; production and the previously
+passing 39-test suite remain unchanged.
+
 ## Regression coverage and code size
 
 The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,
