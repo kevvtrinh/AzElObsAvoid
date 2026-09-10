@@ -159,9 +159,42 @@ The production diff adds 17 lines and removes 18, a net reduction of one line.
 The continuously moving and stationary crossing-barrier cases also matched the
 reference route, clock, and full search record.
 
+## Prepared query snapshot milestone
+
+The next profile attributed 5.07 seconds to search and 4.71 seconds to its 1,680
+public occupancy queries, including 2.22 seconds in polygon tests and 0.64 seconds
+in preparation across the profiled planner. These inclusive times overlap and
+are not summed. The query count and repeated source checks motivated preparing
+the local obstacle snapshot once at search entry.
+
+Two alternatives were not retained. Grouping point indices by query time saved
+only 1.5% in search (medians 4.198729 versus 4.136877 seconds). Wider initial
+sample batches were slower: the retained quarter/midpoint/three-quarter batch took
+4.097923 seconds, versus 4.130804 for sixth-position samples and 4.675055 or
+4.958634 for five-point batches. Every tested variant preserved the full search
+record.
+
+The retained change extracts the unchanged occupancy computation into one shared
+internal function. Public queries still validate inputs and refresh preparation;
+search prepares its local snapshot once and queries it throughout the search.
+The extracted polygon-query computation is textually identical. Boundary policy,
+first blocking-obstacle order, source refresh, and final validation are preserved.
+
+Three paired search runs had medians of 4.119161 seconds before and 3.803443 seconds
+after, with identical routes, clocks, and complete search records. Full planner
+runs took 9.146784, 7.430817, and 7.036871 seconds: median 7.430817 seconds versus
+8.053248 seconds for the previous milestone, a 7.7% reduction. Each full run
+preserved the exact polynomial, search record, arrival, path length, and solve
+counts, and passed independent validation. The separate moving and stationary
+crossing-barrier searches also matched their reference records exactly.
+The net production increase is 20 lines, including the shared function's help.
+Regression coverage checks boundary inclusion, first blocking index, inactive
+times, empty and mismatched query shapes, partial search preparation, and source
+edits that invalidate an existing cache.
+
 ## Regression coverage and code size
 
-The suite now contains 31 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 32 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact

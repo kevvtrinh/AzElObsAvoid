@@ -33,8 +33,10 @@ layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); goalState.time_s])
 layerTimes_s = layerTimes_s(layerTimes_s >= initialState.time_s & layerTimes_s <= goalState.time_s);
 layerCount   = numel(layerTimes_s);
 nodeCount    = size(nodePosition_units, 1);
+% The local obstacle snapshot stays unchanged throughout this search.
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
 [geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacles);
-proposalQueryOptions = struct("BoundaryIsOccupied", false);
+
 % Cache unknown/free/occupied as 0/1/2 within 300 MiB. Eviction only repeats
 % authoritative queries; it never removes a search candidate.
 bytesPerGeometry = 13 * nodeCount ^ 2;
@@ -63,8 +65,8 @@ occupancyCacheKey = zeros(cacheSlotCount, 1);
 nodeIsFree   = false(layerCount, nodeCount);
 % Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount
-    nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-        obstacles,nodePosition_units(:,1),nodePosition_units(:,2),layerTimes_s(layerIndex),proposalQueryOptions).';
+    nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
+        obstacles,nodePosition_units(:,1),nodePosition_units(:,2),layerTimes_s(layerIndex),false).';
 end
 waitIsClear = false(max(0, layerCount - 1), nodeCount);
 % Process each layer needed to complete time expanded visibility search.
@@ -238,8 +240,8 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
                     (second_units(indices,1)-first_units(indices,1));
                 y_units = first_units(indices,2) + fraction(samples).' .* ...
                     (second_units(indices,2)-first_units(indices,2));
-                occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-                    obstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),proposalQueryOptions);
+                occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
+                    obstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),false);
                 clear(indices) = ~any(occupied,2);
             end
         end
@@ -272,8 +274,8 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
                 if ~isempty(batchPointIndices) && mod(geometryKey, 2) == 1
                     % Populate stationary intervals in one query. Exact sample
                     % times retain lazy entries; moving intervals bypass reuse.
-                    batchOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-                        obstacles,batchPositions_units(:,1),batchPositions_units(:,2),time_s(sampleIndex),proposalQueryOptions);
+                    batchOccupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
+                        obstacles,batchPositions_units(:,1),batchPositions_units(:,2),time_s(sampleIndex),false);
                     occupancyCache{cacheSlot} = reshape(1 + uint8(batchOccupied(batchPointIndices)), nodeCount ^ 2, 13);
                 else
                     occupancyCache{cacheSlot} = zeros(nodeCount ^ 2, 13, 'uint8');
@@ -288,8 +290,8 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
         end
         if isempty(candidate), continue; end
         position_units = first_units(candidate, :) + fraction(sampleIndex) .* (second_units(candidate, :) - first_units(candidate, :));
-        clear(candidate) = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-            obstacles,position_units(:,1),position_units(:,2),time_s(sampleIndex),proposalQueryOptions);
+        clear(candidate) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
+            obstacles,position_units(:,1),position_units(:,2),time_s(sampleIndex),false);
         if useCache
             occupancyCache{cacheSlot}(cacheIndices) = 2 - uint8(clear(candidate));
         end

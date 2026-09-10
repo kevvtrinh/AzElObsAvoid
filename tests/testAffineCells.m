@@ -66,6 +66,31 @@ function testCompletePreparationReuseAndSourceChanges(testCase)
     verifyEqual(testCase,blocking,uint32([0,1]));
 end
 
+function testOccupancyBoundaryAndBlockingContract(testCase)
+    box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
+    fixed = obstacleAvoidance.obstacles.createObstacle('fixed',0,box(:,1),box(:,2),0);
+    moving = obstacleAvoidance.obstacles.createObstacle('moving',[0;2], ...
+        {box(:,1)+3;box(:,1)+5},{box(:,2);box(:,2)},0);
+    obstacles = obstacleAvoidance.obstacles.combineObstacles({fixed,moving,moving});
+    x_units = repmat([0,0.5,1,3,5],2,1);
+    y_units = zeros(size(x_units));
+    time_s = repmat([0;2],1,5);
+    for boundaryOccupied = [false,true]
+        expected = logical([1,boundaryOccupied,0,1,0;1,boundaryOccupied,0,0,1]);
+        expectedBlocking = uint32([1,boundaryOccupied,0,2,0;1,boundaryOccupied,0,0,2]);
+        [occupied,blocking] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+            obstacles,x_units,y_units,time_s,struct('BoundaryIsOccupied',boundaryOccupied));
+        verifyEqual(testCase,occupied,expected);
+        verifyEqual(testCase,blocking,expectedBlocking);
+    end
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacles,[3,5],[0,0],[-1,3]),[false,false]);
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacles,zeros(0,2),zeros(0,2),0),false(0,2));
+    verifyError(testCase,@()obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacles,[0,1],[0,0],[0;1]),'queryObstacleOccupancyAtTime:SizeMismatch');
+end
+
 function testCachedMovingGeometryMatchesUncachedSearch(testCase)
     angle = linspace(0,2*pi,18).';
     first = [3.1*cos(angle(1:end-1)),1.7*sin(angle(1:end-1))]+[-1.2,0.8];
