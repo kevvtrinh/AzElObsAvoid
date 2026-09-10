@@ -108,24 +108,19 @@ beq(equalityIndex) = 1;
 
 limitValues = [limits.maxVelocity_units_s; ...
     limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-inequalityIndex = 0;
-% Process each segment while assembling the complete motion or interval result.
-for segmentIndex = 1:segmentCount
-    controlColumns = (segmentIndex - 1) * 2 * (degree + 1) + (1:2 * (degree + 1));
-    % Process each order needed to find trajectory step.
-    for order = 1:3
-        coefficients    = differenceCoefficients{order + 1};
-        scale           = factorial(degree) / factorial(degree - order);
-        derivativeCount = degree - order + 1;
-        derivativeRows  = spdiags(repmat(scale * coefficients, derivativeCount, 1), 0:order, derivativeCount, degree + 1);
-        signedRows      = kron(kron(derivativeRows, speye(2)), [1; -1]);
-        targets         = inequalityIndex + (1:size(signedRows, 1));
-        A(targets, controlColumns) = signedRows; %#ok<SPRIX>
-        axisLimits = repmat(limitValues(order, :), derivativeCount, 1);
-        A(targets, powerIndex(order + 1)) = ...
-            -repelem(reshape(axisLimits.', [], 1), 2); %#ok<SPRIX>
-        inequalityIndex = targets(end);
-    end
+% Assemble each derivative order across all spans, preserving original row order.
+for order = 1:3
+    coefficients = differenceCoefficients{order + 1};
+    scale = factorial(degree) / factorial(degree - order);
+    derivativeCount = degree - order + 1;
+    derivativeRows = spdiags(repmat(scale * coefficients, derivativeCount, 1), 0:order, derivativeCount, degree + 1);
+    signedRows = kron(kron(derivativeRows, speye(2)), [1; -1]);
+    precedingRows = 4 * ((order - 1) * (degree + 1) - (order - 1) * order / 2);
+    targets = reshape(precedingRows + (1:size(signedRows,1)).' + ...
+        (0:segmentCount-1) * (baseInequalityCount / segmentCount), [], 1);
+    A(targets,1:controlCount) = kron(speye(segmentCount),signedRows); %#ok<SPRIX>
+    axisLimits = repmat(limitValues(order,:),derivativeCount,1);
+    A(targets,powerIndex(order+1)) = repmat(-repelem(reshape(axisLimits.',[],1),2),segmentCount,1); %#ok<SPRIX>
 end
 b               = zeros(inequalityCount, 1);
 inequalityIndex = baseInequalityCount;

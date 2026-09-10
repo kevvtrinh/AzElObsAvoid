@@ -192,6 +192,30 @@ Regression coverage checks boundary inclusion, first blocking index, inactive
 times, empty and mismatched query shapes, partial search preparation, and source
 edits that invalidate an existing cache.
 
+## Sparse derivative assembly milestone
+
+The latest profile attributed 4.03 seconds to BMTP, including 2.62 seconds in
+90 conic solves. The trajectory-step builder constructed each derivative order's
+identical sparse rows once per span: 576 repetitions across twelve steps in the
+saved case. The retained change constructs three derivative blocks per step and
+places them across all spans with a sparse Kronecker product. Original row order,
+coefficient values, variable order, bounds, cones, objective, and options remain
+unchanged. The net production diff removes five lines.
+
+Captured complete coneprog inputs matched exactly in sixteen cases: one, four,
+sixteen, and forty spans; degrees five and eight; and earliest- and fixed-arrival
+objectives. Each case included active separating planes. Three paired full BMTP
+runs took 4.091014, 2.786319, and 2.834638 seconds before, versus 2.909493, 2.737703,
+and 2.699731 seconds after. Medians were 2.834638 and 2.737703 seconds. All runs
+returned exactly the same polynomial and full collision certificate.
+
+Full planner runs took 9.339165, 7.326564, and 6.954518 seconds, with median
+7.326564 seconds versus the previous 7.430817 seconds. This 1.4% full-runtime
+difference is modest, and the first run was slower than the previous milestone's
+first run. The smaller implementation and paired BMTP measurements support
+retention. All three preserved the exact polynomial and search record, arrival
+117 seconds, motion length 229.959020399 units, and passing independent validation.
+
 ## Regression coverage and code size
 
 The suite now contains 32 MATLAB tests. The saved-request regression checks arrival 117,
