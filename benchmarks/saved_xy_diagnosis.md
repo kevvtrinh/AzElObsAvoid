@@ -253,9 +253,34 @@ shape evaluations, versus 1,680, 12,270, and 10,705 before this change. Cached
 stationary rejections also avoid subsequent moving-obstacle queries. All 33
 MATLAB tests passed and Code Analyzer reported no issues in the changed files.
 
+## Query-only boundary evaluation milestone
+
+Sparse storage for conic constraint matrices was tested and not retained. Three
+paired BMTP runs had medians of 2.756250 seconds before and 2.775011 seconds with
+sparse cone storage, despite identical polynomials and full certificates.
+
+The retained change lets occupancy queries skip convexity and orientation
+classification while evaluating the exact same prepared boundary. Classification
+remains enabled by default for every other caller. Active state, coordinates,
+edges, speed bounds, source indices, and interpolation model remain unchanged;
+the opt-out leaves classification flags false. The net production increase is
+three lines, including documentation and the caller explanation.
+
+Three paired saved-case searches took 1.676787, 1.220252, and 1.068012 seconds
+before, versus 1.344851, 1.143647, and 1.039127 seconds after. The medians were
+1.220252 and 1.143647 seconds; routes, clocks, and complete search records matched
+exactly. Full planner runs took 6.765425, 4.598434, and 4.390252 seconds, a median
+of 4.598434 seconds versus the previous 4.838624 seconds (5.0% lower). All three
+returned the exact polynomial and search record, unchanged arrival and motion
+length, and passing independent validation.
+
+The new regression compares prepared geometry across convex, concave, and holed
+boundaries at source times, an interpolated time, and inactive times. It also
+checks that default convexity classification remains enabled.
+
 ## Regression coverage and code size
 
-The suite now contains 33 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 34 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact

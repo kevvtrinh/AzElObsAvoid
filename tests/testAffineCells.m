@@ -91,6 +91,31 @@ function testOccupancyBoundaryAndBlockingContract(testCase)
         obstacles,[0,1],[0,0],[0;1]),'queryObstacleOccupancyAtTime:SizeMismatch');
 end
 
+function testBoundaryOnlyGeometryPreservesPreparedModel(testCase)
+    box = [-2,-2;2,-2;2,2;-2,2];
+    concave = [0,0;3,0;3,1;1,1;1,3;0,3];
+    hole = [box;NaN,NaN;-1,-1;-1,1;1,1;1,-1];
+    classificationFields = {'HasOrderedSingleRegion','IsConvex','OutwardSign'};
+    for boundary = {box,concave,hole}
+        vertices = boundary{1};
+        obstacle = obstacleAvoidance.obstacles.createObstacle('boundary',[0;2], ...
+            {vertices(:,1);vertices(:,1)+2},{vertices(:,2);vertices(:,2)+1},0);
+        obstacle = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
+        for time_s = [-1,0,0.75,2,3]
+            [~,classified] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true);
+            [~,boundaryOnly] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true,false);
+            verifyEqual(testCase,rmfield(boundaryOnly,classificationFields), ...
+                rmfield(classified,classificationFields));
+            verifyFalse(testCase,boundaryOnly.HasOrderedSingleRegion);
+            verifyFalse(testCase,boundaryOnly.IsConvex);
+            if isequal(vertices,box) && time_s>=0 && time_s<=2
+                verifyTrue(testCase,classified.HasOrderedSingleRegion);
+                verifyTrue(testCase,classified.IsConvex);
+            end
+        end
+    end
+end
+
 function testCachedMovingGeometryMatchesUncachedSearch(testCase)
     angle = linspace(0,2*pi,18).';
     first = [3.1*cos(angle(1:end-1)),1.7*sin(angle(1:end-1))]+[-1.2,0.8];

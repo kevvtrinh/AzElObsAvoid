@@ -33,7 +33,8 @@ for j = 1:numel(obstacles)
     for k = 1:numel(queryTimes_s)
         indices = find(time_s == queryTimes_s(k) & ~occupied);
         if isempty(indices), continue; end
-        [~, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(j),queryTimes_s(k),true);
+        % Occupancy needs the exact boundary, without convexity or orientation metadata.
+        [~, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(j),queryTimes_s(k),true,false);
         if ~geometry.Active, continue; end
         [inside, on] = inpolygon(x_units(indices),y_units(indices),geometry.x_units,geometry.y_units);
         hit = inside & (~on | boundaryOccupied);

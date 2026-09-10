@@ -1,11 +1,12 @@
-function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly)
+function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly, classifyBoundary)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly)
+%   [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly, classifyBoundary)
 % PURPOSE
 %   Evaluate one prepared obstacle at a physical time.
 % INPUTS
 %   obstacle: prepared history; queryTime_s: scalar seconds; geometryOnly: optional flag.
+%   classifyBoundary: optional logical, default true; false leaves classification flags false.
 % OUTPUTS
 %   shape and geometry: the interpolated protected boundary and its cached interval model.
 % UNITS
@@ -13,11 +14,12 @@ function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometry
 
 %% Section 1: Evaluate Prepared Inputs
 if nargin < 3, geometryOnly = false; end
+if nargin < 4, classifyBoundary = true; end
 preparation = obstacle.InternalPreparation;
 time_s      = double(obstacle.time_s(:));
 shape       = [];
 if isempty(time_s) || (numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end)))
-    geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, 0, "inactive");
+    geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, 0, "inactive", classifyBoundary);
     geometry.EdgeStart_units = zeros(0, 2);
     geometry.EdgeEnd_units   = zeros(0, 2);
     if ~geometryOnly
@@ -77,16 +79,16 @@ y_units(~isfinite(y_units)) = NaN;
 if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units);
 end
-geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel);
+geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel, classifyBoundary);
 geometry.EdgeStart_units = edgeStart_units;
 geometry.EdgeEnd_units   = edgeEnd_units;
 end
 
-function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel)
+function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel, classifyBoundary)
     % Classify one ordered boundary without changing its vertices or ring order.
     finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
-    hasOneRing   = active && all(finiteVertex);
+    hasOneRing   = classifyBoundary && active && all(finiteVertex);
     isConvex     = false;
     outwardSign  = NaN;
     if hasOneRing
