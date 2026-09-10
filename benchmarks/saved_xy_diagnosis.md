@@ -664,9 +664,44 @@ modes, both obstacle orders, stationary obstacles with different lifetimes, and
 an almost-stationary history. The maintained implementation is retained without
 source or test changes.
 
+## Consolidated separating-plane verifier milestone
+
+The static-region timed verifier duplicated the general verifier's trajectory
+Bernstein product, offset correction, normal bound, clearance calculation, and
+roundoff policy. Those checks now live in one function. Static vertices make the
+obstacle-side polynomial linear, so the shared verifier uses its two endpoint
+coefficients, exactly as the removed timed verifier did. Affine moving vertices
+still use all three quadratic Bernstein coefficients. The independent public
+validator continues to recompute its required checks.
+
+The sole production caller of `verifyTimedSeparatingLine` now calls the shared
+`verifySeparatingLine`; the duplicate file is removed. The net production diff
+removes fifty lines. No solver objective, constraints, tolerances, margins,
+certificate coverage, or route-selection policy changes.
+
+After warming both complete BMTP implementations, three paired repetitions with
+alternating order took 2.775630, 2.635827, and 2.637951 seconds before, versus
+2.735038, 2.681832, and 2.645259 seconds after. Medians were 2.637951 and 2.681832
+seconds; this does not demonstrate a useful solver speed improvement. Every
+polynomial and complete collision certificate matched exactly.
+
+Full planner runs took 5.972431, 3.903859, and 3.667459 seconds, with median
+3.903859 seconds. The small difference from the prior three-run median of
+3.961056 seconds is not claimed as a reliable speed gain. All three full runs
+returned the exact reference polynomial and timed-search record, arrival 117
+seconds, unchanged motion length and solve counts, and passing independent
+validation. The change is retained for its smaller implementation.
+
+All 39 MATLAB tests passed and Code Analyzer was clear for the changed files.
+The new regression checks that a static region and its identical two-endpoint
+affine representation produce the same plane certificate, then both reject a
+violating control point. The existing moving-obstacle interior-violation case
+still rejects clear endpoints with an intervening collision, and the maintained
+220-vertex path-length regression remains unchanged.
+
 ## Regression coverage and code size
 
-The suite now contains 38 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact

@@ -50,7 +50,7 @@ if isempty(x) || any(~isfinite(x))
     return;
 end
 [plane.Active, plane.Normal, plane.Offset_units] = deal(true, reshape(x(1:4), 2, []).', x(offsetIndex).');
-plane = bmtpEngine.verifyTimedSeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units);
+plane = bmtpEngine.verifySeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units);
 end
 
 %% Section 2: Local Functions

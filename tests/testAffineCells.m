@@ -23,6 +23,19 @@ function testMovingPlaneCertifiesTranslation(testCase)
     verifyFalse(testCase,bmtpEngine.verifySeparatingLine(plane,controls,[first;first+[10,0]],1e-8,1e-6).Verified);
 end
 
+function testStaticPlaneMatchesStationaryAffineRepresentation(testCase)
+    vertices = [1.5,-0.5;2.5,-0.5;2.5,0.5;1.5,0.5];
+    controls = [linspace(0,0.5,9).',zeros(9,1)];
+    plane = struct('Normal',[1,0;0.75,0.5],'Offset_units',[-0.75,-0.75]);
+    stationary = cat(3,vertices,vertices);
+    checked = bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6);
+    verifyTrue(testCase,checked.Verified);
+    verifyEqual(testCase,checked,bmtpEngine.verifySeparatingLine(plane,controls,stationary,1e-8,1e-6));
+    controls(end,:) = [3,0];
+    verifyFalse(testCase,bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
+    verifyFalse(testCase,bmtpEngine.verifySeparatingLine(plane,controls,stationary,1e-8,1e-6).Verified);
+end
+
 function testClippedSourceInterval(testCase)
     first = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     obstacle = obstacleAvoidance.obstacles.createObstacle('translation',[0;10],{first(:,1);first(:,1)+10},{first(:,2);first(:,2)},0);
