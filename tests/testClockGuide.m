@@ -42,7 +42,8 @@ function testInitiallyOccupiedGoalCanClearBeforeArrival(testCase)
 end
 
 function testStaticAndMovingDetourQuality(testCase)
-    names = {'exampleDenseConcaveObstacle','exampleAlternatingSlalom','exampleMovingObstacle220'};
+    names = {'exampleDenseConcaveObstacle','exampleAlternatingSlalom', ...
+        'exampleMovingRotatingObstacleField','exampleMovingObstacle220'};
     % Historical C2 quality gates remain reported by runExampleBenchmarks.
     for k = 1:numel(names)
         r = feval(names{k},struct('PlotOutputs',false,'Verbose',false));

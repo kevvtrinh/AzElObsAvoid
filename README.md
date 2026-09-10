@@ -30,8 +30,8 @@ for the graphical examples, also add `fullfile(pwd,'examples')`.
 
 Run `exampleMovingObstacle220()` for the narrow moving-obstacle detour with
 220 vertices per snapshot, 4,829 source snapshots, and a 230-second simulated
-motion window. It replaces `exampleMovingRotatingObstacleField` in the maintained
-suite; historical tables below still describe the retired case. The example and
+motion window. It complements the mixed static/rotating-obstacle example in the
+maintained suite. The example and
 [timing benchmark](benchmarks/220_vertex_timing.md) share identical default inputs.
 
 The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
@@ -127,6 +127,11 @@ profile into continuous quadratic jerk and quintic position, increasing its
 duration. Other earliest dynamic and target requests use chronological
 fixed-arrival trials, with `TemporalResolution_s` (default 0.5 s) and
 `MaxArrivalTrials` (default 100). Source/activity boundaries are included.
+For fixed-position goals, physically impossible times are excluded using the
+same necessary travel-time bound as endpoint validation before applying the
+trial budget. A validated delayed straight crossing remains an incumbent while
+earlier detours are tested; it is retained if those trials fail or exhaust the
+budget. Immediate certified crossings keep their direct path.
 `TemporalSearch` reports trials, budget, unsearched intervals, and the absence
 of a global earliest proof. `arrivalSearchExhausted` means no tested time was
 certified; it does not prove physical infeasibility.
@@ -137,8 +142,9 @@ Obstacle preparation, planning, independent validation, and plotting remain
 separate. Original and protected geometry are retained; obstacle margins are
 applied once. Concave regions are triangulated, and adjacent faces merge only
 when their exact union is convex. Visibility search uses the protected occupied
-union, including holes and disconnected components. A* evaluates exact graph
-edges as needed, with a Euclidean distance lower bound.
+union, including holes and disconnected components. It classifies every graph
+edge exactly; proven boundary-cone rejections avoid unnecessary full intersection
+queries without pruning an edge from the returned graph evidence.
 
 Returned position spans use degree-five polynomials, with continuous position,
 velocity, acceleration, and jerk at every internal join. Endpoint position,

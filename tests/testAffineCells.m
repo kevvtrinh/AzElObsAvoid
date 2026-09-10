@@ -35,6 +35,32 @@ function testClippedSourceInterval(testCase)
     verifyEqual(testCase,restricted(:,:,2),cells.Regions_units{1}+[3,0],'AbsTol',1e-12);
 end
 
+function testFullSourceIntervalPreservesStoredEndpoints(testCase)
+    first = [1,0;2,0;2,1;1,1];
+    last = [1e-16,-2;1,-2;1,-1;1e-16,-1];
+    coverage = struct('Passed',true,'EndRegions_units',{{last}}, ...
+        'ActiveTimeInterval_s',[3,8]);
+    restricted = bmtpEngine.regionOnInterval(first,coverage,1,[3,8]);
+    verifyTrue(testCase,isequal(restricted(:,:,1),first));
+    verifyTrue(testCase,isequal(restricted(:,:,2),last));
+end
+
+function testCachedMovingGeometryMatchesUncachedSearch(testCase)
+    angle = linspace(0,2*pi,18).';
+    first = [3.1*cos(angle(1:end-1)),1.7*sin(angle(1:end-1))]+[-1.2,0.8];
+    last = first.*[0.72,1.31]+[4.6,-2.4];
+    parameter = linspace(0,1,9).';
+    controls = [-5+12*parameter,2.8*sin(pi*parameter)-1.1*parameter];
+    geometry = createTestGeometry(first,last);
+    vertices = cat(3,first,last);
+    uncached = bmtpEngine.solveSeparatingLine(controls,vertices,1e-5,1e-8);
+    cached = bmtpEngine.solveSeparatingLine(controls,vertices,1e-5,1e-8,geometry);
+    verifyEqual(testCase,cached.Verified,uncached.Verified);
+    verifyEqual(testCase,cached.Normal,uncached.Normal,'AbsTol',64*eps);
+    verifyEqual(testCase,cached.Offset_units,uncached.Offset_units,'AbsTol',64*eps);
+    verifyEqual(testCase,cached.SignedGap_units,uncached.SignedGap_units,'AbsTol',256*eps);
+end
+
 function testInteriorObstaclePlaneViolationRejected(testCase)
     first = [0.9,-0.1;1.1,-0.1;1.1,0.1;0.9,0.1];
     vertices = cat(3,first,first-[2,0]);
@@ -88,4 +114,19 @@ function testFinalCertificateRechecksNeighborDirections(testCase)
             squeeze(prepared.CertifiedControlPoint_units(k,:,:)),box,1e-8,1e-6);
         verifyTrue(testCase,checked.Verified);
     end
+end
+
+function geometry = createTestGeometry(first,last)
+    edges = [diff([first;first(1,:)],1,1);diff([last;last(1,:)],1,1)];
+    lengths = vecnorm(edges,2,2);
+    edges = edges(lengths>0,:);
+    lengths = lengths(lengths>0);
+    normals = [-edges(:,2),edges(:,1)]./lengths;
+    firstProjection = first*normals.';
+    lastProjection = last*normals.';
+    geometry = struct('PositiveNormals',normals, ...
+        'FirstPositiveSupport_units',min(firstProjection,[],1), ...
+        'LastPositiveSupport_units',min(lastProjection,[],1), ...
+        'FirstNegativeSupport_units',-max(firstProjection,[],1), ...
+        'LastNegativeSupport_units',-max(lastProjection,[],1));
 end

@@ -1,13 +1,12 @@
 function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units, limits, options, monotoneDirection)
 %% Section 0: Header & Readme
 % SYNTAX: visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,start,goal,limits,options)
-% PURPOSE: Find the exact shortest polygonal route in an implicit visibility
-%          graph. A* checks optimistic parent edges only when their child
-%          reaches the frontier, with exact boundary-cone rejection first.
+% PURPOSE: Build the exhaustive exact visibility graph and find its shortest
+%          polygonal route.
 % INPUTS: Protected polygon scene, endpoints, workspace, numerical tolerance.
 %         Optional monotoneDirection requires strictly positive edge progress.
-% OUTPUTS: Exact boundary nodes, examined edges, route, and connectivity.
-%          Unexamined edges remain implicit, never classified as blocked.
+% OUTPUTS: Exact boundary nodes, every accepted/rejected edge, route, and
+%          connectivity.
 % UNITS: Coordinate units.
 
 %% Section 1: Form The Occupied Union And Boundary Edge Arrays
@@ -34,76 +33,78 @@ workspaceFree = all(endpoints_units >= [limits.xInterval_units(1),limits.yInterv
     endpoints_units <= [limits.xInterval_units(2),limits.yInterval_units(2)],2);
 sourceFree = sourceFree && workspaceFree(1); goalFree = goalFree && workspaceFree(2);
 
-%% Section 2: Search The Visibility Graph Lazily
+%% Section 2: Classify Every Candidate Segment
+
 nodeCount = size(nodes_units,1);
-cost_units = Inf(nodeCount,1); cost_units(1) = 0;
-lowerBound_units = vecnorm(nodes_units-goal_units,2,2);
-closed = false(nodeCount,1); parent = zeros(nodeCount,1);
-accepted = zeros(0,2); weights_units = zeros(0,1); rejected = zeros(0,2);
-blocked = sparse(nodeCount,nodeCount); queryCount=0;
-% Only closed nodes offer parent costs. An unchecked edge is a lower bound;
-% rejecting it raises that bound and returns its child to the frontier.
+maximumEdgeCount = nodeCount*(nodeCount-1)/2;
+accepted = zeros(maximumEdgeCount,2);
+weights_units = zeros(maximumEdgeCount,1);
+rejected = zeros(maximumEdgeCount,2);
+acceptedCount = 0;
+rejectedCount = 0;
+queryCount = 0;
 if sourceFree && goalFree
-    cones=endpointCones(shape,nodes_units,edgeStart_units,edgeEnd_units,tolerance_units);
-    while true
-        priority_units = cost_units+lowerBound_units; priority_units(closed) = Inf;
-        [priority_units,current] = min(priority_units);
-        if ~isfinite(priority_units), break; end
-        if current~=1
-            previous=parent(current);
-            queryCount=queryCount+1;
-            [clear,queryPoints_units,queryOwner] = segmentIntervals(nodes_units(previous,:),nodes_units(current,:), ...
-                edgeStart_units,edgeEnd_units,edgeVector_units,edgeBounds_units,parallelTolerance_units2,tolerance_units);
-            if ~isempty(queryOwner)
-                [inside,on] = inpolygon(queryPoints_units(:,1),queryPoints_units(:,2),boundary_units(:,1),boundary_units(:,2));
-                clear(queryOwner(inside & ~on)) = false;
-            end
-            if ~clear
-                blocked(previous,current)=1;
-                rejected(end+1,:)=[previous,current];
-                possible=find(closed & ~blocked(:,current));
-                if any(monotoneDirection)
-                    possible=possible((nodes_units(current,:)-nodes_units(possible,:))*monotoneDirection.'>tolerance_units);
-                end
-                possible=possible(~entersObstacle(possible,current,nodes_units,cones,tolerance_units));
-                alternatives=cost_units(possible)+vecnorm(nodes_units(possible,:)-nodes_units(current,:),2,2);
-                cost_units(current)=Inf;
-                if ~isempty(possible)
-                    [cost_units(current),best]=min(alternatives); parent(current)=possible(best);
-                end
-                continue;
-            end
-            accepted(end+1,:)=[previous,current];
-            weights_units(end+1,1)=norm(nodes_units(current,:)-nodes_units(previous,:));
+    cones = endpointCones(shape,nodes_units,edgeStart_units,edgeEnd_units,tolerance_units);
+    for firstNode = 1:nodeCount-1
+        secondNode = (firstNode+1:nodeCount).';
+        progress_units = (nodes_units(secondNode,:)-nodes_units(firstNode,:))*monotoneDirection.';
+        eligible = true(size(secondNode));
+        if any(monotoneDirection), eligible = abs(progress_units)>tolerance_units; end
+        locallyBlocked = entersObstacle(firstNode,secondNode,nodes_units,cones,tolerance_units);
+        checkIndex = find(eligible & ~locallyBlocked);
+        clear = false(size(secondNode));
+        [checked,queryPoints_units,queryOwner] = segmentIntervals(nodes_units(firstNode,:), ...
+            nodes_units(secondNode(checkIndex),:),edgeStart_units,edgeEnd_units,edgeVector_units, ...
+            edgeBounds_units,parallelTolerance_units2,tolerance_units);
+        if ~isempty(queryOwner)
+            [inside,on] = inpolygon(queryPoints_units(:,1),queryPoints_units(:,2), ...
+                boundary_units(:,1),boundary_units(:,2));
+            checked(queryOwner(inside & ~on)) = false;
         end
-        closed(current) = true;
-        if current == 2, break; end
-        distances_units = vecnorm(nodes_units-nodes_units(current,:),2,2);
-        candidates = find(~closed & cost_units(current)+distances_units < cost_units);
+        clear(checkIndex) = checked;
+        acceptedNode = secondNode(clear);
+        acceptedProgress_units = progress_units(clear);
+        newAccepted = numel(acceptedNode);
+        acceptedRows = acceptedCount+(1:newAccepted);
+        accepted(acceptedRows,:) = [repmat(firstNode,newAccepted,1),acceptedNode];
         if any(monotoneDirection)
-            candidates = candidates((nodes_units(candidates,:)-nodes_units(current,:))*monotoneDirection.'>tolerance_units);
+            reverse = acceptedProgress_units<0;
+            accepted(acceptedRows(reverse),:) = accepted(acceptedRows(reverse),[2,1]);
         end
-        localBlocked=entersObstacle(current,candidates,nodes_units,cones,tolerance_units);
-        rejected=[rejected;repmat(current,nnz(localBlocked),1),candidates(localBlocked)];
-        blocked(current,candidates(localBlocked))=1;
-        candidates=candidates(~localBlocked);
-        cost_units(candidates) = cost_units(current)+distances_units(candidates);
-        parent(candidates) = current;
+        weights_units(acceptedRows) = vecnorm(nodes_units(acceptedNode,:)-nodes_units(firstNode,:),2,2);
+        acceptedCount = acceptedCount+newAccepted;
+        rejectedNode = secondNode(~clear);
+        newRejected = numel(rejectedNode);
+        rejectedRows = rejectedCount+(1:newRejected);
+        rejected(rejectedRows,:) = [repmat(firstNode,newRejected,1),rejectedNode];
+        rejectedCount = rejectedCount+newRejected;
+        queryCount = queryCount+numel(checkIndex);
     end
 end
+accepted = accepted(1:acceptedCount,:);
+weights_units = weights_units(1:acceptedCount);
+rejected = rejected(1:rejectedCount,:);
 
-%% Section 3: Return The Route And Search Evidence
-routeIndex = zeros(1,0); route_units = zeros(0,2);
-if closed(2)
-    routeIndex = 2;
-    while routeIndex(1) ~= 1, routeIndex = [parent(routeIndex(1)),routeIndex]; end %#ok<AGROW>
+%% Section 3: Select The Shortest Route And Return Full Evidence
+
+routeIndex = zeros(1,0);
+route_units = zeros(0,2);
+routeLength_units = Inf;
+if sourceFree && goalFree
+    if any(monotoneDirection)
+        visibilityNetwork = digraph(accepted(:,1),accepted(:,2),weights_units,nodeCount);
+    else
+        visibilityNetwork = graph(accepted(:,1),accepted(:,2),weights_units,nodeCount);
+    end
+    [routeIndex,routeLength_units] = shortestpath(visibilityNetwork,1,2,'Method','positive');
     route_units = nodes_units(routeIndex,:);
 end
 visibilityGraph = struct('NodePosition_units',nodes_units,'AcceptedNodeIndex',accepted, ...
     'AcceptedWeight_units',weights_units,'RejectedNodeIndex',rejected, ...
-    'RouteNodeIndex',routeIndex,'Route_units',route_units,'RouteLength_units',cost_units(2), ...
-    'SourceFree',sourceFree,'GoalFree',goalFree,'IsConnected',closed(2), ...
-    'ExpandedCount',nnz(closed),'GraphIsFullyEnumerated',false,'CollisionQueryCount',queryCount);
+    'RouteNodeIndex',routeIndex,'Route_units',route_units,'RouteLength_units',routeLength_units, ...
+    'SourceFree',sourceFree,'GoalFree',goalFree,'IsConnected',~isempty(routeIndex), ...
+    'ExpandedCount',nodeCount,'GraphIsFullyEnumerated',sourceFree && goalFree, ...
+    'CollisionQueryCount',queryCount);
 end
 
 function free = pointIsFree(point_units,boundary_units,first_units,last_units,tolerance_units)
@@ -154,53 +155,66 @@ function [clear,midpoints_units,owners] = segmentIntervals(first_units,last_unit
     midpoints_units = vertcat(points{:}); owners = vertcat(pointOwners{:});
 end
 
-
-function cones=endpointCones(shape,nodes_units,edgeStart_units,edgeEnd_units,tolerance_units)
-    % An adjacent filled triangle identifies each boundary edge's occupied
-    % side without assuming ring winding. This also handles hole boundaries.
-    % Shared/touching vertices and nearly flat turns retain the full predicate.
-    count=size(nodes_units,1);
-    cones=struct('Incoming',zeros(count,2),'Outgoing',zeros(count,2), ...
+function cones = endpointCones(shape,nodes_units,edgeStart_units,edgeEnd_units,tolerance_units)
+    % Use filled triangles to establish the occupied side of each boundary
+    % edge without assuming ring winding, including hole boundaries.
+    count = size(nodes_units,1);
+    cones = struct('Incoming',zeros(count,2),'Outgoing',zeros(count,2), ...
         'Side',zeros(count,1),'Convex',false(count,1),'Enabled',false(count,1));
     if isempty(edgeStart_units), return; end
-    mesh=triangulation(shape); faces=mesh.ConnectivityList;
-    meshEdges=[faces(:,[1,2]);faces(:,[2,3]);faces(:,[3,1])];
-    opposite=[faces(:,3);faces(:,1);faces(:,2)];
-    [firstFound,first]=ismember(edgeStart_units,mesh.Points,'rows');
-    [lastFound,last]=ismember(edgeEnd_units,mesh.Points,'rows');
-    [edgeFound,face]=ismember(sort([first,last],2),sort(meshEdges,2),'rows');
-    known=firstFound & lastFound & edgeFound;
-    edgeVector_units=edgeEnd_units-edgeStart_units; side=zeros(size(edgeVector_units,1),1);
-    direction_units=mesh.Points(opposite(face(known)),:)-edgeStart_units(known,:);
-    side(known)=sign(edgeVector_units(known,1).*direction_units(:,2)-edgeVector_units(known,2).*direction_units(:,1));
-    [inFound,incoming]=ismember(nodes_units,edgeEnd_units,'rows');
-    [outFound,outgoing]=ismember(nodes_units,edgeStart_units,'rows');
-    [mapped,node]=ismember(edgeEnd_units,nodes_units,'rows'); inCount=accumarray(node(mapped),1,[count,1]);
-    [mapped,node]=ismember(edgeStart_units,nodes_units,'rows'); outCount=accumarray(node(mapped),1,[count,1]);
-    incoming=max(1,incoming); outgoing=max(1,outgoing);
-    cones.Incoming=edgeVector_units(incoming,:); cones.Outgoing=edgeVector_units(outgoing,:); cones.Side=side(incoming);
-    turn_units2=cones.Side.*(cones.Incoming(:,1).*cones.Outgoing(:,2)-cones.Incoming(:,2).*cones.Outgoing(:,1));
-    cones.Enabled=inFound & outFound & inCount==1 & outCount==1 & ...
+    mesh = triangulation(shape);
+    faces = mesh.ConnectivityList;
+    meshEdges = [faces(:,[1,2]);faces(:,[2,3]);faces(:,[3,1])];
+    opposite = [faces(:,3);faces(:,1);faces(:,2)];
+    [firstFound,first] = ismember(edgeStart_units,mesh.Points,'rows');
+    [lastFound,last] = ismember(edgeEnd_units,mesh.Points,'rows');
+    [edgeFound,face] = ismember(sort([first,last],2),sort(meshEdges,2),'rows');
+    known = firstFound & lastFound & edgeFound;
+    edgeVector_units = edgeEnd_units-edgeStart_units;
+    side = zeros(size(edgeVector_units,1),1);
+    direction_units = mesh.Points(opposite(face(known)),:)-edgeStart_units(known,:);
+    side(known) = sign(edgeVector_units(known,1).*direction_units(:,2)- ...
+        edgeVector_units(known,2).*direction_units(:,1));
+    [inFound,incoming] = ismember(nodes_units,edgeEnd_units,'rows');
+    [outFound,outgoing] = ismember(nodes_units,edgeStart_units,'rows');
+    [mapped,node] = ismember(edgeEnd_units,nodes_units,'rows');
+    inCount = accumarray(node(mapped),1,[count,1]);
+    [mapped,node] = ismember(edgeStart_units,nodes_units,'rows');
+    outCount = accumarray(node(mapped),1,[count,1]);
+    incoming = max(1,incoming);
+    outgoing = max(1,outgoing);
+    cones.Incoming = edgeVector_units(incoming,:);
+    cones.Outgoing = edgeVector_units(outgoing,:);
+    cones.Side = side(incoming);
+    turn_units2 = cones.Side.*(cones.Incoming(:,1).*cones.Outgoing(:,2)- ...
+        cones.Incoming(:,2).*cones.Outgoing(:,1));
+    cones.Enabled = inFound & outFound & inCount==1 & outCount==1 & ...
         side(incoming)==side(outgoing) & side(incoming)~=0 & ...
-        abs(turn_units2)>tolerance_units*max(1,vecnorm(cones.Incoming,2,2).*vecnorm(cones.Outgoing,2,2));
-    cones.Convex=turn_units2>0;
+        abs(turn_units2)>tolerance_units*max(1, ...
+        vecnorm(cones.Incoming,2,2).*vecnorm(cones.Outgoing,2,2));
+    cones.Convex = turn_units2>0;
 end
 
-function blocked=entersObstacle(first,last,nodes_units,cones,tolerance_units)
-    % At a convex corner the interior is the intersection of two halfplanes;
-    % at a reentrant corner it is their union. Reject only strict interior
-    % directions. Tangencies and numerically ambiguous cases use full checks.
-    direction_units=nodes_units(last,:)-nodes_units(first,:); blocked=false(size(direction_units,1),1);
-    endpoints={first,last};
-    for endpoint=1:2
-        indices=endpoints{endpoint};
-        incoming=cones.Incoming(indices,:); outgoing=cones.Outgoing(indices,:); side=cones.Side(indices);
-        incomingSide=side.*(incoming(:,1).*direction_units(:,2)-incoming(:,2).*direction_units(:,1));
-        outgoingSide=side.*(outgoing(:,1).*direction_units(:,2)-outgoing(:,2).*direction_units(:,1));
-        roundoff=64*eps(max(1,max(abs(nodes_units(indices,:)),[],2))).*max(1,vecnorm(direction_units,2,2));
-        in=incomingSide>(tolerance_units+roundoff).*vecnorm(incoming,2,2);
-        out=outgoingSide>(tolerance_units+roundoff).*vecnorm(outgoing,2,2);
-        blocked=blocked | (cones.Enabled(indices) & ((cones.Convex(indices) & in & out) | (~cones.Convex(indices) & (in | out))));
-        direction_units=-direction_units;
+function blocked = entersObstacle(first,last,nodes_units,cones,tolerance_units)
+    % Strictly inward directions are certainly blocked. Tangencies and
+    % ambiguous corners continue to the complete segment predicate.
+    direction_units = nodes_units(last,:)-nodes_units(first,:);
+    blocked = false(size(direction_units,1),1);
+    endpoints = {repmat(first,size(last)),last};
+    for endpoint = 1:2
+        indices = endpoints{endpoint};
+        incoming = cones.Incoming(indices,:);
+        outgoing = cones.Outgoing(indices,:);
+        side = cones.Side(indices);
+        incomingSide = side.*(incoming(:,1).*direction_units(:,2)-incoming(:,2).*direction_units(:,1));
+        outgoingSide = side.*(outgoing(:,1).*direction_units(:,2)-outgoing(:,2).*direction_units(:,1));
+        roundoff = 64*eps(max(1,max(abs(nodes_units(indices,:)),[],2))).* ...
+            max(1,vecnorm(direction_units,2,2));
+        inward = incomingSide>(tolerance_units+roundoff).*vecnorm(incoming,2,2);
+        outward = outgoingSide>(tolerance_units+roundoff).*vecnorm(outgoing,2,2);
+        blocked = blocked | (cones.Enabled(indices) & ...
+            ((cones.Convex(indices) & inward & outward) | ...
+            (~cones.Convex(indices) & (inward | outward))));
+        direction_units = -direction_units;
     end
 end

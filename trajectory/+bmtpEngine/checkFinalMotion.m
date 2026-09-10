@@ -40,7 +40,13 @@ if isfield(request.Coverage,'ActiveTimeInterval_s')
     regionActiveBySegment = starts_s < intervals_s(:,2).' & ends_s > intervals_s(:,1).';
 end
 spanBreaks_s = request.InitialState.time_s+[0;cumsum(preparedMotion.SegmentTime_s)];
-certificate = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units,spanBreaks_s,cache);
+separatingLineGeometry=cell(numel(request.Regions_units),1);
+if isfield(request,'SeparatingLineGeometry')
+    separatingLineGeometry=request.SeparatingLineGeometry;
+end
+certificate = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, ...
+    request.Regions_units,request.Coverage,separatingLineGeometry, ...
+    regionActiveBySegment,roundoffReserve_units,obstacleTarget_units,spanBreaks_s,cache);
 if isfield(preparedMotion,'ControlPoint_units')
     % Fixed physical boundary derivatives prevent post-solve dilation. Reject
     % an over-limit analytic proposal here so the shared optimizer can run.
@@ -74,7 +80,7 @@ end
 
 %% Section 2: Local Functions
 
-function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units,spanBreaks_s,cache)
+function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, separatingLineGeometry, regionActiveBySegment, reserve_units, target_units,spanBreaks_s,cache)
     % Verify every applicable output-span and convex-exclusion-region pair.
     segmentCount   = size(controlPoint_units, 1);
     regionCount    = numel(regions_units);
@@ -85,6 +91,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     analyticCount  = 0;
     reusedCount    = 0;
     cachedCount    = 0;
+    cachedGeometryCount = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_units = Inf;
     staticGeometry = ~isfield(coverage,'ActiveTimeInterval_s');
@@ -164,7 +171,14 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
             if plane.Verified
                 reusedCount = reusedCount+1;
             else
-                plane = bmtpEngine.solveSeparatingLine(restricted_units, vertices_units, target_units, reserve_units);
+                geometry=[];
+                if (staticGeometry || isequal(interval_s,coverage.ActiveTimeInterval_s(regionIndex,:))) && ...
+                        ~isempty(separatingLineGeometry{regionIndex})
+                    geometry=separatingLineGeometry{regionIndex};
+                    cachedGeometryCount=cachedGeometryCount+1;
+                end
+                plane = bmtpEngine.solveSeparatingLine(restricted_units,vertices_units, ...
+                    target_units,reserve_units,geometry);
                 analyticCount = analyticCount + 1;
             end
             previousPlanes(regionIndex) = plane;
@@ -191,6 +205,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
         "ReusedPairCount", reusedCount, "CachedPairCount", cachedCount, "AnalyticPairCount", analyticCount, ...
+        "CachedGeometryPairCount",cachedGeometryCount, ...
         "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 

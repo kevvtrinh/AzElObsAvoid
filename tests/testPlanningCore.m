@@ -89,6 +89,10 @@ function testVisibilityMatchesExhaustiveReference(testCase)
         actual = obstacleAvoidance.search.createVisibilityGraph(scene,initial_units,goal_units,limits,options);
         verifyEqual(testCase,actual.IsConnected,reference.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
+        verifyTrue(testCase,actual.GraphIsFullyEnumerated);
+        nodeCount = size(actual.NodePosition_units,1);
+        verifyEqual(testCase,size(actual.AcceptedNodeIndex,1)+size(actual.RejectedNodeIndex,1), ...
+            nodeCount*(nodeCount-1)/2);
     end
 end
 

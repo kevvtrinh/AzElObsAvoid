@@ -24,11 +24,12 @@ result = exampleMovingObstacle220();
 % Headless: exampleMovingObstacle220(struct('PlotOutputs',false,'Verbose',false))
 ```
 
-This replaces `exampleMovingRotatingObstacleField` in the 18-example suite.
-The example and benchmark share `createMovingObstacle220Scenario` so their
-source geometry, timestamps, endpoints, and default limits stay identical.
-The historical workbook and audit tables retain the retired scenario's results;
-the suite marks the replacement's historical references unavailable (`NaN`).
+This complements `exampleMovingRotatingObstacleField`: the mixed rotating field
+retains its historical regression gates, while this dense translating obstacle
+adds a distinct preparation and time-scoping workload. The example and benchmark
+share `createMovingObstacle220Scenario` so their source geometry, timestamps,
+endpoints, and default limits stay identical. This new input has no borrowed
+historical reference values.
 
 ## What reduced the work
 
@@ -40,9 +41,15 @@ the suite marks the replacement's historical references unavailable (`NaN`).
 - Keep the motion mesh independent of the obstacle sampling rate. Constrain
   each curve span only over its exact overlap with each source interval, using
   exact Bezier restriction. Every source interval remains checked.
-- Use the requested-window envelope only to initialize a spatial guide; tighten
-  motion against the original moving cells. Preserve certified direct crossings
-  before an obstacle arrives and avoid recomputing an already certified schedule.
+- Cache obstacle-edge normals and endpoint supports for repeated final
+  all-pair certification. The alternating optimizer deliberately retains its
+  original combined projection arithmetic so its selected motion is unchanged.
+- Reverify the trajectory SOCP's existing planes first. Only when every active
+  pair certifies is the terminal full separating-axis rebuild skipped; any failed
+  pair triggers the unchanged complete update before another iteration.
+- Enumerate the complete visibility graph. Exact boundary-cone rejection avoids
+  full intersection work on provably inward edges, but accepted and rejected
+  evidence still covers every node pair.
 
 No geometry, margin, derivative limit, or validation tolerance was weakened.
 Shared fragment normalization removes only lower-dimensional runs while
@@ -59,6 +66,7 @@ are observations, not a universal speed guarantee.
 | Windowed preparation, exhaustive versus bounded alignment | 1.55 s | 1.20 s |
 | 4,800 samples at 220 vertices, exhaustive versus bounded alignment | 4.66 s | 2.60 s |
 | Tight moving detour, before versus after bounded alignment | 32.22 s | 26.15 s |
+| Reproducible detour, previous repeated-axis run versus cached certification | 27.54 s | 21.03 s |
 
 The final two detour polynomials are exactly equal. Length is 121.5032363 units,
 duration 230 s, minimum certified separating gap 0.0009850922 units, and sampled

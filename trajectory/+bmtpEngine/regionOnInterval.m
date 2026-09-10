@@ -26,5 +26,11 @@ if any(fraction < -64*eps | fraction > 1+64*eps)
 end
 fraction = min(1,max(0,fraction));
 delta_units = end_units-region_units;
-vertices_units = cat(3,region_units+fraction(1)*delta_units,region_units+fraction(2)*delta_units);
+first_units = region_units+fraction(1)*delta_units;
+last_units = region_units+fraction(2)*delta_units;
+% Preserve the authoritative stored endpoints exactly. Besides avoiding an
+% unnecessary roundoff step, this makes full-cell geometry safe to cache.
+if fraction(1)==0, first_units=region_units; end
+if fraction(2)==1, last_units=end_units; end
+vertices_units = cat(3,first_units,last_units);
 end

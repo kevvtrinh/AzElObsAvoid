@@ -30,6 +30,8 @@ fixedControl_units = [];
 if isfield(warmStart,'FixedControl_units'), fixedControl_units = warmStart.FixedControl_units; end
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
+diagnostics.ExistingPlanePairVerificationCount = 0;
+diagnostics.FullPlaneUpdateSkippedCount = 0;
 planes = repmat(createEmptyPlane(), segmentCount, regionCount);
 [planes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(warmStart.ControlPoint_units, warmStart.SegmentTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
 diagnostics.UnverifiedPlaneInitializationCount = nnz(~verifiedPairs);
@@ -55,7 +57,18 @@ if allPlanesActive
             break;
         end
 
-        [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(trialControl_units, trialTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
+        [updatedPlanes,verifiedPairs,verifiedPairCount] = verifyExistingPlanes(trialControl_units, ...
+            trialTime_s,planes,request,obstacleTarget_units,roundoffReserve_units);
+        diagnostics.ExistingPlanePairVerificationCount = ...
+            diagnostics.ExistingPlanePairVerificationCount+verifiedPairCount;
+        allPlanesActive = all(verifiedPairs,'all');
+        if ~allPlanesActive
+            [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = ...
+                solveAllPlanes(trialControl_units,trialTime_s,planes,request, ...
+                diagnostics,obstacleTarget_units,roundoffReserve_units);
+        else
+            diagnostics.FullPlaneUpdateSkippedCount = diagnostics.FullPlaneUpdateSkippedCount+1;
+        end
         planes = updatedPlanes;
         unverifiedPairCount = nnz(~verifiedPairs);
         duration_s = sum(trialTime_s);
@@ -119,7 +132,8 @@ function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(contro
                 end
             end
             vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex},request.Coverage,regionIndex,interval_s);
-            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(controls_units, vertices_units, target_units, reserve_units);
+            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
+                controls_units,vertices_units,target_units,reserve_units);
             plane.TimeFraction=timeFraction;
             diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ~(isfield(output,'IsAnalytic') && output.IsAnalytic);
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
@@ -132,6 +146,45 @@ function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(contro
                 allActive = false;
                 return;
             end
+        end
+    end
+end
+
+function [planes,verifiedPairs,verifiedPairCount] = verifyExistingPlanes(controlPoint_units,segmentTime_s, ...
+        planes,request,target_units,reserve_units)
+    % The trajectory SOCP enforces the current planes. Reverify those exact
+    % planes first; rebuild every direction if even one pair does not certify.
+    verifiedPairs = ~request.RegionActiveBySegment;
+    verifiedPairCount = 0;
+    breaks_s = request.InitialState.time_s+[0;cumsum(segmentTime_s)];
+    for segmentIndex = 1:size(planes,1)
+        for regionIndex = 1:size(planes,2)
+            if ~request.RegionActiveBySegment(segmentIndex,regionIndex), continue; end
+            interval_s = [];
+            controls_units = squeeze(controlPoint_units(segmentIndex,:,:));
+            timeFraction = [0,1];
+            if request.Options.GoalTimeMode=="fixedArrival"
+                interval_s = breaks_s(segmentIndex:segmentIndex+1).';
+                if isfield(request.Coverage,'ActiveTimeInterval_s')
+                    active_s = request.Coverage.ActiveTimeInterval_s(regionIndex,:);
+                    interval_s = [max(interval_s(1),active_s(1)),min(interval_s(2),active_s(2))];
+                    timeFraction = max(0,min(1,(interval_s-breaks_s(segmentIndex))/segmentTime_s(segmentIndex)));
+                    controls_units = bmtpEngine.restrictBezier(controls_units,timeFraction);
+                end
+            end
+            vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex}, ...
+                request.Coverage,regionIndex,interval_s);
+            plane = planes(segmentIndex,regionIndex);
+            normal = plane.Normal(1,:);
+            plane.Offset_units = target_units-[min(vertices_units(:,:,1)*normal.'), ...
+                min(vertices_units(:,:,end)*normal.')];
+            plane.TimeFraction = timeFraction;
+            plane = bmtpEngine.verifySeparatingLine(plane,controls_units, ...
+                vertices_units,reserve_units,target_units);
+            verifiedPairCount = verifiedPairCount+1;
+            planes(segmentIndex,regionIndex) = plane;
+            verifiedPairs(segmentIndex,regionIndex) = plane.Verified;
+            if ~plane.Verified, return; end
         end
     end
 end

@@ -29,7 +29,7 @@ function testDetourGraphC3AndReplay(testCase)
     verifyEqual(testCase, response.diagnosis.Search.NodeCount, size(graph.NodePosition_units, 1));
     verifyEqual(testCase, response.diagnosis.Search.AcceptedEdgeCount, size(graph.AcceptedNodeIndex, 1));
     verifyEqual(testCase, response.diagnosis.Search.RejectedTransitionCount, size(graph.RejectedNodeIndex, 1));
-    verifyFalse(testCase, response.diagnosis.Search.GraphIsFullyEnumerated);
+    verifyTrue(testCase, response.diagnosis.Search.GraphIsFullyEnumerated);
     verifyFalse(testCase, isfield(response.diagnosis, 'Attempts'));
     verifyEqual(testCase, response.result.ElapsedTime_s, bundle.Result.ElapsedTime_s);
     verifyEqual(testCase, response.result.MotionLength_units, bundle.Result.MotionLength_units);

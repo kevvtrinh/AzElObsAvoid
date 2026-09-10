@@ -163,9 +163,13 @@ if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
             result.Validation=obstacleAvoidance.validateTrajectory(result);
             result.Success=result.Validation.Passed;
             result.ElapsedTime_s=toc(totalTimer);
-            if result.Success, return; end
+            hasWait = isfield(diagnostics,'DepartureSchedule') && ...
+                diagnostics.DepartureSchedule.DepartureDelay_s>options.ArrivalTimeTolerance_s;
+            if result.Success && ~hasWait, return; end
         end
     end
+    % A delayed chord is an incumbent, not evidence that earlier detours fail.
+    result.ElapsedTime_s = toc(totalTimer);
     result = obstacleAvoidance.input.searchArrivalTimes(result);
     return;
 end

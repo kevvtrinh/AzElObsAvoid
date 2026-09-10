@@ -57,10 +57,17 @@ end
 
 regionMinimum_units = zeros(numel(regions_units), 2);
 regionMaximum_units = zeros(numel(regions_units), 2);
+separatingLineGeometry = cell(numel(regions_units),1);
 % Process each geometric region while constructing or checking the region topology.
 for regionIndex = 1:numel(regions_units)
     regionMinimum_units(regionIndex, :) = min(regions_units{regionIndex}, [], 1);
     regionMaximum_units(regionIndex, :) = max(regions_units{regionIndex}, [], 1);
+    endRegion_units = regions_units{regionIndex};
+    if isfield(coverage,'EndRegions_units')
+        endRegion_units = coverage.EndRegions_units{regionIndex};
+    end
+    separatingLineGeometry{regionIndex} = createSeparatingLineGeometry( ...
+        regions_units{regionIndex},endRegion_units);
 end
 maximumTrajectoryIterations = 300;
 trajectoryOptions           = optimoptions("coneprog", "Display", "none", "MaxIterations", maximumTrajectoryIterations, 'ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
@@ -77,6 +84,7 @@ request                     = struct("Seed", seed, ...
     "MotionHorizon_s", motionHorizon_s, ...
     "RegionMinimum_units", regionMinimum_units, ...
     "RegionMaximum_units", regionMaximum_units, ...
+    "SeparatingLineGeometry", {separatingLineGeometry}, ...
     "TrajectoryOptions", trajectoryOptions);
 end
 
@@ -110,4 +118,24 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
     if ~requestIsSupported
         error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped full-state request.");
     end
+end
+
+function geometry = createSeparatingLineGeometry(first_units,last_units)
+    % Obstacle-edge directions and supports do not change while alternating
+    % the trajectory. Cache them once; curve-hull directions remain per trial.
+    edges_units = diff([first_units;first_units(1,:)],1,1);
+    if ~isequal(first_units,last_units)
+        edges_units = [edges_units;diff([last_units;last_units(1,:)],1,1)];
+    end
+    length_units = vecnorm(edges_units,2,2);
+    edges_units = edges_units(length_units>0,:);
+    length_units = length_units(length_units>0);
+    positiveNormals = [-edges_units(:,2),edges_units(:,1)]./length_units;
+    firstProjection_units = first_units*positiveNormals.';
+    lastProjection_units = last_units*positiveNormals.';
+    geometry = struct('PositiveNormals',positiveNormals, ...
+        'FirstPositiveSupport_units',min(firstProjection_units,[],1), ...
+        'LastPositiveSupport_units',min(lastProjection_units,[],1), ...
+        'FirstNegativeSupport_units',-max(firstProjection_units,[],1), ...
+        'LastNegativeSupport_units',-max(lastProjection_units,[],1));
 end
