@@ -824,6 +824,53 @@ files. A subsequent public-planner run of the retained production code took
 3.937479 seconds after the suite, passed independent validation, and again
 matched the reference polynomial and complete timed-search record exactly.
 
+## Rejected motion-mesh and polynomial-degree reductions
+
+The next experiment targeted conic problem size rather than query overhead.
+All variants used the same saved scene, selected route, 117-second goal clock,
+limits, tolerances, and solver settings. The first sweep changed both the number
+of conservative timed obstacle cells and the number of degree-eight motion spans.
+
+| Motion spans / cell intervals | Engine outcome | Length (units) | Squared jerk (units²/s⁵) | Trajectory / plane solves |
+| --- | --- | ---: | ---: | ---: |
+| 16 / 16, retained | Passing engine certificate | 229.959020398834 | 0.991397232846 | 11 / 78 |
+| 8 / 8 | Tagged pair crossed its retained plane | — | — | — |
+| 12 / 12 | Trajectory SOCP reported infeasible | — | — | — |
+| 20 / 20 | Passing engine certificate | 229.823416407958 | 1.440861792972 | 17 / 259 |
+| 24 / 24 | Trajectory SOCP reported numerical instability | — | — | — |
+
+To distinguish reduced motion freedom from coarser obstacle geometry, a second
+sweep retained all original 16 obstacle-cell intervals and their polygons while
+changing only the motion spans. Eight and fourteen spans crossed a retained
+plane; twelve spans again produced an infeasible trajectory SOCP. The 16-span
+reference reproduced its original motion and metrics. These failures describe
+the tested optimizer, not physical infeasibility of the scene.
+
+A third sweep retained the original 16 spans and 16 obstacle-cell intervals and
+changed only polynomial degree, including its derivative and continuity rows:
+
+| Degree | Engine outcome | Length (units) | Squared jerk (units²/s⁵) | Trajectory / plane solves |
+| --- | --- | ---: | ---: | ---: |
+| 8, retained | Passing engine certificate | 229.959020398834 | 0.991397232846 | 11 / 78 |
+| 5 | Certified minimum exceeded the fixed arrival | — | — | — |
+| 6 | Tagged pair crossed its retained plane | — | — | — |
+| 7 | Tagged pair crossed its retained plane | — | — | — |
+| 9 | Passing engine certificate | 230.166093498940 | 1.211121284995 | 12 / 104 |
+
+The larger successful representations preserve arrival but increase squared
+jerk by about 45% (20 spans) and 22% (degree nine). Degree nine also lengthens the
+motion. Neither meets the no-quality-regression gate, so neither was promoted
+to a full public-planner candidate. The retained representation passed its
+engine certificate in each sweep and reproduced the reference motion metrics.
+
+These were one-pass screening experiments, with the reference first in each
+fresh MATLAB session; their wall times are not warmed runtime comparisons.
+The 20-span engine call took 5.661325 seconds and degree nine took 3.813960
+seconds, but quality and feasibility already reject these changes. Failed calls
+are not counted as speedups. No mesh-selection heuristic, retry schedule,
+production change, or additional test was retained. The previous paired public
+planner median of 3.525495 seconds remains the latest retained measurement.
+
 ## Regression coverage and code size
 
 The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,
