@@ -5,6 +5,53 @@ The preserved request is `tests/fixtures/savedMovingDetour.json`, copied from
 keyframes, a rotating 38-vertex concave obstacle, a 180-second horizon, and the
 original per-axis motion limits and safety margins.
 
+## Final optimization audit
+
+The retained implementation on `build-core` was replayed three times after the
+complete MATLAB R2024b test suite: 3.702200, 3.505458, and 3.515452 seconds,
+with a 3.515452-second median. These are warmed full public-planner calls,
+including search, BMTP, exact recertification, and independent validation.
+Earlier fresh-process measurements include startup and JIT effects; this final
+median is not a cold-start guarantee.
+
+Every final replay passed independent validation and matched the original timed
+implementation's complete polynomial and timed-search record exactly. Arrival
+remained 117 seconds, motion length 229.959020398834 units, and integrated
+squared jerk 0.991397232846 units²/s⁵. The solver still tagged 13 of 188 applicable
+pairs, with 11 trajectory and 78 plane solves. `GlobalEarliestProven` remains
+false: the planner selects the earliest reachable finite search layer, without
+claiming a continuous-time global optimum.
+
+The initial timed implementation's recorded median was 14.909188 seconds. The
+retained optimizations reduce that to about 3.5 seconds without changing its
+motion. The cleanup reference's recorded median was 49.511337 seconds; its path
+was 0.009074606 units shorter, as documented below. The optimization pass does
+not erase that original port-level quality difference.
+
+All 39 tests passed in the final audit, including direct motion, detours,
+expected no-path results, invalid inputs, tampering rejection, source/cache
+refresh, moving obstacles, and the maintained 220-vertex quality regression.
+The final production diff was reviewed and passed `git diff --check`.
+Code Analyzer was clear for all 12 retained production MATLAB files changed
+during the optimization pass; the thirteenth changed file was deleted.
+
+Git's MATLAB-only production counts show 22 net lines beyond the original
+timed implementation (`c5f28e9`). The original port itself added 1,834 net
+production lines; the total since its parent is 1,856. These counts exclude
+tests, examples, benchmarks, and documentation and correct the earlier
+pre-commit count of 1,830 lines. Rejected experiments remain outside source
+control. Milestone commits retain only verified improvements, the refinement
+field fix, and the measured comparison record.
+
+The experiment set covers geometry preparation and queries, search updates,
+constraint construction, solver scaling and reductions, plane batching,
+sampling, mesh size, polynomial degree, and cache alternatives. The current
+implementation is the retained choice among these measured candidates; this is
+not a proof that no future algorithm could be faster. Worker-pool concurrency
+was not evaluated: although the MATLAB license test returned true, `parpool`
+was unavailable on the active installation's path. No worker infrastructure or
+additional runtime dependency was added.
+
 ## Retained dense-history path
 
 Dense, fixed-position, rest-to-rest earliest-arrival requests first build a
@@ -975,8 +1022,8 @@ the 82.5-second long request, the validated waiting incumbent, and the exact
 both continuously moving and stationary source intervals, preserving the
 reference graph's departure and arrival times.
 
-The initial timed-path implementation added 1,749 lines in new production files and 81 net
-lines in existing production files, for a net production increase of 1,830
+The initial timed-path commit added 1,751 lines in new production files and 83 net
+lines in existing production files, for a net production increase of 1,834
 lines. Reusing the existing boundary-only exact graph was tested as a smaller
 alternative, but the saved request did not complete within one minute; the
 measured 14.9-second route implementation was retained.
