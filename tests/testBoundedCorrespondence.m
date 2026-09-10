@@ -75,6 +75,34 @@ function testUnsupportedConcaveDeformationRemainsExplicit(testCase)
     verifyLessThan(testCase,area(subtract(polyshape(upper),shape)),1e-12);
 end
 
+function testContainmentClassificationMatchesBooleanReference(testCase)
+    % Unequal ring lengths bypass correspondence. Cover shrinking, growing,
+    % equal-area shifted, disconnected and holed shapes, in both orders.
+    lower=[0,0;4,0;4,1;1,1;1,4;0,4];
+    candidates={0.8*lower+[0.1,0.1],1.3*lower-[0.1,0.1], ...
+        lower+[0.1,0.2],lower+[8,0], ...
+        [lower;NaN,NaN;8,0;9,0;9,1;8,1], ...
+        [-1,-1;6,-1;6,6;-1,6;NaN,NaN;2,2;2,3;3,3;3,2]};
+    for index=1:numel(candidates)
+        upper=candidates{index};
+        upper=[upper(1,:);mean(upper(1:2,:),1);upper(2:end,:)];
+        for reversed=[false,true]
+            first=lower; last=upper;
+            if reversed, first=upper; last=lower; end
+            prepared=preparePair(first,last);
+            firstShape=polyshape(first,'Simplify',false);
+            lastShape=polyshape(last,'Simplify',false);
+            tolerance=512*eps(max([1,area(firstShape),area(lastShape)]));
+            contained=[area(subtract(firstShape,lastShape)), ...
+                area(subtract(lastShape,firstShape))]<=tolerance;
+            if all(contained), expected="staticEquivalentSamples";
+            elseif any(contained), expected="conservativeNestedEndpointUnion";
+            else, expected="conservativeEndpointConvexHull"; end
+            verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel,expected);
+        end
+    end
+end
+
 function prepared=preparePair(lower,upper)
     source=obstacleAvoidance.obstacles.createObstacle('generic',[0;1], ...
         {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0);

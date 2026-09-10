@@ -205,10 +205,17 @@ end
 
 function [equivalent, nested] = compareShapes(firstShape, secondShape)
     % Check equality and containment using shape differences.
-    areaScale_units2     = max([1, area(firstShape), area(secondShape)]);
+    firstArea_units2 = area(firstShape);
+    secondArea_units2 = area(secondShape);
+    areaScale_units2     = max([1, firstArea_units2, secondArea_units2]);
     areaTolerance_units2 = 512 * eps(areaScale_units2);
-    firstIsContained   = area(subtract(firstShape, secondShape)) <= areaTolerance_units2;
-    secondIsContained  = area(subtract(secondShape, firstShape)) <= areaTolerance_units2;
+    % A larger polygon cannot fit inside a smaller one: the area difference
+    % bounds the subtraction from below. Keep a full extra tolerance of
+    % roundoff reserve and perform the original Boolean check near equality.
+    firstIsContained = firstArea_units2 <= secondArea_units2+2*areaTolerance_units2 && ...
+        area(subtract(firstShape, secondShape)) <= areaTolerance_units2;
+    secondIsContained = secondArea_units2 <= firstArea_units2+2*areaTolerance_units2 && ...
+        area(subtract(secondShape, firstShape)) <= areaTolerance_units2;
     equivalent         = firstIsContained && secondIsContained;
     nested             = firstIsContained || secondIsContained;
 end

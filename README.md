@@ -32,6 +32,14 @@ motion window. It complements the mixed static/rotating-obstacle example in the
 maintained suite. The example and
 [timing benchmark](benchmarks/220_vertex_timing.md) share identical default inputs.
 
+Run `exampleVietnamBoundarySlew()` for the supplied Vietnam az/el boundary:
+three source snapshots interpolate to 921 input slices of 280 vertices. The
+default request arrives at 3000 s from a 2770 s start. Use
+`struct('PlotOutputs',false)` to time it without plots. The
+[source CSV](examples/data/vietnamBoundaryPoints.csv), [plan](plan.md), and
+[benchmark report](benchmarks/vietnam_boundary.md) document the data, declared
+interpolation, continuous motion, and measured preparation improvement.
+
 The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
 workspace/visibility, four kinematic panels, animation, GIF export, and paired
 wrapped/continuous views using this branch's retained results. Query its display
