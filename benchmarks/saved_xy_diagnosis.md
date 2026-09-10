@@ -134,6 +134,31 @@ preserved the exact polynomial and search record and passed public validation.
 The new regression checks both partial-cache extension and rebuilding after
 an authoritative source edit, including occupancy and blocking-obstacle output.
 
+## Interior sample batching milestone
+
+The moving-scene search now queries the quarter, midpoint, and three-quarter
+samples together, rejecting blocked edges before querying the other ten original
+samples. Acceptance still requires all thirteen original positions and times to
+be clear. Stationary-history caching and independent certification are unchanged.
+
+Paired search-only experiments rotated evaluation order across three runs. A
+midpoint-then-quarter-points variant had a 4.228672-second median versus 5.515602
+seconds for the prior implementation. Splitting the remaining checks into more
+batches was slower: medians were 4.777291 and 5.686870 seconds. A second comparison
+selected the combined three-interior-sample batch: its median was 4.093394 seconds
+versus 4.207000 seconds for separate midpoint and quarter batches and 5.651579
+seconds for the prior implementation. All routes, clocks, and complete search
+records matched exactly.
+
+Full planner runs took 9.515573, 8.053248, and 7.395710 seconds. The 8.053248-second
+median is 14.0% below the previous 9.362836-second milestone. All three returned
+the identical polynomial and search record, arrival 117 seconds, motion length
+229.959020399 units, and passing independent validation. Counts remain 13 active
+out of 188 applicable span-region pairs, 11 trajectory solves, and 78 plane solves.
+The production diff adds 17 lines and removes 18, a net reduction of one line.
+The continuously moving and stationary crossing-barrier cases also matched the
+reference route, clock, and full search record.
+
 ## Regression coverage and code size
 
 The suite now contains 31 MATLAB tests. The saved-request regression checks arrival 117,
@@ -144,7 +169,7 @@ the 82.5-second long request, the validated waiting incumbent, and the exact
 both continuously moving and stationary source intervals, preserving the
 reference graph's departure and arrival times.
 
-The retained implementation adds 1,749 lines in new production files and 81 net
+The initial timed-path implementation added 1,749 lines in new production files and 81 net
 lines in existing production files, for a net production increase of 1,830
 lines. Reusing the existing boundary-only exact graph was tested as a smaller
 alternative, but the saved request did not complete within one minute; the

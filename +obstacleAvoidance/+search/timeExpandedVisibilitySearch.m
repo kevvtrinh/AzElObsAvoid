@@ -213,7 +213,7 @@ record = struct("LayerTimes_s", layerTimes_s, ...
     "SelectedGoalLayerIndex", goalLayerIndex, ...
     "ReachableGoalLayerCount", nnz(reachable(:, 2)));
 function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
-    % A blocked sample rejects the edge. Check the midpoint first, then keep
+    % A blocked sample rejects the edge. Check interior samples first, then keep
     % all remaining samples for edges that could still be clear.
     fraction     = linspace(0, 1, 13).';
     firstNodeIndices = firstNodeIndices(:);
@@ -226,23 +226,22 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
     sampleOrder  = [middleIndex, 1:middleIndex - 1, middleIndex + 1:numel(fraction)];
     clear        = true(edgeCount, 1);
     if ~hasStationarySpan
-        % Reject blocked midpoints first, then batch the remaining samples.
-        % Preserve all thirteen original samples and bound temporary storage.
-        midpoint_units = first_units + fraction(middleIndex) .* (second_units-first_units);
-        clear = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-            obstacles,midpoint_units(:,1),midpoint_units(:,2),time_s(middleIndex),proposalQueryOptions);
-        remaining = [1:middleIndex-1,middleIndex+1:numel(fraction)];
-        candidates = find(clear);
-        edgeBatchSize = max(1,floor(2^18/numel(fraction)));
-        for batchStart = 1:edgeBatchSize:numel(candidates)
-            indices = candidates(batchStart:min(numel(candidates),batchStart+edgeBatchSize-1));
-            x_units = first_units(indices,1) + fraction(remaining).' .* ...
-                (second_units(indices,1)-first_units(indices,1));
-            y_units = first_units(indices,2) + fraction(remaining).' .* ...
-                (second_units(indices,2)-first_units(indices,2));
-            occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-                obstacles,x_units,y_units,repmat(time_s(remaining).',numel(indices),1),proposalQueryOptions);
-            clear(indices) = ~any(occupied,2);
+        % Test the quarter, midpoint, and three-quarter samples together.
+        % Reject blocked edges before batching the remaining original samples.
+        for sampleGroup = {[4,7,10],[1:3,5:6,8:9,11:13]}
+            samples = sampleGroup{1};
+            candidates = find(clear);
+            edgeBatchSize = max(1,floor(2^18/numel(samples)));
+            for batchStart = 1:edgeBatchSize:numel(candidates)
+                indices = candidates(batchStart:min(numel(candidates),batchStart+edgeBatchSize-1));
+                x_units = first_units(indices,1) + fraction(samples).' .* ...
+                    (second_units(indices,1)-first_units(indices,1));
+                y_units = first_units(indices,2) + fraction(samples).' .* ...
+                    (second_units(indices,2)-first_units(indices,2));
+                occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+                    obstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),proposalQueryOptions);
+                clear(indices) = ~any(occupied,2);
+            end
         end
         return;
     end
