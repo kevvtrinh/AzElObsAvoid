@@ -226,17 +226,22 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
     sampleOrder  = [middleIndex, 1:middleIndex - 1, middleIndex + 1:numel(fraction)];
     clear        = true(edgeCount, 1);
     if ~hasStationarySpan
-        % Moving geometry cannot reuse interval occupancy. Batch the same
-        % thirteen samples to amortize source checks, with bounded storage.
+        % Reject blocked midpoints first, then batch the remaining samples.
+        % Preserve all thirteen original samples and bound temporary storage.
+        midpoint_units = first_units + fraction(middleIndex) .* (second_units-first_units);
+        clear = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+            obstacles,midpoint_units(:,1),midpoint_units(:,2),time_s(middleIndex),proposalQueryOptions);
+        remaining = [1:middleIndex-1,middleIndex+1:numel(fraction)];
+        candidates = find(clear);
         edgeBatchSize = max(1,floor(2^18/numel(fraction)));
-        for batchStart = 1:edgeBatchSize:edgeCount
-            indices = batchStart:min(edgeCount,batchStart+edgeBatchSize-1);
-            x_units = first_units(indices,1) + fraction.' .* ...
+        for batchStart = 1:edgeBatchSize:numel(candidates)
+            indices = candidates(batchStart:min(numel(candidates),batchStart+edgeBatchSize-1));
+            x_units = first_units(indices,1) + fraction(remaining).' .* ...
                 (second_units(indices,1)-first_units(indices,1));
-            y_units = first_units(indices,2) + fraction.' .* ...
+            y_units = first_units(indices,2) + fraction(remaining).' .* ...
                 (second_units(indices,2)-first_units(indices,2));
             occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-                obstacles,x_units,y_units,repmat(time_s.',numel(indices),1),proposalQueryOptions);
+                obstacles,x_units,y_units,repmat(time_s(remaining).',numel(indices),1),proposalQueryOptions);
             clear(indices) = ~any(occupied,2);
         end
         return;

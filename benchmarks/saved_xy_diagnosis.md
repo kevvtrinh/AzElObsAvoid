@@ -87,6 +87,31 @@ returned exactly the previous polynomial, arrival 117 seconds, motion length
 229.959020399 units, and a passing independent validator. The production change
 adds only 16 lines to the existing search function.
 
+## Early rejection and solver setup milestone
+
+Profiling the batched version attributed 6.14 seconds to polygon tests. The
+moving-scene batch now tests each edge's midpoint first and only batches the
+remaining twelve samples for edges that pass. This preserves the original
+sample positions and rejection predicate while avoiding work on blocked edges.
+Stationary intervals continue to use the existing cache.
+
+Three paired saved-case search runs produced medians of 7.914062 seconds before
+and 5.977440 seconds after. All route, clock, and search-record fields matched
+exactly. The 13- and 49-layer stationary-barrier comparisons also matched.
+
+The timed solver also creates unchanged options outside its iteration loops,
+and the one-use plane wrapper was removed. The isolated solver's three runs
+were 4.149884, 2.842837, and 2.762659 seconds before and 4.170382, 2.780654, and
+2.737168 seconds after. This small timing difference is not a substantial
+standalone speedup; the retained change simplifies the code and returns exactly
+the same polynomial and full collision certificate.
+
+Together, these changes produced full planner times of 12.224884, 9.677679,
+and 9.314708 seconds. The median is 9.677679 seconds, 16.2% below the previous
+11.554937-second milestone. All three runs matched the retained polynomial,
+route, and complete search record exactly and passed public validation. The
+net production diff for this milestone removes two lines.
+
 ## Regression coverage and code size
 
 The suite now contains 30 MATLAB tests. The saved-request regression checks arrival 117,

@@ -56,9 +56,11 @@ diagnostics.TravelRefinementFinalLength_units   = baseLength_units;
 diagnostics.TravelRefinementInitialDuration_s = segmentCount * baseSegmentTime_s;
 diagnostics.TravelRefinementFinalDuration_s   = segmentCount * baseSegmentTime_s;
 diagnostics.TravelRefinementAccepted          = false;
+trajectoryOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
+planeOptions = optimoptions("coneprog", "Display", "none");
 % Repeat the refinement alternatives needed to refine the current solution.
 for refinementIndex = 1:8
-    [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTimedTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, travelPlanes, roundoffReserve_units, refinementHorizon_s, "fixedArrival", optimoptions("coneprog", "Display", "none", "MaxIterations", 300));
+    [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTimedTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, travelPlanes, roundoffReserve_units, refinementHorizon_s, "fixedArrival", trajectoryOptions);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     if travelExitFlag <= 0 || isempty(refinedControl_units)
         break;
@@ -75,7 +77,7 @@ for refinementIndex = 1:8
         % Process each new pair needed to find travel.
         for newPairIndex = newPairIndices
             [segmentIndex, regionIndex]               = ind2sub(size(newPairs), newPairIndex);
-            [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveTimedSeparatingLine(squeeze(baseControl_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, obstacleTarget_units, roundoffReserve_units, optimoptions("coneprog", "Display", "none"));
+            [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveTimedSeparatingLine(squeeze(baseControl_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, obstacleTarget_units, roundoffReserve_units, planeOptions);
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
             if planeExitFlag <= 0 || ~travelPlane.Active
                 planeUpdateFailed = true;

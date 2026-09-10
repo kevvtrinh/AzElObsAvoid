@@ -45,13 +45,14 @@ taggedPairs           = false(segmentCount, numel(regions_units));
 planes                = repmat(createEmptyPlane(), segmentCount, numel(regions_units));
 optimizationHorizon_s = request.MotionHorizon_s;
 solverMessage         = "The biconvex iteration limit was reached.";
+timedOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
+planeOptions = optimoptions("coneprog", "Display", "none");
 
 %% Section 2: Alternate Trajectory And Separating-Line Solves
 
 for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
     usedRequestHorizon = optimizationHorizon_s == request.MotionHorizon_s;
-    timedOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
     [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTimedTrajectoryStep(segmentCount, degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, optimizationHorizon_s, "earliestArrival", timedOptions);
     diagnostics.TrajectorySocpCount     = diagnostics.TrajectorySocpCount + 1;
     diagnostics.ConicSolver             = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
@@ -132,9 +133,10 @@ for iterationIndex = 1:35
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
         [segmentIndex, regionIndex]         = ind2sub(size(activePairs), pairIndex);
-        [plane, planeExitFlag, planeOutput] = solveTimedPlane(feasibleControl_units, ...
-            feasibleSegmentTime_s, segmentIndex, regionIndex, request, ...
-            obstacleTarget_units, roundoffReserve_units);
+        [plane, planeExitFlag, planeOutput] = bmtpEngine.solveTimedSeparatingLine( ...
+            squeeze(feasibleControl_units(segmentIndex,:,:)),regions_units{regionIndex}, ...
+            obstacleTarget_units,roundoffReserve_units,planeOptions);
+        plane.TimeFraction = [0,1];
         diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
             ~(isfield(planeOutput, 'IsAnalytic') && planeOutput.IsAnalytic);
         diagnostics.ConicSolver    = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
@@ -168,17 +170,6 @@ result = struct("Success", ~isempty(bestControl_units), ...
 end
 
 %% Section 4: Local Functions
-
-function [plane, exitFlag, output] = solveTimedPlane(controlPoint_units, ~, ...
-        segmentIndex, regionIndex, request, target_units, reserve_units)
-    % Timed cells are conservative static hulls. Their active-pair mask
-    % supplies time scope while this maximum-margin solve uses the full span.
-    planeOptions = optimoptions("coneprog", "Display", "none");
-    [plane, exitFlag, output] = bmtpEngine.solveTimedSeparatingLine( ...
-        squeeze(controlPoint_units(segmentIndex, :, :)), ...
-        request.Regions_units{regionIndex}, target_units, reserve_units, planeOptions);
-    plane.TimeFraction = [0, 1];
-end
 
 function plane = createEmptyPlane()
     % Initialize an inactive separating-plane record.
