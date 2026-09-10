@@ -19,6 +19,28 @@ function setupOnce(testCase)
     testCase.TestData.Options = struct('GoalTimeMode','fixedArrival');
 end
 
+function testProposalVisibilityBoundaryAndInteriorRejection(testCase)
+    shape = polyshape([0,1,1,0],[0,0,1,1]);
+    [edgeStart,edgeEnd] = obstacleAvoidance.geometry.boundaryToEdges(shape,1e-12);
+    first = [-2,-1;-1,0.5;-3,0.5;-1,1;-1,2;0,0.5;0.25,0.25];
+    second = [-1,-1;2,0.5;0.25,0.5;2,1;2,2;-1,0.5;0.75,0.75];
+    expected = [true;false;false;false;true;false;false];
+    verifyEqual(testCase,obstacleAvoidance.search.checkVisibilitySegments( ...
+        first,second,shape,edgeStart,edgeEnd),expected);
+    % No midpoint queries survive when every segment hits a boundary.
+    blocked = [2,3,4,6];
+    verifyEqual(testCase,obstacleAvoidance.search.checkVisibilitySegments( ...
+        first(blocked,:),second(blocked,:),shape,edgeStart,edgeEnd),false(4,1));
+    verifyEqual(testCase,obstacleAvoidance.search.checkVisibilitySegments( ...
+        first,second,polyshape(),zeros(0,2),zeros(0,2)),true(size(expected)));
+    shape = polyshape([0,4,4,0,NaN,1,1,3,3],[0,0,4,4,NaN,1,3,3,1]);
+    [edgeStart,edgeEnd] = obstacleAvoidance.geometry.boundaryToEdges(shape,1e-12);
+    first = [1.25,2;1.25,2;0.25,0.25;-2,5;1,1];
+    second = [2.75,2;3.5,2;0.75,0.75;6,5;3,1];
+    verifyEqual(testCase,obstacleAvoidance.search.checkVisibilitySegments( ...
+        first,second,shape,edgeStart,edgeEnd),[true;false;false;true;false]);
+end
+
 function testDirect(testCase)
     r = planner([],testCase.TestData.Initial,testCase.TestData.Goal,testCase.TestData.Limits,testCase.TestData.Options);
     verifyTrue(testCase,r.Success,r.Message);

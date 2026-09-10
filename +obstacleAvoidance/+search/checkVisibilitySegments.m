@@ -26,14 +26,12 @@ function isVisible = checkVisibilitySegments(first_units, second_units, shape, e
 
 %% Section 1: Reject Interior And Boundary Intersections
 
-% Reject interior crossings, boundary crossings, and collinear overlaps.
+% Reject boundary crossings and overlaps before testing the surviving midpoints.
 
 isVisible = true(size(first_units, 1), 1);
 if isempty(shape.Vertices)
     return;
 end
-middle_units          = (first_units + second_units) / 2;
-isVisible           = ~isinterior(shape, middle_units(:, 1), middle_units(:, 2));
 segment_units         = second_units - first_units;
 boundary_units        = edgeEnd_units - edgeStart_units;
 offsetX_units   = edgeStart_units(:, 1).' - first_units(:, 1);
@@ -54,5 +52,9 @@ nextOffsetX_units   = edgeEnd_units(:, 1).' - first_units(:, 1);
 nextOffsetY_units = edgeEnd_units(:, 2).' - first_units(:, 2);
 secondProjection        = (nextOffsetX_units .* segment_units(:, 1) + nextOffsetY_units .* segment_units(:, 2)) ./ segmentScale_units2;
 overlaps                = isCollinear & max(min(firstProjection, secondProjection), 0) <= min(max(firstProjection, secondProjection), 1) + 1e-12;
-isVisible               = isVisible & ~any(crosses | overlaps, 2);
+isVisible = ~any(crosses | overlaps, 2);
+candidates = find(isVisible);
+if isempty(candidates), return; end
+middle_units = (first_units(candidates,:) + second_units(candidates,:)) / 2;
+isVisible(candidates) = ~isinterior(shape,middle_units(:,1),middle_units(:,2));
 end

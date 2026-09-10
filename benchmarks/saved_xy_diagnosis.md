@@ -307,9 +307,38 @@ stationary samples into moving samples, and equivalent polygons whose starting
 vertex differs. It verifies that geometric equivalence cannot substitute for
 exact source-array identity in occupancy queries.
 
+## Visibility rejection order milestone
+
+Graph setup still performs midpoint occupancy checks and segment-boundary
+intersection checks for each proposed edge. Two exact reorderings were compared
+across all seven saved graph attempts. Testing midpoint occupancy first and
+skipping intersection work for blocked midpoints had a 0.315204-second median.
+Testing boundary crossings and collinear overlaps first, then midpoint occupancy
+only for surviving edges, was faster at 0.188816 seconds versus the original
+0.360321 seconds. Each variant preserved every graph-attempt field exactly,
+including the nodes, edges, rejection counts, costs, and connectivity recovery.
+
+The retained boundary-first ordering adds two net production lines. It preserves
+the original coordinate-scale calculation over all input segments and all
+intersection tolerances. Interior-only segments still undergo midpoint rejection;
+boundary contacts and collinear overlaps still block an edge.
+
+Full planner runs took 6.318004, 4.175128, and 3.875344 seconds. The median is
+4.175128 seconds versus the previous 4.266033 seconds, a modest 2.1% reduction.
+All three preserved the exact polynomial, complete timed-search record, and every
+graph-attempt record, with unchanged arrival and motion length and passing public
+independent validation. The new regression covers clear exterior edges, interior
+segments, crossings, boundary contacts, an all-blocked batch, an empty scene,
+and a polygon with a hole.
+The all-blocked test caught MATLAB's rejection of an empty midpoint query; the
+retained implementation returns immediately when no edge survives boundary checks.
+A final replay after that guard took 4.075942 seconds and matched the entire timed
+proposal record and polynomial exactly. All 36 MATLAB tests passed and Code
+Analyzer reported no issues in the changed files.
+
 ## Regression coverage and code size
 
-The suite now contains 35 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 36 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact
