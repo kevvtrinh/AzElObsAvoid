@@ -360,6 +360,27 @@ unchanged numerical problem. All three returned the identical polynomial and
 complete timed proposal record, with unchanged arrival, motion length, solve
 counts, and passing independent validation.
 
+## Rejected Bezier sampling batches
+
+The overlap sampler was tested with de Casteljau evaluation batched across two,
+four, eight, or sixteen spans instead of one span at a time. All five full BMTP
+implementations were warmed before three timed repetitions with rotating order.
+Every run returned the identical polynomial and complete collision certificate.
+
+| Spans evaluated together | Full BMTP median (s) |
+| --- | ---: |
+| 1 (retained) | 2.696645 |
+| 2 | 2.717576 |
+| 4 | 2.710577 |
+| 8 | 2.713449 |
+| 16 | 2.705856 |
+
+No batch size demonstrated a speed benefit. For the saved case's 1,201 samples
+and degree-eight spans, the initial recurrence array grows from 172,944 bytes
+for one span to 2,767,104 bytes for sixteen spans; these are array sizes, not
+measured peak process memory. The original sampler is retained without any
+production change.
+
 ## Regression coverage and code size
 
 The suite now contains 36 MATLAB tests. The saved-request regression checks arrival 117,
