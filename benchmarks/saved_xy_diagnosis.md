@@ -533,6 +533,49 @@ alternating process needed twelve trajectory solves and 91 plane solves.
 This is also rejected. Fewer variables or redundant rows do not guarantee faster
 conic solves or unchanged biconvex convergence. Production remains unchanged.
 
+## Rejected cached bounding-box filters
+
+Two variants added exact axis-aligned bounds to the existing per-time boundary
+cache. The first filtered exterior query points before calling `inpolygon`;
+the second skipped the call only when every query point was exterior. Both used
+the same inclusive min/max predicate as MATLAB R2024b's own polygon prefilter.
+No polygon, interpolation, margin, tolerance, time, or route changes were made.
+
+An initial three-run comparison was inconclusive: search medians were 0.559840
+seconds before and 0.579600 seconds with point filtering. A subsequent comparison
+warmed all three methods and rotated execution order over five repetitions:
+
+| Search query implementation | Median (s) | Profiled `inpolygon` calls |
+| --- | ---: | ---: |
+| Retained boundary cache | 0.539762 | 6,730 |
+| Cached bounds, filter exterior points | 0.511027 | 1,124 |
+| Cached bounds, reject wholly exterior queries | 0.525275 | 1,124 |
+
+Every route, clock, and search-record field matched exactly. Although the
+point-filter variant reduced median search time by 5.3% in the longer comparison,
+it adds five production lines and stores four more numbers per cached boundary.
+The smaller rejection variant adds four lines and was slower than point filtering.
+
+Three full planner runs with point filtering took 6.331766, 4.064565, and 3.747171
+seconds, compared with the previous milestone's median of 3.961056 seconds.
+To separate startup effects from search savings, five further paired full
+planner runs used the prefilter-free search query as the reference, with the
+rest of the pipeline held identical. Both methods were warmed first and their
+order alternated. Reference times were 3.808311, 3.691228, 3.567341, 3.593647, and
+3.551801 seconds. Point-filter times were 3.588280, 3.624662, 3.533815, 3.614849,
+and 3.595546 seconds. Medians of 3.593647 and 3.595546 seconds demonstrate no
+useful full-planner improvement. Every full run retained the reference
+polynomial, complete timed-search record, and passing independent validation.
+
+The existing regressions passed, as did an experimental moving-hole check for
+outer and inner boundary policy, points one floating-point spacing outside the
+bounds, inactive times, and both cached and uncached queries. That fixture uses
+an explicit middle keyframe: between unsupported multi-ring samples, preparation
+correctly uses its conservative union rather than the initially assumed linear
+hole translation. The test expectation was corrected without changing geometry.
+Both optimization variants and the experiment-only test were discarded; the
+simpler production implementation and maintained test suite remain unchanged.
+
 ## Regression coverage and code size
 
 The suite now contains 37 MATLAB tests. The saved-request regression checks arrival 117,
