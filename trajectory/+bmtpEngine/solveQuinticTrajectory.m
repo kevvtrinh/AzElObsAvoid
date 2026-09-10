@@ -24,58 +24,24 @@ result=struct('Success',false,'SolverMessage',"Quintic clock initialization fail
     'ControlPoint_units',zeros(0,degree+1,2),'SegmentTime_s',NaN,'PositionPower_units',[]);
 diagnostics.Identifier="quinticJerkClock";
 diagnostics.ConstraintRepresentation="integratedQuinticVariableClock";
-warmStarts={warmStart};
-diagnostics.OptimizerSpanCount=warmStart.SegmentCount;
-if isfield(warmStart,'ProfileAlternatives'), warmStarts=[warmStarts;warmStart.ProfileAlternatives(:)]; end
-bestDuration_s=Inf;
-trials=repmat(struct('EntryIndex',0,'Passed',false,'Duration_s',Inf,'WallTime_s',0,'ExitFlag',NaN,'InitializationResidual',Inf),numel(warmStarts),1);
-diagnostics.TrajectorySocpCount=0;
-diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
-for trial=1:numel(warmStarts)
-    trialTimer=tic;
-    proposedWarm=warmStarts{trial};
-    proposedPlanes=repmat(emptyPlane,proposedWarm.SegmentCount,regionCount);
-    for k=1:proposedWarm.SegmentCount
-        for j=1:regionCount
-            proposedPlanes(k,j)=bmtpEngine.solveSeparatingLine(squeeze(proposedWarm.ControlPoint_units(k,:,:)),request.Regions_units{j},target_units,reserve_units);
-        end
-    end
-    [proposedControls,proposedTimes,proposedFlag,proposedInitial]=solveQuinticStep(request,proposedPlanes,proposedWarm.SegmentRatio,reserve_units,false,request.MotionHorizon_s);
-    diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+proposedInitial.SolveCount;
-    diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,proposedInitial);
-    trials(trial).WallTime_s=toc(trialTimer);
-    trials(trial).ExitFlag=proposedFlag;
-    if isfield(proposedInitial,'InitializationResidual'), trials(trial).InitializationResidual=proposedInitial.InitializationResidual; end
-    if isfield(proposedWarm,'ProfileEntryIndex'), trials(trial).EntryIndex=proposedWarm.ProfileEntryIndex; end
-    if isempty(proposedControls) || any(~isfinite(proposedControls),'all'), continue; end
-    trials(trial).Passed=true;
-    trials(trial).Duration_s=sum(proposedTimes);
-    if sum(proposedTimes)<bestDuration_s
-        bestDuration_s=sum(proposedTimes);
-        warmStart=proposedWarm;
-        planes=proposedPlanes;
-        controls_units=proposedControls;
-        times_s=proposedTimes;
-        initial=proposedInitial;
-    end
-end
-if isfield(warmStart,'ProfileEntryIndex')
-    diagnostics.ProfileInitialTrials=trials;
-    diagnostics.ProfileSelectedEntryIndex=warmStart.ProfileEntryIndex;
-end
-if ~isfinite(bestDuration_s), return; end
 segmentCount=warmStart.SegmentCount;
 diagnostics.OptimizerSpanCount=segmentCount;
+planes=repmat(emptyPlane,segmentCount,regionCount);
+for k=1:segmentCount
+    for j=1:regionCount
+        planes(k,j)=bmtpEngine.solveSeparatingLine(squeeze(warmStart.ControlPoint_units(k,:,:)),request.Regions_units{j},target_units,reserve_units);
+    end
+end
+[controls_units,times_s,~,initial]=solveQuinticStep(request,planes,warmStart.SegmentRatio,reserve_units,false,request.MotionHorizon_s);
+diagnostics.TrajectorySocpCount=initial.SolveCount;
+diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(bmtpEngine.accumulateConicDiagnostics(),initial);
+if isempty(controls_units) || any(~isfinite(controls_units),'all'), return; end
 diagnostics.ApplicablePairCount=segmentCount*regionCount;
 conversion=zeros(degree+1,6);
 for k=0:degree
     for j=0:min(k,5), conversion(k+1,j+1)=nchoosek(k,j)/nchoosek(degree,j); end
 end
 controls_units=permute(pagemtimes(conversion,permute(initial.PositionPower_units,[3,2,1])),[3,1,2]);
-if isfield(warmStart,'ProfileEntryIndex')
-    diagnostics.ProfileInitialDuration_s=sum(times_s);
-    diagnostics.ProfileInitialLengthBound_units=sum(vecnorm(diff(controls_units,1,2),2,3),'all');
-end
 for k=1:segmentCount
     for j=1:regionCount
         planes(k,j)=bmtpEngine.solveSeparatingLine(squeeze(controls_units(k,:,:)),request.Regions_units{j},target_units,reserve_units);
@@ -83,25 +49,9 @@ for k=1:segmentCount
 end
 
 %% Section 2: Refine Phase Boundaries And Repair The Complete Motion
-if isfield(warmStart,'ProfileEntryIndex')
-    diagnostics.ProfilePlaneCountBefore=nnz([planes.Active]);
-    planes=bmtpEngine.removeRedundantPlanes(planes,request.Limits,reserve_units);
-    diagnostics.ProfilePlaneCountAfter=nnz([planes.Active]);
-end
 jerkPower_units_s3=initial.PositionPower_units(:,:,4:6).*reshape([6,24,60],1,1,3)./times_s.^3;
 jerks_units_s3=permute(pagemtimes([1,0,0;1,0.5,0;1,1,1],permute(jerkPower_units_s3,[3,2,1])),[3,1,2]);
-isProfile=isfield(warmStart,'ProfileEntryIndex');
-iterationLimit=200;
-extraTime_s=0;
-if isProfile && warmStart.ProfileMode=="repair"
-    iterationLimit=40;
-    % Use one third of the existing allowance for final length/variation
-    % repair; the remaining two thirds regularize the arrival-time search.
-    extraTime_s=request.Options.PathLengthTimeAllowance_s/3;
-end
-refineRequest=request;
-refineRequest.Options.PathLengthTimeAllowance_s=request.Options.PathLengthTimeAllowance_s-extraTime_s;
-[times_s,nonlinearFlag,nonlinear]=refinePhaseTimes(refineRequest,times_s,jerks_units_s3,planes,reserve_units,iterationLimit,isProfile);
+[times_s,nonlinearFlag,nonlinear]=refinePhaseTimes(request,times_s,jerks_units_s3,planes,reserve_units);
 diagnostics.NonlinearSolver=nonlinear;
 if any(~isfinite(times_s) | times_s<=0)
     result.SolverMessage="The phase-time optimizer did not return positive finite durations."; return;
@@ -109,14 +59,11 @@ end
 % Repair on the optimized physical clock with a small interior time reserve
 % for rest states. This avoids a degenerate length solve at the conic time bound.
 repairDuration_s=sum(times_s);
-if extraTime_s>0, repairDuration_s=min(request.MotionHorizon_s,repairDuration_s+extraTime_s); end
 if request.IsRest, repairDuration_s=min(request.MotionHorizon_s,repairDuration_s*(1+1e-5)); end
 [controls_units,times_s,exitFlag,final]=solveQuinticStep(request,planes,times_s/mean(times_s),reserve_units,true,repairDuration_s);
 diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+final.SolveCount;
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,final);
 diagnostics.FinalTrajectoryExitFlag=exitFlag;
-diagnostics.QuinticPhaseTime_s=times_s;
-if isProfile, diagnostics.ProfileExtraTime_s=extraTime_s; end
 if isempty(controls_units) || any(~isfinite(controls_units),'all')
     result.SolverMessage="Quintic clock repair failed."; return;
 end
@@ -143,9 +90,9 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     goal_units=goal_units-origin_units; start_units=[0,0];
     domain_units=[limits.xInterval_units-origin_units(1);limits.yInterval_units-origin_units(2)];
     % Preserve ordinary initialization: changing its numerical solution can
-    % send the later nonconvex timing solve to a worse local optimum. Profile
-    % proposals and final fixed-clock repair use neighboring knot states.
-    useLocalStates=minimizeLength || isfield(request.Options,'C3ProfileWarmStart');
+    % send the later nonconvex timing solve to a worse local optimum. The final
+    % fixed-clock repair uses neighboring knot states.
+    useLocalStates=minimizeLength;
     knotCount=3*(segmentCount-1);
     scalarStateCount=segmentCount*(degree-2);
     if useLocalStates, scalarStateCount=knotCount+2*segmentCount+1; end
@@ -372,7 +319,7 @@ end
 
 
 %% Section 4: Joint Quintic Phase-Time Optimization
-function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_units_s3,planes,reserve_units,iterationLimit,useFactorization)
+function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_units_s3,planes,reserve_units)
     % Explicit shared knot states keep physical continuity local. Integrating
     % every earlier jerk into every later constraint creates a dense Jacobian.
     segmentCount=numel(times_s); stateCount=6*(segmentCount-1);
@@ -441,16 +388,14 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
     end
     variationGram=(difference.'*difference)/(16*segmentCount);
     % Each normalized jerk difference is in [-2,2], so this entire penalty
-    % is bounded by the allowance assigned to this timing refinement. Profile
-    % repair reserves the remaining share for final curve generation.
+    % is between zero and the single arrival allowance. This regularizes phase
+    % generation itself; the final repair does not add another delay.
     variationAllowance_s=request.Options.PathLengthTimeAllowance_s;
     lastJacobian=sparse(0,variableCount);
-    subproblemAlgorithm='cg';
-    if useFactorization, subproblemAlgorithm='factorization'; end
     settings=optimoptions('fmincon','Algorithm','interior-point','Display','none', ...
         'SpecifyObjectiveGradient',true,'SpecifyConstraintGradient',true, ...
-        'HessianFcn',@hessian,'InitBarrierParam',1e-5,'SubproblemAlgorithm',subproblemAlgorithm, ...
-        'MaxIterations',iterationLimit,'MaxFunctionEvaluations',1000, ...
+        'HessianFcn',@hessian,'InitBarrierParam',1e-5,'SubproblemAlgorithm','cg', ...
+        'MaxIterations',200,'MaxFunctionEvaluations',1000, ...
         'ConstraintTolerance',1e-10,'OptimalityTolerance',1e-7,'StepTolerance',1e-12,'ScaleProblem',true);
     timer=tic;
     [x,~,exitFlag,output]=fmincon(@objective,x0,totalTimeRow,request.MotionHorizon_s,[],[],lb,ub,@constraints,settings);

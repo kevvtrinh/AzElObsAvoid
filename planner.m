@@ -24,11 +24,6 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %     PathLengthTimeAllowance_s (default 0.49, range [0,0.5)) permits static
 %     monotone corridor refinement to spend arrival time for at least 1% shorter
 %     motion. Set zero to shorten only at the earliest feasible corridor clock.
-%     C3ProfileLibrary accepts a library struct or MAT filename. C3ProfileMode
-%     is "repair" (default: compact clock and bounded timing refinement) or
-%     "warmStart" (full timing optimization). C3ProfileMaxArrival_s caps library arrival;
-%     failed or over-cap proposals fall back to the ordinary solver.
-%     C3ProfileMaxLength_units optionally caps the library proposal's path length.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
@@ -261,26 +256,6 @@ if ~isempty(goalState.targetMotion)
     if options.MatchTargetAcceleration, result.Intercept.TerminalAccelerationPolicy = "matched"; end
 end
 result.Validation = obstacleAvoidance.validateTrajectory(result);
-if candidate.Success && ~result.Validation.Passed && isfield(solverDiagnostics,'ProfileLibrary') && solverDiagnostics.ProfileLibrary.Accepted
-    % A library proposal must pass the public validator as well as the engine
-    % certificate. Recover using the same geometry and unchanged tolerances.
-    profileRecord=solverDiagnostics.ProfileLibrary;
-    profileRecord.Accepted=false;
-    profileRecord.AttemptSucceeded=false;
-    profileRecord.AttemptReason="profileIndependentValidationFailed";
-    profileRecord.FallbackUsed=true;
-    ordinaryOptions=options;
-    ordinaryOptions.C3ProfileLibrary=[];
-    profileElapsed_s=solverDiagnostics.ElapsedTime_s;
-    fallbackTimer=tic;
-    [candidate,solverDiagnostics]=bmtpEngine.solve(seed,regions_units,coverage,initialState,motionGoalState,limits,ordinaryOptions);
-    profileRecord.FallbackTime_s=toc(fallbackTimer);
-    solverDiagnostics.ElapsedTime_s=solverDiagnostics.ElapsedTime_s+profileElapsed_s;
-    for fieldName=reshape(string(fieldnames(candidate)),1,[]), result.(fieldName)=candidate.(fieldName); end
-    solverDiagnostics.ProfileLibrary=profileRecord;
-    result.SolverDiagnostics=solverDiagnostics;
-    result.Validation=obstacleAvoidance.validateTrajectory(result);
-end
 if candidate.Success && ~result.Validation.Passed
     result.Success = false;
     result.Message = "BMTP returned motion that failed independent validation: " + result.Validation.Message;
@@ -311,9 +286,7 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
         "CollisionClearanceTolerance_units", 1e-7, ...
         "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
         "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
-        "TemporalResolution_s",0.5,"MaxArrivalTrials",100,"PathLengthTimeAllowance_s",0.49, ...
-        "C3ProfileLibrary",[],"C3ProfileMode","repair","C3ProfileMaxArrival_s",Inf, ...
-        "C3ProfileMaxLength_units",Inf);
+        "TemporalResolution_s",0.5,"MaxArrivalTrials",100,"PathLengthTimeAllowance_s",0.49);
 end
 
 function state = normalizeState(state, defaults, argumentName)
@@ -417,15 +390,6 @@ function options = resolveOptions(options, defaults)
             'PathLengthTimeAllowance_s must be a finite scalar in [0,0.5).');
     end
     options.PathLengthTimeAllowance_s = double(allowance_s);
-    options.C3ProfileMode=string(options.C3ProfileMode);
-    if ~isscalar(options.C3ProfileMode) || ~any(options.C3ProfileMode==["warmStart","repair"])
-        error('planner:InvalidProfileMode','C3ProfileMode must be warmStart or repair.');
-    end
-    validateattributes(options.C3ProfileMaxArrival_s,{'numeric'},{'real','scalar','nonnan'});
-    validateattributes(options.C3ProfileMaxLength_units,{'numeric'},{'real','scalar','nonnan','nonnegative'});
-    if ~isempty(options.C3ProfileLibrary)
-        options.C3ProfileLibrary=bmtpEngine.loadC3ProfileLibrary(options.C3ProfileLibrary);
-    end
     validateattributes(options.MaxArrivalTrials,{'numeric'},{'scalar','finite','integer','positive'});
 end
 

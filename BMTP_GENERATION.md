@@ -77,29 +77,10 @@ factorizations generally change when times, separating planes, or active
 constraints change. The new physical-state integration already uses one
 exact template instead of repeatedly constructing it for each phase.
 
-An identical request can reuse a validated trajectory. Similar requests can
-reuse normalized phase-time ratios and physical knot/jerk profiles as optimizer
-initializations. They still need adaptation to current endpoints, limits,
-obstacle geometry, and absolute time, followed by independent validation.
-The obstacle-free C3 chord is already analytic, so a dense lookup table for
-that computation is unlikely to remove the expensive static-detour solve.
-
-[Pivtoraiko and Kelly's state-lattice work](https://publications.ri.cmu.edu/kinodynamic-motion-planning-with-state-lattice-motion-primitives)
-uses reusable motion primitives. [iDb-A*](https://argmin.lis.tu-berlin.de/papers/24-ortiz-TRO.pdf)
-combines precomputed primitives with optimization to repair connections.
-Those support a small profile-library experiment, rather than substituting
-an unvalidated lookup result for obstacle-dependent optimization.
 [Ruckig](https://www.roboticsproceedings.org/rss17/p015.pdf) enumerates analytic
 jerk-limited profile families for obstacle-free transfer; its piecewise-constant
-jerk does not directly satisfy this branch's C3 position contract.
-
-A useful next experiment would train 8–16 static-detour profiles and test on
-held-out perturbations. Retrieve a compatible normalized clock, run the current
-conic initialization against current geometry, then compare nonlinear work and
-complete-planner quality against ordinary initialization. Separately test
-omitting nonlinear refinement; collision validity alone would not establish
-the arrival/length quality of that shortcut. No general profile library has
-been installed by this change.
+jerk does not directly satisfy this branch's C3 position contract. Its restored
+package remains standalone and is not called by the planner.
 
 ## Measured result
 
