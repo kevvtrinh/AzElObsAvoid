@@ -38,14 +38,9 @@ variableCount = 7;
 [A, b] = maximumMarginRows(controlPoint_units, vertices_units, target_units);
 f = zeros(variableCount, 1);
 f(marginIndex) = 1;
-emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), -1);
-cones     = repmat(emptyCone, 2, 1);
-% Process each plane needed to find separating line.
-for planeIndex = 0:1
-    coneA = zeros(2, variableCount);
-    coneA(:, planeIndex * 2 + (1:2)) = eye(2);
-    cones(planeIndex + 1) = secondordercone(coneA, zeros(2, 1), zeros(variableCount, 1), -1);
-end
+% Bound the two endpoint normals by the unit disk.
+cones = [secondordercone([eye(2),zeros(2,5)],zeros(2,1),zeros(variableCount,1),-1); ...
+    secondordercone([zeros(2),eye(2),zeros(2,3)],zeros(2,1),zeros(variableCount,1),-1)];
 solverTimer = tic;
 [x, ~, exitFlag, output] = coneprog(f, cones, A, b, [], [], [], [], options);
 output.TotalTime_s = toc(solverTimer);
@@ -62,26 +57,15 @@ end
 
 function [A, b] = maximumMarginRows(controlPoint_units, vertices_units, target_units)
     % Build inequalities for the maximum-margin separating line.
-    degree        = size(controlPoint_units, 1) - 1;
-    variableCount = 7;
-    offsetIndex   = 5:6;
-    marginIndex   = 7;
-    A             = zeros(2 * size(vertices_units, 1) + degree + 2, variableCount);
-    b             = zeros(size(A, 1), 1);
-    rowIndex      = 0;
-    % Process each plane needed to complete maximum margin rows.
-    for planeIndex = 0:1
-        targets = rowIndex + (1:size(vertices_units, 1));
-        normal  = planeIndex * 2 + (1:2);
-        A(targets, normal) = -vertices_units;
-        A(targets, offsetIndex(planeIndex + 1)) = -1;
-        b(targets) = -target_units;
-        rowIndex = targets(end);
-    end
-    objectiveRows = variablePlaneRows(controlPoint_units, variableCount);
-    targets       = rowIndex + (1:size(objectiveRows, 1));
-    A(targets, :) = objectiveRows;
-    A(targets, marginIndex) = -1;
+    % Columns hold two endpoint normals, two offsets, and the margin.
+    vertexCount = size(vertices_units,1);
+    A = zeros(2*vertexCount+size(controlPoint_units,1)+1,7);
+    b = zeros(size(A,1),1);
+    A(1:vertexCount,[1,2,5]) = [-vertices_units,-ones(vertexCount,1)];
+    A(vertexCount+(1:vertexCount),[3,4,6]) = [-vertices_units,-ones(vertexCount,1)];
+    b(1:2*vertexCount) = -target_units;
+    A(2*vertexCount+1:end,:) = variablePlaneRows(controlPoint_units,7);
+    A(2*vertexCount+1:end,7) = -1;
 end
 
 function rows = variablePlaneRows(controlPoint_units, variableCount)

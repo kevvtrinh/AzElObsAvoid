@@ -336,6 +336,30 @@ A final replay after that guard took 4.075942 seconds and matched the entire tim
 proposal record and polynomial exactly. All 36 MATLAB tests passed and Code
 Analyzer reported no issues in the changed files.
 
+## Smaller separating-plane assembly milestone
+
+The timed separating-plane solve now assembles its two endpoint-normal cones and
+two obstacle-row blocks directly. It removes the empty cone placeholder and loop
+index bookkeeping while preserving the seven-variable layout, row order,
+coefficients, bounds, objective, options, and independent verification. The net
+production diff removes sixteen lines.
+
+Captured complete coneprog inputs were identical in twelve configurations:
+degrees three, five, and eight with three, four, sixteen, and sixty-four obstacle
+vertices. A setup-only microbenchmark of 1,000 calls had medians of 0.117841 and
+0.084462 seconds. This 28.3% assembly reduction is small relative to conic solve
+time. With both full BMTP implementations warmed first, paired runs were
+2.792644, 2.692809, and 2.716767 seconds before, versus 2.675528, 2.764553, and
+2.718773 seconds after. Their medians, 2.716767 and 2.718773 seconds, show no useful
+full-solver speed difference. Polynomials and full certificates matched exactly.
+
+Full planner runs took 6.291331, 4.143754, and 3.831818 seconds. The median was
+4.143754 seconds versus the prior 4.175128 seconds; this small difference is not
+treated as a reliable speed gain. The change is retained for its smaller code and
+unchanged numerical problem. All three returned the identical polynomial and
+complete timed proposal record, with unchanged arrival, motion length, solve
+counts, and passing independent validation.
+
 ## Regression coverage and code size
 
 The suite now contains 36 MATLAB tests. The saved-request regression checks arrival 117,
