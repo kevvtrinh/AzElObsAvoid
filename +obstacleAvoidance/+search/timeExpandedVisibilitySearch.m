@@ -53,8 +53,7 @@ if ~hasStationarySpan && nodeCount^2 <= maximumCacheBytes
     isStatic = false(size(obstacles));
     for j = 1:numel(obstacles)
         obstacle = obstacles(j);
-        isStatic(j) = all(cellfun(@(x,y)isequaln(x,obstacle.x_units{1}) && ...
-            isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+        isStatic(j) = obstacle.InternalPreparation.SamplesExactlyEqual;
         if isStatic(j) && numel(obstacle.time_s)>1
             staticTimeRange_s = [max(staticTimeRange_s(1),obstacle.time_s(1)), ...
                 min(staticTimeRange_s(2),obstacle.time_s(end))];

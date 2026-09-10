@@ -66,6 +66,34 @@ function testCompletePreparationReuseAndSourceChanges(testCase)
     verifyEqual(testCase,blocking,uint32([0,1]));
 end
 
+function testExactSampleIdentityCacheRefresh(testCase)
+    box = [-1,-1;1,-1;1,1;-1,1];
+    source = obstacleAvoidance.obstacles.createObstacle('static',[0;5;10], ...
+        repmat({box(:,1)},3,1),repmat({box(:,2)},3,1),0);
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
+    verifyTrue(testCase,prepared.InternalPreparation.SamplesExactlyEqual);
+    legacy = prepared;
+    legacy.InternalPreparation = rmfield(legacy.InternalPreparation,'SamplesExactlyEqual');
+    legacy.InternalPreparation.PreparationVersion = 4;
+    migrated = obstacleAvoidance.obstacles.prepareObstacles(legacy);
+    verifyTrue(testCase,migrated.InternalPreparation.SamplesExactlyEqual);
+    verifyGreaterThan(testCase,migrated.InternalPreparation.PreparationVersion,4);
+    changed = prepared;
+    changed.x_units{end} = changed.x_units{end}+10;
+    changed.originalX_units{end} = changed.originalX_units{end}+10;
+    rebuilt = obstacleAvoidance.obstacles.prepareObstacles(changed);
+    verifyFalse(testCase,rebuilt.InternalPreparation.SamplesExactlyEqual);
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        changed,[0,10],[0,0],10),[false,true]);
+    % Equivalent geometry with a different starting vertex is not numeric identity.
+    rotated = circshift(box,1,1);
+    source = obstacleAvoidance.obstacles.createObstacle('reordered',[0;2], ...
+        {box(:,1);rotated(:,1)},{box(:,2);rotated(:,2)},0);
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
+    verifyTrue(testCase,prepared.InternalPreparation.IsTimeInvariant);
+    verifyFalse(testCase,prepared.InternalPreparation.SamplesExactlyEqual);
+end
+
 function testOccupancyBoundaryAndBlockingContract(testCase)
     box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     fixed = obstacleAvoidance.obstacles.createObstacle('fixed',0,box(:,1),box(:,2),0);

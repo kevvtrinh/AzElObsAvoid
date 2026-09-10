@@ -54,7 +54,7 @@ end
 if isempty(obstacles)
     return;
 end
-preparationVersion = 4;
+preparationVersion = 5;
 if isfield(obstacles, "InternalPreparation")
     preparationIsCurrent = true(numel(obstacles), 1);
     % Evaluate each obstacle against the current geometry or motion.

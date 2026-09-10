@@ -17,8 +17,7 @@ queryTimes_s = unique(time_s(:));
 for j = 1:numel(obstacles)
     obstacle = obstacles(j);
     % Require exact source equality, not tolerance-based shape equivalence.
-    identical = all(cellfun(@(x,y) isequaln(x,obstacle.x_units{1}) && ...
-        isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+    identical = obstacle.InternalPreparation.SamplesExactlyEqual;
     if identical
         active = true(size(time_s));
         if numel(obstacle.time_s)>1

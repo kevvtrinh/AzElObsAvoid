@@ -278,9 +278,38 @@ The new regression compares prepared geometry across convex, concave, and holed
 boundaries at source times, an interpolated time, and inactive times. It also
 checks that default convexity classification remains enabled.
 
+## Cached exact sample identity milestone
+
+Repeating the query-time grouping experiment after the earlier optimizations
+was unfavorable: search medians were 1.073290 seconds before and 1.129546 seconds
+after. A separate BMTP experiment compared six (the host default), one, and two
+MATLAB computation threads. Medians were 2.757538, 2.769479, and 2.743980 seconds,
+with identical polynomials. This small difference did not justify changing
+thread configuration; the experiment restored the original setting.
+
+The retained change stores preparation's existing exact source-array comparison
+in `SamplesExactlyEqual`. Queries and stationary-edge caching reuse this flag
+after the existing source-snapshot check. It is distinct from `IsTimeInvariant`,
+which can also describe geometrically equivalent boundaries with different vertex
+orders. Preparation version five rebuilds older caches. The net production diff
+removes one line by eliminating the two duplicate comparisons.
+
+Three paired searches took 1.537176, 1.106413, and 1.028898 seconds before, versus
+0.891028, 0.717018, and 0.679611 seconds after. Medians fell from 1.106413 to
+0.717018 seconds, with every route, clock, and search-record field unchanged.
+Full planner runs took 6.376267, 4.266033, and 4.024277 seconds. The 4.266033-second
+median is 7.2% below the previous 4.598434 seconds. All three retained the exact
+polynomial and search record, unchanged arrival and length, and passing public
+independent validation.
+
+The new regression covers old-cache migration, an authoritative edit that changes
+stationary samples into moving samples, and equivalent polygons whose starting
+vertex differs. It verifies that geometric equivalence cannot substitute for
+exact source-array identity in occupancy queries.
+
 ## Regression coverage and code size
 
-The suite now contains 34 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 35 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact

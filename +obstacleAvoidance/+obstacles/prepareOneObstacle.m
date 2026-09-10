@@ -55,8 +55,9 @@ if isempty(previous)
         'SampleSpeedBound_units_s',Inf(sampleCount,1),'IsTimeInvariant',false);
     % Exact numeric equality can establish a globally static shape without
     % constructing polygons outside the requested window. Activity still uses time_s.
-    preparation.IsTimeInvariant=all(cellfun(@(x,y)isequaln(x,obstacle.x_units{1}) && ...
+    preparation.SamplesExactlyEqual=all(cellfun(@(x,y)isequaln(x,obstacle.x_units{1}) && ...
         isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+    preparation.IsTimeInvariant=preparation.SamplesExactlyEqual;
 else
     preparation=previous;
 end
