@@ -191,7 +191,7 @@ against the scalar verifier found identical decisions and signed gaps on all
 48,312 geographic pairs. Randomized, near-clearance, and single-region tests
 also check equivalence. No validation tolerance or protected geometry was relaxed.
 
-## Reproduce the complete audit
+## Reproduce the compact regression and benchmark audit
 
 ```matlab
 addpath('trajectory', 'examples', 'tests');
@@ -252,10 +252,16 @@ baseline and changed-branch comparison.
 | `exampleUSOutlineExtremeVisibility` | 5.204940 / 5.827605 | 18.801408 / 23.257993 | 19.186 / 24.871 |
 | `exampleVietnamKeepoutSlew` | 30.000000 / 30.000000 | 17.144141 / 17.305375 | 2.497 / 21.210 |
 
-The tests cover direct motion, detours, no path, infeasibility, invalid inputs,
-axis reversal and exchange, coordinate and clock translations, holes, exact
-visibility, moving/deforming cells, jerk bounds, continuity, and tampering with
-source geometry, activity intervals, certificates, endpoints, and histories.
+The compact suite contains 29 executable tests across seven focused files. It
+covers direct motion, detours, expected no-path and invalid-input outcomes,
+one-time margins, holes and concavities, exhaustive exact visibility, saved
+arrival-search incumbents, bounded 220-vertex correspondence, affine and clipped
+moving cells, nonzero endpoint velocities, certificate-cache invalidation, and
+the maintained 220-vertex result.
+
+The deferred Vietnam route-quality gate is intentionally not in the compact
+suite. Its current guide-route length is 17.366977678962233 versus the retained
+17.2979913158 reference. That remains a known issue; no threshold was relaxed.
 
 ## Scope and limitations
 

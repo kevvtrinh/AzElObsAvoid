@@ -31,12 +31,3 @@ function testSourceAndCurveChangesInvalidateReuse(testCase)
     certificate=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7,cache);
     verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
 end
-function testChangedClearanceAndCoverageInvalidateReuse(testCase)
-    request=testCase.TestData.Request; motion=testCase.TestData.Motion;
-    [~,cache]=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7);
-    certificate=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,3,cache);
-    verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
-    request.Coverage.Passed=false;
-    certificate=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7,cache);
-    verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
-end

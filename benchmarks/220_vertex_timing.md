@@ -86,9 +86,9 @@ were exactly unchanged.
 
 ## Verification and size
 
-58 tests passed across planning core, departure scheduling, full endpoint
-states, affine cells, time restriction, plane consolidation, fragments,
-windowed preparation, time-scoped planes, and bounded correspondence.
+The compact core suite contains 29 tests across planning core, arrival-search
+regressions, bounded correspondence, affine cells, certificate reuse,
+time-scoped planes, and the dense moving-obstacle quality check.
 
 Production contains 5,671 nonblank, non-comment-only lines across the same 58
 MATLAB files: 90 net lines above d6b46d5. Tests, examples, and benchmarks are
