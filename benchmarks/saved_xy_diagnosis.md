@@ -487,6 +487,52 @@ returned the exact reference polynomial and timed-search record, with arrival
 117 seconds, unchanged length and solve counts, and passing independent
 validation. All 37 MATLAB tests passed and Code Analyzer was clear.
 
+## Rejected join-constraint reductions
+
+Three mathematically motivated reductions were tested in isolated copies of the
+current timed BMTP implementation. Each comparison warmed both implementations
+before three paired repetitions with alternating execution order. The seed,
+regions, limits, horizon, solver options, and engine certification were identical.
+These are full BMTP timings, not full public-planner timings. Every candidate
+listed below arrived at 117 seconds and passed the engine plane certificate;
+none was retained or promoted through a new public-planner validation run.
+
+First, equal-duration C1-C3 continuity makes the last derivative bound on one
+span identical to the first on the next. Removing one copy eliminates 180
+inequality rows in the saved sixteen-span, degree-eight case. Captured solver
+inputs in 24 configurations confirmed that every removed row differs from its
+retained counterpart by a scaled continuity equality with zero right-hand side.
+All other inputs were identical. Degrees three, five, and eight; one, three,
+sixteen, and thirty-two spans; and both arrival modes were covered.
+
+| Duplicate derivative bounds removed in | Paired reference median (s) | Variant median (s) | Length (units) | Integrated squared jerk (units squared / s^5) |
+| --- | ---: | ---: | ---: | ---: |
+| Neither phase, retained motion | -- | -- | 229.959020398834 | 0.991397232846 |
+| Both phases | 2.703741 | 2.653702 | 229.951882889269 | 0.993718775493 |
+| Alternating phase only | 2.696334 | 2.647173 | 229.935359875462 | 0.995186276728 |
+| Final refinement only | 2.696334 | 2.639874 | 229.962940855175 | 0.993181057991 |
+
+The modest timing reductions came with increased squared jerk in every variant;
+refinement-only removal also lengthened the path. All retained eleven trajectory
+solves and 78 plane solves. The original row formulation is kept.
+
+Second, direct C0-C3 substitution expressed each span's first four controls in
+the preceding span's last four. This removed 120 decision variables and join
+equalities from the saved case, transforming the objective, constraints, and
+cones before reconstructing all controls. Bounds on eliminated coordinates were
+preserved as additional linear inequalities. The median increased from 2.678864
+to 2.809179 seconds. Length increased to 229.968214701339 units and squared jerk
+to 0.994232580704; solve counts stayed eleven and 78. It is rejected for both
+runtime and motion-quality regressions.
+
+Finally, sharing only the identical endpoint position at each join removed
+thirty variables and C0 equalities while keeping C1-C3 equalities. The paired
+median increased from 2.712557 to 2.916091 seconds. Length increased to
+229.983750600724 units, although squared jerk fell to 0.990358714118. The
+alternating process needed twelve trajectory solves and 91 plane solves.
+This is also rejected. Fewer variables or redundant rows do not guarantee faster
+conic solves or unchanged biconvex convergence. Production remains unchanged.
+
 ## Regression coverage and code size
 
 The suite now contains 37 MATLAB tests. The saved-request regression checks arrival 117,
