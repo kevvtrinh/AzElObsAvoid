@@ -44,6 +44,26 @@ maximumCacheBytes = 300 * 1024 ^ 2;
 batchPositions_units = zeros(0, 2);
 batchPointIndices = zeros(0, 1);
 hasStationarySpan = any(stationaryTimeCell(3:2:end - 2));
+% Cache directed-edge samples only for exactly unchanged source boundaries.
+staticObstacles = obstacles([]);
+dynamicObstacles = obstacles;
+staticEdgeCache = zeros(0,1,'uint8');
+staticTimeRange_s = [-Inf,Inf];
+if ~hasStationarySpan && nodeCount^2 <= maximumCacheBytes
+    isStatic = false(size(obstacles));
+    for j = 1:numel(obstacles)
+        obstacle = obstacles(j);
+        isStatic(j) = all(cellfun(@(x,y)isequaln(x,obstacle.x_units{1}) && ...
+            isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+        if isStatic(j) && numel(obstacle.time_s)>1
+            staticTimeRange_s = [max(staticTimeRange_s(1),obstacle.time_s(1)), ...
+                min(staticTimeRange_s(2),obstacle.time_s(end))];
+        end
+    end
+    staticObstacles = obstacles(isStatic);
+    dynamicObstacles = obstacles(~isStatic);
+    if any(isStatic,'all'), staticEdgeCache = zeros(nodeCount^2,1,'uint8'); end
+end
 if hasStationarySpan && 24 * bytesPerGeometry <= maximumCacheBytes / 2
     % Every edge uses the same 13 spatial fractions regardless of its clock.
     % Keep exact arithmetic and merge only numerically identical positions.
@@ -228,6 +248,24 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
     sampleOrder  = [middleIndex, 1:middleIndex - 1, middleIndex + 1:numel(fraction)];
     clear        = true(edgeCount, 1);
     if ~hasStationarySpan
+        % A cached edge retains all thirteen original sample checks. Only use
+        % it while every cached obstacle is active at every sampled time.
+        queryObstacles = obstacles;
+        if ~isempty(staticEdgeCache) && all(time_s>=staticTimeRange_s(1) & time_s<=staticTimeRange_s(2))
+            cacheKeys = firstNodeIndices + nodeCount*(secondNodeIndices-1);
+            unknown = find(staticEdgeCache(cacheKeys)==0);
+            batchSize = max(1,floor(2^18/numel(fraction)));
+            for batchStart = 1:batchSize:numel(unknown)
+                indices = unknown(batchStart:min(numel(unknown),batchStart+batchSize-1));
+                x_units = first_units(indices,1) + fraction.' .* (second_units(indices,1)-first_units(indices,1));
+                y_units = first_units(indices,2) + fraction.' .* (second_units(indices,2)-first_units(indices,2));
+                occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
+                    staticObstacles,x_units,y_units,repmat(time_s.',numel(indices),1),false);
+                staticEdgeCache(cacheKeys(indices)) = 1+uint8(any(occupied,2));
+            end
+            clear = staticEdgeCache(cacheKeys)==1;
+            queryObstacles = dynamicObstacles;
+        end
         % Test the quarter, midpoint, and three-quarter samples together.
         % Reject blocked edges before batching the remaining original samples.
         for sampleGroup = {[4,7,10],[1:3,5:6,8:9,11:13]}
@@ -241,7 +279,7 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
                 y_units = first_units(indices,2) + fraction(samples).' .* ...
                     (second_units(indices,2)-first_units(indices,2));
                 occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                    obstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),false);
+                    queryObstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),false);
                 clear(indices) = ~any(occupied,2);
             end
         end

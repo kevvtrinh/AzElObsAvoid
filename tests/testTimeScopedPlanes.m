@@ -92,6 +92,42 @@ function testTimedSearchMovingAndStationaryIntervals(testCase)
     end
 end
 
+function testMixedStaticObstacleLifetimes(testCase)
+    movingBox = [-0.2,-3;0.2,-3;0.2,3;-0.2,3];
+    moving = obstacleAvoidance.obstacles.createObstacle('moving',[0;12], ...
+        {movingBox(:,1);movingBox(:,1)},{movingBox(:,2);movingBox(:,2)+8},0.1);
+    fixedBox = [0.5,-1.25;1.5,-1.25;1.5,1.25;0.5,1.25];
+    nodes = [-5,0;5,0;-2,0;2,0;-2,2;2,2];
+    cost = hypot(nodes(:,1)-nodes(:,1).',nodes(:,2)-nodes(:,2).');
+    histories = {0,[0;12],[3;6],[0;12]};
+    for variant = 1:numel(histories)
+        sourceTimes_s = histories{variant};
+        x_units = repmat({fixedBox(:,1)},numel(sourceTimes_s),1);
+        y_units = repmat({fixedBox(:,2)},numel(sourceTimes_s),1);
+        % Near-equal source boundaries must still be treated as moving.
+        if variant == 4, x_units{end} = x_units{end}+1e-12; end
+        fixed = obstacleAvoidance.obstacles.createObstacle('stationary',sourceTimes_s,x_units,y_units,0);
+        for reversed = [false,true]
+            sources = {moving,fixed};
+            if reversed, sources = fliplr(sources); end
+            obstacles = obstacleAvoidance.obstacles.combineObstacles(sources);
+            [route_units,routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+                nodes,cost,obstacles,struct('time_s',0),struct('time_s',12), ...
+                struct('maxVelocity_units_s',[2,2]),unique([(0:0.25:12).';sourceTimes_s]), ...
+                struct('GoalTimeMode',"earliestArrival"));
+            assertNotEmpty(testCase,routeTime_s);
+            if variant == 3
+                % Once the stationary obstacle disappears, the direct edge opens.
+                verifyEqual(testCase,routeTime_s(end-1:end),[3;8.25]);
+                verifyEqual(testCase,route_units(end-1:end,:),nodes(1:2,:));
+            else
+                verifyEqual(testCase,routeTime_s(end-3:end),[3.75;5.25;7.25;8.75]);
+                verifyEqual(testCase,route_units(end-3:end,:),nodes([1,3,6,2],:));
+            end
+        end
+    end
+end
+
 function testSavedMovingDetourEarliestArrival(testCase)
     root = fileparts(mfilename('fullpath'));
     request = jsondecode(fileread(fullfile(root,'fixtures','savedMovingDetour.json')));

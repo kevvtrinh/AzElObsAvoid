@@ -216,9 +216,46 @@ first run. The smaller implementation and paired BMTP measurements support
 retention. All three preserved the exact polynomial and search record, arrival
 117 seconds, motion length 229.959020399 units, and passing independent validation.
 
+## Stationary obstacles within moving scenes milestone
+
+The saved scene contains one changing four-vertex obstacle and one stationary
+38-vertex obstacle. Whole-scene stationary caching cannot apply while the first
+obstacle moves, leaving repeated polygon tests against the second obstacle.
+The retained change caches the thirteen-sample result for each directed edge
+against exactly unchanged source boundaries. Unknown edges are evaluated in
+bounded batches. The cache is local to one prepared search snapshot and requires
+only one byte per possible directed edge, subject to the existing 300 MiB budget.
+
+Cached results apply only when every original sample time lies inside every
+cached obstacle's active interval. Outside that interval the original complete
+query runs. Moving-obstacle queries still test their original samples. The
+existing whole-scene stationary cache is unchanged. This adds 38 net production
+lines to the existing search function without adding a helper or changing any
+geometry, boundary policy, search candidate, or final validation.
+
+Three paired saved-case searches took 4.357932, 3.726654, and 3.630900 seconds
+before, versus 1.244283, 1.104812, and 1.075063 seconds after. The medians fell
+from 3.726654 to 1.104812 seconds, a 70.4% reduction. All routes, clocks, and
+complete search records matched exactly. Eight structurally different mixed
+scene comparisons also matched: scalar-time and finite-lifetime stationary
+obstacles, an obstacle that appears at three seconds and disappears at six,
+a near-equal moving boundary, and both obstacle input orders.
+
+Full planner runs took 7.171086, 4.838624, and 4.517740 seconds. The median is
+4.838624 seconds versus the previous 7.326564 seconds, a 34.0% reduction. All
+three returned the identical polynomial and search record, arrival 117 seconds,
+motion length 229.959020399 units, unchanged solve counts, and passing public
+independent validation.
+
+The saved search has 66 nodes, requiring 4,356 bytes for this cache. The final
+profile recorded 1,356 prepared queries, 6,791 polygon calls, and 6,527 prepared
+shape evaluations, versus 1,680, 12,270, and 10,705 before this change. Cached
+stationary rejections also avoid subsequent moving-obstacle queries. All 33
+MATLAB tests passed and Code Analyzer reported no issues in the changed files.
+
 ## Regression coverage and code size
 
-The suite now contains 32 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 33 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact
