@@ -29,11 +29,21 @@ for j = 1:numel(obstacles)
         occupied(fresh) = true; blockingIndex(fresh) = j;
         continue;
     end
+    cache=[];
+    useCache=isfield(obstacle.InternalPreparation,'QueryGeometryCache');
+    if useCache, cache=obstacle.InternalPreparation.QueryGeometryCache; end
     for k = 1:numel(queryTimes_s)
         indices = find(time_s == queryTimes_s(k) & ~occupied);
         if isempty(indices), continue; end
         % Occupancy needs the exact boundary, without convexity or orientation metadata.
-        [~, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(j),queryTimes_s(k),true,false);
+        if useCache && isKey(cache,queryTimes_s(k))
+            geometry=cache(queryTimes_s(k));
+        else
+            [~, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,queryTimes_s(k),true,false);
+            if useCache && cache.Count<obstacle.InternalPreparation.QueryGeometryCacheCapacity
+                cache(queryTimes_s(k))=struct('Active',geometry.Active,'x_units',geometry.x_units,'y_units',geometry.y_units); %#ok<AGROW> Bounded map insertion.
+            end
+        end
         if ~geometry.Active, continue; end
         [inside, on] = inpolygon(x_units(indices),y_units(indices),geometry.x_units,geometry.y_units);
         hit = inside & (~on | boundaryOccupied);

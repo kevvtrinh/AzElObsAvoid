@@ -35,6 +35,12 @@ layerCount   = numel(layerTimes_s);
 nodeCount    = size(nodePosition_units, 1);
 % The local obstacle snapshot stays unchanged throughout this search.
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
+% Keep cached boundaries local, with fewer entries for larger boundaries or more obstacles.
+for j=1:numel(obstacles)
+    obstacles(j).InternalPreparation.QueryGeometryCache=containers.Map('KeyType','double','ValueType','any');
+    obstacles(j).InternalPreparation.QueryGeometryCacheCapacity=floor(2^14 / max(1,numel(obstacles)) / ...
+        max([1;cellfun(@numel,obstacles(j).x_units(:))]));
+end
 [geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacles);
 
 % Cache unknown/free/occupied as 0/1/2 within 300 MiB. Eviction only repeats

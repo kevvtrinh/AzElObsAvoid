@@ -94,6 +94,34 @@ function testExactSampleIdentityCacheRefresh(testCase)
     verifyFalse(testCase,prepared.InternalPreparation.SamplesExactlyEqual);
 end
 
+function testGeometryQueryCacheCapacityAndSourceRefresh(testCase)
+    box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
+    source = obstacleAvoidance.obstacles.createObstacle('moving',[0;2], ...
+        {box(:,1);box(:,1)+2},{box(:,2);box(:,2)},0);
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
+    prepared.InternalPreparation.QueryGeometryCache = containers.Map('KeyType','double','ValueType','any');
+    prepared.InternalPreparation.QueryGeometryCacheCapacity = 2;
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        prepared,[0,1,2],[0,0,0],[0,1,2]),[true,true,true]);
+    cache = prepared.InternalPreparation.QueryGeometryCache;
+    verifyEqual(testCase,cache.Count,uint64(2));
+    verifyFalse(testCase,isKey(cache,2));
+    % A geometry hit still checks the new points and the requested boundary policy.
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        prepared,[1.5,3],[0,0],1,struct('BoundaryIsOccupied',false)),[false,false]);
+    changed = prepared;
+    changed.x_units = cellfun(@(x)x+10,changed.x_units,'UniformOutput',false);
+    changed.originalX_units = cellfun(@(x)x+10,changed.originalX_units,'UniformOutput',false);
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        changed,[0,10],[0,0],0),[false,true]);
+    prepared.InternalPreparation.QueryGeometryCache = containers.Map('KeyType','double','ValueType','any');
+    verifyFalse(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(prepared,0.5,0,-1));
+    verifyEqual(testCase,prepared.InternalPreparation.QueryGeometryCache.Count,uint64(1));
+    % Changing the active interval must invalidate an inactive cached boundary too.
+    prepared.time_s = [-2;2];
+    verifyTrue(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(prepared,0.5,0,-1));
+end
+
 function testOccupancyBoundaryAndBlockingContract(testCase)
     box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     fixed = obstacleAvoidance.obstacles.createObstacle('fixed',0,box(:,1),box(:,2),0);

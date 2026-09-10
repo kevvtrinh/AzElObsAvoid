@@ -412,9 +412,47 @@ reduced squared jerk, but did not provide a useful runtime improvement. None is
 retained: the faster variants trade away motion quality and require additional
 reduction/reconstruction code. Production remains unchanged.
 
+## Bounded per-search boundary cache milestone
+
+The timed search now keeps a fresh map per prepared obstacle, keyed by exact
+physical query time. It reuses only the active flag and protected boundary
+coordinates; every occupancy query still tests its own points and boundary
+policy. No time quantization, route pruning, or validation changes are involved.
+The maps stay inside the search and are absent from returned prepared obstacles.
+Source changes still invalidate preparation before public occupancy queries.
+
+Entry capacity is the floor of 16,384 divided by obstacle count and the largest
+source coordinate-array length for that obstacle. This limits entry count as
+geometry grows; it is not a measured byte limit. When full, the map leaves new
+times uncached and computes their geometry normally. The saved request used
+482 of 1,024 entries for the moving obstacle and zero of 122 for the stationary
+obstacle, which already bypasses interpolation.
+
+Three paired search runs, alternating method order, took 1.433433, 0.761420,
+and 0.708109 seconds before, versus 0.751232, 0.611988, and 0.540516 seconds
+after. Medians were 0.761420 and 0.611988 seconds, a 19.6% reduction. All routes,
+route times, and search-record fields matched exactly. These runs include
+first-use compilation effects; the later repetitions also favored the cache.
+
+Full planner runs took 6.402025, 3.888072, and 3.733804 seconds, including a
+slower first run. The median was 3.888072 seconds versus the prior 4.143754
+seconds, a 6.2% reduction across separate benchmark sessions. The paired search
+comparison supports the mechanism more directly than that full-planner delta.
+All three full runs preserved the exact polynomial and complete timed-search
+record: arrival 117 seconds, length 229.959020398834 units, 13 tagged pairs out
+of 188 applicable pairs, eleven trajectory solves, and 78 plane solves. Public
+independent validation passed. Arrival remains the first reachable configured
+time layer; continuous-time global earliest arrival is not proven.
+
+The production change adds sixteen net lines across two existing functions.
+A new moving-box regression checks capacity exhaustion, fresh points and
+boundary policy on cache hits, source-coordinate invalidation, and active-time
+invalidation. All 37 MATLAB tests passed and Code Analyzer was clear for the
+changed MATLAB files.
+
 ## Regression coverage and code size
 
-The suite now contains 36 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 37 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact
