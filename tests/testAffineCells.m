@@ -8,7 +8,7 @@ function tests = testAffineCells
 tests = functiontests(localfunctions);
 end
 
-function setupOnce(testCase)
+function setupOnce(~)
     root = fileparts(fileparts(mfilename('fullpath')));
     addpath(root,fullfile(root,'trajectory'));
 end
@@ -42,6 +42,28 @@ function testClippedSourceInterval(testCase)
     restricted = bmtpEngine.regionOnInterval(first,coverage,1,[3,8]);
     verifyTrue(testCase,isequal(restricted(:,:,1),first));
     verifyTrue(testCase,isequal(restricted(:,:,2),last));
+end
+
+function testCompletePreparationReuseAndSourceChanges(testCase)
+    box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
+    source = obstacleAvoidance.obstacles.createObstacle('translation',[0;5;10], ...
+        {box(:,1);box(:,1)+1;box(:,1)+2},repmat({box(:,2)},3,1),0);
+    partial = obstacleAvoidance.obstacles.prepareObstacles(source,[0,2]);
+    verifyFalse(testCase,partial.InternalPreparation.SamplePrepared(end));
+    complete = obstacleAvoidance.obstacles.prepareObstacles(partial,[0,10]);
+    verifyTrue(testCase,all(complete.InternalPreparation.SamplePrepared));
+    verifyTrue(testCase,all(complete.InternalPreparation.IntervalPrepared));
+    reused = obstacleAvoidance.obstacles.prepareObstacles(complete,[3,7]);
+    verifyTrue(testCase,isequaln(reused,complete));
+    verifyTrue(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(reused,1.6,0,8));
+    % A complete cache must still be invalidated when authoritative data changes.
+    changed = complete;
+    changed.x_units = cellfun(@(x)x+10,changed.x_units,'UniformOutput',false);
+    changed.originalX_units = cellfun(@(x)x+10,changed.originalX_units,'UniformOutput',false);
+    [occupied,blocking] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        changed,[1.6,11.6],[0,0],8);
+    verifyEqual(testCase,occupied,[false,true]);
+    verifyEqual(testCase,blocking,uint32([0,1]));
 end
 
 function testCachedMovingGeometryMatchesUncachedSearch(testCase)

@@ -79,6 +79,11 @@ for obstacleIndex = 1:numel(obstacles)
     if preparationIsCurrent(obstacleIndex)
         normalized=obstacles(obstacleIndex);
         previous=normalized.InternalPreparation;
+        % Source equality was checked above. Complete preparation needs no
+        % extension or reconstruction of its unchanged derived fields.
+        if all(previous.SamplePrepared) && all(previous.IntervalPrepared)
+            continue;
+        end
     else
         normalized=obstacleAvoidance.obstacles.createObstacle(obstacles(obstacleIndex));
     end

@@ -112,9 +112,31 @@ and 9.314708 seconds. The median is 9.677679 seconds, 16.2% below the previous
 route, and complete search record exactly and passed public validation. The
 net production diff for this milestone removes two lines.
 
+## Complete preparation reuse milestone
+
+A stationary-geometry query grouping experiment was rejected: saved-case
+search medians were 5.985077 seconds before and 6.126004 seconds after, with
+identical results. Its bookkeeping cost outweighed the saved geometry calls.
+
+The retained change instead skips preparation extension when every sample and
+interval is already prepared. This check runs only after the existing source
+snapshot equality check, so changes to source geometry still rebuild the cache.
+It adds five production lines and leaves public query behavior unchanged.
+
+Three paired saved-case searches had medians of 5.965344 seconds before and
+5.555977 seconds after. The 13-layer stationary-history median improved from
+0.058421 to 0.048296 seconds, and the 49-layer median from 0.285898 to 0.237074
+seconds. Every route, clock, and search-record field matched in all nine pairs.
+
+Full planner runs took 10.105315, 9.362836, and 8.773518 seconds, with median
+9.362836 seconds versus the previous milestone's 9.677679 seconds. All three
+preserved the exact polynomial and search record and passed public validation.
+The new regression checks both partial-cache extension and rebuilding after
+an authoritative source edit, including occupancy and blocking-obstacle output.
+
 ## Regression coverage and code size
 
-The suite now contains 30 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 31 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact
