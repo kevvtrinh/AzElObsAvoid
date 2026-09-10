@@ -119,6 +119,10 @@ function testGeometryQueryCacheCapacityAndSourceRefresh(testCase)
     cache = prepared.InternalPreparation.QueryGeometryCache;
     verifyEqual(testCase,cache.Count,uint64(2));
     verifyFalse(testCase,isKey(cache,2));
+    % Mix cached times with an uncached time after reaching the capacity.
+    verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        prepared,[2,0,1,2],[0,0,0,0],[2,0,1,2]),[true,true,true,true]);
+    verifyEqual(testCase,cache.Count,uint64(2));
     % A geometry hit still checks the new points and the requested boundary policy.
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         prepared,[1.5,3],[0,0],1,struct('BoundaryIsOccupied',false)),[false,false]);
@@ -141,6 +145,11 @@ function testOccupancyBoundaryAndBlockingContract(testCase)
     moving = obstacleAvoidance.obstacles.createObstacle('moving',[0;2], ...
         {box(:,1)+3;box(:,1)+5},{box(:,2);box(:,2)},0);
     obstacles = obstacleAvoidance.obstacles.combineObstacles({fixed,moving,moving});
+    cachedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
+    for obstacleIndex = 1:numel(cachedObstacles)
+        cachedObstacles(obstacleIndex).InternalPreparation.QueryGeometryCache = containers.Map('KeyType','double','ValueType','any');
+        cachedObstacles(obstacleIndex).InternalPreparation.QueryGeometryCacheCapacity = 2;
+    end
     x_units = repmat([0,0.5,1,3,5],2,1);
     y_units = zeros(size(x_units));
     time_s = repmat([0;2],1,5);
@@ -151,6 +160,12 @@ function testOccupancyBoundaryAndBlockingContract(testCase)
             obstacles,x_units,y_units,time_s,struct('BoundaryIsOccupied',boundaryOccupied));
         verifyEqual(testCase,occupied,expected);
         verifyEqual(testCase,blocking,expectedBlocking);
+        for repeat = 1:2
+            [cachedOccupied,cachedBlocking] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+                cachedObstacles,x_units,y_units,time_s,struct('BoundaryIsOccupied',boundaryOccupied));
+            verifyEqual(testCase,cachedOccupied,occupied);
+            verifyEqual(testCase,cachedBlocking,blocking);
+        end
     end
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         obstacles,[3,5],[0,0],[-1,3]),[false,false]);

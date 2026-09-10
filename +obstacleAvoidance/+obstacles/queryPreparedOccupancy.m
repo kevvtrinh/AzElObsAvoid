@@ -32,12 +32,18 @@ for j = 1:numel(obstacles)
     cache=[];
     useCache=isfield(obstacle.InternalPreparation,'QueryGeometryCache');
     if useCache, cache=obstacle.InternalPreparation.QueryGeometryCache; end
+    cachedGeometry=cell(size(queryTimes_s));
+    if useCache
+        queryKeys=num2cell(queryTimes_s);
+        cachedIndices=isKey(cache,queryKeys);
+        cachedGeometry(cachedIndices)=values(cache,queryKeys(cachedIndices));
+    end
     for k = 1:numel(queryTimes_s)
         indices = find(time_s == queryTimes_s(k) & ~occupied);
         if isempty(indices), continue; end
         % Occupancy needs the exact boundary, without convexity or orientation metadata.
-        if useCache && isKey(cache,queryTimes_s(k))
-            geometry=cache(queryTimes_s(k));
+        if ~isempty(cachedGeometry{k})
+            geometry=cachedGeometry{k};
         else
             [~, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,queryTimes_s(k),true,false);
             if useCache && cache.Count<obstacle.InternalPreparation.QueryGeometryCacheCapacity

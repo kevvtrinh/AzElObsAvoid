@@ -770,6 +770,60 @@ convex, concave, and holed obstacles at source times, between samples, and outsi
 their active interval. Production grows by one line; the test adds one setup line
 and one assertion without introducing another helper or test case.
 
+## Batched geometry-cache lookup milestone
+
+A fresh warmed profile still attributed 2.508367 seconds to 90 conic solves
+and 0.564784 seconds to 1,356 prepared occupancy queries. These are inclusive
+times from a 4.638940-second profiled planner call, not independent stage totals.
+The query loop fetched 5,871 cached boundaries one key at a time.
+
+The retained change batches `isKey` and `values` once per moving obstacle and
+query batch. Missing boundaries are still evaluated and inserted in the original
+time order, under the same capacity limit. Every queried point still undergoes
+the original occupancy and boundary-policy check; blocking-obstacle order,
+geometry, route candidates, and validation remain unchanged. Production gains
+six net lines and no helper.
+
+Two independently warmed, alternating-order search comparisons returned exactly
+the same route, clock, and full search record:
+
+| Comparison | Before median (s) | After median (s) |
+| --- | ---: | ---: |
+| First three pairs | 0.634106 | 0.515790 |
+| Second three pairs | 0.555236 | 0.476350 |
+
+The second comparison improves this stage by 14.2%. Sixteen additional search
+comparisons matched exactly across static-obstacle lifetimes, reversed obstacle
+order, a nearly stationary source, and both arrival modes.
+
+A preliminary full-planner comparison was superseded after fixing the copied
+benchmark wrapper's checkout-path initialization. With both implementations
+warmed and using the same production path, five alternating-order pairs took:
+
+| Repetition | Before (s) | After (s) |
+| --- | ---: | ---: |
+| 1 | 3.809694 | 3.521000 |
+| 2 | 3.618948 | 3.713644 |
+| 3 | 3.569256 | 3.573788 |
+| 4 | 3.543350 | 3.525495 |
+| 5 | 3.460538 | 3.456040 |
+| Median | 3.569256 | 3.525495 |
+
+The observed end-to-end median improvement is 1.2%; individual runs overlap and
+two pairs are slower. The clearer benefit is reduced search work, with a modest
+overall effect because conic solving still dominates. All ten measured results
+passed independent validation and preserved the exact reference polynomial and
+complete timed-search record: arrival 117 seconds, length 229.959020398834 units,
+13 tagged pairs, 188 applicable pairs, 11 trajectory solves, and 78 plane solves.
+
+Regression coverage now exercises mixed cache hits and misses after capacity is
+reached, repeated query times, cold and warm caches, boundary policies, and the
+first blocking obstacle. These extend two existing tests without adding a helper.
+All 39 MATLAB tests passed, and Code Analyzer was clear for both changed MATLAB
+files. A subsequent public-planner run of the retained production code took
+3.937479 seconds after the suite, passed independent validation, and again
+matched the reference polynomial and complete timed-search record exactly.
+
 ## Regression coverage and code size
 
 The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,
