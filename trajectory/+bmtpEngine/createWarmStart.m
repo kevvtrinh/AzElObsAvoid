@@ -85,10 +85,23 @@ end
 if request.Options.GoalTimeMode=="fixedArrival"
     % The motion mesh follows the guide, not the obstacle sampling frequency.
     % Every source interval still constrains its exact overlap with these spans.
-    segmentCount=max(8,originalSegmentCount);
-    tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
-    controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
-    warmStart.ControlPoint_units=reshape(controls,segmentCount,degree+1,2);
+    minimumSegmentCount = 8;
+    if request.Degree>=8, minimumSegmentCount = 16; end
+    segmentCount=max(minimumSegmentCount,originalSegmentCount);
+    isTimedSeed = isfield(request.Seed,'Source') && ...
+        string(request.Seed.Source)=="timeExpandedVisibilityGraph";
+    if isTimedSeed
+        routeTau = linspace(0,1,segmentCount+1).';
+        timedRoute_units = interp1(request.Seed.tau,route_units,routeTau,'linear');
+        start_units = reshape(timedRoute_units(1:end-1,:),segmentCount,1,2);
+        finish_units = reshape(timedRoute_units(2:end,:),segmentCount,1,2);
+        warmStart.ControlPoint_units = (1-fraction).*start_units+fraction.*finish_units;
+        warmStart.Route_units = timedRoute_units;
+    else
+        tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
+        controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
+        warmStart.ControlPoint_units=reshape(controls,segmentCount,degree+1,2);
+    end
     warmStart.SegmentTime_s=repmat(request.MotionHorizon_s/segmentCount,segmentCount,1);
     warmStart.SegmentRatio=ones(segmentCount,1);
     warmStart.SegmentCount=segmentCount;
@@ -107,4 +120,12 @@ if request.Options.GoalTimeMode=="fixedArrival"
 end
 warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s,request.InitialState,request.GoalState);
+if isfield(request.Seed, 'Source') && ...
+        string(request.Seed.Source) == "timeExpandedVisibilityGraph"
+    commonSegmentTime_s = max(bmtpEngine.findRequiredSegmentTime( ...
+        warmStart.ControlPoint_units, request.Limits));
+    warmStart.SegmentTime_s = repmat(commonSegmentTime_s, warmStart.SegmentCount, 1);
+    warmStart.SegmentRatio = ones(warmStart.SegmentCount, 1);
+    warmStart.Duration_s = warmStart.SegmentCount * commonSegmentTime_s;
+end
 end

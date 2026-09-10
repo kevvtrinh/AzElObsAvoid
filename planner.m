@@ -145,6 +145,14 @@ else
     coverage.StaticScene = scene;
 end
 if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
+    result.ElapsedTime_s = toc(totalTimer);
+    [timedResult,timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
+    if timedAccepted
+        result = timedResult;
+        return;
+    end
+    % Preserve the delayed chord as an incumbent when the dense-history
+    % fast path is inapplicable or does not certify a motion.
     isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
         goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
     if isDynamic && ~earliestTarget && isRest
@@ -163,8 +171,6 @@ if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
             if result.Success && ~hasWait, return; end
         end
     end
-    % A delayed chord is an incumbent, not evidence that earlier detours fail.
-    result.ElapsedTime_s = toc(totalTimer);
     result = obstacleAvoidance.input.searchArrivalTimes(result);
     return;
 end

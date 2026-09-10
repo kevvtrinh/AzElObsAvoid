@@ -1,12 +1,14 @@
-function regions_units = convexRegions(shape)
+function regions_units = convexRegions(shape, longestSharedEdgeFirst)
 %% Section 0: Header & Readme
 % SYNTAX: regions_units = obstacleAvoidance.geometry.convexRegions(shape)
+%         regions_units = obstacleAvoidance.geometry.convexRegions(shape,true)
 % PURPOSE: Exactly cover a polygon (including holes) with convex regions.
-% INPUTS: A valid polyshape.
+% INPUTS: A valid polyshape and optional deterministic merge ordering.
 % OUTPUTS: Column cell array of convex vertex arrays.
 % UNITS: Coordinate units.
 
 %% Section 1: Keep Convex Components Or Triangulate Exact Geometry
+if nargin < 2, longestSharedEdgeFirst = false; end
 regions_units = cell(0, 1);
 components = regions(shape);
 for k = 1:numel(components)
@@ -21,15 +23,25 @@ for k = 1:numel(components)
         end
     end
     mesh = triangulation(components(k));
-    faces = mergeConvexFaces(mesh);
+    faces = mergeConvexFaces(mesh,longestSharedEdgeFirst);
     for j = 1:numel(faces)
         regions_units{end+1,1} = mesh.Points(faces{j},:); %#ok<AGROW>
     end
 end
+if longestSharedEdgeFirst && numel(regions_units) > 1
+    sortKeys = zeros(numel(regions_units),5);
+    for regionIndex = 1:numel(regions_units)
+        vertices_units = regions_units{regionIndex};
+        sortKeys(regionIndex,:) = [min(vertices_units,[],1), ...
+            max(vertices_units,[],1),polyarea(vertices_units(:,1),vertices_units(:,2))];
+    end
+    [~,order] = sortrows(sortKeys,1:size(sortKeys,2));
+    regions_units = regions_units(order);
+end
 end
 
 %% Section 2: Remove Interior Diagonals Without Changing Geometry
-function faces = mergeConvexFaces(mesh)
+function faces = mergeConvexFaces(mesh,longestSharedEdgeFirst)
     % Every accepted merge removes one shared diagonal from two exact faces.
     % Original vertices and the occupied union remain unchanged. Concave or
     % multiply connected unions are rejected, with no geometric tolerance.
@@ -40,6 +52,18 @@ function faces = mergeConvexFaces(mesh)
     first = repmat(owner,1,3);
     pairs = [first(:),adjacent(:)];
     pairs = pairs(isfinite(pairs(:,2)) & pairs(:,1)<pairs(:,2),:);
+    if longestSharedEdgeFirst && ~isempty(pairs)
+        edgeKey_units = zeros(size(pairs,1),5);
+        for pairIndex = 1:size(pairs,1)
+            shared = intersect(faces{pairs(pairIndex,1)},faces{pairs(pairIndex,2)});
+            endpoints_units = mesh.Points(shared,:);
+            endpoints_units = sortrows(endpoints_units,[1 2]);
+            edgeKey_units(pairIndex,:) = [-sum(diff(endpoints_units,1,1).^2), ...
+                reshape(endpoints_units.',1,4)];
+        end
+        [~,order] = sortrows(edgeKey_units,1:size(edgeKey_units,2));
+        pairs = pairs(order,:);
+    end
     changed = true;
     while changed
         changed = false;

@@ -254,8 +254,10 @@ The compact suite contains 29 executable tests across seven focused files. It
 covers direct motion, detours, expected no-path and invalid-input outcomes,
 one-time margins, holes and concavities, exhaustive exact visibility, saved
 arrival-search incumbents, bounded 220-vertex correspondence, affine and clipped
-moving cells, nonzero endpoint velocities, certificate-cache invalidation, and
-the maintained 220-vertex result.
+moving cells, nonzero endpoint velocities, certificate-cache invalidation, the
+saved moving-detour earliest-arrival fast path, and the maintained 220-vertex
+result. See [the saved-request diagnosis](benchmarks/saved_xy_diagnosis.md)
+for measured failures, the general fix, and the plane-reduction experiment.
 
 The deferred Vietnam route-quality gate is intentionally not in the compact
 suite. Its current guide-route length is 17.366977678962233 versus the retained
@@ -265,8 +267,11 @@ suite. Its current guide-route length is 17.366977678962233 versus the retained
 
 Passing this suite is a measured result, not a universal optimality or runtime
 guarantee. Static optimization uses a visibility-selected topology and a finite
-polynomial family. Earliest dynamic planning can miss routes that require
-topology changes after the initial snapshot. Later dynamic/target meeting times are searched only at declared trial times;
-feasible times may be disconnected and open gaps remain unsearched. Nonlinear
-optimization and fixed-clock conic failures do not prove physical infeasibility.
-These cases return stable failure outcomes without weakening validation.
+polynomial family. Dense rest-to-rest histories first use a time-expanded
+visibility proposal over declared source, midpoint, and uniform time layers.
+The selected layer is not a continuous-time global-optimality proof. Sparse
+histories and unsuccessful timed proposals retain chronological fixed-arrival
+search; feasible times may be disconnected and open gaps remain unsearched.
+Nonlinear optimization and fixed-clock conic failures do not prove physical
+infeasibility. These cases return stable failure outcomes without weakening
+validation.

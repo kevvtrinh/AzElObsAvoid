@@ -171,7 +171,27 @@ else
         end
         prescribedPower_units = alternatingResult.PositionPower_units;
     else
-        [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+        usesTimedSolver = isfield(seed, 'Source') && ...
+            string(seed.Source) == "timeExpandedVisibilityGraph";
+        if usesTimedSolver
+            [alternatingResult, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( ...
+                request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+            if alternatingResult.Success
+                [timedMotion, diagnostics] = bmtpEngine.refineTimedTravel( ...
+                    request, warmStart, alternatingResult, diagnostics, ...
+                    obstacleTarget_units, roundoffReserve_units);
+                alternatingResult.ControlPoint_units = timedMotion.ControlPoint_units;
+                alternatingResult.SegmentTime_s = timedMotion.SegmentTime_s;
+            end
+            if alternatingResult.Success && isscalar(alternatingResult.SegmentTime_s)
+                alternatingResult.SegmentTime_s = repmat( ...
+                    alternatingResult.SegmentTime_s, ...
+                    size(alternatingResult.ControlPoint_units, 1), 1);
+            end
+        else
+            [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
+                request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+        end
     end
     if ~alternatingResult.Success
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
@@ -182,7 +202,8 @@ else
     end
     % Endpoint correction and export can increase the derivative bounds.
     preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s,prescribedPower_units);
-    certificate = struct('Passed',false); certificateCache=[];
+    certificate = struct('Passed',false);
+    certificateCache=[];
 end
 diagnostics.LowerBoundAttempt = boundRecord;
 

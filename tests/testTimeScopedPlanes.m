@@ -2,7 +2,8 @@ function tests = testTimeScopedPlanes
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testTimeScopedPlanes.m')
 % PURPOSE: Verify constraints act on their physical time intervals, and
-%          moving detours preserve nonzero physical endpoint states.
+%          moving detours preserve endpoint states and dense-history
+%          earliest-arrival motions use fewer active than applicable pairs.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Behavioral constraint, collision, and endpoint regressions.
 % UNITS: Coordinate units and seconds.
@@ -53,4 +54,25 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     verifyLessThan(testCase,result.Polynomial.SegmentCount,80);
     verifyEqual(testCase,result.PlaneCertificate.SolverRegionCount,80);
     verifyGreaterThan(testCase,result.SolverDiagnostics.TrajectorySocpCount,0);
+end
+
+function testSavedMovingDetourEarliestArrival(testCase)
+    root = fileparts(mfilename('fullpath'));
+    request = jsondecode(fileread(fullfile(root,'fixtures','savedMovingDetour.json')));
+    sources = cell(numel(request.obstacles),1);
+    for k = 1:numel(sources)
+        source = request.obstacles(k); frames = source.keyframes;
+        sources{k} = obstacleAvoidance.obstacles.createObstacle(source.name,[frames.time_s].', ...
+            arrayfun(@(f)f.vertices_units(:,1),frames,'UniformOutput',false), ...
+            arrayfun(@(f)f.vertices_units(:,2),frames,'UniformOutput',false),source.safetyMargin_units);
+    end
+    obstacles = obstacleAvoidance.obstacles.combineObstacles(sources);
+    options = request.options; options.GoalTimeMode = 'earliestArrival';
+    result = planner(obstacles,request.initialState,request.goalState,request.limits,options);
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.ArrivalTime_s,117,'AbsTol',1e-8);
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");
+    verifyLessThan(testCase,result.SolverDiagnostics.TaggedPairCount, ...
+        result.SolverDiagnostics.ApplicablePairCount);
 end

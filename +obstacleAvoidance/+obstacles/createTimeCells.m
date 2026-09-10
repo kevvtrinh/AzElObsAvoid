@@ -1,13 +1,16 @@
-function cells = createTimeCells(obstacles, initialTime_s, finalTime_s)
+function cells = createTimeCells(obstacles, initialTime_s, finalTime_s, longestSharedEdgeFirst)
 %% Section 0: Header & Readme
 % SYNTAX: cells = obstacleAvoidance.obstacles.createTimeCells(obstacles,t0,t1)
+%         cells = obstacleAvoidance.obstacles.createTimeCells(obstacles,t0,t1,true)
 % PURPOSE: Prepare convex exclusion cells with affine vertex motion in
 %          absolute time; static cells have equal endpoint vertices.
-% INPUTS: Prepared authoritative obstacle histories and physical horizon.
+% INPUTS: Prepared authoritative obstacle histories, physical horizon, and
+%         optional deterministic merge ordering.
 % OUTPUTS: Convex regions, absolute active intervals, source IDs, event knots.
 % UNITS: Coordinate units and seconds.
 
 %% Section 1: Cover Every Active Source Interval
+if nargin < 4, longestSharedEdgeFirst = false; end
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialTime_s,finalTime_s]);
 regions_units = cell(0,1); endRegions_units = cell(0,1);
 intervals_s = zeros(0,2); sources = zeros(0,1);
@@ -24,12 +27,13 @@ for k = 1:numel(obstacles)
         if active_s(1) >= active_s(2), continue; end
         if isscalar(obstacle.time_s) || preparation.IsTimeInvariant
             shape = preparation.SampleShapes{j};
-            regions = obstacleAvoidance.geometry.convexRegions(shape);
+            regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);
             endRegions = regions;
         elseif preparation.MatchingTopology(j) && preparation.IntervalSpeedBound_units_s(j)==0
             % A history can change elsewhere while this interval remains
             % stationary. Preserve its cavities and disconnected components.
-            regions = obstacleAvoidance.geometry.convexRegions(preparation.SampleShapes{j});
+            regions = obstacleAvoidance.geometry.convexRegions( ...
+                preparation.SampleShapes{j},longestSharedEdgeFirst);
             endRegions = regions;
         elseif preparation.MatchingTopology(j)
             % The convex hull of corresponding vertices at each instant
@@ -42,7 +46,7 @@ for k = 1:numel(obstacles)
             endRegions = {lower_units+fraction(2)*delta_units};
         else
             shape = preparation.IntervalUnionShapes{j};
-            regions = obstacleAvoidance.geometry.convexRegions(shape);
+            regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);
             endRegions = regions;
         end
         regions_units = [regions_units;regions]; %#ok<AGROW>

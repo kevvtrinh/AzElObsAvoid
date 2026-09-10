@@ -33,9 +33,8 @@ function testClippedSourceInterval(testCase)
     restricted = bmtpEngine.regionOnInterval(cells.Regions_units{1},cells,1,[4,6]);
     verifyEqual(testCase,restricted(:,:,1),cells.Regions_units{1}+[1,0],'AbsTol',1e-12);
     verifyEqual(testCase,restricted(:,:,2),cells.Regions_units{1}+[3,0],'AbsTol',1e-12);
-end
-
-function testFullSourceIntervalPreservesStoredEndpoints(testCase)
+    % Full intervals preserve their stored endpoints, including cancellation
+    % cases that must not be reconstructed by interpolation arithmetic.
     first = [1,0;2,0;2,1;1,1];
     last = [1e-16,-2;1,-2;1,-1;1e-16,-1];
     coverage = struct('Passed',true,'EndRegions_units',{{last}}, ...

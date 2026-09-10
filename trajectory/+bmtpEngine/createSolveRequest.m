@@ -47,6 +47,9 @@ validateKernelInputs(seed, regions_units, coverage, initialState, goalState, lim
 % Fixed-arrival clocks use their natural events and a minimum steering mesh.
 
 [degree, splitCount] = deal(5, 3);
+if isfield(seed,'Source') && string(seed.Source)=="timeExpandedVisibilityGraph"
+    [degree,splitCount] = deal(8,2);
+end
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");
