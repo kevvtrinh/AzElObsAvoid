@@ -634,6 +634,36 @@ Neither phase isolated a runtime improvement without a motion-quality tradeoff.
 All normalization variants are discarded. Only the independently reproduced
 plane-field crash fix is retained from this investigation.
 
+## Rejected reachability-update rewrites
+
+Three search implementations tested whether repeated state-update calls were
+worth removing. The batched version passed all clear transitions for one target
+layer to a helper that processed them sequentially. The shared-state version
+made the helper nested, updating its parent's arrays without array arguments or
+return values. The inline version placed the wait and motion updates directly
+in the search loop and removed the helper. All retained the exact update order,
+floating-point comparison expressions, and final-layer parent tie policy.
+
+Each timing comparison warmed its methods before three repetitions with rotated
+execution order. These are search-only timings on identical saved-case inputs:
+
+| Implementation | Paired reference median (s) | Variant median (s) |
+| --- | ---: | ---: |
+| Batched sequential updates | 0.525199 | 0.531149 |
+| Nested helper with shared arrays | 0.525199 | 0.535001 |
+| Inline wait and motion updates | 0.551300 | 0.547199 |
+
+An earlier paired batch comparison also favored the reference, 0.560137 versus
+0.569044 seconds. The inline version's four-millisecond median difference is
+too small to establish a useful gain. None warrants a new full-planner timing
+claim or additional production complexity.
+
+All saved-case routes, clocks, and complete search records matched exactly.
+Each variant also matched sixteen mixed-obstacle searches spanning both arrival
+modes, both obstacle orders, stationary obstacles with different lifetimes, and
+an almost-stationary history. The maintained implementation is retained without
+source or test changes.
+
 ## Regression coverage and code size
 
 The suite now contains 38 MATLAB tests. The saved-request regression checks arrival 117,
