@@ -56,6 +56,32 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     verifyGreaterThan(testCase,result.SolverDiagnostics.TrajectorySocpCount,0);
 end
 
+function testTimedSearchMovingAndStationaryIntervals(testCase)
+    box = [-0.2,-3;0.2,-3;0.2,3;-0.2,3];
+    nodes = [-5,0;5,0;-2,0;2,0;-2,2;2,2];
+    cost = hypot(nodes(:,1)-nodes(:,1).',nodes(:,2)-nodes(:,2).');
+    for hasStationaryInterval = [false,true]
+        if hasStationaryInterval
+            sourceTimes_s = [0;6;6.5;12]; shifts_units = [0;0;8;8];
+            expectedDeparture_s = 3.75; expectedArrival_s = 8.75;
+        else
+            sourceTimes_s = [0;12]; shifts_units = [0;8];
+            expectedDeparture_s = 2.25; expectedArrival_s = 7.25;
+        end
+        obstacle = obstacleAvoidance.obstacles.createObstacle('crossing barrier',sourceTimes_s, ...
+            repmat({box(:,1)},numel(sourceTimes_s),1), ...
+            arrayfun(@(shift)box(:,2)+shift,shifts_units,'UniformOutput',false),0.1);
+        obstacle = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,12]);
+        [route_units,routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+            nodes,cost,obstacle,struct('time_s',0),struct('time_s',12), ...
+            struct('maxVelocity_units_s',[2,2]),unique([(0:0.25:12).';sourceTimes_s]), ...
+            struct('GoalTimeMode',"earliestArrival"));
+        assertNotEmpty(testCase,routeTime_s);
+        verifyEqual(testCase,routeTime_s(end-1:end),[expectedDeparture_s;expectedArrival_s]);
+        verifyEqual(testCase,route_units,[repmat(nodes(1,:),numel(routeTime_s)-1,1);nodes(2,:)]);
+    end
+end
+
 function testSavedMovingDetourEarliestArrival(testCase)
     root = fileparts(mfilename('fullpath'));
     request = jsondecode(fileread(fullfile(root,'fixtures','savedMovingDetour.json')));

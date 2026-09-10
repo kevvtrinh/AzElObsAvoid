@@ -250,7 +250,7 @@ baseline and changed-branch comparison.
 | `exampleUSOutlineExtremeVisibility` | 5.204940 / 5.827605 | 18.801408 / 23.257993 | 19.186 / 24.871 |
 | `exampleVietnamKeepoutSlew` | 30.000000 / 30.000000 | 17.144141 / 17.305375 | 2.497 / 21.210 |
 
-The compact suite contains 29 executable tests across seven focused files. It
+The compact suite contains 30 executable tests across seven focused files. It
 covers direct motion, detours, expected no-path and invalid-input outcomes,
 one-time margins, holes and concavities, exhaustive exact visibility, saved
 arrival-search incumbents, bounded 220-vertex correspondence, affine and clipped

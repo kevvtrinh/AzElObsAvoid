@@ -225,6 +225,22 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
     middleIndex  = ceil(numel(fraction) / 2);
     sampleOrder  = [middleIndex, 1:middleIndex - 1, middleIndex + 1:numel(fraction)];
     clear        = true(edgeCount, 1);
+    if ~hasStationarySpan
+        % Moving geometry cannot reuse interval occupancy. Batch the same
+        % thirteen samples to amortize source checks, with bounded storage.
+        edgeBatchSize = max(1,floor(2^18/numel(fraction)));
+        for batchStart = 1:edgeBatchSize:edgeCount
+            indices = batchStart:min(edgeCount,batchStart+edgeBatchSize-1);
+            x_units = first_units(indices,1) + fraction.' .* ...
+                (second_units(indices,1)-first_units(indices,1));
+            y_units = first_units(indices,2) + fraction.' .* ...
+                (second_units(indices,2)-first_units(indices,2));
+            occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+                obstacles,x_units,y_units,repmat(time_s.',numel(indices),1),proposalQueryOptions);
+            clear(indices) = ~any(occupied,2);
+        end
+        return;
+    end
     for sampleIndex = sampleOrder
         candidate = find(clear);
         if isempty(candidate)

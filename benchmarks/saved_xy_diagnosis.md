@@ -61,13 +61,41 @@ layer set and sampled proposal edges do not prove a continuous-time global
 minimum. Collision freedom and motion limits are exact for the returned
 polynomial certificate; optimality between unsearched times is not claimed.
 
+## Batched occupancy milestone
+
+Profiling the committed timed planner attributed 12.26 seconds to route search,
+including 8,702 public occupancy calls. Rechecking obstacle preparation inside
+those calls consumed 4.12 seconds. The moving-scene search now batches each
+edge's original thirteen samples into one public query, bounded to 262,144
+sample positions per batch. Sample positions, times, boundary policy, candidate
+transitions, and final certification are unchanged.
+
+Fully batching stationary histories was rejected: a 49-layer crossing-barrier
+search increased from a 0.282-second median to 1.466 seconds. The retained
+change keeps the original occupancy cache whenever the prepared history has a
+stationary interval, using batching only for continuously changing geometry.
+
+Three paired search-only runs on the saved request had medians of 10.873656
+seconds before and 7.871029 seconds after. Routes, clocks, and every search
+record field matched exactly. Two structurally different stationary-history
+comparisons (13 and 49 uniform layers, plus obstacle events) also matched
+exactly and retained cache performance.
+
+Full planner runs took 13.833663, 11.554937, and 11.078550 seconds, a median of
+11.554937 seconds (22.5% below the previous 14.909188-second milestone). Each
+returned exactly the previous polynomial, arrival 117 seconds, motion length
+229.959020399 units, and a passing independent validator. The production change
+adds only 16 lines to the existing search function.
+
 ## Regression coverage and code size
 
-All 29 MATLAB tests pass. The saved-request regression checks arrival 117,
+The suite now contains 30 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact
-220-vertex length of 121.503236303671 units.
+220-vertex length of 121.503236303671 units. A crossing-barrier regression covers
+both continuously moving and stationary source intervals, preserving the
+reference graph's departure and arrival times.
 
 The retained implementation adds 1,749 lines in new production files and 81 net
 lines in existing production files, for a net production increase of 1,830
