@@ -83,26 +83,19 @@ for axisIndex = 1:2
         Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
     end
 end
-% Process each segment while assembling the complete motion or interval result.
-for segmentIndex = 1:segmentCount - 1
-    % Process each order needed to find trajectory step.
-    for order = 0:3
-        coefficients     = differenceCoefficients{order + 1};
-        coefficientIndex = 0:order;
-        % Evaluate each coordinate axis and combine its limiting result.
-        for axisIndex = 1:2
-            equalityIndex = equalityIndex + 1;
-            left          = controlIndexOf(segmentIndex, degree - order + coefficientIndex, axisIndex, degree);
-            right         = controlIndexOf(segmentIndex + 1, coefficientIndex, axisIndex, degree);
-            Aeq(equalityIndex, left) = coefficients; %#ok<SPRIX>
-            Aeq(equalityIndex, right) = ...
-                Aeq(equalityIndex, right) - coefficients; %#ok<SPRIX>
-        end
-    end
+% Assemble C0-C3 rows for adjacent spans in the original segment/order/axis order.
+leftRows = zeros(4,degree+1);
+rightRows = zeros(4,degree+1);
+for order = 0:3
+    leftRows(order+1,degree-order+1:end) = differenceCoefficients{order+1};
+    rightRows(order+1,1:order+1) = differenceCoefficients{order+1};
 end
-equalityIndex = equalityIndex + 1;
-Aeq(equalityIndex, powerIndex(1)) = 1;
-beq(equalityIndex) = 1;
+joins = 1:segmentCount-1;
+Aeq(13:end-1,1:controlCount) = ...
+    kron(sparse(joins,joins,1,segmentCount-1,segmentCount),kron(sparse(leftRows),speye(2))) - ...
+    kron(sparse(joins,joins+1,1,segmentCount-1,segmentCount),kron(sparse(rightRows),speye(2)));
+Aeq(end,powerIndex(1)) = 1;
+beq(end) = 1;
 
 %% Section 2: Create Derivative And Separating-Line Bounds
 
@@ -124,20 +117,16 @@ for order = 1:3
 end
 b               = zeros(inequalityCount, 1);
 inequalityIndex = baseInequalityCount;
-% Process each segment while assembling the complete motion or interval result.
-for segmentIndex = 1:segmentCount
-    % Process each geometric region while constructing or checking the region topology.
-    for regionIndex = 1:size(planes, 2)
-        plane = planes(segmentIndex, regionIndex);
-        if ~plane.Active
-            continue;
-        end
-        [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, segmentIndex);
-        targets = inequalityIndex + (1:size(rows, 1));
-        A(targets, :) = rows; %#ok<SPRIX>
-        b(targets) = -reserve_units - offset_units;
-        inequalityIndex = targets(end);
-    end
+% Transpose before finding active pairs to preserve segment-major constraint order.
+[regionIndices,segmentIndices] = find(reshape([planes.Active],size(planes)).');
+for planeIndex = 1:numel(segmentIndices)
+    segmentIndex = segmentIndices(planeIndex);
+    plane = planes(segmentIndex,regionIndices(planeIndex));
+    [rows,offset_units] = fixedPlaneRows(plane,degree,variableCount,segmentIndex);
+    targets = inequalityIndex+(1:size(rows,1));
+    A(targets,:) = rows; %#ok<SPRIX>
+    b(targets) = -reserve_units-offset_units;
+    inequalityIndex = targets(end);
 end
 
 %% Section 3: Create The Objective And Solve

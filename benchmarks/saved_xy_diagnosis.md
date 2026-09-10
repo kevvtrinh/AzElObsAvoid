@@ -450,6 +450,43 @@ boundary policy on cache hits, source-coordinate invalidation, and active-time
 invalidation. All 37 MATLAB tests passed and Code Analyzer was clear for the
 changed MATLAB files.
 
+## Smaller continuity and active-plane assembly milestone
+
+A fresh profile after the boundary cache attributed 2.570432 of 4.805993
+profiled planner seconds to coneprog, including 2.433209 seconds in the twelve
+timed trajectory steps. These inclusive times overlap and must not be added.
+The trajectory-step function's self time was 0.069665 seconds, so reducing its
+assembly cost has limited potential for total runtime.
+
+Continuity rows now use sparse Kronecker blocks for C0-C3 joins. Plane assembly
+visits active pairs directly, transposing the active mask before `find` to
+preserve the former segment-major row order. Endpoint rows, coefficients,
+constraint order, variable layout, cones, bounds, objectives, and solver options
+remain identical. The combined production diff removes eleven net lines from
+one existing function.
+
+Captured complete coneprog inputs matched exactly in 72 configurations: degrees
+three, five, and eight; one, three, sixteen, and thirty-two spans; both arrival
+modes; and zero, one, or multiple active planes. The multiple-plane cases varied
+normals and mixed whole-span and restricted time fractions. One hundred
+assembly-only calls had medians of 0.139443 seconds before and 0.068476 seconds
+after. This comparison excludes the actual conic solve.
+
+With both full BMTP implementations warmed, three paired runs in alternating
+order took 2.747687, 2.684560, and 2.862167 seconds before, versus 2.694268,
+2.727837, and 2.937539 seconds after. Medians were 2.747687 and 2.727837 seconds;
+this small, noisy difference does not demonstrate a useful full-solver speedup.
+Every polynomial and complete collision certificate matched exactly. A prior
+continuity-only experiment likewise showed no useful full-solver improvement.
+
+Full planner runs took 5.533135, 3.961056, and 3.732710 seconds, with median
+3.961056 seconds versus the preceding 3.888072 seconds. These separate-session
+measurements do not establish an end-to-end gain. The change is retained for
+smaller code and faster assembly of the identical numerical problem. All three
+returned the exact reference polynomial and timed-search record, with arrival
+117 seconds, unchanged length and solve counts, and passing independent
+validation. All 37 MATLAB tests passed and Code Analyzer was clear.
+
 ## Regression coverage and code size
 
 The suite now contains 37 MATLAB tests. The saved-request regression checks arrival 117,
