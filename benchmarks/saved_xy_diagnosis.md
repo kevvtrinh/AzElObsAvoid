@@ -576,9 +576,67 @@ hole translation. The test expectation was corrected without changing geometry.
 Both optimization variants and the experiment-only test were discarded; the
 simpler production implementation and maintained test suite remain unchanged.
 
+## Newly discovered travel-plane initialization fix
+
+A coordinate-scaling experiment reached an untested refinement path: a shorter
+trial intersects a previously untagged obstacle region, so refinement solves for
+and inserts a new separating plane. The returned plane lacked `TimeFraction`,
+which was already present in the stored plane array. MATLAB consequently raised
+`MATLAB:heterogeneousStrucAssignment` instead of continuing refinement.
+
+The retained one-line fix initializes the new plane's full-span fraction to
+`[0,1]`, as the alternating phase already does. Its solve covers the full control
+span, so this records existing constraint coverage without weakening it.
+A structurally different three-span detour around one static box reproduces the
+exact exception with the old implementation. With the fix, refinement adds three
+planes and reduces the control-polygon travel bound from 12 to 6.099031529653
+units at the twelve-second clock. A new exact engine collision certificate passes.
+
+The saved moving request still returns the exact reference polynomial and
+complete timed-search record, with arrival 117 seconds, unchanged motion length
+and solve counts, and passing public independent validation. A verification
+replay took 4.508219 seconds; this single run is not a speed comparison. The
+change fixes a crash rather than claiming a runtime gain. All 38 MATLAB tests
+passed and Code Analyzer was clear for the changed files.
+
+## Rejected conic variable normalization
+
+Time powers were normalized by the maximum segment duration and its powers.
+Position and travel variables were separately normalized by workspace extent,
+with coordinates centered on the workspace. The combined variant applied both.
+Positive scaling was carried through linear constraints, endpoint equalities,
+bounds, and objective, then undone on the returned controls. Homogeneity of the
+time-power and travel cones permits their original unit-coefficient forms in
+these normalized variables. Physical limits and solver tolerances were unchanged.
+
+All methods were warmed before three paired repetitions with rotating order.
+Every listed candidate passed the engine collision certificate and arrived at
+117 seconds. These are full BMTP timings, excluding the public planner's route
+search and independent validation.
+
+| Normalized variables | Median (s) | Length (units) | Integrated squared jerk (units squared / s^5) | Trajectory / plane solves |
+| --- | ---: | ---: | ---: | ---: |
+| None, paired reference | 2.770484 | 229.959020398834 | 0.991397232846 | 11 / 78 |
+| Time powers | 2.579679 | 229.978457751056 | 0.994353107475 | 10 / 65 |
+| Position and travel | 3.480864 | 230.041245567676 | 0.996804181662 | 12 / 91 |
+| Both | 3.626676 | 230.008395785913 | 0.987674941408 | 11 / 78 |
+
+Time normalization reduced median BMTP runtime by 6.9%, but lengthened the path
+and increased squared jerk. A second paired comparison isolated its phases:
+
+| Time normalization phase | Median (s) | Length (units) | Integrated squared jerk (units squared / s^5) |
+| --- | ---: | ---: | ---: |
+| None, paired reference | 2.692239 | 229.959020398834 | 0.991397232846 |
+| Alternating only | 2.621945 | 229.984093543966 | 0.994045985115 |
+| Final refinement only | 2.666395 | 229.959136058593 | 0.991345896919 |
+
+Neither phase isolated a runtime improvement without a motion-quality tradeoff.
+All normalization variants are discarded. Only the independently reproduced
+plane-field crash fix is retained from this investigation.
+
 ## Regression coverage and code size
 
-The suite now contains 37 MATLAB tests. The saved-request regression checks arrival 117,
+The suite now contains 38 MATLAB tests. The saved-request regression checks arrival 117,
 independent validation, timed-route selection, and active-pair reduction.
 Structurally different regressions retain the nine-second moving-circle detour,
 the 82.5-second long request, the validated waiting incumbent, and the exact

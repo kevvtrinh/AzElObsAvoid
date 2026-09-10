@@ -38,6 +38,37 @@ function testDifferentTimeWindowsDoNotConflict(testCase)
     verifyTrue(testCase,flag<=0 || output.MaximumClearanceSlack_units>0.4);
 end
 
+function testTravelRefinementAddsNewCollisionPlanes(testCase)
+    box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
+    waypoints = [-3,0;-3,3;3,3;3,0];
+    controls = zeros(3,9,2);
+    for span = 1:3
+        points = [repmat(waypoints(span,:),4,1); ...
+            mean(waypoints(span:span+1,:),1);repmat(waypoints(span+1,:),4,1)];
+        controls(span,:,:) = reshape(points,1,9,2);
+    end
+    plane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
+        'Normal',zeros(2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
+    initial = struct('time_s',0,'position_units',waypoints(1,:));
+    goal = struct('time_s',12,'position_units',waypoints(end,:));
+    limits = struct('xInterval_units',[-10,10],'yInterval_units',[-10,10], ...
+        'maxVelocity_units_s',[5,5],'maxAcceleration_units_s2',[10,10],'maxJerk_units_s3',[20,20]);
+    request = struct('Degree',8,'InitialState',initial,'GoalState',goal,'Limits',limits, ...
+        'Regions_units',{{box}},'RegionMinimum_units',min(box),'RegionMaximum_units',max(box), ...
+        'MotionHorizon_s',12,'Options',struct('GoalTimeMode',"fixedArrival"),'Coverage',struct('Passed',true));
+    warmStart = struct('SegmentCount',3,'RegionActiveBySegment',true(3,1));
+    alternating = struct('ControlPoint_units',controls,'SegmentTime_s',4, ...
+        'Planes',repmat(plane,3,1),'TaggedPairs',false(3,1));
+    diagnostics = struct('ConicSolver',bmtpEngine.accumulateConicDiagnostics());
+    [refined,diagnostics] = bmtpEngine.refineTimedTravel(request,warmStart,alternating,diagnostics,1e-5,1e-8);
+    verifyTrue(testCase,diagnostics.TravelRefinementAccepted);
+    verifyGreaterThan(testCase,diagnostics.TaggedPairCount,0);
+    verifyLessThan(testCase,diagnostics.TravelRefinementFinalLength_units,diagnostics.TravelRefinementInitialLength_units);
+    prepared = struct('CertifiedControlPoint_units',refined.ControlPoint_units, ...
+        'SegmentTime_s',repmat(refined.SegmentTime_s,3,1));
+    verifyTrue(testCase,bmtpEngine.checkFinalMotion(request,warmStart,prepared,1e-8,1e-5).Passed);
+end
+
 function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     times_s = (0:0.25:20)';
     box = [-0.5,-0.7;0.5,-0.7;0.5,0.7;-0.5,0.7];

@@ -78,6 +78,7 @@ for refinementIndex = 1:8
         for newPairIndex = newPairIndices
             [segmentIndex, regionIndex]               = ind2sub(size(newPairs), newPairIndex);
             [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveTimedSeparatingLine(squeeze(baseControl_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, obstacleTarget_units, roundoffReserve_units, planeOptions);
+            travelPlane.TimeFraction = [0,1];
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
             if planeExitFlag <= 0 || ~travelPlane.Active
                 planeUpdateFailed = true;
