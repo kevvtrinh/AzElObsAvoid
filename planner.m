@@ -21,6 +21,7 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %     magnitudes allocated equally, and two-element vectors are per-axis.
 %   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
 %     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
+%     FixedArrivalSearch: spatial (default) or timeExpanded for timed visibility.
 %     PathLengthTimeAllowance_s (default 0.49, range [0,0.5)) permits static
 %     monotone corridor refinement to spend arrival time for at least 1% shorter
 %     motion. Set zero to shorten only at the earliest feasible corridor clock.
@@ -143,6 +144,11 @@ if isDynamic
     if options.GoalTimeMode == "fixedArrival", coverage.BreakTime_s = cells.BreakTime_s; end
 else
     coverage.StaticScene = scene;
+end
+if options.GoalTimeMode=="fixedArrival" && options.FixedArrivalSearch=="timeExpanded"
+    result.ElapsedTime_s = toc(totalTimer);
+    [result,~] = obstacleAvoidance.input.tryTimedArrival(result);
+    return;
 end
 if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
     result.ElapsedTime_s = toc(totalTimer);
@@ -287,7 +293,7 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
     limits = struct("xInterval_units", [-180 180], "yInterval_units", [-90 90], ...
         "maxVelocity_units_s", [2 2], ...
         "maxAcceleration_units_s2", [2 2], "maxJerk_units_s3", [4 4]);
-    options = struct("GoalTimeMode", "fixedArrival", ...
+    options = struct("GoalTimeMode", "fixedArrival", "FixedArrivalSearch", "spatial", ...
         "SampleTime_s", 0.05, "ConstraintTolerance", 1e-8, ...
         "CollisionClearanceTolerance_units", 1e-7, ...
         "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
@@ -379,6 +385,10 @@ function options = resolveOptions(options, defaults)
         end
     end
     options.GoalTimeMode = string(options.GoalTimeMode);
+    options.FixedArrivalSearch = string(options.FixedArrivalSearch);
+    if ~isscalar(options.FixedArrivalSearch) || ~any(options.FixedArrivalSearch==["spatial","timeExpanded"])
+        error("planner:UnsupportedFixedArrivalSearch","FixedArrivalSearch must be spatial or timeExpanded.");
+    end
     if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["fixedArrival", "earliestArrival"])
         error("planner:UnsupportedGoalTimeMode", "GoalTimeMode must be fixedArrival or earliestArrival.");
     end

@@ -40,6 +40,21 @@ default request arrives at 3000 s from a 2770 s start. Use
 [benchmark report](benchmarks/vietnam_boundary.md) document the data, declared
 interpolation, continuous motion, and measured preparation improvement.
 
+Fixed-arrival requests can explicitly select the existing time-expanded guide:
+
+```matlab
+options = struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded');
+result = planner(obstacles,initialState,goalState,limits,options);
+```
+
+`FixedArrivalSearch` defaults to `'spatial'`. The timed option supports a
+fixed-position goal and zero endpoint velocity and acceleration; intermediate
+motion carries derivatives continuously through BMTP joins. It returns an
+explicit failure if the timed method cannot produce validated motion. See the
+[fixed-arrival comparison](benchmarks/fixed_arrival_timed_visibility.md): it
+solves a moving-detour request that the spatial method fails, but costs more
+time and produces a slightly longer path on the supplied Vietnam fixture.
+
 The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
 workspace/visibility, four kinematic panels, animation, GIF export, and paired
 wrapped/continuous views using this branch's retained results. Query its display

@@ -2,15 +2,16 @@ function [result, accepted] = tryTimedArrival(previous)
 %% Section 0: Header & Readme
 % SYNTAX: [result,accepted] = obstacleAvoidance.input.tryTimedArrival(previous)
 % PURPOSE: Use a time-expanded visibility proposal and timed BMTP for a moving obstacle,
-%   fixed-position, rest-to-rest earliest-arrival request.
+%   fixed-position, rest-to-rest fixed- or earliest-arrival request.
 % INPUTS: A normalized planner result carrying the original request and geometry.
-% OUTPUTS: An independently validated result when accepted is true; otherwise the input result so
-%   chronological arrival search can continue.
+% OUTPUTS: Independently validated motion when accepted is true; otherwise a
+%   diagnostic failure. Earliest-arrival callers may continue chronological search.
 % UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Check Eligibility And Create The Timed Route
 timer = tic;
 result = previous;
+result.Success = false;
 accepted = false;
 initialState = previous.Inputs.initialState;
 goalState = previous.Inputs.goalState;
@@ -21,17 +22,41 @@ isRest = all([initialState.velocity_units_s(:);initialState.acceleration_units_s
     goalState.velocity_units_s(:);goalState.acceleration_units_s2(:)] == 0);
 % The timed mesh compresses dense histories. Sparse histories remain faster
 % through the exact chronological planner and its validated wait incumbent.
+isFixedArrival = previous.Options.GoalTimeMode=="fixedArrival";
 if ~isempty(goalState.targetMotion) || ~isRest || ...
-        sourceIntervalCount < timedSegmentCount
+        (~isFixedArrival && sourceIntervalCount < timedSegmentCount)
+    result.Message = "Timed visibility requires a fixed-position goal and zero endpoint velocity and acceleration.";
+    result.TerminationReason = "unsupportedTimedRequest";
+    result.ElapsedTime_s = previous.ElapsedTime_s+toc(timer);
     return;
 end
+result.VisibilityGraph.SearchKind = "timeExpandedVisibilityGraph";
+searchTimer = tic;
 [route_units,routeTime_s,searchRecord] = ...
     obstacleAvoidance.search.createTimedRouteProposal( ...
     previous.PreparedObstacles,initialState,goalState, ...
     previous.RequestedLimits,previous.Options);
+searchRecord.ElapsedTime_s = toc(searchTimer);
 if isempty(routeTime_s)
+    result.Message = "No route reached the requested goal layer in the discrete timed graph.";
+    result.TerminationReason = "noTimedRoute";
+    result.VisibilityGraph.TimedSearch = searchRecord;
+    result.ElapsedTime_s = previous.ElapsedTime_s+toc(timer);
     return;
 end
+if isFixedArrival && size(route_units,1)>2
+    % A constant-position run needs only its first and last times. Removing
+    % interior wait knots preserves the complete piecewise-linear timed guide.
+    moving = any(diff(route_units,1,1)~=0,2);
+    keep = [true;moving(1:end-1)|moving(2:end);true];
+    route_units = route_units(keep,:);
+    routeTime_s = routeTime_s(keep);
+end
+result.VisibilityGraph.TimedSearch = searchRecord;
+result.VisibilityGraph.RouteTime_s = routeTime_s;
+result.VisibilityGraph.Route_units = route_units;
+result.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units),2,2));
+result.Route_units = route_units;
 
 %% Section 2: Solve The Search-Selected Arrival
 fixedGoalState = goalState;
@@ -49,12 +74,21 @@ seed = struct('position_units',route_units, ...
 [candidate,diagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
     initialState,fixedGoalState,previous.RequestedLimits,fixedOptions);
 if ~candidate.Success
+    result.Message = "The timed route did not produce a feasible BMTP motion: "+candidate.Message;
+    result.TerminationReason = "timedMotionInfeasible";
+    result.VisibilityGraph.TimedSearch = searchRecord;
+    result.SolverDiagnostics = diagnostics;
+    result.ElapsedTime_s = previous.ElapsedTime_s+toc(timer);
     return;
 end
 [candidate,diagnostics] = certifyAgainstExactCells(candidate,diagnostics, ...
     seed,previous.PreparedObstacles,initialState,fixedGoalState, ...
     previous.RequestedLimits,fixedOptions);
 if ~candidate.Success
+    result.Message = "The timed BMTP motion failed continuous source-cell certification.";
+    result.TerminationReason = "invalidTimedMotion";
+    result.SolverDiagnostics = diagnostics;
+    result.ElapsedTime_s = previous.ElapsedTime_s+toc(timer);
     return;
 end
 
@@ -62,20 +96,21 @@ end
 for fieldName = reshape(string(fieldnames(candidate)),1,[])
     result.(fieldName) = candidate.(fieldName);
 end
-result.Route_units = route_units;
 result.SolverDiagnostics = diagnostics;
-result.VisibilityGraph.SearchKind = "timeExpandedVisibilityGraph";
-result.VisibilityGraph.Route_units = route_units;
-result.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units),2,2));
-result.VisibilityGraph.TimedSearch = searchRecord;
 result.FixedArrivalTrialTime_s = candidate.ArrivalTime_s;
 result.Validation = obstacleAvoidance.validateTrajectory(result);
+result.ElapsedTime_s = previous.ElapsedTime_s + toc(timer);
 accepted = result.Validation.Passed;
 result.Success = accepted;
 if ~accepted
+    result.Message = "Timed BMTP motion failed independent validation: "+result.Validation.Message;
+    result.TerminationReason = "invalidTimedMotion";
     return;
 end
 result.Message = "The earliest reachable timed-route layer produced an independently validated BMTP motion.";
+if isFixedArrival
+    result.Message = "The prescribed goal layer produced an independently validated timed BMTP motion.";
+end
 result.TerminationReason = "goalReached";
 necessaryArrival_s = initialState.time_s + ...
     obstacleAvoidance.input.minimumTravelTime(initialState,goalState, ...
