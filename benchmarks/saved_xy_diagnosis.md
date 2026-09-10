@@ -734,6 +734,42 @@ the intervening trajectory iterations, showed no batching benefit. The larger
 programs cost more than the saved call overhead. No block solver was integrated
 into the planner, and production remains unchanged.
 
+## Shape-only query milestone and rejected union deduplication
+
+The proposal builder adds a sampled polygon for every obstacle and time layer.
+An experiment skipped later copies when an obstacle's prepared source samples
+were exactly identical. Although union is mathematically idempotent, changing
+its operand list changed floating-point polygon construction: the symmetric
+difference area was 1.7651206156660431e-10 square units, and the retained route
+nodes changed. The arrival layers remained 0, 13.5, 22.5, and 117 seconds, but
+BMTP failed with `A tagged pair crossed its retained separating plane.`
+This variant is rejected; the operand sequence remains unchanged.
+
+The retained alternative adds one production line to `preparedShapeAtTime`.
+Once an active shape is constructed, a caller requesting only that first output
+returns before the unused geometry-metadata construction. Two-output queries
+retain their exact classification, edge records, and other metadata. No union
+operand, geometry, node, route, time layer, or validation predicate changes.
+
+After warming both implementations, three paired complete-proposal runs with
+alternating order took 0.855302, 0.763717, and 0.752392 seconds before, versus
+0.754094, 0.746965, and 0.736317 seconds after. Medians were 0.763717 and 0.746965
+seconds, a 2.2% improvement in this stage. Every route, clock, and complete
+proposal record matched exactly, including all offset attempts.
+
+Full planner runs took 6.031234, 3.865943, and 3.710338 seconds, with median
+3.865943 seconds versus the preceding 3.903859 seconds. This small
+separate-session difference is not treated as a reliable end-to-end gain.
+All three preserved the exact reference polynomial and timed-search record,
+117-second arrival, motion length, solve counts, and passing independent
+validation. The change is retained as a one-line removal of unused work.
+
+All 39 MATLAB tests passed and Code Analyzer was clear. The existing prepared
+geometry regression now also compares one-output and two-output shapes for
+convex, concave, and holed obstacles at source times, between samples, and outside
+their active interval. Production grows by one line; the test adds one setup line
+and one assertion without introducing another helper or test case.
+
 ## Regression coverage and code size
 
 The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,

@@ -79,6 +79,7 @@ y_units(~isfinite(y_units)) = NaN;
 if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units);
 end
+if nargout<2, return; end
 geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel, classifyBoundary);
 geometry.EdgeStart_units = edgeStart_units;
 geometry.EdgeEnd_units   = edgeEnd_units;

@@ -171,6 +171,8 @@ function testBoundaryOnlyGeometryPreservesPreparedModel(testCase)
             {vertices(:,1);vertices(:,1)+2},{vertices(:,2);vertices(:,2)+1},0);
         obstacle = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
         for time_s = [-1,0,0.75,2,3]
+            [shape,~] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s);
+            verifyEqual(testCase,obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s),shape);
             [~,classified] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true);
             [~,boundaryOnly] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true,false);
             verifyEqual(testCase,rmfield(boundaryOnly,classificationFields), ...
