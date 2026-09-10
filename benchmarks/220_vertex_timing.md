@@ -16,6 +16,20 @@ Input generation is outside the measured planner call. Public independent
 validation runs inside planning and is checked again after timing. No generated
 MAT files or plots are required to reproduce the input.
 
+The same inputs are available as a maintained graphical example:
+
+```matlab
+addpath('examples');
+result = exampleMovingObstacle220();
+% Headless: exampleMovingObstacle220(struct('PlotOutputs',false,'Verbose',false))
+```
+
+This replaces `exampleMovingRotatingObstacleField` in the 18-example suite.
+The example and benchmark share `createMovingObstacle220Scenario` so their
+source geometry, timestamps, endpoints, and default limits stay identical.
+The historical workbook and audit tables retain the retired scenario's results;
+the suite marks the replacement's historical references unavailable (`NaN`).
+
 ## What reduced the work
 
 - Prepare only requested samples and bracketing intervals. Keep the complete

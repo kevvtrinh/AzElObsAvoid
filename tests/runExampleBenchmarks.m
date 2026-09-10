@@ -1,7 +1,7 @@
 function summary = runExampleBenchmarks(caseNames, repetitions)
 %% Section 0: Header & Readme
 % SYNTAX: summary = runExampleBenchmarks(caseNames, repetitions)
-% PURPOSE: Compare unchanged example requests with the historical workbook.
+% PURPOSE: Validate maintained examples and compare available historical references.
 % INPUTS: Optional example names and repetitions (default three).
 % OUTPUTS: Per-example medians, independent validity, and benchmark gates.
 % UNITS: Seconds and coordinate units; production lines include comments.
@@ -11,6 +11,11 @@ root = fileparts(fileparts(mfilename('fullpath')));
 addpath(root, fullfile(root, 'trajectory'), fullfile(root, 'examples'));
 reference = readcell(fullfile(root, 'benchmarks', 'bmtp_emptycore_benchmark.xlsx'));
 reference = reference(6:end, :);
+% Replace the retired field scenario without borrowing its unrelated metrics.
+% Preserve the workbook as a historical record; NaN means no same-input reference.
+replacementRow = strcmp(string(reference(:,1)),"exampleMovingRotatingObstacleField");
+reference{replacementRow,1} = 'exampleMovingObstacle220';
+reference(replacementRow,[12,13,14,18]) = {NaN,NaN,NaN,NaN};
 if nargin < 1 || isempty(caseNames), caseNames = string(reference(:, 1)); end
 if nargin < 2, repetitions = 3; end
 caseNames = string(caseNames);
@@ -84,6 +89,7 @@ for caseIndex = 1:numel(caseNames)
         'ReferenceLength_units', numericReference(row{13}), ...
         'ReferenceRouteLength_units', numericReference(row{12}), ...
         'ReferenceWallTime_s', row{18}, 'ProductionLines', productionLines, 'Message', message);
+    record.HasHistoricalReference = isfinite(record.ReferenceWallTime_s);
     record.MeetsQuality = record.Valid && (~logical(row{10}) || ...
         (record.Duration_s <= record.ReferenceDuration_s + 1e-8 && ...
         record.Length_units <= record.ReferenceLength_units + 1e-8));

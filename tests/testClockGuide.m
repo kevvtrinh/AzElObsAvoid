@@ -2,7 +2,7 @@ function tests = testClockGuide
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testClockGuide.m')
 % PURPOSE: Check general kinematic-bound detours, clock shifts, and axis symmetry.
-% INPUTS: MATLAB unit test framework and unchanged historical examples.
+% INPUTS: MATLAB unit test framework and maintained examples.
 % OUTPUTS: Function-based tests.
 % UNITS: Coordinate units, seconds, and physical derivatives.
 tests = functiontests(localfunctions);
@@ -41,8 +41,8 @@ function testInitiallyOccupiedGoalCanClearBeforeArrival(testCase)
     verifyFalse(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle,4,0,r.ArrivalTime_s));
 end
 
-function testStaticAndRotatingDetourQuality(testCase)
-    names = {'exampleDenseConcaveObstacle','exampleAlternatingSlalom','exampleMovingRotatingObstacleField'};
+function testStaticAndMovingDetourQuality(testCase)
+    names = {'exampleDenseConcaveObstacle','exampleAlternatingSlalom','exampleMovingObstacle220'};
     % Historical C2 quality gates remain reported by runExampleBenchmarks.
     for k = 1:numel(names)
         r = feval(names{k},struct('PlotOutputs',false,'Verbose',false));

@@ -28,6 +28,12 @@ path. This keeps archived benchmark engines out of active planning when a
 session has used `addpath(genpath(pwd))`. Prefer the explicit paths above;
 for the graphical examples, also add `fullfile(pwd,'examples')`.
 
+Run `exampleMovingObstacle220()` for the narrow moving-obstacle detour with
+220 vertices per snapshot, 4,829 source snapshots, and a 230-second simulated
+motion window. It replaces `exampleMovingRotatingObstacleField` in the maintained
+suite; historical tables below still describe the retired case. The example and
+[timing benchmark](benchmarks/220_vertex_timing.md) share identical default inputs.
+
 The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
 workspace/visibility, four kinematic panels, animation, GIF export, and paired
 wrapped/continuous views using this branch's retained results. Query its display
