@@ -1,44 +1,23 @@
 function [obstacleData, history] = createMovingObstacle(obstacleName, time_s, sourceX_units, sourceY_units, sliceTransform, safetyMargin_units, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [obstacleData, history] = ...
-%       obstacleAvoidance.obstacles.createMovingObstacle( ...
-%       obstacleName, time_s, sourceX_units, sourceY_units, ...
-%       sliceTransform, safetyMargin_units)
-%   [obstacleData, history] = ...
-%       obstacleAvoidance.obstacles.createMovingObstacle( ...
-%       obstacleName, time_s, sourceX_units, sourceY_units, ...
-%       sliceTransform, safetyMargin_units, options)
-%
-% PURPOSE
-%   - Create and protect an arbitrary moving or deforming obstacle history.
-%   - Evaluate independent time slices deterministically in caller order.
-%
-% INPUTS
-%   - obstacleName (scalar text)
-%   - time_s (nonempty increasing numeric vector)
-%   - sourceX_units, sourceY_units (matching vectors)
-%       Paired nonfinite rows may separate rings.
-%   - sliceTransform (function handle)
-%       position_units = sliceTransform(sourcePosition_units,time_s,index).
-%       Output slices use the obstacle history contract: direct motion is
-%       linear between verified corresponding vertices, not rigid arc motion.
-%   - safetyMargin_units (nonnegative scalar)
-%   - options (scalar struct, optional; default struct())
-%       Verbose prints bounded progress updates (default false).
-%
-% OUTPUTS
-%   - obstacleData (canonical protected moving obstacle)
-%   - history (scalar struct)
-%       Source slice boundaries, geometry metrics, and resolved options.
-%
-% UNITS
-%   - Position is coordinate units, time is seconds, and area is square coordinate units.
-%   - See obstacle_history_contract.md for ring and fallback semantics.
-%
+% SYNTAX: [obstacleData, history] = obstacleAvoidance.obstacles.createMovingObstacle( obstacleName,
+%   time_s, sourceX_units, sourceY_units, sliceTransform, safetyMargin_units)
+%   [obstacleData, history] = obstacleAvoidance.obstacles.createMovingObstacle( obstacleName,
+%   time_s, sourceX_units, sourceY_units, sliceTransform, safetyMargin_units, options)
+% PURPOSE: Create and protect an arbitrary moving or deforming obstacle history. Evaluate
+%   independent time slices deterministically in caller order.
+% INPUTS: obstacleName (scalar text) time_s (nonempty increasing numeric vector) sourceX_units,
+%   sourceY_units (matching vectors) Paired nonfinite rows may separate rings. sliceTransform
+%   (function handle) position_units = sliceTransform(sourcePosition_units,time_s,index). Output
+%   slices use the obstacle history contract: direct motion is linear between verified corresponding
+%   vertices, not rigid arc motion. safetyMargin_units (nonnegative scalar) options (scalar struct,
+%   optional; default struct()) Verbose prints bounded progress updates (default false).
+% OUTPUTS: obstacleData (canonical protected moving obstacle) history (scalar struct) Source slice
+%   boundaries, geometry metrics, and resolved options.
+% UNITS: Position is coordinate units, time is seconds, and area is square coordinate units. See
+%   obstacle_history_contract.md for ring and fallback semantics.
 
 %% Section 1: Validate Inputs & Apply Defaults
-
 if nargin < 7 || isempty(options)
     options = struct();
 end
@@ -67,7 +46,6 @@ end
 validateattributes(safetyMargin_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 
 %% Section 2: Create Independent Source Slices
-
 sourcePosition_units   = [sourceX_units, sourceY_units];
 sliceCount           = numel(time_s);
 xBySlice_units   = cell(sliceCount, 1);
@@ -77,7 +55,6 @@ area_units2            = zeros(sliceCount, 1);
 aspectRatio          = zeros(sliceCount, 1);
 centroid_units         = zeros(sliceCount, 2);
 bounds_units           = zeros(sliceCount, 4);
-% Process each sample in temporal order and accumulate its result.
 for sampleIndex = 1:sliceCount
     position_units = sliceTransform(sourcePosition_units, time_s(sampleIndex), sampleIndex);
     validateattributes(position_units, {'numeric'}, {'real', '2d', 'ncols', 2, 'nonempty'});
@@ -109,7 +86,6 @@ for sampleIndex = 1:sliceCount
 end
 
 %% Section 3: Construct The Protected History
-
 obstacleData = obstacleAvoidance.obstacles.createObstacle(obstacleName, time_s, xBySlice_units, yBySlice_units, safetyMargin_units, struct("Verbose", verbose));
 history      = struct("time_s", time_s, "xBySlice_units", {xBySlice_units}, ...
     "yBySlice_units", {yBySlice_units}, ...

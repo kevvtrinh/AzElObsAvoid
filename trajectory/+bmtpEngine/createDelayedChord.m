@@ -7,7 +7,6 @@ function [controls_units,durations_s,prescribedPower_units,diagnostics] = create
 % UNITS: Coordinate units, seconds, and normalized polynomial coefficients.
 
 %% Section 1: Construct The Scalar Progress Clock
-
 [controls_units,durations_s,prescribedPower_units] = bmtpEngine.createC3Chord( ...
     request.InitialState.position_units,request.GoalState.position_units,request.Limits);
 phases = struct('StartTime_s',[0;cumsum(durations_s(1:end-1))],'SegmentTime_s',durations_s);
@@ -28,7 +27,6 @@ clearance_units = (1+2^20*eps)*request.Options.CollisionClearanceTolerance_units
 forbidden_s = zeros(0,2);
 
 %% Section 2: Project Convex Space-Time Cells Onto Path Progress And Time
-
 for region = 1:numel(request.Regions_units)
     interval_s = request.InitialState.time_s+[0,request.MotionHorizon_s];
     if isfield(request.Coverage,'ActiveTimeInterval_s'), interval_s = request.Coverage.ActiveTimeInterval_s(region,:); end
@@ -92,7 +90,6 @@ for region = 1:numel(request.Regions_units)
 end
 
 %% Section 3: Select The First Gap And Export The Complete Motion
-
 forbidden_s = sortrows(forbidden_s,1);
 wait_s = 0;
 for k = 1:size(forbidden_s,1)

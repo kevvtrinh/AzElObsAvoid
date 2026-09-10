@@ -1,28 +1,17 @@
 function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
-%       request, warmStart, diagnostics, obstacleTarget_units, ...
-%       roundoffReserve_units)
-%
-% PURPOSE
-%   - Alternate one trajectory SOCP with exact all-pair separating-line
-%     SOCPs until a completely verified motion is found. Timed cells constrain
-%     only their exact overlap with each fixed-duration motion span.
-%
-% INPUTS
-%   - request, warmStart, diagnostics: checked BMTP state and diagnostics.
-%   - obstacleTarget_units, roundoffReserve_units: required separation.
-%
-% OUTPUTS
-%   - result: best all-pair-verified controls and per-segment durations.
-%   - diagnostics: solver counts, residual pair counts, and termination data.
-%
-% UNITS
-%   - Position and clearance are coordinate units; time is seconds.
+% SYNTAX: [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( request, warmStart,
+%   diagnostics, obstacleTarget_units, roundoffReserve_units)
+% PURPOSE: Alternate one trajectory SOCP with exact all-pair separating-line SOCPs until a
+%   completely verified motion is found. Timed cells constrain only their exact overlap with each
+%   fixed-duration motion span.
+% INPUTS: request, warmStart, diagnostics: checked BMTP state and diagnostics.
+%   obstacleTarget_units, roundoffReserve_units: required separation.
+% OUTPUTS: result: best all-pair-verified controls and per-segment durations.
+%   diagnostics: solver counts, residual pair counts, and termination data.
+% UNITS: Position and clearance are coordinate units; time is seconds.
 
 %% Section 1: Initialize Every Segment-Obstacle Pair
-
 segmentCount = warmStart.SegmentCount;
 regionCount = numel(request.Regions_units);
 request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
@@ -32,15 +21,16 @@ diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 diagnostics.ExistingPlanePairVerificationCount = 0;
 diagnostics.FullPlaneUpdateSkippedCount = 0;
-planes = repmat(createEmptyPlane(), segmentCount, regionCount);
-[planes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(warmStart.ControlPoint_units, warmStart.SegmentTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
+emptyPlane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
+    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
+planes = repmat(emptyPlane, segmentCount, regionCount);
+[planes, allPlanesActive, verifiedPairs, diagnostics] = updatePlanes(warmStart.ControlPoint_units, warmStart.SegmentTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units, false);
 diagnostics.UnverifiedPlaneInitializationCount = nnz(~verifiedPairs);
 selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 solverMessage = "The all-pair alternating iteration limit was reached.";
 
 %% Section 2: Alternate The Complete Formulation
-
 if allPlanesActive
     for iterationIndex = 1:35
         diagnostics.IterationCount = iterationIndex;
@@ -57,15 +47,15 @@ if allPlanesActive
             break;
         end
 
-        [updatedPlanes,verifiedPairs,verifiedPairCount] = verifyExistingPlanes(trialControl_units, ...
-            trialTime_s,planes,request,obstacleTarget_units,roundoffReserve_units);
+        [updatedPlanes,~,verifiedPairs,diagnostics,verifiedPairCount] = updatePlanes(trialControl_units, ...
+            trialTime_s,planes,request,diagnostics,obstacleTarget_units,roundoffReserve_units,true);
         diagnostics.ExistingPlanePairVerificationCount = ...
             diagnostics.ExistingPlanePairVerificationCount+verifiedPairCount;
         allPlanesActive = all(verifiedPairs,'all');
         if ~allPlanesActive
             [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = ...
-                solveAllPlanes(trialControl_units,trialTime_s,planes,request, ...
-                diagnostics,obstacleTarget_units,roundoffReserve_units);
+                updatePlanes(trialControl_units,trialTime_s,planes,request, ...
+                diagnostics,obstacleTarget_units,roundoffReserve_units,false);
         else
             diagnostics.FullPlaneUpdateSkippedCount = diagnostics.FullPlaneUpdateSkippedCount+1;
         end
@@ -99,7 +89,6 @@ else
 end
 
 %% Section 3: Return The Best Fully Verified Iterate
-
 diagnostics.SolverMessage = solverMessage;
 result = struct();
 result.Success = ~isempty(selectedControl_units);
@@ -110,11 +99,11 @@ result.Planes = planes;
 end
 
 %% Section 4: Local Functions
-
-function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(controlPoint_units, segmentTime_s, planes, request, diagnostics, target_units, reserve_units)
+function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = updatePlanes(controlPoint_units, segmentTime_s, planes, request, diagnostics, target_units, reserve_units, verifyOnly)
     % Update every active curve-region pair without sampled discovery or pruning.
     verifiedPairs = ~request.RegionActiveBySegment;
     allActive = true;
+    verifiedPairCount = 0;
     breaks_s = request.InitialState.time_s+[0;cumsum(segmentTime_s)];
     for segmentIndex = 1:size(planes, 1)
         for regionIndex = 1:size(planes, 2)
@@ -132,14 +121,26 @@ function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(contro
                 end
             end
             vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex},request.Coverage,regionIndex,interval_s);
-            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
-                controls_units,vertices_units,target_units,reserve_units);
-            plane.TimeFraction=timeFraction;
-            diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ~(isfield(output,'IsAnalytic') && output.IsAnalytic);
-            diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
+            if verifyOnly
+                plane = planes(segmentIndex,regionIndex);
+                normal = plane.Normal(1,:);
+                plane.Offset_units = target_units-[min(vertices_units(:,:,1)*normal.'), ...
+                    min(vertices_units(:,:,end)*normal.')];
+                plane.TimeFraction = timeFraction;
+                plane = bmtpEngine.verifySeparatingLine(plane,controls_units,vertices_units,reserve_units,target_units);
+                verifiedPairCount = verifiedPairCount+1;
+            else
+                [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
+                    controls_units,vertices_units,target_units,reserve_units);
+                plane.TimeFraction = timeFraction;
+                diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ~(isfield(output,'IsAnalytic') && output.IsAnalytic);
+                diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
+            end
             planes(segmentIndex, regionIndex) = plane;
             verifiedPairs(segmentIndex, regionIndex) = plane.Verified;
-            if exitFlag <= 0 || ~plane.Active
+            if verifyOnly
+                if ~plane.Verified, allActive = false; return; end
+            elseif exitFlag <= 0 || ~plane.Active
                 diagnostics.FailedPlaneSegmentIndex = segmentIndex;
                 diagnostics.FailedPlaneRegionIndex = regionIndex;
                 diagnostics.FailedPlane = plane;
@@ -148,55 +149,4 @@ function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(contro
             end
         end
     end
-end
-
-function [planes,verifiedPairs,verifiedPairCount] = verifyExistingPlanes(controlPoint_units,segmentTime_s, ...
-        planes,request,target_units,reserve_units)
-    % The trajectory SOCP enforces the current planes. Reverify those exact
-    % planes first; rebuild every direction if even one pair does not certify.
-    verifiedPairs = ~request.RegionActiveBySegment;
-    verifiedPairCount = 0;
-    breaks_s = request.InitialState.time_s+[0;cumsum(segmentTime_s)];
-    for segmentIndex = 1:size(planes,1)
-        for regionIndex = 1:size(planes,2)
-            if ~request.RegionActiveBySegment(segmentIndex,regionIndex), continue; end
-            interval_s = [];
-            controls_units = squeeze(controlPoint_units(segmentIndex,:,:));
-            timeFraction = [0,1];
-            if request.Options.GoalTimeMode=="fixedArrival"
-                interval_s = breaks_s(segmentIndex:segmentIndex+1).';
-                if isfield(request.Coverage,'ActiveTimeInterval_s')
-                    active_s = request.Coverage.ActiveTimeInterval_s(regionIndex,:);
-                    interval_s = [max(interval_s(1),active_s(1)),min(interval_s(2),active_s(2))];
-                    timeFraction = max(0,min(1,(interval_s-breaks_s(segmentIndex))/segmentTime_s(segmentIndex)));
-                    controls_units = bmtpEngine.restrictBezier(controls_units,timeFraction);
-                end
-            end
-            vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex}, ...
-                request.Coverage,regionIndex,interval_s);
-            plane = planes(segmentIndex,regionIndex);
-            normal = plane.Normal(1,:);
-            plane.Offset_units = target_units-[min(vertices_units(:,:,1)*normal.'), ...
-                min(vertices_units(:,:,end)*normal.')];
-            plane.TimeFraction = timeFraction;
-            plane = bmtpEngine.verifySeparatingLine(plane,controls_units, ...
-                vertices_units,reserve_units,target_units);
-            verifiedPairCount = verifiedPairCount+1;
-            planes(segmentIndex,regionIndex) = plane;
-            verifiedPairs(segmentIndex,regionIndex) = plane.Verified;
-            if ~plane.Verified, return; end
-        end
-    end
-end
-
-function plane = createEmptyPlane()
-    % Initialize one inactive separating-plane record.
-    plane = struct();
-    plane.Active = false;
-    plane.Verified = false;
-    plane.ExitFlag = NaN;
-    plane.Normal = zeros(2, 2);
-    plane.Offset_units = zeros(1, 2);
-    plane.SignedGap_units = NaN;
-    plane.TimeFraction = [0,1];
 end

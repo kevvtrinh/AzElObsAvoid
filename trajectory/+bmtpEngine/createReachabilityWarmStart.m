@@ -7,7 +7,6 @@ function warmStart = createReachabilityWarmStart(request)
 % UNITS: Coordinate units and seconds.
 
 %% Section 1: Solve The Independent Axis Profiles
-
 degree = request.Degree;
 initial_units = request.InitialState.position_units;
 goal_units = request.GoalState.position_units;
@@ -28,7 +27,6 @@ end
 guide = bmtpEngine.createClockGuide(request,axisPhases{lockedAxis},lockedAxis);
 
 %% Section 2: Refine At All Axis Switches And Absolute Obstacle Events
-
 breaks_s = [0;duration_s];
 if isfield(request.Coverage,'ActiveTimeInterval_s')
     events_s = request.Coverage.ActiveTimeInterval_s(:)-request.InitialState.time_s;
@@ -97,7 +95,6 @@ if guide.IsConnected && minimumTime_s(3-lockedAxis)<duration_s
 end
 
 %% Section 3: Retain Exact Time-Limiting Motion And Cell Applicability
-
 fixedControl_units = NaN(size(controlPoint_units));
 fixedControl_units(:,:,minimumTime_s==duration_s) = controlPoint_units(:,:,minimumTime_s==duration_s);
 fixedPower_units = NaN(segmentCount,2,degree+1);

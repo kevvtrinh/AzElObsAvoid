@@ -2,13 +2,12 @@ function vertices_units = regionOnInterval(region_units, coverage, regionIndex, 
 %% Section 0: Header & Readme
 % SYNTAX: vertices = bmtpEngine.regionOnInterval(region, coverage, index, interval)
 % PURPOSE: Restrict a source-derived affine convex cell to physical time.
-% INPUTS: Start vertices, cell coverage, index, and two absolute times.
-%         An empty interval requests the conservative spatial projection.
+% INPUTS: Start vertices, cell coverage, index, and two absolute times. An empty interval requests
+%   the conservative spatial projection.
 % OUTPUTS: N-by-2 static vertices or N-by-2-by-2 affine endpoint vertices.
 % UNITS: Coordinate units and seconds.
 
 %% Section 1: Evaluate The Source Cell At The Requested Endpoints
-
 vertices_units = region_units;
 if ~isfield(coverage,'EndRegions_units'), return; end
 end_units = coverage.EndRegions_units{regionIndex};

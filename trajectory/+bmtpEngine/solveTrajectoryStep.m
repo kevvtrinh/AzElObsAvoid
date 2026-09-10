@@ -1,46 +1,27 @@
 function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
-%       bmtpEngine.solveTrajectoryStep( ...
-%       segmentCount, degree, initialState, goalState, limits, planes, ...
-%       reserve_units, maximumMotionDuration_s, options)
-%
-% PURPOSE
-%   - Solve one convex trajectory step for fixed separating lines, timing
-%     policy, and derivative limits.
-%
-% INPUTS
-%   - segmentCount, degree (positive integer scalars)
-%       Composite Bezier representation size.
-%   - initialState, goalState (full normalized state structs)
-%       Prescribed physical endpoint positions, velocities, and accelerations.
-%   - limits (scalar struct)
-%       Workspace, velocity, acceleration, and jerk limits.
-%   - planes (S-by-R struct array)
-%       Fixed active separating-line constraints. Optional TimeFraction
-%       restricts a plane to a closed part of a fixed-duration motion span.
-%   - reserve_units (nonnegative scalar)
-%       Numerical separation reserve.
-%   - maximumMotionDuration_s (positive scalar)
-%       Upper bound on the internal minimum-time solve.
-%   - options (coneprog options)
-%       Numerical solver controls.
-%
-% OUTPUTS
-%   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
-%       Solved control points, or an empty array on expected solve failure.
-%   - segmentTime_s (scalar numeric)
-%       Per-segment durations, or NaN on expected solve failure.
-%   - exitFlag (numeric scalar), output (solver record)
-%       Original coneprog status and measured solver time.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds.
-%
+% SYNTAX: [controlPoint_units, segmentTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(
+%   segmentCount, degree, initialState, goalState, limits, planes, reserve_units,
+%   maximumMotionDuration_s, options)
+% PURPOSE: Solve one convex trajectory step for fixed separating lines, timing policy, and
+%   derivative limits.
+% INPUTS: segmentCount, degree (positive integer scalars) Composite Bezier representation size.
+%   initialState, goalState (full normalized state structs) Prescribed physical endpoint positions,
+%   velocities, and accelerations.
+%   limits (scalar struct) Workspace, velocity, acceleration, and jerk limits.
+%   planes (S-by-R struct array) Fixed active separating-line constraints. Optional TimeFraction
+%   restricts a plane to a closed part of a fixed-duration motion span.
+%   reserve_units (nonnegative scalar) Numerical separation reserve.
+%   maximumMotionDuration_s (positive scalar) Upper bound on the internal minimum-time solve.
+%   options (coneprog options) Numerical solver controls.
+% OUTPUTS: controlPoint_units (S-by-(D+1)-by-2 numeric array) Solved control points, or an empty
+%   array on expected solve failure.
+%   segmentTime_s (scalar numeric) Per-segment durations, or NaN on expected solve failure.
+%   exitFlag (numeric scalar), output (solver record) Original coneprog status and measured solver
+%   time.
+% UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Create Decision Bounds And Continuity Rows
-
 controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
@@ -77,113 +58,33 @@ sharedSlack = fixedClock && originalPlaneCount>lengthCount;
 slackCount = fixedClock*activePlaneCount;
 if sharedSlack, slackCount=nnz(planeCountBySegment); end
 variableCount          = controlCount + 4 + lengthCount + slackCount + intrinsicVariation*segmentCount;
-differenceCoefficients = {1, [-1 1], [1 -2 1], [-1 3 -3 1]};
-baseInequalityCount    = 4 * segmentCount * (3 * degree - 3);
-inequalityCount        = baseInequalityCount + activePlaneCount * (degree + 2);
-equalityCount          = 13 + 8 * (segmentCount - 1);
-A                      = spalloc(inequalityCount, variableCount, 6 * inequalityCount);
-Aeq                    = spalloc(equalityCount, variableCount, 8 * equalityCount);
-beq                    = zeros(equalityCount, 1);
-lb                     = -Inf(variableCount, 1);
-ub                     = Inf(variableCount, 1);
-domain_units             = [limits.xInterval_units; limits.yInterval_units];
-lb(1:controlCount) = repmat(domain_units(:, 1), segmentCount * (degree + 1), 1);
-ub(1:controlCount) = repmat(domain_units(:, 2), segmentCount * (degree + 1), 1);
+physicalTimes_s = maximumMotionDuration_s*segmentRatio/sum(segmentRatio);
+jerkTimes_s = []; if intrinsicVariation, jerkTimes_s = physicalTimes_s; end
+[A,Aeq,beq,lb,ub,jerkMap] = bmtpEngine.createTrajectoryConstraints( ...
+    segmentCount,degree,boundaryControls,limits,variableCount,activePlaneCount,segmentRatio,jerkTimes_s);
 if nargin>=12 && ~isempty(fixedControl_units)
     fixedValues = reshape(permute(fixedControl_units,[3,2,1]),[],1);
     indices = find(isfinite(fixedValues));
     lb(indices) = fixedValues(indices);
     ub(indices) = fixedValues(indices);
 end
-lb(powerIndex) = 0;
-lb(powerIndex(2)) = eps;
-equalityIndex = 0;
-% Evaluate each coordinate axis and combine its limiting result.
-for axisIndex = 1:2
-    equalityIndex = equalityIndex + 1;
-    Aeq(equalityIndex, ...
-        controlIndexOf(1, 0, axisIndex, degree)) = 1; %#ok<SPRIX>
-    beq(equalityIndex) = start_units(axisIndex);
-    equalityIndex = equalityIndex + 1;
-    Aeq(equalityIndex, controlIndexOf(segmentCount, degree, axisIndex, degree)) = 1; %#ok<SPRIX>
-    beq(equalityIndex) = goal_units(axisIndex);
-    % Process each endpoint order needed to find trajectory step.
-    for endpointOrder = 1:2
-        equalityIndex = equalityIndex + 1;
-        indices       = controlIndexOf(1, [endpointOrder 0], axisIndex, degree);
-        Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
-        beq(equalityIndex) = boundaryControls(1,endpointOrder+1,axisIndex)-start_units(axisIndex);
-        equalityIndex = equalityIndex + 1;
-        indices       = controlIndexOf(segmentCount, [degree - endpointOrder degree], axisIndex, degree);
-        Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
-        beq(equalityIndex) = boundaryControls(end,degree-endpointOrder+1,axisIndex)-goal_units(axisIndex);
-    end
-end
-% Process each segment while assembling the complete motion or interval result.
-for segmentIndex = 1:segmentCount - 1
-    % Process each order needed to find trajectory step.
-    for order = 0:3
-        coefficients     = differenceCoefficients{order + 1};
-        coefficientIndex = 0:order;
-        % Evaluate each coordinate axis and combine its limiting result.
-        for axisIndex = 1:2
-            equalityIndex = equalityIndex + 1;
-            left          = controlIndexOf(segmentIndex, degree - order + coefficientIndex, axisIndex, degree);
-            right         = controlIndexOf(segmentIndex + 1, coefficientIndex, axisIndex, degree);
-            rowScale = max(segmentRatio(segmentIndex:segmentIndex+1))^order;
-            Aeq(equalityIndex, left) = coefficients * segmentRatio(segmentIndex+1)^order / rowScale; %#ok<SPRIX>
-            Aeq(equalityIndex, right) = ...
-                Aeq(equalityIndex, right) - coefficients * segmentRatio(segmentIndex)^order / rowScale; %#ok<SPRIX>
-        end
-    end
-end
-equalityIndex = equalityIndex + 1;
-Aeq(equalityIndex, powerIndex(1)) = 1;
-beq(equalityIndex) = 1;
 
-%% Section 2: Create Derivative And Separating-Line Bounds
-
-limitValues = [limits.maxVelocity_units_s; ...
-    limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-jerkMap=sparse(6*segmentCount,variableCount);
-physicalTimes_s=maximumMotionDuration_s*segmentRatio/sum(segmentRatio);
-inequalityIndex = 0;
-% Process each segment while assembling the complete motion or interval result.
-for segmentIndex = 1:segmentCount
-    controlColumns = (segmentIndex - 1) * 2 * (degree + 1) + (1:2 * (degree + 1));
-    % Process each order needed to find trajectory step.
-    for order = 1:3
-        coefficients    = differenceCoefficients{order + 1};
-        scale           = factorial(degree) / factorial(degree - order);
-        derivativeCount = degree - order + 1;
-        derivativeRows  = spdiags(repmat(scale * coefficients, derivativeCount, 1), 0:order, derivativeCount, degree + 1);
-        if intrinsicVariation && order==3
-            jerkMap((segmentIndex-1)*6+(1:6),controlColumns)=kron(derivativeRows,speye(2))/physicalTimes_s(segmentIndex)^3;
-        end
-        signedRows      = kron(kron(derivativeRows, speye(2)), [1; -1]);
-        targets         = inequalityIndex + (1:size(signedRows, 1));
-        A(targets, controlColumns) = signedRows; %#ok<SPRIX>
-        axisLimits = repmat(limitValues(order, :), derivativeCount, 1);
-        A(targets, powerIndex(order + 1)) = ...
-            -repelem(reshape(axisLimits.', [], 1), 2) * segmentRatio(segmentIndex)^order; %#ok<SPRIX>
-        inequalityIndex = targets(end);
-    end
-end
+%% Section 2: Add Separating-Line Bounds
+baseInequalityCount = 4*segmentCount*(3*degree-3);
+inequalityCount = size(A,1);
 b               = zeros(inequalityCount, 1);
 inequalityIndex = baseInequalityCount;
 slackIndex = controlCount+4+lengthCount;
-% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     if sharedSlack && planeCountBySegment(segmentIndex)>0
         slackIndex = slackIndex+1;
     end
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:size(planes, 2)
         plane = planes(segmentIndex, regionIndex);
         if ~plane.Active
             continue;
         end
-        [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, segmentIndex);
+        [rows, offset_units] = bmtpEngine.createPlaneRows(plane, degree, variableCount, segmentIndex);
         targets = inequalityIndex + (1:size(rows, 1));
         A(targets, :) = rows; %#ok<SPRIX>
         if fixedClock
@@ -196,8 +97,7 @@ for segmentIndex = 1:segmentCount
 end
 
 %% Section 3: Create The Objective And Solve
-
-cones = createTimePowerCones(variableCount, powerIndex);
+cones = bmtpEngine.createTimePowerCones(variableCount, powerIndex);
 f = zeros(variableCount, 1);
 f(powerIndex(4)) = 1;
 maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
@@ -280,7 +180,6 @@ controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCo
 end
 
 %% Section 4: Local Functions
-
 function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,options,prescribedAxis,phaseTimes_s,limits)
     transform=[]; center=[]; objectiveOffset=0;
     if ~isempty(phaseTimes_s)
@@ -353,41 +252,6 @@ function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,option
         value = value+f(fixed).'*fixedValues;
         if ~isempty(transform), x=center+transform*x; value=value+objectiveOffset; end
     end
-end
-
-function soc = createTimePowerCones(variableCount, powerIndex)
-    % Create p0*p2>=p1^2 and p1*p3>=p2^2 as standard cones.
-    emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0);
-    soc       = repmat(emptyCone, 2, 1);
-    % Process each cone needed to build time power cones.
-    for coneIndex = 1:2
-        coneA = zeros(2, variableCount);
-        coneA(1, powerIndex(coneIndex + 1)) = 2;
-        coneA(2, powerIndex(coneIndex)) = 1;
-        coneA(2, powerIndex(coneIndex + 2)) = -1;
-        coneD = zeros(variableCount, 1);
-        coneD(powerIndex([coneIndex coneIndex + 2])) = 1;
-        soc(coneIndex) = secondordercone(coneA, zeros(2, 1), coneD, 0);
-    end
-end
-
-function [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, segmentIndex)
-    % Multiply a fixed separating line by variable trajectory controls.
-    % Exact degree-N by degree-one Bernstein product weights.
-    beta  = (0:degree + 1).' / (degree + 1);
-    alpha = 1 - beta;
-    controlColumns = (segmentIndex-1)*2*(degree+1)+(1:2*(degree+1)).';
-    rowIndices = [repelem((1:degree+1).',2);repelem((2:degree+2).',2)];
-    values = [reshape((alpha(1:end-1)*plane.Normal(1,:)).',[],1); ...
-        reshape((beta(2:end)*plane.Normal(2,:)).',[],1)];
-    rows = sparse(rowIndices,[controlColumns;controlColumns],values,degree+2,variableCount);
-    if isfield(plane,'TimeFraction') && ~isequal(plane.TimeFraction,[0,1])
-        % Restrict the unknown controls exactly before forming the existing
-        % Bernstein plane product; keep every source interval as a constraint.
-        restriction=bmtpEngine.restrictBezier(eye(degree+1),plane.TimeFraction);
-        rows(:,controlColumns)=rows(:,controlColumns)*kron(restriction,speye(2));
-    end
-    offset_units = alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
 end
 
 function index = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree)

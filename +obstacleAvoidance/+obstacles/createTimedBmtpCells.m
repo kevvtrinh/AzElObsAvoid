@@ -1,18 +1,12 @@
 function [regions_units, coverage] = createTimedBmtpCells(obstacles, startTime_s, finishTime_s, timedSegmentCount)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [regions_units,coverage] = ...
-%       obstacleAvoidance.obstacles.createTimedBmtpCells( ...
-%       obstacles,startTime_s,finishTime_s,timedSegmentCount)
-% PURPOSE
-%   Cover static geometry exactly and each moving time cell by a convex
-%   hull of its protected endpoint and midpoint geometry.
-% INPUTS
-%   Prepared obstacles, physical bounds in seconds, and segment count.
-% OUTPUTS
-%   Convex exclusion regions and their physical and normalized intervals.
-% UNITS
-%   Position is coordinate units and time is seconds.
+% SYNTAX: [regions_units,coverage] = obstacleAvoidance.obstacles.createTimedBmtpCells(
+%   obstacles,startTime_s,finishTime_s,timedSegmentCount)
+% PURPOSE: Cover static geometry exactly and each moving time cell by a convex hull of its protected
+%   endpoint and midpoint geometry.
+% INPUTS: Prepared obstacles, physical bounds in seconds, and segment count.
+% OUTPUTS: Convex exclusion regions and their physical and normalized intervals.
+% UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Build Conservative Time Cells
 regions_units = cell(0,1);

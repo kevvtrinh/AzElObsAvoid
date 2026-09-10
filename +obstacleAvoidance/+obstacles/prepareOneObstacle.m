@@ -1,34 +1,21 @@
 function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous)
 %% Section 0: Header & Readme
-% SYNTAX
-%   obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
-%       obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous)
-%
-% PURPOSE
-%   - Prepare requested entries of one obstacle history for repeated geometry queries.
-%   - Retain the interval method, bounds, edges, motion, and static status.
-%
-% INPUTS
-%   - obstacle (scalar canonical obstacle struct)
-%       Protected and original source histories remain unchanged.
-%   - preparationVersion (positive integer scalar)
-%       Version written into the internal preparation record.
-%   - sourceSnapshot (scalar struct)
-%       Source fields assembled by prepareObstacles for cache validation.
-%
-%   - timeRange_s: requested closed interval; omitted means the full history.
-%   - previous: source-checked preparation to extend; omitted means empty.
-%
-% OUTPUTS
-%   - obstacle (scalar canonical obstacle struct)
-%       InternalPreparation contains reusable source-derived geometry data.
-%
-% UNITS
-%   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
-%
+% SYNTAX: obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( obstacle, preparationVersion,
+%   sourceSnapshot, timeRange_s, previous)
+% PURPOSE: Prepare requested entries of one obstacle history for repeated geometry queries.
+%   Retain the interval method, bounds, edges, motion, and static status.
+% INPUTS: obstacle (scalar canonical obstacle struct) Protected and original source histories remain
+%   unchanged.
+%   preparationVersion (positive integer scalar) Version written into the internal preparation
+%   record.
+%   sourceSnapshot (scalar struct) Source fields assembled by prepareObstacles for cache validation.
+%   timeRange_s: requested closed interval; omitted means the full history.
+%   previous: source-checked preparation to extend; omitted means empty.
+% OUTPUTS: obstacle (scalar canonical obstacle struct) InternalPreparation contains reusable
+%   source-derived geometry data.
+% UNITS: Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 
 %% Section 1: Select Source Samples Without Changing The History
-
 validateattributes(preparationVersion, {'numeric'}, {'real','finite','scalar','integer','positive'});
 if nargin<4, timeRange_s=[-Inf,Inf]; end
 if nargin<5, previous=[]; end
@@ -40,18 +27,17 @@ neededSamples([intervalIndices;intervalIndices+1])=true;
 if sampleCount==1, neededSamples(1)=true; end
 
 %% Section 2: Extend The Single Source-Checked Preparation Record
-
 if isempty(previous)
     preparation=struct('PreparationVersion',preparationVersion,'SourceSnapshot',sourceSnapshot, ...
         'SamplePrepared',false(sampleCount,1),'IntervalPrepared',false(intervalCount,1), ...
-        'SampleShapes',{cell(sampleCount,1)},'SampleBounds_units',NaN(sampleCount,4), ...
+        'SampleShapes',{cell(sampleCount,1)}, ...
         'SampleEdgeStart_units',{cell(sampleCount,1)},'SampleEdgeEnd_units',{cell(sampleCount,1)}, ...
-        'SampleBoundaryRunBounds',{cell(sampleCount,1)},'IntervalUnionShapes',{cell(intervalCount,1)}, ...
-        'IntervalBounds_units',NaN(intervalCount,4),'IntervalUnionEdgeStart_units',{cell(intervalCount,1)}, ...
-        'IntervalUnionEdgeEnd_units',{cell(intervalCount,1)},'IntervalUnionBoundaryRunBounds',{cell(intervalCount,1)}, ...
+        'IntervalUnionShapes',{cell(intervalCount,1)}, ...
+        'IntervalUnionEdgeStart_units',{cell(intervalCount,1)}, ...
+        'IntervalUnionEdgeEnd_units',{cell(intervalCount,1)}, ...
         'DeltaX_units',{cell(intervalCount,1)},'DeltaY_units',{cell(intervalCount,1)}, ...
         'MatchingTopology',false(intervalCount,1),'IntervalGeometryModel',strings(intervalCount,1), ...
-        'IntervalSpeedBound_units_s',Inf(intervalCount,1),'SelectedEdgeQueryIsExact',false, ...
+        'IntervalSpeedBound_units_s',Inf(intervalCount,1), ...
         'SampleSpeedBound_units_s',Inf(sampleCount,1),'IsTimeInvariant',false);
     % Exact numeric equality can establish a globally static shape without
     % constructing polygons outside the requested window. Activity still uses time_s.
@@ -64,13 +50,12 @@ end
 for sampleIndex=reshape(find(neededSamples & ~preparation.SamplePrepared),1,[])
     shape=obstacleAvoidance.geometry.boundaryToShape(obstacle.x_units{sampleIndex},obstacle.y_units{sampleIndex});
     preparation.SampleShapes{sampleIndex}=shape;
-    [preparation.SampleBounds_units(sampleIndex,:),preparation.SampleEdgeStart_units{sampleIndex}, ...
-        preparation.SampleEdgeEnd_units{sampleIndex},preparation.SampleBoundaryRunBounds{sampleIndex}]=createShapeCache(shape);
+    [preparation.SampleEdgeStart_units{sampleIndex},preparation.SampleEdgeEnd_units{sampleIndex}]= ...
+        obstacleAvoidance.geometry.boundaryToEdges(shape,0);
     preparation.SamplePrepared(sampleIndex)=true;
 end
 
 %% Section 3: Prepare Each Newly Requested Source Interval Once
-
 for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),1,[])
     lowerX_units=obstacle.x_units{intervalIndex}; lowerY_units=obstacle.y_units{intervalIndex};
     upperX_units=obstacle.x_units{intervalIndex+1}; upperY_units=obstacle.y_units{intervalIndex+1};
@@ -96,16 +81,13 @@ for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),
         preparation.IntervalUnionShapes{intervalIndex}=shape;
         preparation.IntervalGeometryModel(intervalIndex)=method;
         preparation.IntervalSpeedBound_units_s(intervalIndex)=0;
-        [~,preparation.IntervalUnionEdgeStart_units{intervalIndex}, ...
-            preparation.IntervalUnionEdgeEnd_units{intervalIndex}, ...
-            preparation.IntervalUnionBoundaryRunBounds{intervalIndex}]=createShapeCache(shape);
+        [preparation.IntervalUnionEdgeStart_units{intervalIndex},preparation.IntervalUnionEdgeEnd_units{intervalIndex}]= ...
+            obstacleAvoidance.geometry.boundaryToEdges(shape,0);
     end
-    preparation.IntervalBounds_units(intervalIndex,:)=finiteBounds([lowerX_units,lowerY_units;upperX_units,upperY_units]);
     preparation.IntervalPrepared(intervalIndex)=true;
 end
 
 %% Section 4: Retain Conservative Bounds At Unprepared Neighbor Intervals
-
 preparation.SampleSpeedBound_units_s=max([0;preparation.IntervalSpeedBound_units_s], ...
     [preparation.IntervalSpeedBound_units_s;0]);
 staticIntervals=preparation.IntervalGeometryModel=="staticEquivalentSamples" | ...
@@ -117,36 +99,6 @@ obstacle.InternalPreparation=preparation;
 end
 
 %% Section 5: Local Functions
-
-
-function [bounds_units, edgeStart_units, edgeEnd_units, runBounds_units] = createShapeCache(shape)
-    % Cache bounds and edges for repeated queries.
-    vertices_units = shape.Vertices;
-    bounds_units   = finiteBounds(vertices_units);
-    [edgeStart_units, edgeEnd_units] = obstacleAvoidance.geometry.boundaryToEdges(shape, 0);
-    [x_units, y_units] = boundary(shape);
-    boundary_units  = [double(x_units(:)), double(y_units(:))];
-    finiteRow     = all(isfinite(boundary_units), 2);
-    runStart      = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
-    runEnd        = find(finiteRow & [~finiteRow(2:end); true]);
-    runBounds_units = NaN(numel(runStart), 4);
-    % Process each run needed to build shape cache.
-    for runIndex = 1:numel(runStart)
-        runBounds_units(runIndex, :) = finiteBounds(boundary_units(runStart(runIndex):runEnd(runIndex), :));
-    end
-end
-
-function bounds_units = finiteBounds(vertices_units)
-    % Return [minimum x, maximum x, minimum y, maximum y].
-    finiteVertices_units = vertices_units(all(isfinite(vertices_units), 2), :);
-    if isempty(finiteVertices_units)
-        bounds_units = [Inf -Inf Inf -Inf];
-    else
-        bounds_units = [ ...
-            min(finiteVertices_units(:, 1)), max(finiteVertices_units(:, 1)), min(finiteVertices_units(:, 2)), max(finiteVertices_units(:, 2))];
-    end
-end
-
 function [verified, alignedUpper_units] = alignVerifiedSingleRing(lowerX_units, lowerY_units, upperX_units, upperY_units)
     % Normalize rings and check whether linear vertex interpolation is safe.
     lower_units        = [lowerX_units(:), lowerY_units(:)];
@@ -230,7 +182,6 @@ function verified = remainsStrictlyConvex(lower_units, upper_units, coordinateSc
     linear_units2       = cross2d(edgeDelta_units, nextLowerEdge_units) + cross2d(lowerEdge_units, nextEdgeDelta_units);
     quadratic_units2    = cross2d(edgeDelta_units, nextEdgeDelta_units);
     verified          = true;
-    % Process each geometric vertex while constructing or checking the region topology.
     for vertexIndex = 1:size(lower_units, 1)
         candidateTau = [0; 1];
         if quadratic_units2(vertexIndex) ~= 0

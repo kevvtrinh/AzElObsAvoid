@@ -1,35 +1,20 @@
 function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmentTime_s, prescribedPower_units, splitMask, splitFraction)
 %% Section 0: Header & Readme
-% SYNTAX
-%   preparedMotion = bmtpEngine.prepareFinalMotion( ...
-%       request, controlPoint_units, segmentTime_s)
-%
-% PURPOSE
-%   - Impose physical endpoint states, split the selected curve, and
-%     retain its physical clock for continuous derivative certification.
-%
-% INPUTS
-%   - request (scalar struct)
-%       Checked BMTP request, limits, horizon, and goal-time policy.
-%   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
-%       Selected composite Bezier control points.
-%   - segmentTime_s (positive finite scalar)
-%       Selected per-segment durations.
-%   - prescribedPower_units (optional normalized analytic axis coefficients)
-%       Preserved exactly through subdivision and independently certified.
-%   - splitMask (optional logical S-by-1): spans to subdivide; default all.
-%   - splitFraction (optional S-by-1): interior split locations; default 0.5.
-%
-% OUTPUTS
-%   - preparedMotion (scalar struct)
-%       Prepared controls, time, timing certificate, and expected failure.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds.
-%
+% SYNTAX: preparedMotion = bmtpEngine.prepareFinalMotion( request, controlPoint_units,
+%   segmentTime_s)
+% PURPOSE: Impose physical endpoint states, split the selected curve, and retain its physical clock
+%   for continuous derivative certification.
+% INPUTS: request (scalar struct) Checked BMTP request, limits, horizon, and goal-time policy.
+%   controlPoint_units (S-by-(D+1)-by-2 numeric array) Selected composite Bezier control points.
+%   segmentTime_s (positive finite scalar) Selected per-segment durations. prescribedPower_units
+%   (optional normalized analytic axis coefficients) Preserved exactly through subdivision and
+%   independently certified. splitMask (optional logical S-by-1): spans to subdivide; default all.
+%   splitFraction (optional S-by-1): interior split locations; default 0.5.
+% OUTPUTS: preparedMotion (scalar struct) Prepared controls, time, timing certificate, and expected
+%   failure.
+% UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Set Endpoint Derivatives And Split The Curve
-
 if nargin<4, prescribedPower_units = []; end
 if nargin<5, splitMask=true(size(controlPoint_units,1),1); end
 splitMask=logical(splitMask(:));
@@ -69,14 +54,11 @@ end
 segmentTime_s=refinedTime_s;
 
 %% Section 2: Record Sufficient Control Bounds And Preserve The Clock
-
 exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, segmentTime_s, 0,prescribedPower_units);
 certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
 % Control hull bounds are sufficient, not necessary. The exported polynomial
 % is checked continuously against the actual physical limits before success.
-dilationScale = 1;
-segmentTime_s             = segmentTime_s * dilationScale;
 minimumDuration_s         = sum(segmentTime_s);
 isFixedArrival            = request.Options.GoalTimeMode == "fixedArrival";
 if isFixedArrival && abs(sum(segmentTime_s)-request.MotionHorizon_s)<=64*eps(request.MotionHorizon_s)
@@ -98,7 +80,6 @@ if ~success
 end
 
 %% Section 3: Return The Prepared Representation
-
 motionCertificate = createMotionCertificate(segmentTime_s, requiredTime_s);
 preparedMotion    = struct("Success", success, ...
     "Message", message, ...
@@ -107,21 +88,19 @@ preparedMotion    = struct("Success", success, ...
     "CertifiedControlPoint_units", certifiedControlPoint_units, ...
     "SegmentTime_s", segmentTime_s, ...
     "RequiredSegmentTime_s", requiredTime_s, ...
-    "DilationScale", dilationScale, ...
+    "DilationScale", 1, ...
     "ArrivalAtHorizon", isFixedArrival, ...
     "MotionCertificate", motionCertificate);
 preparedMotion.PrescribedPower_units = prescribedPower_units;
 end
 
 %% Section 4: Local Functions
-
 function subdivided_units = subdivideControls(controlPoint_units,splitMask,splitFraction)
     % Restrict selected spans exactly using de Casteljau subdivision.
     segmentCount   = size(controlPoint_units, 1);
     degree         = size(controlPoint_units, 2) - 1;
     subdivided_units = zeros(segmentCount+nnz(splitMask), degree + 1, 2);
     target=1;
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         if ~splitMask(segmentIndex)
             subdivided_units(target,:,:)=controlPoint_units(segmentIndex,:,:);
@@ -133,7 +112,6 @@ function subdivided_units = subdivideControls(controlPoint_units,splitMask,split
         right_units = zeros(degree + 1, 2);
         left_units(1, :) = work_units(1, :);
         right_units(end, :) = work_units(end, :);
-        % Repeat the level alternatives needed to refine the current solution.
         for levelIndex = 1:degree
             work_units = (1-splitFraction(segmentIndex))*work_units(1:end - 1, :)+splitFraction(segmentIndex)*work_units(2:end, :);
             left_units(levelIndex + 1, :) = work_units(1, :);
@@ -149,9 +127,7 @@ function controlPoint_units = powerToBernsteinControls(positionPower_units)
     % Reconstruct Bezier controls from the exported power coefficients.
     degree    = size(positionPower_units, 3) - 1;
     transform = zeros(degree + 1);
-    % Process each bernstein needed to complete power to bernstein controls.
     for bernsteinIndex = 0:degree
-        % Process each power needed to complete power to bernstein controls.
         for powerIndex = 0:bernsteinIndex
             transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
         end

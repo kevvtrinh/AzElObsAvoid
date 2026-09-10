@@ -1,34 +1,19 @@
 function [certificate,cache] = checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units,cache)
 %% Section 0: Header & Readme
-% SYNTAX
-%   certificate = bmtpEngine.checkFinalMotion( ...
-%       request, warmStart, preparedMotion, roundoffReserve_units, ...
-%       obstacleTarget_units)
-%
-% PURPOSE
-%   - Check every applicable final curve span against each supplied convex
-%     obstacle region using direct separating-plane certificates.
-%
-% INPUTS
-%   - request, warmStart, preparedMotion (scalar structs)
-%       Checked request, region applicability, and final prepared curve.
-%   - roundoffReserve_units, obstacleTarget_units (finite scalars)
-%       Numerical reserve and required obstacle-side target in coordinate units.
-%   - cache (optional opaque struct returned by this function)
-%       Previous refinement's checks within the same solve. Reuse requires
-%       exactly matching source geometry, coverage, controls, and tolerances.
-%
-% OUTPUTS
-%   - certificate (scalar struct)
-%       Pair coverage, separating planes, counts, and passing state.
-%   - cache: current checks for a later refinement; never a public input.
-%
-% UNITS
-%   - Position, gaps, and reserves are coordinate units.
-%
+% SYNTAX: certificate = bmtpEngine.checkFinalMotion( request, warmStart, preparedMotion,
+%   roundoffReserve_units, obstacleTarget_units)
+% PURPOSE: Check every applicable final curve span against each supplied convex obstacle region
+%   using direct separating-plane certificates.
+% INPUTS: request, warmStart, preparedMotion (scalar structs) Checked request, region applicability,
+%   and final prepared curve. roundoffReserve_units, obstacleTarget_units (finite scalars) Numerical
+%   reserve and required obstacle-side target in coordinate units. cache (optional opaque struct
+%   returned by this function) Previous refinement's checks within the same solve. Reuse requires
+%   exactly matching source geometry, coverage, controls, and tolerances.
+% OUTPUTS: certificate (scalar struct) Pair coverage, separating planes, counts, and passing state.
+%   cache: current checks for a later refinement; never a public input.
+% UNITS: Position, gaps, and reserves are coordinate units.
 
 %% Section 1: Check All Curve And Obstacle Pairs
-
 if nargin<6, cache=[]; end
 % Each optimized segment becomes two output spans. Repeat the static
 % all-region mask for both spans.
@@ -79,7 +64,6 @@ cache=struct('Controls',preparedMotion.CertifiedControlPoint_units,'Breaks',span
 end
 
 %% Section 2: Local Functions
-
 function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, separatingLineGeometry, regionActiveBySegment, reserve_units, target_units,spanBreaks_s,cache)
     % Verify every applicable output-span and convex-exclusion-region pair.
     segmentCount   = size(controlPoint_units, 1);
@@ -115,7 +99,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         staticOwners = repelem((1:regionCount).',cellfun(@(v)size(v,1),regions_units));
         staticOwners = staticOwners(:);
     end
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
         oldSpan=cachedSpan(segmentIndex);
@@ -145,7 +128,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
             verifiedCount = verifiedCount+nnz(verified);
             if any(verified), minimumGap_units = min(minimumGap_units,min([previousPlanes(verified).SignedGap_units])); end
         end
-        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;

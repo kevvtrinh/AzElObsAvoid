@@ -1,35 +1,19 @@
 function request = createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   request = bmtpEngine.createSolveRequest( ...
-%       seed, regions_units, coverage, initialState, goalState, limits, options)
-%
-% PURPOSE
-%   - Check BMTP inputs and select the established polynomial representation.
-%   - Collect horizon, region, objective, and numerical solver controls once.
-%
-% INPUTS
-%   - seed (scalar route-seed struct)
-%       Ordered positions and normalized route progress.
-%   - regions_units (R-by-1 cell array)
-%       Convex exclusion polygons.
-%   - coverage (scalar struct)
-%       Static region-coverage evidence from the caller.
-%   - initialState, goalState, limits, options (scalar structs)
-%       Dimension-neutral boundary request, limits, and resolved controls.
-%
-% OUTPUTS
-%   - request (scalar struct)
-%       Validated inputs, representation choice, horizon, region bounds,
-%       objective rate, and numerical solver options.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds; derivatives use units/s,
-%     units/s^2, and units/s^3.
-%
+% SYNTAX: request = bmtpEngine.createSolveRequest( seed, regions_units, coverage, initialState,
+%   goalState, limits, options)
+% PURPOSE: Check BMTP inputs and select the established polynomial representation. Collect horizon,
+%   region, objective, and numerical solver controls once.
+% INPUTS: seed (scalar route-seed struct) Ordered positions and normalized route progress.
+%   regions_units (R-by-1 cell array) Convex exclusion polygons. coverage (scalar struct) Static
+%   region-coverage evidence from the caller. initialState, goalState, limits, options (scalar
+%   structs) Dimension-neutral boundary request, limits, and resolved controls.
+% OUTPUTS: request (scalar struct) Validated inputs, representation choice, horizon, region bounds,
+%   objective rate, and numerical solver options.
+% UNITS: Position is coordinate units and time is seconds; derivatives use units/s, units/s^2, and
+%   units/s^3.
 
 %% Section 1: Check The Engine Inputs
-
 % Validate convex static regions before solving.
 
 for name = ["velocity_units_s","acceleration_units_s2"]
@@ -41,7 +25,6 @@ end
 validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
 
 %% Section 2: Select The Polynomial Representation
-
 % Start static guide edges with three quintic subspans to limit model size
 % while retaining continuous-jerk steering freedom.
 % Fixed-arrival clocks use their natural events and a minimum steering mesh.
@@ -55,13 +38,11 @@ if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");
 end
 %% Section 3: Prepare Shared Solver Controls
-
 % Set shared tolerances and iteration limits for both conic solvers.
 
 regionMinimum_units = zeros(numel(regions_units), 2);
 regionMaximum_units = zeros(numel(regions_units), 2);
 separatingLineGeometry = cell(numel(regions_units),1);
-% Process each geometric region while constructing or checking the region topology.
 for regionIndex = 1:numel(regions_units)
     regionMinimum_units(regionIndex, :) = min(regions_units{regionIndex}, [], 1);
     regionMaximum_units(regionIndex, :) = max(regions_units{regionIndex}, [], 1);
@@ -92,7 +73,6 @@ request                     = struct("Seed", seed, ...
 end
 
 %% Section 4: Local Functions
-
 function validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options)
     % Check engine-specific input restrictions.
     if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, {'position_units', 'tau'}))
@@ -105,7 +85,6 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
         error("bmtpEngine:InvalidSeedTau", "seed.position_units must be finite N-by-2 and tau must increase 0 to 1.");
     end
     regionsAreValid = iscell(regions_units) && iscolumn(regions_units);
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(regions_units)
         region_units      = regions_units{regionIndex};
         regionsAreValid = regionsAreValid && isnumeric(region_units) && size(region_units, 2) == 2 && size(region_units, 1) >= 3 && all(isfinite(region_units), "all");

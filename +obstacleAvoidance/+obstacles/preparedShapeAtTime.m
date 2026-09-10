@@ -1,16 +1,12 @@
 function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly, classifyBoundary)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly, classifyBoundary)
-% PURPOSE
-%   Evaluate one prepared obstacle at a physical time.
-% INPUTS
-%   obstacle: prepared history; queryTime_s: scalar seconds; geometryOnly: optional flag.
+% SYNTAX: [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly,
+%   classifyBoundary)
+% PURPOSE: Evaluate one prepared obstacle at a physical time.
+% INPUTS: obstacle: prepared history; queryTime_s: scalar seconds; geometryOnly: optional flag.
 %   classifyBoundary: optional logical, default true; false leaves classification flags false.
-% OUTPUTS
-%   shape and geometry: the interpolated protected boundary and its cached interval model.
-% UNITS
-%   Positions are coordinate units; time is seconds; derivatives retain physical units.
+% OUTPUTS: shape and geometry: the interpolated protected boundary and its cached interval model.
+% UNITS: Positions are coordinate units; time is seconds; derivatives retain physical units.
 
 %% Section 1: Evaluate Prepared Inputs
 if nargin < 3, geometryOnly = false; end
@@ -43,7 +39,6 @@ if lowerIndex ~= upperIndex
     fraction = (queryTime_s - time_s(lowerIndex)) / (time_s(upperIndex) - time_s(lowerIndex));
 end
 %% Section 2: Evaluate The Protected Boundary
-
 x_units            = double(obstacle.x_units{lowerIndex}(:));
 y_units          = double(obstacle.y_units{lowerIndex}(:));
 topologyIsInterpolated = true;

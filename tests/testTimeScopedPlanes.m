@@ -69,6 +69,69 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
     verifyTrue(testCase,bmtpEngine.checkFinalMotion(request,warmStart,prepared,1e-8,1e-5).Passed);
 end
 
+function testSingleSpanTimedInfeasibilityReturnsNoMotion(testCase)
+    limits = struct('xInterval_units',[-2,2],'yInterval_units',[-2,2], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[5,5],'maxJerk_units_s3',[10,10]);
+    options = optimoptions('coneprog','Display','none','ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
+    planes = repmat(struct('Active',false),1,0);
+    % Two units in 0.1 s exceeds the two-units/s velocity bound alone.
+    [controls,duration_s,flag] = bmtpEngine.solveTimedTrajectoryStep( ...
+        1,8,[-1,0],[1,0.5],limits,planes,1e-8,0.1,"fixedArrival",options);
+    verifyLessThanOrEqual(testCase,flag,0);
+    verifyEmpty(testCase,controls);
+    verifyTrue(testCase,isnan(duration_s));
+end
+
+function testSingleSpanTimedMotionIsIndependentlyValid(testCase)
+    limits = struct('xInterval_units',[-2,2],'yInterval_units',[-2,2], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[5,5],'maxJerk_units_s3',[10,10]);
+    options = optimoptions('coneprog','Display','none','ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
+    planes = repmat(struct('Active',false),1,0);
+    for degree = [5,8]
+        for horizon_s = [5,6,8,10]
+            [controls,duration_s,flag,output] = bmtpEngine.solveTimedTrajectoryStep( ...
+                1,degree,[-1,0],[1,0.5],limits,planes,1e-8,horizon_s,"fixedArrival",options);
+            assertNotEmpty(testCase,controls);
+            verifyTrue(testCase,flag>0 || flag==-7);
+            verifyEqual(testCase,output.OptimizationConverged,flag>0);
+            verifyEqual(testCase,duration_s,horizon_s,'AbsTol',1e-12);
+            initial = struct('time_s',0,'position_units',[-1,0]);
+            goal = struct('time_s',horizon_s,'position_units',[1,0.5]);
+            result = planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+            seed = struct('position_units',[-1,0;1,0.5],'tau',[0;1],'Source',"timeExpandedVisibilityGraph");
+            request = bmtpEngine.createSolveRequest(seed,cell(0,1),struct('Passed',true), ...
+                result.Inputs.initialState,result.Inputs.goalState,result.Limits,result.Options);
+            prepared = bmtpEngine.prepareFinalMotion(request,controls,duration_s);
+            [~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(controls,limits.xInterval_units,limits.yInterval_units);
+            target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
+            result = bmtpEngine.createMotionOutput(result,request,prepared);
+            result.PlaneCertificate = bmtpEngine.checkFinalMotion(request,[],prepared,reserve_units,target_units);
+            assertTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+        end
+    end
+end
+
+function testUnequalSpanClockWithFullEndpointStates(testCase)
+    initial = struct('position_units',[-1,0],'velocity_units_s',[0.1,-0.1],'acceleration_units_s2',[0.02,0.01]);
+    goal = struct('position_units',[1,0.4],'velocity_units_s',[0.2,0.05],'acceleration_units_s2',[-0.01,0.02]);
+    limits = struct('xInterval_units',[-2,2],'yInterval_units',[-2,2], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[5,5],'maxJerk_units_s3',[10,10]);
+    options = optimoptions('coneprog','Display','none','ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
+    planes = repmat(struct('Active',false),3,0);
+    [controls,durations_s,flag] = bmtpEngine.solveTrajectoryStep( ...
+        3,5,initial,goal,limits,planes,1e-8,8,options,[1,2,1],true);
+    assertTrue(testCase,flag>0 || flag==-7);
+    verifyEqual(testCase,durations_s,[2,4,2]);
+    polynomial = bmtpEngine.createPowerPolynomial(controls,durations_s,0);
+    [~,position,velocity,acceleration] = bmtpEngine.evaluatePolynomial(polynomial,[0;8]);
+    verifyEqual(testCase,position,[initial.position_units;goal.position_units],'AbsTol',1e-8);
+    verifyEqual(testCase,velocity,[initial.velocity_units_s;goal.velocity_units_s],'AbsTol',1e-8);
+    verifyEqual(testCase,acceleration,[initial.acceleration_units_s2;goal.acceleration_units_s2],'AbsTol',1e-8);
+    [~,~,~,~,leftJerk] = bmtpEngine.evaluatePolynomial(polynomial,[2;6],[1;2]);
+    [~,~,~,~,rightJerk] = bmtpEngine.evaluatePolynomial(polynomial,[2;6],[2;3]);
+    verifyEqual(testCase,leftJerk,rightJerk,'AbsTol',1e-8);
+end
+
 function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     times_s = (0:0.25:20)';
     box = [-0.5,-0.7;0.5,-0.7;0.5,0.7;-0.5,0.7];

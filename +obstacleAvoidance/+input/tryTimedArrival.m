@@ -1,17 +1,12 @@
 function [result, accepted] = tryTimedArrival(previous)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [result,accepted] = obstacleAvoidance.input.tryTimedArrival(previous)
-% PURPOSE
-%   Use a time-expanded visibility proposal and timed BMTP for a moving
-%   obstacle, fixed-position, rest-to-rest earliest-arrival request.
-% INPUTS
-%   A normalized planner result carrying the original request and geometry.
-% OUTPUTS
-%   An independently validated result when accepted is true; otherwise the
-%   input result so chronological arrival search can continue.
-% UNITS
-%   Position is coordinate units and time is seconds.
+% SYNTAX: [result,accepted] = obstacleAvoidance.input.tryTimedArrival(previous)
+% PURPOSE: Use a time-expanded visibility proposal and timed BMTP for a moving obstacle,
+%   fixed-position, rest-to-rest earliest-arrival request.
+% INPUTS: A normalized planner result carrying the original request and geometry.
+% OUTPUTS: An independently validated result when accepted is true; otherwise the input result so
+%   chronological arrival search can continue.
+% UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Check Eligibility And Create The Timed Route
 timer = tic;

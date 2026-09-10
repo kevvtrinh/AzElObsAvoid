@@ -1,39 +1,20 @@
 function attempt = createVisibilityAttempt(shape, start_units, goal_units, limits, candidateOffset_units, offsetRetryCount, workBudget)
 %% Section 0: Header & Readme
-% SYNTAX
-%   attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
-%       shape, start_units, goal_units, limits, candidateOffset_units, ...
-%       offsetRetryCount, workBudget)
-%
-% PURPOSE
-%   - Create, check, and recover one offset visibility-graph attempt.
-%   - Return every representation needed to inspect its decisions.
-%
-% INPUTS
-%   - shape (scalar polyshape)
-%       Spatial obstacle representation used only for route proposals.
-%   - start_units, goal_units (1-by-2 finite numeric rows)
-%       Required endpoint positions in [x y] order.
-%   - limits (scalar struct)
-%       Workspace intervals in coordinate units.
-%   - candidateOffset_units (positive finite scalar)
-%       Outward obstacle-boundary offset for this attempt.
-%   - offsetRetryCount (nonnegative integer scalar)
-%       Zero-based index of this attempt in the offset schedule.
-%   - workBudget (positive finite scalar)
-%       Pair-edge work cap governing node count and exhaustive recovery.
-%
-% OUTPUTS
-%   - attempt (scalar struct)
-%       Raw and retained nodes, candidate pairs, accepted and rejected
-%       edges, components, recovery steps, costs, and connectivity state.
-%
-% UNITS
-%   - Positions, offsets, bounds, and graph costs are coordinate units.
-%
+% SYNTAX: attempt = obstacleAvoidance.search.createVisibilityAttempt( shape, start_units,
+%   goal_units, limits, candidateOffset_units, offsetRetryCount, workBudget)
+% PURPOSE: Create, check, and recover one offset visibility-graph attempt. Return every
+%   representation needed to inspect its decisions.
+% INPUTS: shape (scalar polyshape) Spatial obstacle representation used only for route proposals.
+%   start_units, goal_units (1-by-2 finite numeric rows) Required endpoint positions in [x y] order.
+%   limits (scalar struct) Workspace intervals in coordinate units. candidateOffset_units (positive
+%   finite scalar) Outward obstacle-boundary offset for this attempt. offsetRetryCount (nonnegative
+%   integer scalar) Zero-based index of this attempt in the offset schedule. workBudget (positive
+%   finite scalar) Pair-edge work cap governing node count and exhaustive recovery.
+% OUTPUTS: attempt (scalar struct) Raw and retained nodes, candidate pairs, accepted and rejected
+%   edges, components, recovery steps, costs, and connectivity state.
+% UNITS: Positions, offsets, bounds, and graph costs are coordinate units.
 
 %% Section 1: Bound The Candidate Nodes
-
 % Convert the pair/edge work budget into a node limit.
 
 [edgeStart_units, edgeEnd_units] = obstacleAvoidance.geometry.boundaryToEdges(shape, 1e-12);
@@ -41,7 +22,6 @@ candidateLimit = max(2, floor(sqrt(2 * workBudget / max(1, size(edgeStart_units,
 nodes          = createVisibilityNodes(shape, start_units, goal_units, limits, candidateOffset_units, candidateLimit);
 
 %% Section 2: Create And Check Candidate Pairs
-
 % Check proposed edges and record both accepted and rejected connections.
 
 nodeCount      = size(nodes.Positions_units, 1);
@@ -65,13 +45,11 @@ pairSet                 = struct("PairMask", pairMask, ...
 edgeCheck = evaluateVisibilityPairs(nodes.Positions_units, pairSet.PairMask, shape, edgeStart_units, edgeEnd_units);
 
 %% Section 3: Recover Missing Connectivity
-
 % Try boundary edges and affordable all-pairs edges to connect the graph.
 
 recovery = recoverVisibilityConnectivity(nodes, pairSet, edgeCheck, shape, edgeStart_units, edgeEnd_units);
 
 %% Section 4: Assemble The Attempt
-
 attempt = struct("OffsetRetryCount", offsetRetryCount, ...
     "CandidateOffset_units", candidateOffset_units, ...
     "Nodes", nodes, ...
@@ -95,7 +73,6 @@ attempt = struct("OffsetRetryCount", offsetRetryCount, ...
 end
 
 %% Section 5: Local Functions
-
 function nodes = createVisibilityNodes(shape, start_units, goal_units, limits, candidateOffset_units, candidateLimit)
     % Create offset-boundary and workspace nodes within the node budget.
     candidateShape = shape;
@@ -133,7 +110,6 @@ function selected_units = selectVisibilityCandidates(candidates_units, start_uni
         [~, support] = max(candidates_units * direction.', [], 1);
         selected = [selected; support(:)];
     end
-    % Process each reference units needed to complete select visibility candidates.
     for reference_units = [start_units; goal_units].'
         [~, order] = sort(vecnorm(candidates_units - reference_units.', 2, 2));
         selected = [selected; order(1:endpointCount)]; %#ok<AGROW>

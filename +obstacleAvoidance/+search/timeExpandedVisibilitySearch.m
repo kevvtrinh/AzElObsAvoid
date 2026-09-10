@@ -1,33 +1,18 @@
 function [route_units, routeTime_s, record] = timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units, obstacles, initialState, goalState, limits, sampleTimes_s, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [route_units, routeTime_s, record] = ...
-%       obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, ...
-%       edgeCost_units, obstacles, initialState, goalState, limits, sampleTimes_s, options)
-%
-% PURPOSE
-%   - Search forward reachability using waits and moving edges at every
-%     supplied planning time.
-%
-% INPUTS
-%   - nodePosition_units (N-by-2 numeric matrix)
-%       Nodes with start first and goal second.
-%   - edgeCost_units (N-by-N numeric matrix)
-%       Finite entries enable motion edges.
-%   - obstacles (canonical protected obstacle struct array)
-%   - initialState, goalState, limits, options (scalar structs)
-%   - sampleTimes_s (numeric vector)
-%       Candidate times retained exactly as temporal search layers.
-%
-% OUTPUTS
-%   - route_units (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector)
-%       Selected timed route, or documented empty arrays on exhaustion.
-%   - record (scalar struct)
-%       Search counts, frontier, and best partial ancestry.
-%
-% UNITS
-%   - Position and edge cost are coordinate units; time is seconds.
-%
+% SYNTAX: [route_units, routeTime_s, record] =
+%   obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units,
+%   obstacles, initialState, goalState, limits, sampleTimes_s, options)
+% PURPOSE: Search forward reachability using waits and moving edges at every supplied planning time.
+% INPUTS: nodePosition_units (N-by-2 numeric matrix) Nodes with start first and goal second.
+%   edgeCost_units (N-by-N numeric matrix) Finite entries enable motion edges. obstacles (canonical
+%   protected obstacle struct array) initialState, goalState, limits, options (scalar structs)
+%   sampleTimes_s (numeric vector) Candidate times retained exactly as temporal search layers.
+% OUTPUTS: route_units (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector) Selected timed
+%   route, or documented empty arrays on exhaustion. record (scalar struct) Search counts, frontier,
+%   and best partial ancestry.
+% UNITS: Position and edge cost are coordinate units; time is seconds.
+
 %% Section 1: Propagate The Reachability Frontier
 layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); goalState.time_s]);
 layerTimes_s = layerTimes_s(layerTimes_s >= initialState.time_s & layerTimes_s <= goalState.time_s);
@@ -88,13 +73,11 @@ cacheSlotCount = min(numel(stationaryTimeCell), floor((maximumCacheBytes - looku
 occupancyCache = cell(cacheSlotCount, 1);
 occupancyCacheKey = zeros(cacheSlotCount, 1);
 nodeIsFree   = false(layerCount, nodeCount);
-% Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
         obstacles,nodePosition_units(:,1),nodePosition_units(:,2),layerTimes_s(layerIndex),false).';
 end
 waitIsClear = false(max(0, layerCount - 1), nodeCount);
-% Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount - 1
     candidateNodeIndices = find(nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
     % Test a stationary wait only at nodes that are free in both adjacent layers; all other waits remain unavailable.
@@ -107,7 +90,6 @@ end
 isWaitComponentStart = nodeIsFree;
 isWaitComponentStart(2:end, :) = nodeIsFree(2:end, :) & ~waitIsClear;
 waitComponentFinalLayerIndex = repmat(uint32((1:layerCount).'), 1, nodeCount);
-% Process each layer needed to complete time expanded visibility search.
 for layerIndex = layerCount - 1:-1:1
     continuingNodeIndices = find(waitIsClear(layerIndex, :));
     waitComponentFinalLayerIndex(layerIndex, continuingNodeIndices) = waitComponentFinalLayerIndex(layerIndex + 1, continuingNodeIndices);
@@ -134,14 +116,12 @@ spatialCost_units(1, 1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount, goalBoundRejectionCount, candidateBatchSplitCount] = deal(0);
 goalCostBound_units = Inf;
 exploredNodes_units = zeros(0, 2);
-% Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount - 1
     % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
     if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
         break;
     end
     currentNodeIndices          = find(reachable(layerIndex, :));
-    % Process each current node needed to complete time expanded visibility search.
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         exploredNodes_units(end + 1, :) = nodePosition_units(currentNodeIndex, :); %#ok<AGROW>
@@ -164,7 +144,6 @@ for layerIndex = 1:layerCount - 1
     % Keep the first clear entry per wait interval; later entries can be reached by waiting.
     while any(pendingMotion)
         queriedTargetLayers = unique(motionCandidates(pendingMotion, 3));
-        % Process each target layer needed to complete time expanded visibility search.
         for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
             queryIndices = find(pendingMotion & motionCandidates(:, 3) == targetLayerIndex);
             % Use the prescribed final layer for fixed-arrival requests; earliest-arrival selection was resolved during forward search.
@@ -193,7 +172,6 @@ for layerIndex = 1:layerCount - 1
             queryIsClear = edgeIsClear(motionCandidates(queryIndices, 1), motionCandidates(queryIndices, 2), layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
             clearIndices = queryIndices(queryIsClear);
             motionCount  = motionCount + numel(clearIndices);
-            % Process each motion needed to complete time expanded visibility search.
             for motionIndex = reshape(clearIndices, 1, [])
                 [reachable, spatialCost_units, parentLayerIndex, ...
                     parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, layerIndex, motionCandidates(motionIndex, 1), motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), motionCandidates(motionIndex, 5));
@@ -436,7 +414,6 @@ function [route_units, routeTime_s] = reconstructTimedRoute(nodePosition_units, 
     end
     layerPath = goalLayerIndex;
     nodePath  = goalNodeIndex;
-    % Continue iterating until the stopping condition for complete reconstruct timed route is satisfied.
     while ~(layerPath(1) == 1 && nodePath(1) == 1)
         priorLayerIndex = double(parentLayerIndex(layerPath(1), nodePath(1)));
         priorNodeIndex  = double(parentNodeIndex(layerPath(1), nodePath(1)));

@@ -1,31 +1,17 @@
 function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units)
 %% Section 0: Header & Readme
-% SYNTAX
-%   plane = bmtpEngine.verifySeparatingLine( ...
-%       plane, controlPoint_units, vertices_units, reserve_units, target_units)
-%
-% PURPOSE
-%   - Verify obstacle, trajectory, gap, and normal inequalities for one
-%     degree-one separating line using direct Bernstein product bounds.
-%
-% INPUTS
-%   - plane (scalar separating-line struct)
-%       Candidate normals and offsets.
-%   - controlPoint_units (N-by-2), vertices_units (M-by-2 or M-by-2-by-2)
-%       Bezier control hull and static or affine obstacle endpoint vertices.
-%   - reserve_units, target_units (nonnegative numeric scalars)
-%       Trajectory-side reserve and obstacle-side target.
-%
-% OUTPUTS
-%   - plane (scalar struct)
-%       Corrected offsets, certified gap, and Verified state.
-%
-% UNITS
-%   - Positions, offsets, targets, reserves, and gaps are coordinate units.
-%
+% SYNTAX: plane = bmtpEngine.verifySeparatingLine( plane, controlPoint_units, vertices_units,
+%   reserve_units, target_units)
+% PURPOSE: Verify obstacle, trajectory, gap, and normal inequalities for one degree-one separating
+%   line using direct Bernstein product bounds.
+% INPUTS: plane (scalar separating-line struct) Candidate normals and offsets. controlPoint_units
+%   (N-by-2), vertices_units (M-by-2 or M-by-2-by-2) Bezier control hull and static or affine
+%   obstacle endpoint vertices. reserve_units, target_units (nonnegative numeric scalars)
+%   Trajectory-side reserve and obstacle-side target.
+% OUTPUTS: plane (scalar struct) Corrected offsets, certified gap, and Verified state.
+% UNITS: Positions, offsets, targets, reserves, and gaps are coordinate units.
 
 %% Section 1: Verify Direct Separation Inequalities
-
 if ismatrix(vertices_units)
     % Static vertices make the obstacle-side polynomial linear.
     minimumObstacleSide_units = min(vertices_units*plane.Normal.'+plane.Offset_units,[],"all");

@@ -1,36 +1,20 @@
 function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = evaluatePolynomial(polynomial, time_s, segmentIndex)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
-%       jerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, time_s)
-%   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
-%       jerk_units_s3] = bmtpEngine.evaluatePolynomial( ...
-%       polynomial, time_s, segmentIndex)
-%
-% PURPOSE
-%   - Evaluate shared ascending-power segment records at absolute times.
-%
-% INPUTS
-%   - polynomial (scalar normalized trajectory polynomial struct)
-%       Coefficient arrays use N-by-D-by-P shape and ascending powers.
-%   - time_s (numeric vector)
-%       Absolute evaluation times. The output uses a numeric column.
-%   - segmentIndex (numeric scalar or vector, optional; default [])
-%       Select an exact segment for each time. Empty values select segments
-%       from polynomial start-time records. A scalar applies to all times.
-%
-% OUTPUTS
-%   - time_s (N-by-1 numeric column)
-%       Normalized requested times.
-%   - position_units through jerk_units_s3 (N-by-D numeric arrays)
-%       Evaluated motion histories for every modeled coordinate.
-%
-% UNITS
-%   - Position is coordinate units; time is seconds; derivatives use units/s powers.
-%
+% SYNTAX: [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] =
+%   bmtpEngine.evaluatePolynomial(polynomial, time_s)
+%   [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] =
+%   bmtpEngine.evaluatePolynomial( polynomial, time_s, segmentIndex)
+% PURPOSE: Evaluate shared ascending-power segment records at absolute times.
+% INPUTS: polynomial (scalar normalized trajectory polynomial struct) Coefficient arrays use
+%   N-by-D-by-P shape and ascending powers. time_s (numeric vector) Absolute evaluation times. The
+%   output uses a numeric column. segmentIndex (numeric scalar or vector, optional; default [])
+%   Select an exact segment for each time. Empty values select segments from polynomial start-time
+%   records. A scalar applies to all times.
+% OUTPUTS: time_s (N-by-1 numeric column) Normalized requested times. position_units through
+%   jerk_units_s3 (N-by-D numeric arrays) Evaluated motion histories for every modeled coordinate.
+% UNITS: Position is coordinate units; time is seconds; derivatives use units/s powers.
 
 %% Section 1: Select Polynomial Segments
-
 time_s              = double(time_s(:));
 sampleCount         = numel(time_s);
 dimensionCount      = size(polynomial.positionPower_units, 2);
@@ -52,7 +36,6 @@ else
 end
 
 %% Section 2: Evaluate Ascending-Power Records
-
 if isscalar(polynomial.SegmentDuration_s)
     selectedDuration_s = polynomial.SegmentDuration_s;
 else
@@ -73,7 +56,6 @@ end
 end
 
 %% Section 3: Local Functions
-
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
     % Evaluate the selected polynomial segments in local time.
     coefficientCount = size(coefficientArray, 3);

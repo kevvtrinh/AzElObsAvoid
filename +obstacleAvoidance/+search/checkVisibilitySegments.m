@@ -1,31 +1,18 @@
 function isVisible = checkVisibilitySegments(first_units, second_units, shape, edgeStart_units, edgeEnd_units)
 %% Section 0: Header & Readme
-% SYNTAX
-%   isVisible = obstacleAvoidance.search.checkVisibilitySegments( ...
-%       first_units, second_units, shape, edgeStart_units, edgeEnd_units)
-%
-% PURPOSE
-%   - Check straight spatial segments against one proposal obstacle shape.
-%   - Provide one shared visibility rule for graph and route cleanup stages.
-%
-% INPUTS
-%   - first_units, second_units (N-by-2 finite numeric matrices)
-%       Paired segment endpoints in [x y] order.
-%   - shape (scalar polyshape)
-%       Spatial proposal obstacle used for route guidance.
-%   - edgeStart_units, edgeEnd_units (M-by-2 numeric matrices)
-%       Ordered proposal-boundary edge endpoints.
-%
-% OUTPUTS
-%   - isVisible (N-by-1 logical vector)
-%       True where the segment avoids the proposal shape and its boundary.
-%
-% UNITS
-%   - All geometry is coordinate units.
-%
+% SYNTAX: isVisible = obstacleAvoidance.search.checkVisibilitySegments( first_units, second_units,
+%   shape, edgeStart_units, edgeEnd_units)
+% PURPOSE: Check straight spatial segments against one proposal obstacle shape. Provide one shared
+%   visibility rule for graph and route cleanup stages.
+% INPUTS: first_units, second_units (N-by-2 finite numeric matrices) Paired segment endpoints in [x
+%   y] order. shape (scalar polyshape) Spatial proposal obstacle used for route guidance.
+%   edgeStart_units, edgeEnd_units (M-by-2 numeric matrices) Ordered proposal-boundary edge
+%   endpoints.
+% OUTPUTS: isVisible (N-by-1 logical vector) True where the segment avoids the proposal shape and
+%   its boundary.
+% UNITS: All geometry is coordinate units.
 
 %% Section 1: Reject Interior And Boundary Intersections
-
 % Reject boundary crossings and overlaps before testing the surviving midpoints.
 
 isVisible = true(size(first_units, 1), 1);

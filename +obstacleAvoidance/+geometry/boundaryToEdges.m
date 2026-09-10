@@ -1,30 +1,18 @@
 function [edgeStart_units, edgeEnd_units] = boundaryToEdges(shape, closureTolerance_units)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [edgeStart_units, edgeEnd_units] = ...
-%       obstacleAvoidance.geometry.boundaryToEdges(shape, closureTolerance_units)
-%
-% PURPOSE
-%   - Convert every connected boundary ring into explicit start/end edge rows.
-%     Visibility and clearance code can then share one deterministic edge order
-%     instead of each implementing NaN-separator and ring-closure rules.
-%
-% INPUTS
-%   - shape (scalar polyshape)
-%       Polygon geometry whose boundary traversal order is retained.
-%   - closureTolerance_units (nonnegative finite scalar)
-%       Distance for recognizing a repeated final ring vertex.
-%
-% OUTPUTS
-%   - edgeStart_units, edgeEnd_units (N-by-2 arrays)
-%       Matched edge endpoints in deterministic boundary order.
-%
-% UNITS
-%   - Shape vertices, edge endpoints, and tolerance are coordinate units.
-%
+% SYNTAX: [edgeStart_units, edgeEnd_units] = obstacleAvoidance.geometry.boundaryToEdges(shape,
+%   closureTolerance_units)
+% PURPOSE: Convert every connected boundary ring into explicit start/end edge rows. Visibility and
+%   clearance code can then share one deterministic edge order instead of each implementing
+%   NaN-separator and ring-closure rules.
+% INPUTS: shape (scalar polyshape) Polygon geometry whose boundary traversal order is retained.
+%   closureTolerance_units (nonnegative finite scalar) Distance for recognizing a repeated final
+%   ring vertex.
+% OUTPUTS: edgeStart_units, edgeEnd_units (N-by-2 arrays) Matched edge endpoints in deterministic
+%   boundary order.
+% UNITS: Shape vertices, edge endpoints, and tolerance are coordinate units.
 
 %% Section 1: Validate And Split NaN-Separated Boundary Rings
-
 % Split NaN-separated polygon rings.
 
 if ~isa(shape, "polyshape") || ~isscalar(shape)
@@ -39,7 +27,6 @@ runStart = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
 runEnd   = find(finiteRow & [~finiteRow(2:end); true]);
 
 %% Section 2: Close Every Valid Ring Into Matched Edge Rows
-
 % Connect adjacent vertices and close each ring.
 
 % Remove a repeated closing vertex before creating edges.

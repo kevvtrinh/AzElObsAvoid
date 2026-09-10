@@ -7,7 +7,6 @@ function time_s = findEarliestTargetTime(target, initialState, horizon_s, limits
 % UNITS: Coordinate units, seconds, and physical derivative limits.
 
 %% Section 1: Partition At Target And Reachability Polynomial Changes
-
 obstacleAvoidance.input.targetPositionAtTime(target,horizon_s);
 method = 'linear';
 if isfield(target,'InterpolationMethod'), method = char(target.InterpolationMethod); end
@@ -28,7 +27,6 @@ end
 time_s = NaN;
 
 %% Section 2: Intersect All Polynomial Reachability Inequalities
-
 % Maximum rest-to-rest displacement is cubic before acceleration saturation,
 % quadratic before velocity saturation, and linear during cruise. All target
 % crossings can therefore be enumerated by cubic roots, including intervals

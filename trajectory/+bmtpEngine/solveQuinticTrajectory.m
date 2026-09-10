@@ -1,13 +1,14 @@
 function [result,diagnostics] = solveQuinticTrajectory(request,warmStart,diagnostics,target_units,reserve_units)
 %% Section 0: Header & Readme
-% SYNTAX: [motion,diagnostics] = bmtpEngine.solveQuinticTrajectory(request,warm,diagnostics,target,reserve)
-% PURPOSE: Optimize a static detour using integrated quadratic-jerk phases.
-%   Initialize the clock conically, vary local knot states, durations, and jerk,
-%   then repair on the final clock with length and bounded jerk-variation cost.
-% INPUTS: Validated earliest-arrival static request, visibility warm start,
-%   diagnostic record, obstacle target, and numerical reserve.
-% OUTPUTS: A polynomial proposal and full solver diagnostics. The caller must
-%   prepare and independently validate every returned motion before success.
+% SYNTAX: [motion,diagnostics] =
+%   bmtpEngine.solveQuinticTrajectory(request,warm,diagnostics,target,reserve)
+% PURPOSE: Optimize a static detour using integrated quadratic-jerk phases. Initialize the clock
+%   conically, vary local knot states, durations, and jerk, then repair on the final clock with
+%   length and bounded jerk-variation cost.
+% INPUTS: Validated earliest-arrival static request, visibility warm start, diagnostic record,
+%   obstacle target, and numerical reserve.
+% OUTPUTS: A polynomial proposal and full solver diagnostics. The caller must prepare and
+%   independently validate every returned motion before success.
 % UNITS: Coordinate units and seconds; jerk uses coordinate units/s^3.
 
 %% Section 1: Initialize One Integrated Quintic Model
@@ -292,7 +293,6 @@ function soc = createTimePowerCones(variableCount, powerIndex)
     % Create p0*p2>=p1^2 and p1*p3>=p2^2 as standard cones.
     emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0);
     soc       = repmat(emptyCone, 2, 1);
-    % Process each cone needed to build time power cones.
     for coneIndex = 1:2
         coneA = zeros(2, variableCount);
         coneA(1, powerIndex(coneIndex + 1)) = 2;
@@ -316,7 +316,6 @@ function [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, seg
     rows = sparse(rowIndices,[controlColumns;controlColumns],values,degree+2,variableCount);
     offset_units = alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
 end
-
 
 %% Section 4: Joint Quintic Phase-Time Optimization
 function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_units_s3,planes,reserve_units)

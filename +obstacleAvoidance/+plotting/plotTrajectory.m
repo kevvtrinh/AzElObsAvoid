@@ -1,38 +1,23 @@
 function handles = plotTrajectory(result, optionOverrides, ~)
 %% Section 0: Header & Readme
-% SYNTAX
-%   options = obstacleAvoidance.plotting.plotTrajectory()
+% SYNTAX: options = obstacleAvoidance.plotting.plotTrajectory()
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides, diagnosis)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, axesHandle)
-%
-% PURPOSE
-%   - Plot retained core geometry, visibility graph, motion, and physical limits.
-%   - Animate returned samples against time-varying obstacles and targets.
-%
-% INPUTS
-%   - result (scalar planner result)
-%       Success or failure record; plotting never reruns the planner.
-%   - optionOverrides (scalar struct, optional; default struct())
-%       Display, animation, and GIF controls. Hidden figures never pause.
-%       A Cartesian axes handle instead selects a workspace-only plot.
-%       ShowSeedPaths, ShowSweptSurfaces, and MaximumDisplayed* are retained
-%       for example compatibility; the core has no such diagnostic histories.
-%   - diagnosis (optional compatibility argument, unused)
-%       The retained visibility graph is read directly from result.
-%
-% OUTPUTS
-%   - handles (scalar struct)
-%       Stable workspace, visibility, kinematic, and animation handles,
-%       plus the core Axes, obstacle, graph, Route, Trajectory, Endpoint aliases.
-%
-% UNITS
-%   - Axes use coordinate units, seconds, units/s, units/s^2, and units/s^3.
-%
+% PURPOSE: Plot retained core geometry, visibility graph, motion, and physical limits. Animate
+%   returned samples against time-varying obstacles and targets.
+% INPUTS: result (scalar planner result) Success or failure record; plotting never reruns the
+%   planner. optionOverrides (scalar struct, optional; default struct()) Display, animation, and GIF
+%   controls. Hidden figures never pause. A Cartesian axes handle instead selects a workspace-only
+%   plot. ShowSeedPaths, ShowSweptSurfaces, and MaximumDisplayed* are retained for example
+%   compatibility; the core has no such diagnostic histories. diagnosis (optional compatibility
+%   argument, unused) The retained visibility graph is read directly from result.
+% OUTPUTS: handles (scalar struct) Stable workspace, visibility, kinematic, and animation handles,
+%   plus the core Axes, obstacle, graph, Route, Trajectory, Endpoint aliases.
+% UNITS: Axes use coordinate units, seconds, units/s, units/s^2, and units/s^3.
 
 %% Section 1: Resolve Display Controls
-
 defaults = struct();
 defaults.FigureVisible                       = "on";
 defaults.Title                               = "X/Y motion plan";
@@ -115,7 +100,6 @@ if options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimatio
 end
 
 %% Section 2: Plot Workspace And Failure Diagnostics
-
 if options.ShowWorkspace
     if isempty(workspaceAxes)
         workspaceFigure = figure("Name", options.Title, "Visible", options.FigureVisible);
@@ -150,7 +134,6 @@ if (options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimati
 end
 
 %% Section 3: Plot The Retained Visibility Graph
-
 if options.ShowVisibilityGraphs
     if options.ShowWorkspace
         handles.VisibilityFigure = handles.WorkspaceFigure;
@@ -170,7 +153,6 @@ if options.ShowVisibilityGraphs
 end
 
 %% Section 4: Plot Returned Kinematics
-
 if options.ShowKinematics && result.Success
     kinematicFigure = figure("Name", options.Title + " kinematics", "Visible", options.FigureVisible);
     kinematicLayout = tiledlayout(kinematicFigure, 4, 1, "TileSpacing", "compact", "Padding", "compact");
@@ -183,7 +165,6 @@ if options.ShowKinematics && result.Success
 end
 
 %% Section 5: Animate Returned Motion
-
 if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     animationVisibility = options.FigureVisible;
     if options.SaveAnimationGif
@@ -256,7 +237,6 @@ end
 end
 
 %% Section 6: Local Functions
-
 function options = normalizePlotAliases(options)
     % Normalize the display aliases used by existing examples.
     if ~isstruct(options) || ~isscalar(options)

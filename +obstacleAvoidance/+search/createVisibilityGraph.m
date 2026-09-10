@@ -1,12 +1,11 @@
 function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units, limits, options, monotoneDirection)
 %% Section 0: Header & Readme
-% SYNTAX: visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,start,goal,limits,options)
-% PURPOSE: Build the exhaustive exact visibility graph and find its shortest
-%          polygonal route.
-% INPUTS: Protected polygon scene, endpoints, workspace, numerical tolerance.
-%         Optional monotoneDirection requires strictly positive edge progress.
-% OUTPUTS: Exact boundary nodes, every accepted/rejected edge, route, and
-%          connectivity.
+% SYNTAX: visibilityGraph =
+%   obstacleAvoidance.search.createVisibilityGraph(scene,start,goal,limits,options)
+% PURPOSE: Build the exhaustive exact visibility graph and find its shortest polygonal route.
+% INPUTS: Protected polygon scene, endpoints, workspace, numerical tolerance. Optional
+%   monotoneDirection requires strictly positive edge progress.
+% OUTPUTS: Exact boundary nodes, every accepted/rejected edge, route, and connectivity.
 % UNITS: Coordinate units.
 
 %% Section 1: Form The Occupied Union And Boundary Edge Arrays
@@ -34,7 +33,6 @@ workspaceFree = all(endpoints_units >= [limits.xInterval_units(1),limits.yInterv
 sourceFree = sourceFree && workspaceFree(1); goalFree = goalFree && workspaceFree(2);
 
 %% Section 2: Classify Every Candidate Segment
-
 nodeCount = size(nodes_units,1);
 maximumEdgeCount = nodeCount*(nodeCount-1)/2;
 accepted = zeros(maximumEdgeCount,2);
@@ -86,7 +84,6 @@ weights_units = weights_units(1:acceptedCount);
 rejected = rejected(1:rejectedCount,:);
 
 %% Section 3: Select The Shortest Route And Return Full Evidence
-
 routeIndex = zeros(1,0);
 route_units = zeros(0,2);
 routeLength_units = Inf;

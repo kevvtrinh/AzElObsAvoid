@@ -1,32 +1,18 @@
 function [result, diagnostics] = solveTimedAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [result, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( ...
-%       request, warmStart, diagnostics, obstacleTarget_units, ...
-%       roundoffReserve_units)
-%
-% PURPOSE
-%   - Alternate trajectory and separating-line solves until a sampled-clear
-%     motion is retained or the bounded iteration fails.
-%
-% INPUTS
-%   - request, warmStart, diagnostics (scalar structs)
-%       Checked engine request, feasible starting curve, and diagnostics.
-%   - obstacleTarget_units, roundoffReserve_units (finite scalars)
-%       Required obstacle-side target and numerical reserve in coordinate units.
-%
-% OUTPUTS
-%   - result (scalar struct)
-%       Best sampled-clear controls, timing, planes, tags, and failure reason.
-%   - diagnostics (scalar struct)
-%       Updated iteration, solver, overlap, and separating-line evidence.
-%
-% UNITS
-%   - Position and clearance are coordinate units; time is seconds.
-%
+% SYNTAX: [result, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( request, warmStart,
+%   diagnostics, obstacleTarget_units, roundoffReserve_units)
+% PURPOSE: Alternate trajectory and separating-line solves until a sampled-clear motion is retained
+%   or the bounded iteration fails.
+% INPUTS: request, warmStart, diagnostics (scalar structs) Checked engine request, feasible starting
+%   curve, and diagnostics. obstacleTarget_units, roundoffReserve_units (finite scalars) Required
+%   obstacle-side target and numerical reserve in coordinate units.
+% OUTPUTS: result (scalar struct) Best sampled-clear controls, timing, planes, tags, and failure
+%   reason. diagnostics (scalar struct) Updated iteration, solver, overlap, and separating-line
+%   evidence.
+% UNITS: Position and clearance are coordinate units; time is seconds.
 
 %% Section 1: Initialize The Alternating State
-
 segmentCount = warmStart.SegmentCount;
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.RetainedHorizonRetryCount = 0;
@@ -42,14 +28,15 @@ bestControl_units = zeros(0, degree + 1, 2);
 [bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
 diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
 taggedPairs           = false(segmentCount, numel(regions_units));
-planes                = repmat(createEmptyPlane(), segmentCount, numel(regions_units));
+emptyPlane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
+    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
+planes = repmat(emptyPlane, segmentCount, numel(regions_units));
 optimizationHorizon_s = request.MotionHorizon_s;
 solverMessage         = "The biconvex iteration limit was reached.";
 timedOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
 planeOptions = optimoptions("coneprog", "Display", "none");
 
 %% Section 2: Alternate Trajectory And Separating-Line Solves
-
 for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
     usedRequestHorizon = optimizationHorizon_s == request.MotionHorizon_s;
@@ -116,7 +103,7 @@ for iterationIndex = 1:35
             end
             continue;
         end
-        planes(:) = createEmptyPlane();
+        planes(:) = emptyPlane;
         activePairs = taggedPairs;
     % Restart alternating optimization when new obstacle-time pairs are discovered; otherwise the active set has stabilized.
     elseif any(newPairs, "all")
@@ -129,7 +116,6 @@ for iterationIndex = 1:35
     % Add separating lines where samples overlap. Final certification follows later.
     updateFailed      = false;
     activePairIndices = reshape(find(activePairs), 1, []);
-    % Process each active needed to find alternating trajectory.
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
         [segmentIndex, regionIndex]         = ind2sub(size(activePairs), pairIndex);
@@ -159,7 +145,6 @@ for iterationIndex = 1:35
 end
 
 %% Section 3: Return The Best Sampled-Clear Attempt
-
 [diagnostics.TaggedPairCount, diagnostics.SolverMessage] = deal(nnz(taggedPairs), solverMessage);
 result = struct("Success", ~isempty(bestControl_units), ...
     "SolverMessage", solverMessage, ...
@@ -167,18 +152,4 @@ result = struct("Success", ~isempty(bestControl_units), ...
     "SegmentTime_s", bestSegmentTime_s, ...
     "Planes", planes, ...
     "TaggedPairs", taggedPairs);
-end
-
-%% Section 4: Local Functions
-
-function plane = createEmptyPlane()
-    % Initialize an inactive separating-plane record.
-    plane = struct();
-    plane.Active        = false;
-    plane.Verified      = false;
-    plane.ExitFlag      = NaN;
-    plane.Normal        = zeros(2, 2);
-    plane.Offset_units    = zeros(1, 2);
-    plane.SignedGap_units = NaN;
-    plane.TimeFraction = [0, 1];
 end

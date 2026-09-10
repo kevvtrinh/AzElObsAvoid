@@ -7,7 +7,6 @@ function graph = createClockGuide(request, phases, axisIndex)
 % UNITS: Coordinate units and seconds.
 
 %% Section 1: Intersect Constant-Velocity Phases With Space-Time Cells
-
 if isfield(request.Coverage,'StaticScene')
     direction = [0,0];
     direction(axisIndex) = sign(request.GoalState.position_units(axisIndex)-request.InitialState.position_units(axisIndex));
@@ -69,7 +68,6 @@ for k = 1:numel(phases.SegmentTime_s)
 end
 
 %% Section 2: Search With The Monotonicity Required By The Locked Axis
-
 direction = [0,0];
 direction(axisIndex) = sign(request.GoalState.position_units(axisIndex)-request.InitialState.position_units(axisIndex));
 graph = obstacleAvoidance.search.createVisibilityGraph(scene,request.InitialState.position_units, ...

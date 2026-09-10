@@ -1,21 +1,15 @@
 function [displayPosition_units, sourceIndex] = createWrappedSpatialPath(position_units, intervals_units, wrapAxes)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [displayPosition_units, sourceIndex] = ...
-%       obstacleAvoidance.plotting.createWrappedSpatialPath( ...
-%       position_units, intervals_units, wrapAxes)
-% PURPOSE
-%   Display a continuous x/y path without drawing across periodic seams.
-% INPUTS
-%   position_units: N-by-2 finite continuous [x y] positions, or empty.
-%   intervals_units: 2-by-2 [xLower xUpper; yLower yUpper] finite bounds.
-%   wrapAxes: two logical or binary numeric values [WrapX WrapY].
-% OUTPUTS
-%   displayPosition_units: wrapped path with NaN rows separating seams.
-%   sourceIndex: source row associated with each output row. Interior seam
-%   points use the destination row of their original path segment.
-% UNITS
-%   Caller-consistent coordinate units; periods are interval widths.
+% SYNTAX: [displayPosition_units, sourceIndex] =
+%   obstacleAvoidance.plotting.createWrappedSpatialPath( position_units, intervals_units, wrapAxes)
+% PURPOSE: Display a continuous x/y path without drawing across periodic seams.
+% INPUTS: position_units: N-by-2 finite continuous [x y] positions, or empty. intervals_units:
+%   2-by-2 [xLower xUpper; yLower yUpper] finite bounds. wrapAxes: two logical or binary numeric
+%   values [WrapX WrapY].
+% OUTPUTS: displayPosition_units: wrapped path with NaN rows separating seams. sourceIndex: source
+%   row associated with each output row. Interior seam points use the destination row of their
+%   original path segment.
+% UNITS: Caller-consistent coordinate units; periods are interval widths.
 
 %% Section 1: Validate Display Inputs
 validateattributes(intervals_units, {'numeric'}, {'real', 'finite', 'size', [2 2]});

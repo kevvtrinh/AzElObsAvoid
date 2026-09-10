@@ -1,18 +1,12 @@
 function [route_units, routeTime_s, record] = createTimedRouteProposal(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [route_units,routeTime_s,record] = ...
-%       obstacleAvoidance.search.createTimedRouteProposal( ...
-%       obstacles,initialState,goalState,limits,options)
-% PURPOSE
-%   Build a deterministic time-expanded route proposal for moving obstacles.
-%   The returned route initializes BMTP and cannot approve a final motion.
-% INPUTS
-%   Prepared obstacles, normalized endpoint states, limits, and options.
-% OUTPUTS
-%   Timed route arrays, or empty arrays on exhaustion, plus search evidence.
-% UNITS
-%   Position is coordinate units and time is seconds.
+% SYNTAX: [route_units,routeTime_s,record] = obstacleAvoidance.search.createTimedRouteProposal(
+%   obstacles,initialState,goalState,limits,options)
+% PURPOSE: Build a deterministic time-expanded route proposal for moving obstacles. The returned
+%   route initializes BMTP and cannot approve a final motion.
+% INPUTS: Prepared obstacles, normalized endpoint states, limits, and options.
+% OUTPUTS: Timed route arrays, or empty arrays on exhaustion, plus search evidence.
+% UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Build The Sampled Swept Proposal
 obstacles = obstacleAvoidance.obstacles.prepareObstacles( ...

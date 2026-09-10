@@ -1,30 +1,16 @@
 function candidate = createMotionOutput(candidate, request, preparedMotion)
 %% Section 0: Header & Readme
-% SYNTAX
-%   candidate = bmtpEngine.createMotionOutput( ...
-%       candidate, request, preparedMotion)
-%
-% PURPOSE
-%   - Convert the prepared BMTP curve into the stable polynomial and sampled
-%     motion fields consumed outside the engine.
-%
-% INPUTS
-%   - candidate (scalar struct)
-%       Stable empty candidate record to populate.
-%   - request, preparedMotion (scalar structs)
-%       Checked request and final prepared control net.
-%
-% OUTPUTS
-%   - candidate (scalar struct)
-%       Candidate with polynomial, sampled histories, and motion measures.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds; derivatives use units/s,
-%     units/s^2, and units/s^3.
-%
+% SYNTAX: candidate = bmtpEngine.createMotionOutput( candidate, request, preparedMotion)
+% PURPOSE: Convert the prepared BMTP curve into the stable polynomial and sampled motion fields
+%   consumed outside the engine.
+% INPUTS: candidate (scalar struct) Stable empty candidate record to populate. request,
+%   preparedMotion (scalar structs) Checked request and final prepared control net.
+% OUTPUTS: candidate (scalar struct) Candidate with polynomial, sampled histories, and motion
+%   measures.
+% UNITS: Position is coordinate units and time is seconds; derivatives use units/s, units/s^2, and
+%   units/s^3.
 
 %% Section 1: Create The Stable Motion Record
-
 polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, ...
     request.InitialState.time_s,preparedMotion.PrescribedPower_units);
 sampled    = samplePolynomial(polynomial, request.Options.SampleTime_s);
@@ -48,7 +34,6 @@ candidate.Polynomial = polynomial;
 end
 
 %% Section 2: Local Functions
-
 function sampled = samplePolynomial(polynomial, sampleTime_s)
     % Sample the output polynomial.
     initialTime_s  = polynomial.SegmentStartTime_s(1);

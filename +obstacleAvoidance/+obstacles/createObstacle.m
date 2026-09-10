@@ -1,51 +1,33 @@
 function obstacleData = createObstacle(obstacleInput, varargin)
 %% Section 0: Header & Readme
-% SYNTAX
-%   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
-%       obstacleName, time_s, xBoundary_units, yBoundary_units)
-%   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
-%       obstacleName, time_s, xBoundary_units, ...
-%       yBoundary_units, safetyMargin_units)
-%   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
-%       obstacleName, time_s, xBoundary_units, ...
-%       yBoundary_units, safetyMargin_units, constructionOptions)
+% SYNTAX: obstacleData = obstacleAvoidance.obstacles.createObstacle( obstacleName, time_s,
+%   xBoundary_units, yBoundary_units)
+%   obstacleData = obstacleAvoidance.obstacles.createObstacle( obstacleName, time_s,
+%   xBoundary_units, yBoundary_units, safetyMargin_units)
+%   obstacleData = obstacleAvoidance.obstacles.createObstacle( obstacleName, time_s,
+%   xBoundary_units, yBoundary_units, safetyMargin_units, constructionOptions)
 %   obstacleData = obstacleAvoidance.obstacles.createObstacle(canonicalObstacle)
-%   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
-%       canonicalObstacles, safetyMargin_units)
-%   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
-%       canonicalObstacles, safetyMargin_units, constructionOptions)
-%
-% PURPOSE
-%   - Own canonical obstacle construction and normalization.
-%   - Rebuild protected histories from retained original geometry so an
-%     absolute safety margin is applied exactly once.
-%
-% INPUTS
-%   - obstacleInput (scalar text or canonical obstacle container)
-%   - varargin
-%       Construction uses increasing time_s, matching boundary histories,
-%       an optional nonnegative margin, and optional scalar options.
-%       Rebuild uses an absolute margin and optional scalar options.
-%       constructionOptions.Verbose defaults to false.
-%       Paired nonfinite rows separate rings. Ring orientation and first
-%       vertex are representation details. The status field is metadata and
-%       does not deactivate physical geometry.
-%       Exact consecutive duplicates and closing copies are removed. Runs
-%       with fewer than three distinct vertices become empty area; distinct
-%       coordinates are retained without a distance or area threshold.
-%
-% OUTPUTS
-%   - obstacleData (canonical scalar or column struct array)
-%       Original and protected histories, margin, status, and normalization
-%       counts with affected sample indices/times (at most one per sample).
-%
-% UNITS
-%   - Boundary coordinates and safety margins are coordinate units; time is seconds.
-%   - See obstacle_history_contract.md for between-sample semantics.
-%
+%   obstacleData = obstacleAvoidance.obstacles.createObstacle( canonicalObstacles,
+%   safetyMargin_units)
+%   obstacleData = obstacleAvoidance.obstacles.createObstacle( canonicalObstacles,
+%   safetyMargin_units, constructionOptions)
+% PURPOSE: Own canonical obstacle construction and normalization. Rebuild protected histories from
+%   retained original geometry so an absolute safety margin is applied exactly once.
+% INPUTS: obstacleInput (scalar text or canonical obstacle container) varargin Construction uses
+%   increasing time_s, matching boundary histories, an optional nonnegative margin, and optional
+%   scalar options. Rebuild uses an absolute margin and optional scalar options.
+%   constructionOptions.Verbose defaults to false. Paired nonfinite rows separate rings. Ring
+%   orientation and first vertex are representation details. The status field is metadata and does
+%   not deactivate physical geometry. Exact consecutive duplicates and closing copies are removed.
+%   Runs with fewer than three distinct vertices become empty area; distinct coordinates are
+%   retained without a distance or area threshold.
+% OUTPUTS: obstacleData (canonical scalar or column struct array) Original and protected histories,
+%   margin, status, and normalization counts with affected sample indices/times (at most one per
+%   sample).
+% UNITS: Boundary coordinates and safety margins are coordinate units; time is seconds. See
+%   obstacle_history_contract.md for between-sample semantics.
 
 %% Section 1: Select Construction Or Canonical Rebuild
-
 if nargin == 0
     error("createObstacle:MissingInput", "Obstacle construction or canonical input is required.");
 end
@@ -70,7 +52,6 @@ if nargin < 4 || nargin > 6
 end
 
 %% Section 2: Create And Protect One Raw Record
-
 time_s               = double(varargin{1}(:));
 xBySlice_units   = varargin{2};
 yBySlice_units = varargin{3};
@@ -188,7 +169,6 @@ function [xHistory_units, yHistory_units, removedCount, removalBySample] = norma
         "createObstacle:OriginalBoundarySizeMismatch"];
     fieldNames = ["x_units", "y_units"; "originalX_units", "originalY_units"];
     roleIndex  = 1 + (role == "original");
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:sampleCount
         validateattributes(xHistory_units{sampleIndex}, {'numeric'}, {'vector', 'real'});
         validateattributes(yHistory_units{sampleIndex}, {'numeric'}, {'vector', 'real'});
@@ -247,7 +227,6 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
     newX_units   = NaN(outputCount, 1);
     newY_units = NaN(outputCount, 1);
     writeIndex       = 1;
-    % Process each retained needed to prepare slice.
     for retainedIndex = 1:numel(retainedRegions)
         regionIndex = retainedRegions(retainedIndex);
         inputRows   = rowsByRegion{regionIndex};
@@ -285,13 +264,11 @@ function obstacles = protectObstacles(obstacles, safetyMargin_units, verbose)
         end
         if useBackgroundWorkers
             futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
-            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:sampleCount
                 futures(sampleIndex) = parfeval(workerPool, @inflateSlice, 2, obstacle.originalX_units{sampleIndex}, obstacle.originalY_units{sampleIndex}, safetyMargin_units);
             end
             [protectedX_units, protectedY_units] = fetchOutputs(futures, "UniformOutput", false);
         else
-            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:sampleCount
                 [protectedX_units{sampleIndex}, ...
                     protectedY_units{sampleIndex}] = inflateSlice(obstacle.originalX_units{sampleIndex}, obstacle.originalY_units{sampleIndex}, safetyMargin_units);

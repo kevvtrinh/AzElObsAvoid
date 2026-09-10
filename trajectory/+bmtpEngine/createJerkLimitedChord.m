@@ -3,12 +3,11 @@ function [controlPoint_units, segmentTime_s, phases] = createJerkLimitedChord(st
 % SYNTAX: [controls, durations] = bmtpEngine.createJerkLimitedChord(start, goal, limits, degree)
 % PURPOSE: Exact minimum-time rest-to-rest scalar progress along a chord.
 % INPUTS: Distinct 1-by-2 endpoints, positive axis limits, degree at least three.
-% OUTPUTS: Degree-elevated cubic Bezier spans, physical durations, and optional
-%          analytic phase position, velocity, acceleration, and jerk states.
+% OUTPUTS: Degree-elevated cubic Bezier spans, physical durations, and optional analytic phase
+%   position, velocity, acceleration, and jerk states.
 % UNITS: Position in coordinate units; durations in seconds.
 
 %% Section 1: Solve The Scalar Jerk-Limited Profile
-
 displacement_units = goal_units-start_units;
 distance_units = abs(displacement_units);
 velocity_s1 = min(limits.maxVelocity_units_s./distance_units);
@@ -29,7 +28,6 @@ segmentTime_s = segmentTime_s(active);
 segmentJerk_s3 = segmentJerk_s3(active);
 
 %% Section 2: Integrate And Elevate Each Cubic Without Changing Its Curve
-
 conversion = zeros(degree+1,4);
 for k = 0:degree
     for power = 0:min(k,3)

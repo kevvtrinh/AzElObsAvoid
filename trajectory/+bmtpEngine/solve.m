@@ -1,43 +1,25 @@
 function [candidate, diagnostics] = solve(seed, regions_units, coverage, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [candidate, diagnostics] = ...
-%       bmtpEngine.solve( ...
-%       seed, regions_units, coverage, initialState, goalState, limits, options)
-%
-% PURPOSE
-%   Turn one proposed path into a smooth motion that respects motion limits.
-%   Adjust the curve and obstacle-separating boundaries in alternating steps.
-%   Use quintic Bezier segments; the planner independently validates the result.
-%
-% INPUTS
-%   - seed (scalar struct)
-%       position_units is N-by-2; tau strictly increases from zero to one.
-%   - regions_units (R-by-1 cell array)
-%       Each cell contains one finite convex N-by-2 exclusion polygon.
-%   - coverage (scalar struct)
-%       Requires Passed. Optional RegionActiveTauInterval is R-by-2 and
-%       limits each region to an absolute normalized motion-time interval.
-%   - initialState, goalState (normalized scalar state structs)
-%       Position, velocity, and acceleration are prescribed at both endpoints.
-%   - limits (normalized scalar struct)
-%       Workspace, velocity, acceleration, and jerk bounds.
-%   - options (resolved scalar planner-options struct)
-%       Goal-time policy, sampling interval, work limits, and tolerances.
-%
-% OUTPUTS
-%   - candidate (scalar struct)
-%       Stable motion record. Expected infeasibility returns Success=false.
-%   - diagnostics (scalar struct)
-%       Solver, timing, coverage, motion, and plane-certificate evidence.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds. Derivatives use units/s,
-%     units/s^2, and units/s^3. Polynomial powers use local normalized time.
-%
+% SYNTAX: [candidate, diagnostics] = bmtpEngine.solve( seed, regions_units, coverage, initialState,
+%   goalState, limits, options)
+% PURPOSE: Turn one proposed path into a smooth motion that respects motion limits. Adjust the curve
+%   and obstacle-separating boundaries in alternating steps. Use quintic Bezier segments; the
+%   planner independently validates the result.
+% INPUTS: seed (scalar struct) position_units is N-by-2; tau strictly increases from zero to one.
+%   regions_units (R-by-1 cell array) Each cell contains one finite convex N-by-2 exclusion polygon.
+%   coverage (scalar struct) Requires Passed. Optional RegionActiveTauInterval is R-by-2 and limits
+%   each region to an absolute normalized motion-time interval. initialState, goalState (normalized
+%   scalar state structs) Position, velocity, and acceleration are prescribed at both endpoints.
+%   limits (normalized scalar struct) Workspace, velocity, acceleration, and jerk bounds. options
+%   (resolved scalar planner-options struct) Goal-time policy, sampling interval, work limits, and
+%   tolerances.
+% OUTPUTS: candidate (scalar struct) Stable motion record. Expected infeasibility returns
+%   Success=false. diagnostics (scalar struct) Solver, timing, coverage, motion, and
+%   plane-certificate evidence.
+% UNITS: Position is coordinate units and time is seconds. Derivatives use units/s, units/s^2, and
+%   units/s^3. Polynomial powers use local normalized time.
 
 %% Section 1: Validate And Create The Exclusion Representation
-
 totalTimer = tic;
 % Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
@@ -69,7 +51,6 @@ normalNormLimit    = 1 + 2 ^ 20 * eps;
 obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_units + roundoffReserve_units;
 
 %% Section 2: Solve The Direct Curve Or Alternating Convex Problem
-
 % Earliest arrival tries the C3 jerk-limited chord. Fixed arrival retains
 % the minimum-jerk quintic at the requested physical horizon.
 preparedMotion = struct('Success',false);
@@ -208,7 +189,6 @@ end
 diagnostics.LowerBoundAttempt = boundRecord;
 
 %% Section 3: Prepare And Check The Final Motion
-
 diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale             = preparedMotion.DilationScale;
 % Return reconstruction failure without certification because no complete motion exists to certify.
@@ -257,7 +237,6 @@ if ~certificate.Passed
 end
 
 %% Section 4: Finalize The Directly Certified Candidate
-
 [candidate.Message, candidate.TerminationReason]        = deal("A directly certified BMTP trajectory was found.", "goalReached");
 [candidate.Success, diagnostics.Accepted]               = deal(true);
 [diagnostics.BestDuration_s, diagnostics.ElapsedTime_s] = deal(candidate.TrajectoryDuration_s, toc(totalTimer));
@@ -265,7 +244,6 @@ candidate.SolverDiagnostics = diagnostics;
 end
 
 %% Section 5: Local Functions
-
 function plane = emptyPlane()
     % Initialize an inactive separating-plane record.
     plane = struct();

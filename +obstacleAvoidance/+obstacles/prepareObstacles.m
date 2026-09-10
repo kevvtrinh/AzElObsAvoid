@@ -1,29 +1,17 @@
 function obstacles = prepareObstacles(obstacles, timeRange_s)
 %% Section 0: Header & Readme
-% SYNTAX
-%   obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles)
+% SYNTAX: obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles)
 %   obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[t0,t1])
-%
-% PURPOSE
-%   - Prepare requested source intervals and reuse overlapping cached entries.
-%   - Rebuild stale preparation through one per-obstacle stage.
-%
-% INPUTS
-%   - obstacles (canonical obstacle struct array)
-%       Normalize expected boundary fragments before preparing authoritative
-%       protected geometry; retain original geometry and absolute margin.
-%   - timeRange_s: finite nondecreasing 1-by-2 interval; omit for full history.
-%
-% OUTPUTS
-%   - obstacles (prepared obstacle struct array)
-%       Each record contains source-checked reusable geometry data.
-%
-% UNITS
-%   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
-%
+% PURPOSE: Prepare requested source intervals and reuse overlapping cached entries.
+%   Rebuild stale preparation through one per-obstacle stage.
+% INPUTS: obstacles (canonical obstacle struct array) Normalize expected boundary fragments before
+%   preparing authoritative protected geometry; retain original geometry and absolute margin.
+%   timeRange_s: finite nondecreasing 1-by-2 interval; omit for full history.
+% OUTPUTS: obstacles (prepared obstacle struct array) Each record contains source-checked reusable
+%   geometry data.
+% UNITS: Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 
 %% Section 1: Reuse Only Source-Checked Preparation
-
 if nargin<2
     timeRange_s=[-Inf,Inf];
 else
@@ -31,10 +19,8 @@ else
     assert(timeRange_s(1)<=timeRange_s(2),'prepareObstacles:InvalidTimeRange','The requested time interval must be nondecreasing.');
 end
 
-preparationIsCurrent = false(numel(obstacles), 1);
 if iscell(obstacles)
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-    preparationIsCurrent = false(numel(obstacles),1);
 end
 if ~isempty(obstacles) && isstruct(obstacles) && isfield(obstacles, 'Vertices_units')
     canonical = cell(numel(obstacles), 1);
@@ -54,29 +40,21 @@ end
 if isempty(obstacles)
     return;
 end
-preparationVersion = 5;
-if isfield(obstacles, "InternalPreparation")
-    preparationIsCurrent = true(numel(obstacles), 1);
-    % Evaluate each obstacle against the current geometry or motion.
-    for obstacleIndex = 1:numel(obstacles)
-        preparation      = obstacles(obstacleIndex).InternalPreparation;
-        hasCurrentLayout = isstruct(preparation) && isscalar(preparation) && isfield(preparation, "PreparationVersion") && isequal(preparation.PreparationVersion, preparationVersion) && isfield(preparation, "SourceSnapshot");
-        if hasCurrentLayout
-            sourceSnapshot = createSourceSnapshot(obstacles(obstacleIndex));
-            preparationIsCurrent(obstacleIndex) = isequaln(preparation.SourceSnapshot, sourceSnapshot);
-        else
-            preparationIsCurrent(obstacleIndex) = false;
-        end
-    end
-end
-
+preparationVersion = 6;
 %% Section 2: Extend Only The Requested Entries
-
 % Prepare each obstacle separately.
 
 for obstacleIndex = 1:numel(obstacles)
     previous=[];
-    if preparationIsCurrent(obstacleIndex)
+    preparationIsCurrent = false;
+    if isfield(obstacles,'InternalPreparation')
+        preparation = obstacles(obstacleIndex).InternalPreparation;
+        preparationIsCurrent = isstruct(preparation) && isscalar(preparation) && ...
+            all(isfield(preparation,{'PreparationVersion','SourceSnapshot'})) && ...
+            isequal(preparation.PreparationVersion,preparationVersion) && ...
+            isequaln(preparation.SourceSnapshot,createSourceSnapshot(obstacles(obstacleIndex)));
+    end
+    if preparationIsCurrent
         normalized=obstacles(obstacleIndex);
         previous=normalized.InternalPreparation;
         % Source equality was checked above. Complete preparation needs no
@@ -96,7 +74,6 @@ end
 end
 
 %% Section 3: Local Functions
-
 function snapshot = createSourceSnapshot(obstacle)
     % Store the source fields for cache checks.
     snapshot = struct("targetName", obstacle.targetName, ...

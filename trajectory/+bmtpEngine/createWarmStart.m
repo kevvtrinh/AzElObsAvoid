@@ -1,29 +1,18 @@
 function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
-% SYNTAX
-%   warmStart = bmtpEngine.createWarmStart(request)
-%
-% PURPOSE
-%   - Convert the exact visibility route into quintic BMTP controls.
-%
-% INPUTS
-%   - request: validated BMTP request with static or timed exclusion cells.
-%
-% OUTPUTS
-%   - warmStart: route, control points, time, and all-pair region mask.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds.
+% SYNTAX: warmStart = bmtpEngine.createWarmStart(request)
+% PURPOSE: Convert the exact visibility route into quintic BMTP controls.
+% INPUTS: request: validated BMTP request with static or timed exclusion cells.
+% OUTPUTS: warmStart: route, control points, time, and all-pair region mask.
+% UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Use The Exact Visibility Route
-
 route_units = double(request.Seed.position_units);
 route_units([1 end], :) = [request.InitialState.position_units; request.GoalState.position_units];
 segmentCount = size(route_units, 1) - 1;
 regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
 
 %% Section 2: Create Linear Rest-To-Rest Controls
-
 degree = request.Degree;
 fraction = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
 start_units = reshape(route_units(1:end - 1, :), segmentCount, 1, 2);
@@ -46,7 +35,6 @@ if request.SplitCount>1
 end
 
 %% Section 3: Return The Solver Initialization
-
 warmStart = struct();
 warmStart.Route_units = route_units;
 warmStart.ControlPoint_units = controlPoint_units;
