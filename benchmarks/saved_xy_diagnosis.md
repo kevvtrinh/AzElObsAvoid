@@ -916,6 +916,55 @@ runtime improvement, so its extra production line is also rejected. Neither
 experiment was promoted to the public planner; production and the previously
 passing 39-test suite remain unchanged.
 
+## Rejected trajectory-assembly cache
+
+A bounded single-entry cache retained the derivative and continuity matrices,
+endpoint right-hand sides, and initial variable bounds between timed trajectory
+steps. Its exact key included span count, degree, endpoints, limits, arrival
+mode, and active-plane count. Separating-plane rows and physical time bounds
+were rebuilt on every call. Requests above 4,096 variables or 65,536 inequality
+rows bypassed cache insertion.
+
+Captured complete solver inputs matched in 288 configurations: three degrees,
+four span counts, both arrival modes, three active-plane patterns, and four
+versions of each case including changed plane data, reserves, and horizons.
+One hundred repeated assembly calls had warmed medians of 0.073477 seconds
+before and 0.036438 seconds after. Three paired full BMTP runs also returned
+identical polynomials and engine certificates, with medians 2.681556 and
+2.666405 seconds respectively.
+
+That small engine difference did not survive five warmed public-planner pairs:
+
+| Repetition | Original planner (s) | Assembly cache (s) |
+| --- | ---: | ---: |
+| 1 | 3.777920 | 3.498001 |
+| 2 | 3.510893 | 3.583043 |
+| 3 | 3.485416 | 3.567950 |
+| 4 | 3.472428 | 3.524494 |
+| 5 | 3.416256 | 3.456057 |
+| Median | 3.485416 | 3.524494 |
+
+All ten public results passed independent validation and preserved the exact
+reference polynomial and complete timed-search record. Four of five cached
+runs were slower. The cache is rejected because its added state and ten net
+production lines do not produce an end-to-end benefit; the simpler current
+assembly remains in production.
+
+## Rejected deferred query-time sorting
+
+Another candidate preserved a scalar query time before broadcasting it across
+points, and deferred `unique` for array-valued times until a moving obstacle
+actually needed time groups. Exactly static obstacles could skip that sorting.
+Geometry lookups, point tests, and first-blocker ordering were unchanged.
+
+After warming both implementations, three alternating-order search pairs took
+0.551817, 0.466194, and 0.452387 seconds for the current implementation versus
+0.496009, 0.478157, and 0.457398 seconds for the candidate. The medians were
+0.466194 and 0.478157 seconds. Complete route, clock, and search records matched,
+as did sixteen mixed-obstacle comparisons covering both arrival modes and
+reversed obstacle order. Since the saved-case search did not improve, this
+variant was not promoted to a full planner comparison or retained in production.
+
 ## Regression coverage and code size
 
 The suite now contains 39 MATLAB tests. The saved-request regression checks arrival 117,
