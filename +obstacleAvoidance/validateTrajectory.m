@@ -229,7 +229,10 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     if isstruct(authoritativeInput) && isfield(authoritativeInput,'InternalPreparation')
         authoritativeInput = rmfield(authoritativeInput,'InternalPreparation');
     end
-    authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput);
+    coverageEnd_s = result.Inputs.goalState.time_s;
+    if isfield(result,'FixedArrivalTrialTime_s'), coverageEnd_s = result.Polynomial.FinalTime_s; end
+    authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput, ...
+        [result.Inputs.initialState.time_s,coverageEnd_s]);
     endpoints_units = [result.Inputs.initialState.position_units;result.Inputs.goalState.position_units];
     endpointTimes_s = [result.Polynomial.SegmentStartTime_s(1);result.Polynomial.FinalTime_s];
     if isfield(result.Inputs.goalState,'targetMotion') && ~isempty(result.Inputs.goalState.targetMotion)
@@ -243,8 +246,6 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
     expectedActive = true(size(positionPower_units,1),numel(regions_units));
     if isfield(certificate,'Coverage') && isfield(certificate.Coverage,'ActiveTimeInterval_s')
-        coverageEnd_s = result.Inputs.goalState.time_s;
-        if isfield(result,'FixedArrivalTrialTime_s'), coverageEnd_s = result.Polynomial.FinalTime_s; end
         cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
             result.Inputs.initialState.time_s,coverageEnd_s);
         regions_units = cells.Regions_units;

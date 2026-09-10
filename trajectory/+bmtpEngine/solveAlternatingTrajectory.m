@@ -7,7 +7,8 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 %
 % PURPOSE
 %   - Alternate one trajectory SOCP with exact all-pair separating-line
-%     SOCPs until a completely verified static motion is found.
+%     SOCPs until a completely verified motion is found. Timed cells constrain
+%     only their exact overlap with each fixed-duration motion span.
 %
 % INPUTS
 %   - request, warmStart, diagnostics: checked BMTP state and diagnostics.
@@ -36,7 +37,7 @@ selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 solverMessage = "The all-pair alternating iteration limit was reached.";
 
-%% Section 2: Alternate The Complete Static Formulation
+%% Section 2: Alternate The Complete Formulation
 
 if allPlanesActive
     for iterationIndex = 1:35
@@ -98,7 +99,7 @@ end
 %% Section 4: Local Functions
 
 function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(controlPoint_units, segmentTime_s, planes, request, diagnostics, target_units, reserve_units)
-    % Update every static curve-region pair without sampled discovery or pruning.
+    % Update every active curve-region pair without sampled discovery or pruning.
     verifiedPairs = ~request.RegionActiveBySegment;
     allActive = true;
     breaks_s = request.InitialState.time_s+[0;cumsum(segmentTime_s)];
@@ -106,11 +107,20 @@ function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(contro
         for regionIndex = 1:size(planes, 2)
             if ~request.RegionActiveBySegment(segmentIndex,regionIndex), continue; end
             interval_s = [];
+            controls_units=squeeze(controlPoint_units(segmentIndex,:,:));
+            timeFraction=[0,1];
             if request.Options.GoalTimeMode=="fixedArrival"
                 interval_s = breaks_s(segmentIndex:segmentIndex+1).';
+                if isfield(request.Coverage,'ActiveTimeInterval_s')
+                    active_s=request.Coverage.ActiveTimeInterval_s(regionIndex,:);
+                    interval_s=[max(interval_s(1),active_s(1)),min(interval_s(2),active_s(2))];
+                    timeFraction=max(0,min(1,(interval_s-breaks_s(segmentIndex))/segmentTime_s(segmentIndex)));
+                    controls_units=bmtpEngine.restrictBezier(controls_units,timeFraction);
+                end
             end
             vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex},request.Coverage,regionIndex,interval_s);
-            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(squeeze(controlPoint_units(segmentIndex, :, :)), vertices_units, target_units, reserve_units);
+            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(controls_units, vertices_units, target_units, reserve_units);
+            plane.TimeFraction=timeFraction;
             diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ~(isfield(output,'IsAnalytic') && output.IsAnalytic);
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
             planes(segmentIndex, regionIndex) = plane;
@@ -135,4 +145,5 @@ function plane = createEmptyPlane()
     plane.Normal = zeros(2, 2);
     plane.Offset_units = zeros(1, 2);
     plane.SignedGap_units = NaN;
+    plane.TimeFraction = [0,1];
 end

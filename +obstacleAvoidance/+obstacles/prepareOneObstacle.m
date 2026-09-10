@@ -1,11 +1,11 @@
-function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot)
+function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous)
 %% Section 0: Header & Readme
 % SYNTAX
 %   obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
-%       obstacle, preparationVersion, sourceSnapshot)
+%       obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous)
 %
 % PURPOSE
-%   - Prepare one complete obstacle history for repeated geometry queries.
+%   - Prepare requested entries of one obstacle history for repeated geometry queries.
 %   - Retain the interval method, bounds, edges, motion, and static status.
 %
 % INPUTS
@@ -16,6 +16,9 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 %   - sourceSnapshot (scalar struct)
 %       Source fields assembled by prepareObstacles for cache validation.
 %
+%   - timeRange_s: requested closed interval; omitted means the full history.
+%   - previous: source-checked preparation to extend; omitted means empty.
+%
 % OUTPUTS
 %   - obstacle (scalar canonical obstacle struct)
 %       InternalPreparation contains reusable source-derived geometry data.
@@ -24,136 +27,92 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 %   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 %
 
-%% Section 1: Prepare Sample Geometry
+%% Section 1: Select Source Samples Without Changing The History
 
-% Cache shapes, bounds, and edges for repeated queries.
+validateattributes(preparationVersion, {'numeric'}, {'real','finite','scalar','integer','positive'});
+if nargin<4, timeRange_s=[-Inf,Inf]; end
+if nargin<5, previous=[]; end
+time_s=obstacle.time_s; sampleCount=numel(time_s); intervalCount=sampleCount-1;
+neededSamples=time_s>=timeRange_s(1) & time_s<=timeRange_s(2);
+neededIntervals=time_s(1:end-1)<timeRange_s(2) & time_s(2:end)>timeRange_s(1);
+intervalIndices=find(neededIntervals);
+neededSamples([intervalIndices;intervalIndices+1])=true;
+if sampleCount==1, neededSamples(1)=true; end
 
-validateattributes(preparationVersion, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-sampleCount                    = numel(obstacle.time_s);
-intervalCount                  = max(0, sampleCount - 1);
-sampleShapes                   = cell(sampleCount, 1);
-unionShapes                    = cell(intervalCount, 1);
-deltaX_units               = cell(intervalCount, 1);
-deltaY_units             = cell(intervalCount, 1);
-matchingTopology               = false(intervalCount, 1);
-intervalSpeed_units_s            = Inf(intervalCount, 1);
-intervalGeometryMethod         = strings(intervalCount, 1);
-historyBounds_units              = [Inf -Inf Inf -Inf];
-sampleBounds_units               = NaN(sampleCount, 4);
-sampleEdgeStart_units            = cell(sampleCount, 1);
-sampleEdgeEnd_units              = cell(sampleCount, 1);
-sampleBoundaryRunBounds        = cell(sampleCount, 1);
-intervalBounds_units             = NaN(intervalCount, 4);
-intervalUnionEdgeStart_units     = cell(intervalCount, 1);
-intervalUnionEdgeEnd_units       = cell(intervalCount, 1);
-intervalUnionBoundaryRunBounds = cell(intervalCount, 1);
-% Process each sample in temporal order and accumulate its result.
-for sampleIndex = 1:sampleCount
-    x_units   = double(obstacle.x_units{sampleIndex}(:));
-    y_units = double(obstacle.y_units{sampleIndex}(:));
-    finiteVertex  = isfinite(x_units) & isfinite(y_units);
-    if any(finiteVertex)
-        historyBounds_units = [ ...
-            min(historyBounds_units(1), min(x_units(finiteVertex))), max(historyBounds_units(2), max(x_units(finiteVertex))), min(historyBounds_units(3), min(y_units(finiteVertex))), max(historyBounds_units(4), max(y_units(finiteVertex)))];
-    end
-    sampleShapes{sampleIndex} = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units);
-    [sampleBounds_units(sampleIndex, :), ...
-        sampleEdgeStart_units{sampleIndex}, ...
-        sampleEdgeEnd_units{sampleIndex}, ...
-        sampleBoundaryRunBounds{sampleIndex}] = createShapeCache(sampleShapes{sampleIndex});
+%% Section 2: Extend The Single Source-Checked Preparation Record
+
+if isempty(previous)
+    preparation=struct('PreparationVersion',preparationVersion,'SourceSnapshot',sourceSnapshot, ...
+        'SamplePrepared',false(sampleCount,1),'IntervalPrepared',false(intervalCount,1), ...
+        'SampleShapes',{cell(sampleCount,1)},'SampleBounds_units',NaN(sampleCount,4), ...
+        'SampleEdgeStart_units',{cell(sampleCount,1)},'SampleEdgeEnd_units',{cell(sampleCount,1)}, ...
+        'SampleBoundaryRunBounds',{cell(sampleCount,1)},'IntervalUnionShapes',{cell(intervalCount,1)}, ...
+        'IntervalBounds_units',NaN(intervalCount,4),'IntervalUnionEdgeStart_units',{cell(intervalCount,1)}, ...
+        'IntervalUnionEdgeEnd_units',{cell(intervalCount,1)},'IntervalUnionBoundaryRunBounds',{cell(intervalCount,1)}, ...
+        'DeltaX_units',{cell(intervalCount,1)},'DeltaY_units',{cell(intervalCount,1)}, ...
+        'MatchingTopology',false(intervalCount,1),'IntervalGeometryModel',strings(intervalCount,1), ...
+        'IntervalSpeedBound_units_s',Inf(intervalCount,1),'SelectedEdgeQueryIsExact',false, ...
+        'SampleSpeedBound_units_s',Inf(sampleCount,1),'IsTimeInvariant',false);
+    % Exact numeric equality can establish a globally static shape without
+    % constructing polygons outside the requested window. Activity still uses time_s.
+    preparation.IsTimeInvariant=all(cellfun(@(x,y)isequaln(x,obstacle.x_units{1}) && ...
+        isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+else
+    preparation=previous;
+end
+for sampleIndex=reshape(find(neededSamples & ~preparation.SamplePrepared),1,[])
+    shape=obstacleAvoidance.geometry.boundaryToShape(obstacle.x_units{sampleIndex},obstacle.y_units{sampleIndex});
+    preparation.SampleShapes{sampleIndex}=shape;
+    [preparation.SampleBounds_units(sampleIndex,:),preparation.SampleEdgeStart_units{sampleIndex}, ...
+        preparation.SampleEdgeEnd_units{sampleIndex},preparation.SampleBoundaryRunBounds{sampleIndex}]=createShapeCache(shape);
+    preparation.SamplePrepared(sampleIndex)=true;
 end
 
-%% Section 2: Check Every History Interval
+%% Section 3: Prepare Each Newly Requested Source Interval Once
 
-% Interpolate only when vertex correspondence is verified.
-% Otherwise use geometry that conservatively covers the interval.
-
-intervalDuration_s = diff(double(obstacle.time_s(:)));
-% Process each interval while assembling the complete motion or interval result.
-for intervalIndex = 1:intervalCount
-    lowerX_units   = double(obstacle.x_units{intervalIndex}(:));
-    lowerY_units = double(obstacle.y_units{intervalIndex}(:));
-    upperX_units   = double(obstacle.x_units{intervalIndex + 1}(:));
-    upperY_units = double(obstacle.y_units{intervalIndex + 1}(:));
-    [matchingTopology(intervalIndex), alignedUpper_units] = alignVerifiedSingleRing(lowerX_units, lowerY_units, upperX_units, upperY_units);
-    if matchingTopology(intervalIndex)
-        deltaX_units{intervalIndex} = alignedUpper_units(:, 1) - lowerX_units;
-        deltaY_units{intervalIndex} = alignedUpper_units(:, 2) - lowerY_units;
-        finiteVertex = isfinite(lowerX_units) & isfinite(lowerY_units);
-        speed_units_s  = hypot(deltaX_units{intervalIndex}(finiteVertex), deltaY_units{intervalIndex}(finiteVertex)) / intervalDuration_s(intervalIndex);
-        intervalSpeed_units_s(intervalIndex) = max([0; speed_units_s]);
-        intervalGeometryMethod(intervalIndex) = "linearCorrespondingVertices";
+for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),1,[])
+    lowerX_units=obstacle.x_units{intervalIndex}; lowerY_units=obstacle.y_units{intervalIndex};
+    upperX_units=obstacle.x_units{intervalIndex+1}; upperY_units=obstacle.y_units{intervalIndex+1};
+    [matched,alignedUpper_units]=alignVerifiedSingleRing(lowerX_units,lowerY_units,upperX_units,upperY_units);
+    preparation.MatchingTopology(intervalIndex)=matched;
+    if matched
+        preparation.DeltaX_units{intervalIndex}=alignedUpper_units(:,1)-lowerX_units;
+        preparation.DeltaY_units{intervalIndex}=alignedUpper_units(:,2)-lowerY_units;
+        speed_units_s=hypot(preparation.DeltaX_units{intervalIndex},preparation.DeltaY_units{intervalIndex})/diff(time_s(intervalIndex:intervalIndex+1));
+        preparation.IntervalSpeedBound_units_s(intervalIndex)=max([0;speed_units_s]);
+        preparation.IntervalGeometryModel(intervalIndex)="linearCorrespondingVertices";
     else
-        [shapesAreEquivalent, shapesAreNested] = compareShapes(sampleShapes{intervalIndex}, sampleShapes{intervalIndex + 1});
-        if shapesAreEquivalent
-            unionShapes{intervalIndex} = sampleShapes{intervalIndex};
-            intervalGeometryMethod(intervalIndex) = "staticEquivalentSamples";
-        elseif shapesAreNested
-            % Use the exact union for nested shapes to preserve holes and concavities.
-            unionShapes{intervalIndex} = union(sampleShapes{intervalIndex}, sampleShapes{intervalIndex + 1});
-            intervalGeometryMethod(intervalIndex) = "conservativeNestedEndpointUnion";
+        firstShape=preparation.SampleShapes{intervalIndex}; lastShape=preparation.SampleShapes{intervalIndex+1};
+        [equivalent,nested]=compareShapes(firstShape,lastShape);
+        if equivalent
+            shape=firstShape; method="staticEquivalentSamples";
+        elseif nested
+            shape=union(firstShape,lastShape); method="conservativeNestedEndpointUnion";
         else
-            unionShapes{intervalIndex} = createEndpointConvexHull(lowerX_units, lowerY_units, upperX_units, upperY_units);
-            intervalGeometryMethod(intervalIndex) = "conservativeEndpointConvexHull";
+            shape=createEndpointConvexHull(lowerX_units,lowerY_units,upperX_units,upperY_units);
+            method="conservativeEndpointConvexHull";
         end
-        intervalSpeed_units_s(intervalIndex) = 0;
+        preparation.IntervalUnionShapes{intervalIndex}=shape;
+        preparation.IntervalGeometryModel(intervalIndex)=method;
+        preparation.IntervalSpeedBound_units_s(intervalIndex)=0;
+        [~,preparation.IntervalUnionEdgeStart_units{intervalIndex}, ...
+            preparation.IntervalUnionEdgeEnd_units{intervalIndex}, ...
+            preparation.IntervalUnionBoundaryRunBounds{intervalIndex}]=createShapeCache(shape);
     end
-    intervalVertices_units = [ ...
-        lowerX_units, lowerY_units; ...
-        upperX_units, upperY_units];
-    intervalBounds_units(intervalIndex, :) = finiteBounds(intervalVertices_units);
-    if ~isempty(unionShapes{intervalIndex})
-        [~, intervalUnionEdgeStart_units{intervalIndex}, ...
-            intervalUnionEdgeEnd_units{intervalIndex}, ...
-            intervalUnionBoundaryRunBounds{intervalIndex}] = createShapeCache(unionShapes{intervalIndex});
-    end
+    preparation.IntervalBounds_units(intervalIndex,:)=finiteBounds([lowerX_units,lowerY_units;upperX_units,upperY_units]);
+    preparation.IntervalPrepared(intervalIndex)=true;
 end
 
-%% Section 3: Calculate Speed Bounds And Static Status
+%% Section 4: Retain Conservative Bounds At Unprepared Neighbor Intervals
 
-% Cache sample speeds and whether the whole history is static.
-
-sampleSpeed_units_s = zeros(sampleCount, 1);
-% Process each interval while assembling the complete motion or interval result.
-for intervalIndex = 1:intervalCount
-    sampleSpeed_units_s(intervalIndex) = max(sampleSpeed_units_s(intervalIndex), intervalSpeed_units_s(intervalIndex));
-    sampleSpeed_units_s(intervalIndex + 1) = max(sampleSpeed_units_s(intervalIndex + 1), intervalSpeed_units_s(intervalIndex));
-end
-staticInterval  = intervalGeometryMethod == "staticEquivalentSamples" | (intervalGeometryMethod == "linearCorrespondingVertices" & intervalSpeed_units_s == 0);
-isTimeInvariant = sampleCount > 0 && (sampleCount == 1 || all(staticInterval));
-staticShape     = polyshape();
-if isTimeInvariant
-    staticShape = sampleShapes{1};
-end
-
-%% Section 4: Create The Prepared Obstacle Record
-
-% Save source data so later calls can detect stale caches.
-
-preparation = struct("PreparationVersion", preparationVersion, ...
-    "SourceSnapshot", sourceSnapshot, ...
-    "HistoryBounds_units", historyBounds_units, ...
-    "SampleShapes", {sampleShapes}, ...
-    "SampleBounds_units", sampleBounds_units, ...
-    "SampleEdgeStart_units", {sampleEdgeStart_units}, ...
-    "SampleEdgeEnd_units", {sampleEdgeEnd_units}, ...
-    "SampleBoundaryRunBounds", {sampleBoundaryRunBounds}, ...
-    "IntervalUnionShapes", {unionShapes}, ...
-    "IntervalBounds_units", intervalBounds_units, ...
-    "IntervalUnionEdgeStart_units", {intervalUnionEdgeStart_units}, ...
-    "IntervalUnionEdgeEnd_units", {intervalUnionEdgeEnd_units}, ...
-    "IntervalUnionBoundaryRunBounds", ...
-    {intervalUnionBoundaryRunBounds}, ...
-    "DeltaX_units", {deltaX_units}, ...
-    "DeltaY_units", {deltaY_units}, ...
-    "MatchingTopology", matchingTopology, ...
-    "IntervalGeometryModel", intervalGeometryMethod, ...
-    "IntervalSpeedBound_units_s", intervalSpeed_units_s, ...
-    "SelectedEdgeQueryIsExact", false, ...
-    "SampleSpeedBound_units_s", sampleSpeed_units_s, ...
-    "IsTimeInvariant", isTimeInvariant, ...
-    "StaticShape", staticShape);
-obstacle.InternalPreparation = preparation;
+preparation.SampleSpeedBound_units_s=max([0;preparation.IntervalSpeedBound_units_s], ...
+    [preparation.IntervalSpeedBound_units_s;0]);
+staticIntervals=preparation.IntervalGeometryModel=="staticEquivalentSamples" | ...
+    (preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s==0);
+preparation.IsTimeInvariant=preparation.IsTimeInvariant || ...
+    (all(preparation.IntervalPrepared) && all(staticIntervals));
+if preparation.IsTimeInvariant, preparation.SampleSpeedBound_units_s(:)=0; end
+obstacle.InternalPreparation=preparation;
 end
 
 %% Section 5: Local Functions
@@ -203,23 +162,43 @@ function [verified, alignedUpper_units] = alignVerifiedSingleRing(lowerX_units, 
         verified = true;
         return;
     end
-    vertexCount   = size(lower_units, 1);
-    bestCost_units2 = Inf;
-    % Process each orientation needed to complete align verified single ring.
+    % Center and scale before FFT correlation: translation does not affect
+    % the least-squares correspondence, and normalization avoids cancellation
+    % when a small polygon is far from the coordinate origin.
+    centeredLower = lower_units-mean(lower_units,1);
+    centeredUpper = upper_units-mean(upper_units,1);
+    scale_units = max(abs([centeredLower;centeredUpper]),[],'all');
+    if scale_units==0, return; end
+    centeredLower = centeredLower/scale_units;
+    centeredUpper = centeredUpper/scale_units;
+    lowerSpectrum = fft(centeredLower);
+    anchorChoices = find(lower_units(:,1)==min(lower_units(:,1)));
+    [~,anchorChoice] = min(lower_units(anchorChoices,2));
+    anchorIndex = anchorChoices(anchorChoice);
+    bestSquaredCost = Inf;
+    % Circular correlation evaluates every cyclic alignment in O(N log N).
+    % Only the two selected shifts are materialized; there is no shift-loop fallback.
     for orientationIndex = 1:2
         orientedUpper_units = upper_units;
+        orientedUpper = centeredUpper;
         if orientationIndex == 2
             orientedUpper_units = flipud(orientedUpper_units);
+            orientedUpper = flipud(orientedUpper);
         end
-        % Repeat the shift alternatives needed to refine the current solution.
-        for shiftCount = 0:vertexCount - 1
-            candidateUpper_units = circshift(orientedUpper_units, shiftCount, 1);
-            cost_units2          = sum((candidateUpper_units - lower_units) .^ 2, "all");
-            % Use the lower-cost vertex correspondence; ties retain the earlier deterministic match.
-            if cost_units2 < bestCost_units2
-                bestCost_units2    = cost_units2;
-                alignedUpper_units = candidateUpper_units;
-            end
+        correlation = sum(real(ifft(lowerSpectrum.*conj(fft(orientedUpper)))),2);
+        % Resolve numerically tied alignments at a physical anchor vertex,
+        % independent of either incoming ring's starting index.
+        tieTolerance = 64*ceil(log2(size(lower_units,1)))*eps(max(abs(correlation)));
+        shifts = find(correlation>=max(correlation)-tieTolerance);
+        anchorVertices_units = orientedUpper_units(mod(anchorIndex-shifts,size(lower_units,1))+1,:);
+        choices = find(anchorVertices_units(:,1)==min(anchorVertices_units(:,1)));
+        [~,choice] = min(anchorVertices_units(choices,2));
+        shiftIndex = shifts(choices(choice));
+        shiftCount = shiftIndex-1;
+        squaredCost = sum((circshift(orientedUpper,shiftCount,1)-centeredLower).^2,'all');
+        if squaredCost < bestSquaredCost
+            bestSquaredCost = squaredCost;
+            alignedUpper_units = circshift(orientedUpper_units,shiftCount,1);
         end
     end
     delta_units                = alignedUpper_units - lower_units;

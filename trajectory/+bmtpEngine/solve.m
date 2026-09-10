@@ -134,7 +134,9 @@ if size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.
     end
     analyticIdentifier = "c3JerkLimitedChord";
     analyticRepresentation = "analyticC3Clock";
-elseif size(route_units,1)==2 && options.GoalTimeMode=="fixedArrival"
+elseif options.GoalTimeMode=="fixedArrival"
+    % A timed direct motion may pass through a spatial guide's swept hull.
+    % Check it before committing to that guide's detour.
     directDuration_s = request.MotionHorizon_s;
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
@@ -163,7 +165,9 @@ elseif size(route_units,1)==2 && options.GoalTimeMode=="fixedArrival"
         [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
     end
 end
-if seed.Source=="departureSchedule"
+% A certified zero-delay chord already supplies this schedule's first departure.
+% Preserve its absolute clock and certificate instead of computing them again.
+if seed.Source=="departureSchedule" && ~(preparedMotion.Success && certificate.Passed)
     [controls_units,times_s,powers_units,departure] = bmtpEngine.createDelayedChord(request);
     diagnostics.DepartureSchedule = departure;
     if isempty(times_s)

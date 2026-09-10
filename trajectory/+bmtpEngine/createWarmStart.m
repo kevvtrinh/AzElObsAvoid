@@ -7,7 +7,7 @@ function warmStart = createWarmStart(request)
 %   - Convert the exact visibility route into quintic BMTP controls.
 %
 % INPUTS
-%   - request: validated static BMTP solve request.
+%   - request: validated BMTP request with static or timed exclusion cells.
 %
 % OUTPUTS
 %   - warmStart: route, control points, time, and all-pair region mask.
@@ -57,7 +57,7 @@ warmStart.SegmentCount = segmentCount;
 warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = originalSegmentCount;
 warmStart.WarmRouteResampled = false;
-if isfield(request.Coverage,'BreakTime_s')
+if isfield(request.Coverage,'BreakTime_s') && request.Options.GoalTimeMode~="fixedArrival"
     sourceBreaks_s = request.Coverage.BreakTime_s;
     % Natural obstacle events already supply phases on a detailed clock.
     % Keep at least eight spans (up to four per interval) on sparse clocks
@@ -82,9 +82,9 @@ if isfield(request.Coverage,'BreakTime_s')
         breakTime_s(2:end) > intervals_s(:,1).';
     warmStart.WarmRouteResampled = true;
 end
-if request.Options.GoalTimeMode=="fixedArrival" && ~isfield(request.Coverage,'BreakTime_s')
-    % Uniform physical spans avoid derivative amplification on tiny polygon
-    % guide edges while retaining that route as the initialization.
+if request.Options.GoalTimeMode=="fixedArrival"
+    % The motion mesh follows the guide, not the obstacle sampling frequency.
+    % Every source interval still constrains its exact overlap with these spans.
     segmentCount=max(8,originalSegmentCount);
     tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
     controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
@@ -93,6 +93,12 @@ if request.Options.GoalTimeMode=="fixedArrival" && ~isfield(request.Coverage,'Br
     warmStart.SegmentRatio=ones(segmentCount,1);
     warmStart.SegmentCount=segmentCount;
     warmStart.RegionActiveBySegment=true(segmentCount,numel(request.Regions_units));
+    if isfield(request.Coverage,'ActiveTimeInterval_s')
+        breaks_s=request.InitialState.time_s+[0;cumsum(warmStart.SegmentTime_s)];
+        intervals_s=request.Coverage.ActiveTimeInterval_s;
+        warmStart.RegionActiveBySegment=breaks_s(1:end-1)<intervals_s(:,2).' & ...
+            breaks_s(2:end)>intervals_s(:,1).';
+    end
     warmStart.WarmRouteResampled=true;
 end
 if request.Options.GoalTimeMode=="fixedArrival"

@@ -38,6 +38,6 @@ if nargin < 3 || isempty(geometryOnly)
 end
 geometryOnly = obstacleAvoidance.input.normalizeLogicalScalar(geometryOnly, "geometryOnly", "shapeAtTime:InvalidGeometryOnly");
 queryTime_s  = double(queryTime_s);
-obstacle     = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
+obstacle     = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[queryTime_s,queryTime_s]);
 [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s, geometryOnly);
 end

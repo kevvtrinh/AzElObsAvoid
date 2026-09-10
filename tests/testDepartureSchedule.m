@@ -53,6 +53,21 @@ function testInsufficientDepartureWindow(testCase)
     verifyEmpty(testCase,rejected.time_s);
 end
 
+function testCrossBeforeObstacleArrives(testCase)
+    r = testCase.TestData.Barrier;
+    initial = r.Inputs.initialState; goal = r.Inputs.goalState; goal.time_s = 30;
+    trapezoid = [-1,-0.3;1,-0.3;0.5,0.3;-0.5,0.3];
+    source = obstacleAvoidance.obstacles.createObstacle('later crossing',[0;30], ...
+        {trapezoid(:,1);trapezoid(:,1)},{trapezoid(:,2)+6;trapezoid(:,2)-6},0.1);
+    direct = planner([],initial,goal,r.Limits,r.Options);
+    actual = planner(source,initial,goal,r.Limits,r.Options);
+    verifyTrue(testCase,actual.Success,actual.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(actual).Passed);
+    verifyEqual(testCase,actual.Polynomial,direct.Polynomial);
+    verifyEqual(testCase,actual.SolverDiagnostics.Identifier,"c3JerkLimitedChord");
+    verifyEqual(testCase,actual.SolverDiagnostics.TrajectorySocpCount,0);
+end
+
 function testWaitingPointMustRemainFree(testCase)
     r = testCase.TestData.Barrier;
     box = [-5.1,-0.1;-4.9,-0.1;-4.9,0.1;-5.1,0.1];

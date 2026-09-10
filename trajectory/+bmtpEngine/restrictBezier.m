@@ -2,7 +2,7 @@ function restricted_units = restrictBezier(controlPoint_units, interval)
 %% Section 0: Header & Readme
 % SYNTAX: restricted = bmtpEngine.restrictBezier(controls,[a b])
 % PURPOSE: Express the same Bezier curve on a closed normalized subinterval.
-% INPUTS: N-by-2 controls and 0 <= a <= b <= 1 from physical interval overlap.
+% INPUTS: N-by-M controls and 0 <= a <= b <= 1 from physical interval overlap.
 % OUTPUTS: Same-degree controls, preserving the curve without sampling.
 % UNITS: Coordinate units; interval endpoints are dimensionless.
 

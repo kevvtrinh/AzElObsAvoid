@@ -18,7 +18,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   - limits (scalar struct)
 %       Workspace, velocity, acceleration, and jerk limits.
 %   - planes (S-by-R struct array)
-%       Fixed active separating-line constraints.
+%       Fixed active separating-line constraints. Optional TimeFraction
+%       restricts a plane to a closed part of a fixed-duration motion span.
 %   - reserve_units (nonnegative scalar)
 %       Numerical separation reserve.
 %   - maximumMotionDuration_s (positive scalar)
@@ -44,7 +45,16 @@ controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
 originalPlaneCount=nnz([planes.Active]);
-if fixedClock && originalPlaneCount>segmentCount*degree
+partialPlanes=false;
+if isfield(planes,'TimeFraction') && ~isempty(planes)
+    fractions=reshape([planes.TimeFraction],2,[]).';
+    validateattributes(fractions,{'numeric'},{'real','finite','ncols',2,'>=',0,'<=',1});
+    assert(all(fractions(:,1)<fractions(:,2)),'bmtpEngine:InvalidPlaneTimeScope');
+    partialPlanes=any(fractions~=[0,1],'all');
+    assert(fixedClock || ~partialPlanes,'bmtpEngine:InvalidPlaneTimeScope');
+end
+% Half-spaces on different physical intervals cannot eliminate each other.
+if fixedClock && ~partialPlanes && originalPlaneCount>segmentCount*degree
     planes=bmtpEngine.removeRedundantPlanes(planes,limits,2*reserve_units);
 end
 prescribedAxis = nargin>=12 && ~isempty(fixedControl_units) && any(isfinite(fixedControl_units(:)));
@@ -265,6 +275,7 @@ if (exitFlag <= 0 && exitFlag ~= -7) || isempty(x) || any(~isfinite(x))
     return;
 end
 segmentTime_s    = max(x(powerIndex(4)), 0) ^ (1 / 3) * segmentRatio;
+if fixedClock, segmentTime_s=physicalTimes_s; end
 controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCount), [3 2 1]);
 end
 
@@ -370,6 +381,12 @@ function [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, seg
     values = [reshape((alpha(1:end-1)*plane.Normal(1,:)).',[],1); ...
         reshape((beta(2:end)*plane.Normal(2,:)).',[],1)];
     rows = sparse(rowIndices,[controlColumns;controlColumns],values,degree+2,variableCount);
+    if isfield(plane,'TimeFraction') && ~isequal(plane.TimeFraction,[0,1])
+        % Restrict the unknown controls exactly before forming the existing
+        % Bernstein plane product; keep every source interval as a constraint.
+        restriction=bmtpEngine.restrictBezier(eye(degree+1),plane.TimeFraction);
+        rows(:,controlColumns)=rows(:,controlColumns)*kron(restriction,speye(2));
+    end
     offset_units = alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
 end
 

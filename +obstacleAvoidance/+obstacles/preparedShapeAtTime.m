@@ -31,6 +31,11 @@ if isscalar(time_s)
     lowerIndex = 1;
     upperIndex = 1;
 end
+if isfield(preparation,'SamplePrepared')
+    covered=preparation.SamplePrepared(lowerIndex) && preparation.SamplePrepared(upperIndex);
+    if lowerIndex~=upperIndex, covered=covered && preparation.IntervalPrepared(lowerIndex); end
+    assert(covered,'preparedShapeAtTime:UnpreparedTime','Prepare the requested time before querying internal geometry.');
+end
 fraction = 0;
 if lowerIndex ~= upperIndex
     fraction = (queryTime_s - time_s(lowerIndex)) / (time_s(upperIndex) - time_s(lowerIndex));

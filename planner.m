@@ -8,6 +8,8 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
 %     then construct independently certified C3 quintic BMTP motion.
+%   - Moving-obstacle guides use requested-window envelopes for initialization;
+%     motion constraints retain the original time-dependent geometry.
 %
 % INPUTS
 %   - obstacles: static polygon structs or canonical polygon histories.
@@ -110,7 +112,7 @@ end
 totalTimer = tic;
 earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
 interceptTime_s = goalState.time_s;
-preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
+preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
 scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
 visibilityGraph = struct('NodePosition_units',zeros(0,2),'AcceptedNodeIndex',zeros(0,2), ...
     'AcceptedWeight_units',zeros(0,1),'RejectedNodeIndex',zeros(0,2), ...
@@ -128,7 +130,8 @@ if ~endpointFeasible
     result.ElapsedTime_s = toc(totalTimer);
     return;
 end
-isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant,preparedObstacles));
+isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant || ...
+    (numel(o.time_s)>1 && (initialState.time_s<o.time_s(1) || goalState.time_s>o.time_s(end))),preparedObstacles));
 regions_units = cell(0,1);
 for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
 if isDynamic
@@ -179,22 +182,43 @@ if futureGoalBlocked
     visibilityGraph.RouteLength_units = norm(diff(route_units));
     visibilityGraph.SearchKind = "temporalDirectSeed";
 else
+    guideScene = scene;
+    guideKind = "initialSpatialSnapshot";
+    if isDynamic
+        % The sweep selects a spatial guide only. BMTP below retains the
+        % original moving cells and can tighten the motion inside this hull.
+        guideScene = struct('ProtectedShape',{});
+        for k = 1:numel(preparedObstacles)
+            indices = find(cells.SourceObstacleIndex==k);
+            if isempty(indices), continue; end
+            if preparedObstacles(k).InternalPreparation.IsTimeInvariant
+                sampleIndex=find(preparedObstacles(k).InternalPreparation.SamplePrepared,1);
+                guideScene(end+1).ProtectedShape=preparedObstacles(k).InternalPreparation.SampleShapes{sampleIndex}; %#ok<AGROW>
+                continue;
+            end
+            vertices_units = [vertcat(cells.Regions_units{indices});vertcat(cells.EndRegions_units{indices})];
+            hull = convhull(vertices_units(:,1),vertices_units(:,2));
+            guideScene(end+1).ProtectedShape = polyshape(vertices_units(hull(1:end-1),:), ...
+                'Simplify',false,'KeepCollinearPoints',true);
+        end
+        guideKind = "requestedWindowEnvelopeGuide";
+    end
     % Chronological trials often share exactly the same spatial problem.
     % Compare all graph inputs directly so changed source geometry cannot
     % reuse stale visibility edges. Retain only the most recent graph.
     persistent previousVisibilityInput previousVisibilityGraph
-    visibilityInput=struct('Scene',scene,'Start',initialState.position_units, ...
+    visibilityInput=struct('Scene',guideScene,'Start',initialState.position_units, ...
         'Goal',goalState.position_units,'Limits',limits,'Options',options);
     if isequaln(visibilityInput,previousVisibilityInput)
         visibilityGraph=previousVisibilityGraph;
     else
-        visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,initialState.position_units,goalState.position_units,limits,options);
+        visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(guideScene,initialState.position_units,goalState.position_units,limits,options);
         previousVisibilityInput=visibilityInput; previousVisibilityGraph=visibilityGraph;
     end
-    visibilityGraph.SearchKind = "initialSpatialSnapshot";
+    visibilityGraph.SearchKind = guideKind;
 end
 if isDynamic && ~visibilityGraph.IsConnected
-    % A disconnected snapshot cannot rule out a route through a later opening.
+    % A disconnected spatial guide cannot rule out a later temporal opening.
     % This chord is only a seed; all time-dependent exclusions remain active.
     visibilityGraph.Route_units = route_units;
     visibilityGraph.RouteLength_units = norm(diff(route_units));

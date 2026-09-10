@@ -1,15 +1,18 @@
-function obstacles = prepareObstacles(obstacles)
+function obstacles = prepareObstacles(obstacles, timeRange_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles)
+%   obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[t0,t1])
 %
 % PURPOSE
-%   - Reuse current obstacle-history preparation for a complete collection.
+%   - Prepare requested source intervals and reuse overlapping cached entries.
 %   - Rebuild stale preparation through one per-obstacle stage.
 %
 % INPUTS
 %   - obstacles (canonical obstacle struct array)
-%       Protected histories remain unchanged and authoritative.
+%       Normalize expected boundary fragments before preparing authoritative
+%       protected geometry; retain original geometry and absolute margin.
+%   - timeRange_s: finite nondecreasing 1-by-2 interval; omit for full history.
 %
 % OUTPUTS
 %   - obstacles (prepared obstacle struct array)
@@ -19,7 +22,14 @@ function obstacles = prepareObstacles(obstacles)
 %   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 %
 
-%% Section 1: Reuse Only Current Complete Preparation
+%% Section 1: Reuse Only Source-Checked Preparation
+
+if nargin<2
+    timeRange_s=[-Inf,Inf];
+else
+    validateattributes(timeRange_s,{'numeric'},{'real','finite','size',[1,2]});
+    assert(timeRange_s(1)<=timeRange_s(2),'prepareObstacles:InvalidTimeRange','The requested time interval must be nondecreasing.');
+end
 
 preparationIsCurrent = false(numel(obstacles), 1);
 if iscell(obstacles)
@@ -44,7 +54,7 @@ end
 if isempty(obstacles)
     return;
 end
-preparationVersion = 1;
+preparationVersion = 4;
 if isfield(obstacles, "InternalPreparation")
     preparationIsCurrent = true(numel(obstacles), 1);
     % Evaluate each obstacle against the current geometry or motion.
@@ -58,18 +68,24 @@ if isfield(obstacles, "InternalPreparation")
             preparationIsCurrent(obstacleIndex) = false;
         end
     end
-    if all(preparationIsCurrent)
-        return;
-    end
 end
 
-%% Section 2: Prepare Each Complete History
+%% Section 2: Extend Only The Requested Entries
 
 % Prepare each obstacle separately.
 
 for obstacleIndex = 1:numel(obstacles)
-    if preparationIsCurrent(obstacleIndex), continue; end
-    preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle(obstacles(obstacleIndex), preparationVersion, createSourceSnapshot(obstacles(obstacleIndex)));
+    previous=[];
+    if preparationIsCurrent(obstacleIndex)
+        normalized=obstacles(obstacleIndex);
+        previous=normalized.InternalPreparation;
+    else
+        normalized=obstacleAvoidance.obstacles.createObstacle(obstacles(obstacleIndex));
+    end
+    preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle(normalized, preparationVersion, createSourceSnapshot(normalized),timeRange_s,previous);
+    for name = reshape(string(fieldnames(normalized)),1,[])
+        obstacles(obstacleIndex).(name) = normalized.(name);
+    end
     obstacles(obstacleIndex).InternalPreparation = preparedObstacle.InternalPreparation;
 end
 end

@@ -30,10 +30,14 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %       Paired nonfinite rows separate rings. Ring orientation and first
 %       vertex are representation details. The status field is metadata and
 %       does not deactivate physical geometry.
+%       Exact consecutive duplicates and closing copies are removed. Runs
+%       with fewer than three distinct vertices become empty area; distinct
+%       coordinates are retained without a distance or area threshold.
 %
 % OUTPUTS
 %   - obstacleData (canonical scalar or column struct array)
-%       Original and protected histories, margin, status, and stable fields.
+%       Original and protected histories, margin, status, and normalization
+%       counts with affected sample indices/times (at most one per sample).
 %
 % UNITS
 %   - Boundary coordinates and safety margins are coordinate units; time is seconds.
@@ -116,17 +120,40 @@ function obstacle = normalizeOne(inputData)
     if hasOriginalX
         originalIsValid = iscell(inputData.originalX_units) && iscell(inputData.originalY_units) && numel(inputData.originalX_units) == sampleCount && numel(inputData.originalY_units) == sampleCount;
         requireCondition(originalIsValid, "createObstacle:InvalidOriginalBoundary", "Original boundary cells must match time_s.");
-        [originalXBySlice_units, originalYBySlice_units, ...
-            originalRemoved, originalRemovalBySample] = normalizeHistory(inputData.originalX_units, inputData.originalY_units, sampleCount, "original");
+        if isequaln(inputData.originalX_units,inputData.x_units) && isequaln(inputData.originalY_units,inputData.y_units)
+            originalXBySlice_units = xBySlice_units; originalYBySlice_units = yBySlice_units;
+            originalRemoved = protectedRemoved; originalRemovalBySample = protectedRemovalBySample;
+        else
+            [originalXBySlice_units, originalYBySlice_units, ...
+                originalRemoved, originalRemovalBySample] = normalizeHistory(inputData.originalX_units, inputData.originalY_units, sampleCount, "original");
+        end
     else
         originalXBySlice_units   = xBySlice_units;
         originalYBySlice_units = yBySlice_units;
-        originalRemoved              = 0;
+        originalRemoved              = [0,0];
         originalRemovalBySample      = false(sampleCount, 1);
     end
-    if protectedRemoved + originalRemoved > 0
-        removalBySample = protectedRemovalBySample | originalRemovalBySample;
-        warning("createObstacle:RemovedTwoVertexRegions", "Obstacle '%s' removed %d protected and %d original two-vertex " + "regions across %d time slices; remaining regions were unchanged.", targetName, protectedRemoved, originalRemoved, nnz(removalBySample));
+    affectedSamples = find(protectedRemovalBySample | originalRemovalBySample);
+    normalization = struct('Version',1,'SourceTime_s',time_s,'Roles',["protected","original"], ...
+        'RemovedRegionCount',[protectedRemoved(1),originalRemoved(1)], ...
+        'RemovedDuplicateVertexCount',[protectedRemoved(2),originalRemoved(2)], ...
+        'AffectedSampleIndex',affectedSamples,'AffectedSampleTime_s',time_s(affectedSamples), ...
+        'Reasons',["fewerThanThreeDistinctVertices","exactDuplicateOrClosure"]);
+    % Preserve cleanup provenance through canonical rebuilds and margin changes.
+    % This metadata never controls occupancy or substitutes for source checks.
+    if isfield(inputData,'NormalizationDiagnostics')
+        previous = inputData.NormalizationDiagnostics;
+        if isstruct(previous) && isscalar(previous) && all(isfield(previous,fieldnames(normalization))) && ...
+                isequal(previous.Version,1) && isequal(previous.SourceTime_s,time_s)
+            for name = ["RemovedRegionCount","RemovedDuplicateVertexCount"]
+                validateattributes(previous.(name),{'numeric'},{'real','finite','size',[1,2],'integer','nonnegative'});
+                normalization.(name) = normalization.(name)+previous.(name);
+            end
+            validateattributes(previous.AffectedSampleIndex,{'numeric'},{'real','finite','integer','positive','<=',sampleCount});
+            affectedSamples = union(affectedSamples,previous.AffectedSampleIndex(:));
+            normalization.AffectedSampleIndex = affectedSamples;
+            normalization.AffectedSampleTime_s = time_s(affectedSamples);
+        end
     end
     safetyMargin_units = 0;
     if isfield(inputData, "safetyMargin_units")
@@ -147,14 +174,15 @@ function obstacle = normalizeOne(inputData)
         "x_units", {xBySlice_units}, "y_units", {yBySlice_units}, ...
         "originalX_units", {originalXBySlice_units}, ...
         "originalY_units", {originalYBySlice_units}, ...
-        "safetyMargin_units", safetyMargin_units, "status", status);
+        "safetyMargin_units", safetyMargin_units, "status", status, ...
+        "NormalizationDiagnostics",normalization);
 end
 
 function [xHistory_units, yHistory_units, removedCount, removalBySample] = normalizeHistory(xInput_units, yInput_units, sampleCount, role)
     % Normalize original and protected slices with distinct error identifiers.
     xHistory_units   = reshape(xInput_units, [], 1);
     yHistory_units = reshape(yInput_units, [], 1);
-    removedCount         = 0;
+    removedCount         = [0,0];
     removalBySample      = false(sampleCount, 1);
     identifiers          = ["createObstacle:BoundarySizeMismatch", ...
         "createObstacle:OriginalBoundarySizeMismatch"];
@@ -173,27 +201,43 @@ function [xHistory_units, yHistory_units, removedCount, removalBySample] = norma
         xHistory_units{sampleIndex} = x_units;
         yHistory_units{sampleIndex} = y_units;
         removedCount = removedCount + removed;
-        removalBySample(sampleIndex) = removed > 0;
+        removalBySample(sampleIndex) = any(removed > 0);
     end
 end
 
 function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sampleIndex, role)
-    % Reject malformed rings; remove two-vertex regions with no area.
+    % Remove only provably redundant coordinates and lower-dimensional runs.
     xFinite   = isfinite(x_units);
     yFinite = isfinite(y_units);
     requireCondition(~any(xor(xFinite, yFinite)), "createObstacle:UnpairedNonfiniteBoundary", "The %s boundary at slice %d must use paired separators.", role, sampleIndex);
     changes           = diff([false; xFinite; false]);
     regionStarts      = find(changes == 1);
     regionStops       = find(changes == -1) - 1;
-    regionVertexCount = regionStops - regionStarts + 1;
-    oneVertexRegion   = find(regionVertexCount == 1, 1, "first");
-    requireCondition(isempty(oneVertexRegion), "createObstacle:BoundaryRingTooShort", "The %s boundary region %d at slice %d has one finite vertex.", role, oneVertexRegion, sampleIndex);
-    removeRegion = regionVertexCount == 2;
-    removedCount = nnz(removeRegion);
-    if removedCount == 0
+    rowsByRegion = cell(numel(regionStarts),1);
+    removedCount = [0,0];
+    for regionIndex = 1:numel(regionStarts)
+        rows = (regionStarts(regionIndex):regionStops(regionIndex)).';
+        repeated = [false;diff(x_units(rows))==0 & diff(y_units(rows))==0];
+        removedCount(2) = removedCount(2)+nnz(repeated);
+        rows(repeated) = [];
+        if numel(rows)>1 && x_units(rows(1))==x_units(rows(end)) && y_units(rows(1))==y_units(rows(end))
+            rows(end) = []; removedCount(2) = removedCount(2)+1;
+        end
+        hasAreaVertices = numel(rows)>=3;
+        if hasAreaVertices
+            % The first two retained vertices differ. Alternating copies of
+            % only those two points still enclose no area, without an area test.
+            hasAreaVertices = any((x_units(rows)~=x_units(rows(1)) | y_units(rows)~=y_units(rows(1))) & ...
+                (x_units(rows)~=x_units(rows(2)) | y_units(rows)~=y_units(rows(2))));
+        end
+        if hasAreaVertices, rowsByRegion{regionIndex} = rows;
+        else, removedCount(1) = removedCount(1)+1; end
+    end
+    if ~any(removedCount) && any(xFinite)
         return;
     end
-    retainedRegions = find(~removeRegion);
+    regionVertexCount = cellfun(@numel,rowsByRegion);
+    retainedRegions = find(regionVertexCount>0);
     if isempty(retainedRegions)
         x_units   = zeros(0, 1);
         y_units = zeros(0, 1);
@@ -206,7 +250,7 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
     % Process each retained needed to prepare slice.
     for retainedIndex = 1:numel(retainedRegions)
         regionIndex = retainedRegions(retainedIndex);
-        inputRows   = regionStarts(regionIndex):regionStops(regionIndex);
+        inputRows   = rowsByRegion{regionIndex};
         outputRows  = writeIndex + (0:numel(inputRows) - 1);
         newX_units(outputRows) = x_units(inputRows);
         newY_units(outputRows) = y_units(inputRows);

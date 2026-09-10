@@ -99,7 +99,8 @@ for name = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnap
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 handles    = createEmptyHandles(options);
-obstacles  = result.PreparedObstacles;
+plotTimeRange_s=[result.Inputs.initialState.time_s,result.Inputs.goalState.time_s];
+obstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles,plotTimeRange_s);
 originalObstacles = obstacles;
 if options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimation || options.SaveAnimationGif
     % Reuse protected geometry verbatim. Cache the original histories once
@@ -110,7 +111,7 @@ if options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimatio
         originalObstacles(obstacleIndex).safetyMargin_units = 0;
         originalObstacles(obstacleIndex).InternalPreparation = struct();
     end
-    originalObstacles = obstacleAvoidance.obstacles.prepareObstacles(originalObstacles);
+    originalObstacles = obstacleAvoidance.obstacles.prepareObstacles(originalObstacles,plotTimeRange_s);
 end
 
 %% Section 2: Plot Workspace And Failure Diagnostics

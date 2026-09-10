@@ -8,6 +8,7 @@ function cells = createTimeCells(obstacles, initialTime_s, finalTime_s)
 % UNITS: Coordinate units and seconds.
 
 %% Section 1: Cover Every Active Source Interval
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialTime_s,finalTime_s]);
 regions_units = cell(0,1); endRegions_units = cell(0,1);
 intervals_s = zeros(0,2); sources = zeros(0,1);
 breaks_s = [initialTime_s;finalTime_s];
@@ -22,7 +23,7 @@ for k = 1:numel(obstacles)
         active_s = [max(initialTime_s,sourceIntervals_s(j,1)),min(finalTime_s,sourceIntervals_s(j,2))];
         if active_s(1) >= active_s(2), continue; end
         if isscalar(obstacle.time_s) || preparation.IsTimeInvariant
-            shape = preparation.SampleShapes{1};
+            shape = preparation.SampleShapes{j};
             regions = obstacleAvoidance.geometry.convexRegions(shape);
             endRegions = regions;
         elseif preparation.MatchingTopology(j) && preparation.IntervalSpeedBound_units_s(j)==0

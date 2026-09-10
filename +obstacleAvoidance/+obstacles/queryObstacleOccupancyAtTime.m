@@ -17,8 +17,9 @@ assert(isequal(size(time_s),size(x_units)), 'queryObstacleOccupancyAtTime:SizeMi
 boundaryOccupied = true;
 if isfield(options,'BoundaryIsOccupied'), boundaryOccupied = options.BoundaryIsOccupied; end
 boundaryOccupied = obstacleAvoidance.input.normalizeLogicalScalar(boundaryOccupied, 'BoundaryIsOccupied', 'queryObstacleOccupancyAtTime:InvalidBoundaryPolicy');
-obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 occupied = false(size(x_units)); blockingIndex = zeros(size(x_units),'uint32');
+if isempty(time_s), return; end
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[min(time_s(:)),max(time_s(:))]);
 
 %% Section 2: Batch Identical Geometry And Equal-Time Queries
 queryTimes_s = unique(time_s(:));
