@@ -107,19 +107,30 @@ for sourceIndex = 1:nodeCount
 end
 distanceToGoal_units = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
 goalCanWaitToFinal = nodeIsFree(:, 2) & double(waitComponentFinalLayerIndex(:, 2)) == layerCount;
+preferNearGoalWait=options.GoalTimeMode=="earliestArrival" && ...
+    nnz(isWaitComponentStart(:,2) & nodeIsFree(:,2))>1;
 reachable        = false(layerCount, nodeCount);
 spatialCost_units  = Inf(layerCount, nodeCount);
+goalExposure_units_s = Inf(layerCount,nodeCount);
 parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
 parentNodeIndex  = zeros(layerCount, nodeCount, "uint16");
 reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_units(1, 1) = 0;
+goalExposure_units_s(1,1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount, goalBoundRejectionCount, candidateBatchSplitCount] = deal(0);
-goalCostBound_units = Inf;
+goalCostBound_units=Inf;
 exploredNodes_units = zeros(0, 2);
 for layerIndex = 1:layerCount - 1
-    % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
-    if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
-        break;
+    % Once the goal is reached, retain its complete clear wait component.
+    % That gives BMTP a kinematically useful arrive-then-wait seed without
+    % crossing a later interval in which the goal becomes occupied.
+    firstGoalLayerIndex=find(reachable(1:layerIndex,2),1,"first");
+    if options.GoalTimeMode == "earliestArrival" && ~isempty(firstGoalLayerIndex)
+        selectedGoalLayerIndex=double(waitComponentFinalLayerIndex(firstGoalLayerIndex,2));
+        if selectedGoalLayerIndex==layerCount
+            selectedGoalLayerIndex=firstGoalLayerIndex;
+        end
+        if layerIndex>=selectedGoalLayerIndex, break; end
     end
     currentNodeIndices          = find(reachable(layerIndex, :));
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
@@ -128,13 +139,19 @@ for layerIndex = 1:layerCount - 1
         % Add the same-node transition only when the obstacle sweep permits waiting through the full layer interval.
         if waitIsClear(layerIndex, currentNodeIndex)
             waitCount = waitCount + 1;
-            [reachable, spatialCost_units, parentLayerIndex, ...
-                parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, layerIndex, currentNodeIndex, layerIndex + 1, currentNodeIndex, 0);
+            exposureIncrement_units_s=(layerTimes_s(layerIndex+1)-layerTimes_s(layerIndex))* ...
+                distanceToGoal_units(currentNodeIndex);
+            [reachable, spatialCost_units, goalExposure_units_s, ...
+                parentLayerIndex,parentNodeIndex] = updateTemporalState( ...
+                reachable,spatialCost_units,goalExposure_units_s, ...
+                parentLayerIndex,parentNodeIndex,layerIndex,currentNodeIndex, ...
+                layerIndex+1,currentNodeIndex,0,exposureIncrement_units_s, ...
+                preferNearGoalWait);
         else
             rejectedCount = rejectedCount + 1;
         end
     end
-    goalCostBound_units = min([goalCostBound_units; spatialCost_units(goalCanWaitToFinal, 2)]);
+    goalCostBound_units=min([goalCostBound_units;spatialCost_units(goalCanWaitToFinal,2)]);
     [motionCandidates, candidateRejections, batchSplitCount] = buildLayerCandidates(currentNodeIndices, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
     rejectedCount = rejectedCount + candidateRejections;
     candidateBatchSplitCount = candidateBatchSplitCount + batchSplitCount;
@@ -150,21 +167,18 @@ for layerIndex = 1:layerCount - 1
             if options.GoalTimeMode ~= "earliestArrival"
                 trialCost_units  = reshape(spatialCost_units(layerIndex, motionCandidates(queryIndices, 1)), [], 1) + motionCandidates(queryIndices, 5);
                 storedCost_units = reshape(spatialCost_units(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
-                % Preserve cheaper arrivals and cost ties that can propagate through safe waits,
-                % including frontier states that an early exit would otherwise omit.
-                isDominated = trialCost_units > storedCost_units + 1e-12;
+                isDominated=trialCost_units>storedCost_units+1e-12;
                 pendingMotion(queryIndices(isDominated)) = false;
                 rejectedCount = rejectedCount + nnz(isDominated);
                 queryIndices  = queryIndices(~isDominated);
-                trialCost_units = trialCost_units(~isDominated);
-                % A goal state that can wait to the final layer supplies an
-                % admissible completion bound. Retain cost ties because they
-                % participate in the existing deterministic parent policy.
-                cannotImproveGoal = trialCost_units + distanceToGoal_units(motionCandidates(queryIndices, 2)) > goalCostBound_units + 1e-12;
-                pendingMotion(queryIndices(cannotImproveGoal)) = false;
-                rejectedCount = rejectedCount + nnz(cannotImproveGoal);
-                goalBoundRejectionCount = goalBoundRejectionCount + nnz(cannotImproveGoal);
-                queryIndices = queryIndices(~cannotImproveGoal);
+                trialCost_units=trialCost_units(~isDominated);
+                cannotImproveGoal=trialCost_units+ ...
+                    distanceToGoal_units(motionCandidates(queryIndices,2))> ...
+                    goalCostBound_units+1e-12;
+                pendingMotion(queryIndices(cannotImproveGoal))=false;
+                rejectedCount=rejectedCount+nnz(cannotImproveGoal);
+                goalBoundRejectionCount=goalBoundRejectionCount+nnz(cannotImproveGoal);
+                queryIndices=queryIndices(~cannotImproveGoal);
             end
             if isempty(queryIndices)
                 continue;
@@ -173,13 +187,25 @@ for layerIndex = 1:layerCount - 1
             clearIndices = queryIndices(queryIsClear);
             motionCount  = motionCount + numel(clearIndices);
             for motionIndex = reshape(clearIndices, 1, [])
-                [reachable, spatialCost_units, parentLayerIndex, ...
-                    parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, layerIndex, motionCandidates(motionIndex, 1), motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), motionCandidates(motionIndex, 5));
+                sourceNodeIndex=motionCandidates(motionIndex,1);
+                targetNodeIndex=motionCandidates(motionIndex,2);
+                candidateTargetLayerIndex=motionCandidates(motionIndex,3);
+                edgeDuration_s=layerTimes_s(candidateTargetLayerIndex)-layerTimes_s(layerIndex);
+                exposureIncrement_units_s=0.5*edgeDuration_s* ...
+                    (distanceToGoal_units(sourceNodeIndex)+distanceToGoal_units(targetNodeIndex));
+                [reachable, spatialCost_units, goalExposure_units_s, ...
+                    parentLayerIndex,parentNodeIndex] = updateTemporalState( ...
+                    reachable,spatialCost_units,goalExposure_units_s, ...
+                    parentLayerIndex,parentNodeIndex,layerIndex,sourceNodeIndex, ...
+                    candidateTargetLayerIndex,targetNodeIndex,motionCandidates(motionIndex,5), ...
+                    exposureIncrement_units_s,preferNearGoalWait);
             end
-            clearGoalIndices = clearIndices(motionCandidates(clearIndices, 2) == 2 & goalCanWaitToFinal(motionCandidates(clearIndices, 3)));
+            clearGoalIndices=clearIndices(motionCandidates(clearIndices,2)==2 & ...
+                goalCanWaitToFinal(motionCandidates(clearIndices,3)));
             if ~isempty(clearGoalIndices)
-                clearGoalLayers = motionCandidates(clearGoalIndices, 3);
-                goalCostBound_units = min([goalCostBound_units; spatialCost_units(clearGoalLayers, 2)]);
+                clearGoalLayers=motionCandidates(clearGoalIndices,3);
+                goalCostBound_units=min([goalCostBound_units; ...
+                    spatialCost_units(clearGoalLayers,2)]);
             end
             rejectedCount = rejectedCount + nnz(~queryIsClear);
             pendingMotion(queryIndices) = false;
@@ -201,11 +227,22 @@ if ~isempty(deepestLayerIndex)
 end
 % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
 if options.GoalTimeMode == "earliestArrival"
-    goalLayerIndex = find(reachable(:, 2), 1, "first");
+    firstGoalLayerIndex = find(reachable(:, 2), 1, "first");
+    goalLayerIndex=firstGoalLayerIndex;
+    waitSeedGoalLayerIndex=firstGoalLayerIndex;
+    if ~isempty(firstGoalLayerIndex)
+        waitSeedGoalLayerIndex=double(waitComponentFinalLayerIndex(firstGoalLayerIndex,2));
+        if waitSeedGoalLayerIndex==layerCount
+            waitSeedGoalLayerIndex=firstGoalLayerIndex;
+        end
+    end
 else
     goalLayerIndex = find(reachable(:, 2) & (1:layerCount).' == layerCount, 1, "first");
+    waitSeedGoalLayerIndex=goalLayerIndex;
 end
 [route_units, routeTime_s] = reconstructTimedRoute(nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
+[waitRoute_units,waitRouteTime_s]=reconstructTimedRoute(nodePosition_units, ...
+    layerTimes_s,parentLayerIndex,parentNodeIndex,waitSeedGoalLayerIndex,2);
 record = struct("LayerTimes_s", layerTimes_s, ...
     "CandidateLayerCount", layerCount, "NodeCount", nodeCount, ...
     "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
@@ -216,6 +253,8 @@ record = struct("LayerTimes_s", layerTimes_s, ...
     "ExploredNodes_units", exploredNodes_units, "FrontierNodes_units", frontier_units, ...
     "BestPartialRoute_units", bestPartial_units, ...
     "SelectedGoalLayerIndex", goalLayerIndex, ...
+    "WaitSeedGoalLayerIndex",waitSeedGoalLayerIndex, ...
+    "WaitRoute_units",waitRoute_units,"WaitRouteTime_s",waitRouteTime_s, ...
     "ReachableGoalLayerCount", nnz(reachable(:, 2)));
 function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
     % A blocked sample rejects the edge. Check interior samples first, then keep
@@ -390,18 +429,34 @@ function [geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacl
         end
     end
 end
-function [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, sourceLayerIndex, sourceNodeIndex, targetLayerIndex, targetNodeIndex, edgeLength_units)
-    % Keep the shortest spatial cost and break final-layer ties consistently.
+function [reachable, spatialCost_units, goalExposure_units_s, parentLayerIndex, parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, goalExposure_units_s, parentLayerIndex, parentNodeIndex, sourceLayerIndex, sourceNodeIndex, targetLayerIndex, targetNodeIndex, edgeLength_units, exposureIncrement_units_s, preferNearGoalWait)
+    % When the goal disappears and reopens, place unavoidable waiting near
+    % it. Otherwise retain spatial length as the primary route objective.
     trialCost_units          = spatialCost_units(sourceLayerIndex, sourceNodeIndex) + edgeLength_units;
     storedCost_units         = spatialCost_units(targetLayerIndex, targetNodeIndex);
-    costIsEqual            = abs(trialCost_units - storedCost_units) <= 1e-12;
-    isLaterFinalTransition = targetLayerIndex == size(reachable, 1) && edgeLength_units > 0 && sourceLayerIndex > double(parentLayerIndex(targetLayerIndex, targetNodeIndex));
-    % Discard transitions that are more expensive than the stored state, while allowing the designated equal-cost final transition.
-    if trialCost_units > storedCost_units + 1e-12 || (costIsEqual && ~isLaterFinalTransition)
-        return;
+    trialExposure_units_s = goalExposure_units_s(sourceLayerIndex,sourceNodeIndex)+ ...
+        exposureIncrement_units_s;
+    storedExposure_units_s = goalExposure_units_s(targetLayerIndex,targetNodeIndex);
+    if preferNearGoalWait
+        costIsEqual=abs(trialCost_units-storedCost_units)<=1e-12;
+        exposureIsBetter=trialExposure_units_s<storedExposure_units_s-1e-12;
+        if trialCost_units>storedCost_units+1e-12 || ...
+                (costIsEqual && ~exposureIsBetter)
+            return;
+        end
+    else
+        costIsEqual=abs(trialCost_units-storedCost_units)<=1e-12;
+        isLaterFinalTransition=targetLayerIndex==size(reachable,1) && ...
+            edgeLength_units>0 && sourceLayerIndex> ...
+            double(parentLayerIndex(targetLayerIndex,targetNodeIndex));
+        if trialCost_units>storedCost_units+1e-12 || ...
+                (costIsEqual && ~isLaterFinalTransition)
+            return;
+        end
     end
     reachable(targetLayerIndex, targetNodeIndex) = true;
     spatialCost_units(targetLayerIndex, targetNodeIndex) = trialCost_units;
+    goalExposure_units_s(targetLayerIndex,targetNodeIndex)=trialExposure_units_s;
     parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint32(sourceLayerIndex);
     parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
 end
