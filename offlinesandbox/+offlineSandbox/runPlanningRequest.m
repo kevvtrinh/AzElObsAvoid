@@ -14,6 +14,8 @@ function [response, diagnosisBundle] = runPlanningRequest(requestFilePath, resul
 % INPUTS
 %   - requestFilePath (scalar text)
 %       Existing offlineSandboxRequest/v1 JSON file.
+%       Derivative limits must all be combined scalar magnitudes or all be
+%       [x y] pairs, following the public planner contract.
 %   - resultFilePath (scalar text)
 %       Destination JSON file, not a folder. Its parent folder must already
 %       exist. An existing file at this explicit path is replaced.
@@ -30,8 +32,8 @@ function [response, diagnosisBundle] = runPlanningRequest(requestFilePath, resul
 %       scene geometry, environment metadata, and reproduction commands.
 %**************************************************************************
 % UNITS
-%   - Positions and polygon vertices are [azimuth elevation] in degrees.
-%   - Time is seconds. Derivatives use deg/s, deg/s^2, and deg/s^3.
+%   - Positions and polygon vertices are [x y] in coordinate units.
+%   - Time is seconds. Derivatives use units/s, units/s^2, and units/s^3.
 %**************************************************************************
 
 %% Section 1: Read & Validate The JSON Request
@@ -76,7 +78,6 @@ end
 
 initialState = normalizeState(request.initialState, "request.initialState");
 goalState    = normalizeState(request.goalState, "request.goalState");
-limits       = normalizeLimits(request.limits);
 options      = request.options;
 requireScalarStruct(options, "request.options");
 
@@ -85,6 +86,8 @@ requireScalarStruct(options, "request.options");
 packageParent  = fileparts(fileparts(mfilename("fullpath")));
 repositoryRoot = fileparts(packageParent);
 addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
+limits = request.limits;
+requireScalarStruct(limits, "request.limits");
 
 % The wire format contains original polygon keyframes. Only the public
 % constructor applies the requested safety margin, exactly once.
@@ -92,7 +95,7 @@ obstacles = createObstacles(request.obstacles);
 
 %% Section 3: Run The Public Planner & Independent Validator
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 if result.Success
     validation = obstacleAvoidance.validateTrajectory(result);
 else
@@ -106,11 +109,13 @@ response           = struct("schemaVersion", "offlineSandboxResult/v1", ...
     "requestId", requestId, ...
     "generatedAtUtc", string(datetime("now", "TimeZone", "UTC", ...
         "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'")), ...
-    "result", projectPlannerResult(result), ...
-    "diagnosis", projectSearchDiagnostics(diagnosis), ...
+    "result", projectPlannerResult(result, request), ...
+    "diagnosis", projectSearchDiagnostics(result), ...
     "validation", validation, ...
     "obstacles", {projectedObstacles});
 if nargout > 1
+    request.initialState = initialState;
+    request.goalState = goalState;
     diagnosisBundle = offlineSandbox.createDiagnosisBundle(request, result, validation, diagnosis);
 end
 
@@ -218,51 +223,24 @@ end
 function state = normalizeState(value, fieldName)
     % Normalize required endpoint fields and optional zero-order derivatives.
     requireScalarStruct(value, fieldName);
-    requireFields(value, ["time_s", "position_deg"], fieldName);
+    requireFields(value, ["time_s", "position_units"], fieldName);
     validateattributes(value.time_s, {'numeric'}, {'real', 'finite', 'scalar'}, "runPlanningRequest", fieldName + ".time_s");
     state = value;
     state.time_s       = double(value.time_s);
-    state.position_deg = normalizePair(value.position_deg, fieldName + ".position_deg", false);
-    optionalPairNames = ["velocity_deg_s", "acceleration_deg_s2"];
+    state.position_units = normalizePair(value.position_units, fieldName + ".position_units");
+    optionalPairNames = ["velocity_units_s", "acceleration_units_s2"];
     % Process each name needed by the sandbox workflow.
     for name = optionalPairNames
         if isfield(value, name) && ~isempty(value.(name))
-            state.(name) = normalizePair(value.(name), fieldName + "." + name, false);
+            state.(name) = normalizePair(value.(name), fieldName + "." + name);
         end
     end
 end
 
-function limits = normalizeLimits(value)
-    % Normalize the three required physical pairs and optional workspace bounds.
-    requireScalarStruct(value, "request.limits");
-    requiredNames = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", ...
-        "maxJerk_deg_s3"];
-    requireFields(value, requiredNames, "request.limits");
-    limits = value;
-    % Process each name needed by the sandbox workflow.
-    for name = requiredNames
-        limits.(name) = normalizePair(value.(name), "request.limits." + name, true);
-    end
-    intervalNames = ["azimuthInterval_deg", "elevationInterval_deg"];
-    % Process each name needed by the sandbox workflow.
-    for name = intervalNames
-        if isfield(value, name) && ~isempty(value.(name))
-            interval = normalizePair(value.(name), "request.limits." + name, false);
-            if interval(2) <= interval(1)
-                error("runPlanningRequest:InvalidWorkspaceInterval", "request.limits.%s must be an increasing [lower upper] pair.", name);
-            end
-            limits.(name) = interval;
-        end
-    end
-end
-
-function pair = normalizePair(value, fieldName, mustBePositive)
-    % Normalize one finite [azimuth elevation] pair with an optional positivity rule.
+function pair = normalizePair(value, fieldName)
+    % Normalize one finite [x y] state pair.
     validateattributes(value, {'numeric'}, {'real', 'finite', 'vector', 'numel', 2}, "runPlanningRequest", fieldName);
     pair = reshape(double(value), 1, 2);
-    if mustBePositive && any(pair <= 0)
-        error("runPlanningRequest:NonpositiveLimit", "%s values must both be positive.", fieldName);
-    end
 end
 
 function obstacles = createObstacles(obstacleInput)
@@ -279,124 +257,85 @@ function obstacles = createObstacles(obstacleInput)
     for obstacleIndex = 1:numel(obstacleInput)
         obstacle = obstacleInput(obstacleIndex);
         context  = "request.obstacles(" + obstacleIndex + ")";
-        requireFields(obstacle, ["name", "safetyMargin_deg", "keyframes"], context);
+        requireFields(obstacle, ["name", "safetyMargin_units", "keyframes"], context);
         obstacleName = normalizeScalarText(obstacle.name, context + ".name");
         if strlength(strtrim(obstacleName)) == 0
             error("runPlanningRequest:EmptyObstacleName", "%s.name must be nonempty scalar text.", context);
         end
-        validateattributes(obstacle.safetyMargin_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'}, "runPlanningRequest", context + ".safetyMargin_deg");
+        validateattributes(obstacle.safetyMargin_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'}, "runPlanningRequest", context + ".safetyMargin_units");
         keyframes = obstacle.keyframes;
         if ~isstruct(keyframes) || isempty(keyframes)
             error("runPlanningRequest:InvalidObstacleKeyframes", "%s.keyframes must contain at least one JSON object.", context);
         end
         time_s               = zeros(numel(keyframes), 1);
-        azimuthBySlice_deg   = cell(numel(keyframes), 1);
-        elevationBySlice_deg = cell(numel(keyframes), 1);
+        xBySlice_units   = cell(numel(keyframes), 1);
+        yBySlice_units = cell(numel(keyframes), 1);
         % Process each sample needed by the sandbox workflow.
         for sampleIndex = 1:numel(keyframes)
             keyframeContext = context + ".keyframes(" + sampleIndex + ")";
-            requireFields(keyframes(sampleIndex), ["time_s", "vertices_deg"], keyframeContext);
+            requireFields(keyframes(sampleIndex), ["time_s", "vertices_units"], keyframeContext);
             validateattributes(keyframes(sampleIndex).time_s, {'numeric'}, {'real', 'finite', 'scalar'}, "runPlanningRequest", keyframeContext + ".time_s");
-            rawVertices_deg    = keyframes(sampleIndex).vertices_deg;
-            isValidVertexArray = isnumeric(rawVertices_deg) && isreal(rawVertices_deg) && ismatrix(rawVertices_deg) && size(rawVertices_deg, 2) == 2 && size(rawVertices_deg, 1) >= 3 && all(isfinite(rawVertices_deg), "all");
+            rawVertices_units    = keyframes(sampleIndex).vertices_units;
+            isValidVertexArray = isnumeric(rawVertices_units) && isreal(rawVertices_units) && ismatrix(rawVertices_units) && size(rawVertices_units, 2) == 2 && size(rawVertices_units, 1) >= 3 && all(isfinite(rawVertices_units), "all");
             if ~isValidVertexArray
-                error("runPlanningRequest:InvalidObstacleVertices", "%s.vertices_deg must be a finite N-by-2 numeric array " + "with N >= 3.", keyframeContext);
+                error("runPlanningRequest:InvalidObstacleVertices", "%s.vertices_units must be a finite N-by-2 numeric array " + "with N >= 3.", keyframeContext);
             end
-            vertices_deg = double(rawVertices_deg);
+            vertices_units = double(rawVertices_units);
             time_s(sampleIndex) = double(keyframes(sampleIndex).time_s);
-            azimuthBySlice_deg{sampleIndex} = vertices_deg(:, 1);
-            elevationBySlice_deg{sampleIndex} = vertices_deg(:, 2);
+            xBySlice_units{sampleIndex} = vertices_units(:, 1);
+            yBySlice_units{sampleIndex} = vertices_units(:, 2);
         end
         if any(diff(time_s) <= 0)
             error("runPlanningRequest:InvalidObstacleTime", "%s keyframe times must be strictly increasing.", context);
         end
-        obstacleCells{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle(obstacleName, time_s, azimuthBySlice_deg, elevationBySlice_deg, double(obstacle.safetyMargin_deg));
+        obstacleCells{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle(obstacleName, time_s, xBySlice_units, yBySlice_units, double(obstacle.safetyMargin_units));
     end
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleCells);
 end
 
-function projection = projectPlannerResult(result)
-    % Retain browser-relevant public fields without exporting solver internals.
-    resolvedOptions = result.Options;
-    projection      = struct("Success", result.Success, ...
-        "Message", result.Message, ...
-        "TerminationReason", result.TerminationReason, ...
-        "Options", resolvedOptions, ...
-        "Inputs", struct("initialState", result.Inputs.initialState, ...
-            "goalState", result.Inputs.goalState, ...
-            "limits", result.Inputs.limits), ...
-        "Route_deg", result.Route_deg, ...
-        "BestPartialRoute_deg", result.BestPartialRoute_deg, ...
-        "time_s", result.time_s, ...
-        "position_deg", result.position_deg, ...
-        "velocity_deg_s", result.velocity_deg_s, ...
-        "acceleration_deg_s2", result.acceleration_deg_s2, ...
-        "jerk_deg_s3", result.jerk_deg_s3, ...
-        "ArrivalTime_s", result.ArrivalTime_s, ...
-        "TrajectoryDuration_s", result.TrajectoryDuration_s, ...
-        "ElapsedPlanningTime_s", result.ElapsedPlanningTime_s);
-end
-
-function projection = projectSearchDiagnostics(diagnostics)
-    % Preserve stable counts, seed summaries, timing, and bounded plot evidence.
-    seedSummaries  = diagnostics.Attempts;
-    seedFieldNames = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
-        "ValidationPassed", "CollisionFree", "CollisionResolved", ...
-        "MinimumClearance_deg", "UnresolvedIntervalCount", ...
-        "ArrivalTime_s", "TrajectoryDuration_s", "MotionLength_deg", ...
-        "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
-        "SeedPlanningElapsedTime_s", "TerminationReason", "Message"];
-    projectedSeeds = projectStructFields(seedSummaries, seedFieldNames);
-    projection     = struct("SelectedAttemptIndex", diagnostics.SelectedAttemptIndex, ...
-        "AttemptedCount", diagnostics.AttemptedCount, ...
-        "ValidatedCount", diagnostics.ValidatedCount, ...
-        "BestPartialAttemptIndex", diagnostics.BestPartialAttemptIndex, ...
-        "FirstValidatedMotionTime_s", diagnostics.FirstValidatedMotionTime_s, ...
-        "Attempts", {projectedSeeds}, ...
-        "Timing", diagnostics.Timing, ...
-        "Search", projectSearchGrid(diagnostics.Search));
-end
-
-function projection = projectSearchGrid(grid)
-    % Return one exact display schema even when route search was not required.
+function projection = projectPlannerResult(result, request)
+    % Export actual core results, retaining the original request separately.
+    names = ["Success", "Message", "TerminationReason", "Options", "Route_units", ...
+        "time_s", "position_units", "velocity_units_s", "acceleration_units_s2", ...
+        "jerk_units_s3", "ArrivalTime_s", "TrajectoryDuration_s", "ElapsedTime_s"];
     projection = struct();
-    projection.Bounds_deg              = [NaN NaN NaN NaN];
-    projection.AcceptedEdges_deg       = zeros(0, 4);
-    projection.RejectedEdges_deg       = zeros(0, 4);
-    projection.ExploredNodes_deg       = zeros(0, 2);
-    projection.FrontierNodes_deg       = zeros(0, 2);
-    projection.BestPartialRoute_deg    = zeros(0, 2);
-    projection.Start_deg               = [NaN NaN];
-    projection.Goal_deg                = [NaN NaN];
-    projection.NodeCount               = 0;
-    projection.ExpandedCount           = 0;
-    projection.RejectedTransitionCount = 0;
-    projection.GeneratedSeedCount      = 0;
-    projection.TraceDownsampleRule     = "";
-    if ~isstruct(grid) || ~isscalar(grid)
-        return;
+    for name = names
+        projection.(name) = result.(name);
     end
-    fieldNames = string(fieldnames(projection));
-    % Process each name needed by the sandbox workflow.
-    for name = reshape(fieldNames, 1, [])
-        if isfield(grid, name)
-            projection.(name) = grid.(name);
-        end
+    projection.Inputs = struct("initialState", result.Inputs.initialState, ...
+        "goalState", result.Inputs.goalState, "limits", result.Limits);
+    projection.Request = struct("initialState", request.initialState, ...
+        "goalState", request.goalState, "limits", request.limits, "options", request.options);
+    for name = ["RequestedLimits", "MotionLength_units", "IntegratedSquaredJerk_units2_s5", ...
+            "MaximumConstraintViolation", "FixedArrivalTrialTime_s"]
+        if isfield(result, name), projection.(name) = result.(name); end
     end
 end
 
-function projection = projectStructFields(records, fieldNames)
-    % Copy records into cells so JSON collections stay arrays at every cardinality.
-    projection = cell(numel(records), 1);
-    % Process each record needed by the sandbox workflow.
-    for recordIndex = 1:numel(records)
-        projectedRecord = struct();
-        % Process each name needed by the sandbox workflow.
-        for name = reshape(fieldNames, 1, [])
-            projectedRecord.(name) = records(recordIndex).(name);
-        end
-        projection{recordIndex} = projectedRecord;
-    end
+function projection = projectSearchDiagnostics(result)
+    % Project only examined graph edges; unexamined pairs are not rejections.
+    graph = result.VisibilityGraph;
+    nodes_units = graph.NodePosition_units;
+    accepted = graph.AcceptedNodeIndex;
+    rejected = graph.RejectedNodeIndex;
+    search = struct();
+    search.Nodes_units = nodes_units;
+    search.AcceptedEdges_units = [nodes_units(accepted(:, 1), :), nodes_units(accepted(:, 2), :)];
+    search.RejectedEdges_units = [nodes_units(rejected(:, 1), :), nodes_units(rejected(:, 2), :)];
+    search.NodeCount = size(nodes_units, 1);
+    search.AcceptedEdgeCount = size(accepted, 1);
+    search.RejectedTransitionCount = size(rejected, 1);
+    search.ExpandedCount = graph.ExpandedCount;
+    search.SearchKind = graph.SearchKind;
+    search.GraphIsFullyEnumerated = graph.GraphIsFullyEnumerated;
+    search.CollisionQueryCount = NaN;
+    if isfield(graph, "CollisionQueryCount"), search.CollisionQueryCount = graph.CollisionQueryCount; end
+    search.TraceDownsampleRule = "All returned graph nodes and examined edges are displayed. " + ...
+        "Unexamined edges remain implicit; expanded-node identities and frontier are not recorded. " + ...
+        "For moving obstacles this spatial guide alone does not certify timed collision freedom.";
+    projection = struct("Planner", "build-core", "Search", search, ...
+        "SolverDiagnostics", result.SolverDiagnostics);
+    if isfield(result, "TemporalSearch"), projection.TemporalSearch = result.TemporalSearch; end
 end
 
 function projection = projectObstacles(obstacles)
@@ -404,9 +343,9 @@ function projection = projectObstacles(obstacles)
     template = struct("Name", "", ...
         "time_s", zeros(0, 1), ...
         "status", strings(0, 1), ...
-        "SafetyMargin_deg", 0, ...
-        "OriginalVerticesByTime_deg", {cell(0, 1)}, ...
-        "ProtectedVerticesByTime_deg", {cell(0, 1)});
+        "SafetyMargin_units", 0, ...
+        "OriginalVerticesByTime_units", {cell(0, 1)}, ...
+        "ProtectedVerticesByTime_units", {cell(0, 1)});
     projection = cell(numel(obstacles), 1);
     % Process each obstacle needed by the sandbox workflow.
     for obstacleIndex = 1:numel(obstacles)
@@ -417,18 +356,18 @@ function projection = projectObstacles(obstacles)
         % Process each sample needed by the sandbox workflow.
         for sampleIndex = 1:sampleCount
             originalVertices{sampleIndex} = [ ...
-                obstacle.originalAz_deg{sampleIndex}, ...
-                obstacle.originalEl_deg{sampleIndex}];
+                obstacle.originalX_units{sampleIndex}, ...
+                obstacle.originalY_units{sampleIndex}];
             protectedVertices{sampleIndex} = [ ...
-                obstacle.az_deg{sampleIndex}, obstacle.el_deg{sampleIndex}];
+                obstacle.x_units{sampleIndex}, obstacle.y_units{sampleIndex}];
         end
         projectedObstacle = template;
         projectedObstacle.Name                        = obstacle.targetName;
         projectedObstacle.time_s                      = obstacle.time_s;
         projectedObstacle.status                      = obstacle.status;
-        projectedObstacle.SafetyMargin_deg            = obstacle.safetyMargin_deg;
-        projectedObstacle.OriginalVerticesByTime_deg  = originalVertices;
-        projectedObstacle.ProtectedVerticesByTime_deg = protectedVertices;
+        projectedObstacle.SafetyMargin_units            = obstacle.safetyMargin_units;
+        projectedObstacle.OriginalVerticesByTime_units  = originalVertices;
+        projectedObstacle.ProtectedVerticesByTime_units = protectedVertices;
         projection{obstacleIndex} = projectedObstacle;
     end
 end

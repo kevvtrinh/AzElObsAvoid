@@ -1,81 +1,27 @@
-function [isOccupied, blockingObstacleIndex, queryDetails] = queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, queryTime, optionOverrides)
+function [occupied, blockingIndex] = queryObstacleOccupancyAtTime(obstacles, x_units, y_units, time_s, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   options = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime()
-%   isOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-%       obstacles, azimuth_deg, elevation_deg, queryTime)
-%   [isOccupied, blockingObstacleIndex, queryDetails] = ...
-%       obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-%       obstacles, azimuth_deg, elevation_deg, queryTime, optionOverrides)
-%
-% PURPOSE
-%   - Query protected polygon occupancy at explicit physical times.
-%   - Return signed-clearance and nearest-obstacle diagnostics.
-%
-% INPUTS
-%   - obstacles (canonical obstacle array, nested cells, or [])
-%   - azimuth_deg, elevation_deg (numeric arrays or scalars)
-%   - queryTime (numeric seconds or datetime array)
-%   - optionOverrides (scalar struct, optional; default struct())
-%       BoundaryIsOccupied, ClearanceTolerance_deg, and ReferenceTime.
-%
-% OUTPUTS
-%   - isOccupied (logical array)
-%   - blockingObstacleIndex (uint32 array)
-%       First blocker in caller order, or zero when clear.
-%   - queryDetails (scalar struct)
-%       Signed clearance, nearest obstacle, times, margins, and options.
-%
-% UNITS
-%   - Position and clearance are degrees. Numeric time is seconds.
-%
+% SYNTAX: [occupied, blockingIndex] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles,x,y,time,options)
+% PURPOSE: Query the original protected history model at physical times.
+% INPUTS: Canonical obstacles and equally sized coordinate/time arrays.
+%         A scalar time broadcasts. BoundaryIsOccupied defaults to true.
+% OUTPUTS: Logical occupancy and first blocking obstacle index.
+% UNITS: Seconds and coordinate units.
 
-%% Section 1: Resolve Options And Queries
+%% Section 1: Validate Query Coordinates
+if nargin < 5, options = struct(); end
+validateattributes(x_units, {'numeric'}, {'real','finite'});
+validateattributes(y_units, {'numeric'}, {'real','finite','size',size(x_units)});
+validateattributes(time_s, {'numeric'}, {'real','finite'});
+if isscalar(time_s), time_s = repmat(time_s, size(x_units)); end
+assert(isequal(size(time_s),size(x_units)), 'queryObstacleOccupancyAtTime:SizeMismatch', 'Query arrays must have equal sizes.');
+boundaryOccupied = true;
+if isfield(options,'BoundaryIsOccupied'), boundaryOccupied = options.BoundaryIsOccupied; end
+boundaryOccupied = obstacleAvoidance.input.normalizeLogicalScalar(boundaryOccupied, 'BoundaryIsOccupied', 'queryObstacleOccupancyAtTime:InvalidBoundaryPolicy');
+occupied = false(size(x_units)); blockingIndex = zeros(size(x_units),'uint32');
+if isempty(time_s), return; end
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[min(time_s(:)),max(time_s(:))]);
 
-defaults = struct("BoundaryIsOccupied", true, "ClearanceTolerance_deg", 1e-10, "ReferenceTime", ...
-    datetime(1970, 1, 1, 0, 0, 0, "TimeZone", "UTC"));
-if nargin == 0
-    isOccupied            = defaults;
-    blockingObstacleIndex = [];
-    queryDetails          = struct();
-    return;
-end
-if nargin ~= 4 && nargin ~= 5
-    error("queryObstacleOccupancyAtTime:InvalidCall", "Use zero inputs, four query inputs, or four inputs plus options.");
-end
-if nargin < 5 || isempty(optionOverrides)
-    optionOverrides = struct();
-end
-if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
-    error("queryObstacleOccupancyAtTime:InvalidOptions", "options must be a scalar struct.");
-end
-[options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, optionOverrides);
-if ~isempty(unknownNames)
-    warning("queryObstacleOccupancyAtTime:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
-end
-options.BoundaryIsOccupied = obstacleAvoidance.input.normalizeLogicalScalar(options.BoundaryIsOccupied, "BoundaryIsOccupied", "queryObstacleOccupancyAtTime:InvalidBoundaryPolicy");
-validateattributes(options.ClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-if ~isdatetime(options.ReferenceTime) || ~isscalar(options.ReferenceTime) || isnat(options.ReferenceTime)
-    error("queryObstacleOccupancyAtTime:InvalidReferenceTime", "ReferenceTime must be one finite datetime scalar.");
-end
-options.ReferenceTime.TimeZone = "UTC";
-if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
-    obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-end
-obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
-if isdatetime(queryTime)
-    queryTime.TimeZone = "UTC";
-    queryTime_s = seconds(queryTime - options.ReferenceTime);
-elseif isnumeric(queryTime)
-    queryTime_s = double(queryTime);
-else
-    error("queryObstacleOccupancyAtTime:InvalidTime", "queryTime must be numeric seconds or datetime.");
-end
-if nargout < 2
-    isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
-elseif nargout == 2
-    [isOccupied, blockingObstacleIndex] = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
-else
-    [isOccupied, blockingObstacleIndex, queryDetails] = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
-end
+%% Section 2: Query The Prepared Snapshot
+[occupied, blockingIndex] = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
+    obstacles,x_units,y_units,time_s,boundaryOccupied);
 end

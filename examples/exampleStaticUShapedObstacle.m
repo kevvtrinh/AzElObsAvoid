@@ -18,8 +18,8 @@ function [result, diagnosis] = exampleStaticUShapedObstacle(exampleOverrides)
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -38,9 +38,9 @@ end
 
 missionEndTime_s     = 120;
 obstacleTime_s       = [0; missionEndTime_s];
-obstaclePosition_deg = [ -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
-safetyMargin_deg     = 0.20;
-obstacles            = obstacleAvoidance.obstacles.createObstacle("Static U-shaped obstacle", obstacleTime_s, obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), safetyMargin_deg);
+obstaclePosition_units = [ -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
+safetyMargin_units     = 0.20;
+obstacles            = obstacleAvoidance.obstacles.createObstacle("Static U-shaped obstacle", obstacleTime_s, obstaclePosition_units(:, 1), obstaclePosition_units(:, 2), safetyMargin_units);
 
 %% Section 3: Create Planner Inputs
 
@@ -49,15 +49,15 @@ obstacles            = obstacleAvoidance.obstacles.createObstacle("Static U-shap
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [0 0];
-goalState = struct("time_s", missionEndTime_s, "position_deg", [0 -10]);
-limits    = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [0.75 0.75], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState.position_units = [0 0];
+goalState = struct("time_s", missionEndTime_s, "position_units", [0 -10]);
+limits    = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [0.75 0.75], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 
 % Run the public planner once with the complete scenario input.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

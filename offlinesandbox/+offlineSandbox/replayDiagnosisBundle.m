@@ -25,7 +25,7 @@ function [response, reproducedBundle] = replayDiagnosisBundle(bundleFilePath, re
 %       Fresh handle-free diagnosis bundle for the reproduced result.
 %**************************************************************************
 % UNITS
-%   - Positions and vertices are [azimuth elevation] in degrees. Time is
+%   - Positions and vertices are [x y] in coordinate units. Time is
 %     seconds, and obstacle motion is preserved as sampled positions.
 %**************************************************************************
 
@@ -109,11 +109,11 @@ function obstacleInput = createWireObstacles(obstacles)
         error("replayDiagnosisBundle:InvalidObstacles", "diagnosisBundle.PlannerInputs.obstacles must be a structure array.");
     end
     obstacleTemplate = struct("name", "", ...
-        "safetyMargin_deg", 0, ...
+        "safetyMargin_units", 0, ...
         "keyframes", struct.empty(0, 1));
     obstacleInput = repmat(obstacleTemplate, numel(obstacles), 1);
-    requiredNames = ["targetName", "time_s", "originalAz_deg", ...
-        "originalEl_deg", "safetyMargin_deg"];
+    requiredNames = ["targetName", "time_s", "originalX_units", ...
+        "originalY_units", "safetyMargin_units"];
     % Process each obstacle needed by the sandbox workflow.
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
@@ -123,26 +123,26 @@ function obstacleInput = createWireObstacles(obstacles)
         if numel(time_s) < 1 || any(~isfinite(time_s)) || any(diff(time_s) <= 0)
             error("replayDiagnosisBundle:InvalidObstacleTime", "%s.time_s must be finite and strictly increasing.", context);
         end
-        if numel(obstacle.originalAz_deg) ~= numel(time_s) || numel(obstacle.originalEl_deg) ~= numel(time_s)
+        if numel(obstacle.originalX_units) ~= numel(time_s) || numel(obstacle.originalY_units) ~= numel(time_s)
             error("replayDiagnosisBundle:ObstacleHistorySizeMismatch", "%s original coordinate histories must match time_s.", context);
         end
         keyframeTemplate = struct();
         keyframeTemplate.time_s       = 0;
-        keyframeTemplate.vertices_deg = zeros(0, 2);
+        keyframeTemplate.vertices_units = zeros(0, 2);
         keyframes = repmat(keyframeTemplate, numel(time_s), 1);
         % Process each sample needed by the sandbox workflow.
         for sampleIndex = 1:numel(time_s)
-            azimuth_deg   = reshape(double(obstacle.originalAz_deg{sampleIndex}), [], 1);
-            elevation_deg = reshape(double(obstacle.originalEl_deg{sampleIndex}), [], 1);
-            vertices_deg  = [azimuth_deg, elevation_deg];
-            if size(vertices_deg, 1) < 3 || any(~isfinite(vertices_deg), "all")
-                error("replayDiagnosisBundle:InvalidObstacleVertices", "%s original slice %d must have at least three finite " + "[azimuth elevation] vertices.", context, sampleIndex);
+            x_units   = reshape(double(obstacle.originalX_units{sampleIndex}), [], 1);
+            y_units = reshape(double(obstacle.originalY_units{sampleIndex}), [], 1);
+            vertices_units  = [x_units, y_units];
+            if size(vertices_units, 1) < 3 || any(~isfinite(vertices_units), "all")
+                error("replayDiagnosisBundle:InvalidObstacleVertices", "%s original slice %d must have at least three finite " + "[x y] vertices.", context, sampleIndex);
             end
             keyframes(sampleIndex).time_s = time_s(sampleIndex);
-            keyframes(sampleIndex).vertices_deg = vertices_deg;
+            keyframes(sampleIndex).vertices_units = vertices_units;
         end
         obstacleInput(obstacleIndex).name = string(obstacle.targetName);
-        obstacleInput(obstacleIndex).safetyMargin_deg = double(obstacle.safetyMargin_deg);
+        obstacleInput(obstacleIndex).safetyMargin_units = double(obstacle.safetyMargin_units);
         obstacleInput(obstacleIndex).keyframes = keyframes;
     end
 end

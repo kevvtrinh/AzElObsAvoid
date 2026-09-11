@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
+function [result, diagnosis, regionResults] = exampleUSOutlineExtremeVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleUSOutlineExtremeVisibility()
@@ -6,20 +6,20 @@ function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
 %
 % PURPOSE
 %   - Plan sequential routes around the dense static outlines of Hawaii,
-%     Croatia, and the Philippines using bounded extreme visibility
-%     candidates and full protected collision geometry.
+%     Croatia, and the Philippines using full protected collision geometry.
 %
 % INPUTS
 %   - options (scalar struct, optional; default struct())
-%       Planner/display overrides plus the finite MaxJerk_deg_s3 limit.
+%       Planner/display overrides plus the finite MaxJerk_units_s3 limit.
 %
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result for the final region.
+%   - regionResults (optional third output): every unmodified region result.
 %
 % UNITS
-%   - Position is degrees, time is seconds, velocity is degrees per second,
-%     acceleration is degrees per second squared, and jerk is degrees per
+%   - Position is coordinate units, time is seconds, velocity is coordinate units per second,
+%     acceleration is coordinate units per second squared, and jerk is coordinate units per
 %     second cubed.
 %
 
@@ -56,7 +56,7 @@ end
 % Use equal physical limits for each region. The helper derives endpoints from
 % occupancy tests and does not store a preferred detour.
 
-limits = struct("maxVelocity_deg_s", [8 8], "maxAcceleration_deg_s2", [3 3], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+limits = struct("maxVelocity_units_s", [8 8], "maxAcceleration_units_s2", [3 3], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 
@@ -66,10 +66,10 @@ regionDiagnoses = cell(regionCount, 1);
 % Plan each geographic region independently. Use the same physical limits.
 for regionIndex = 1:regionCount
     scenario      = regionScenarios{regionIndex};
-    initialState  = struct("time_s", 0, "position_deg", scenario.initialPosition_deg);
-    goalState     = struct("time_s", missionEndTime_s, "position_deg", scenario.goalPosition_deg);
+    initialState  = struct("time_s", 0, "position_units", scenario.initialPosition_units);
+    goalState     = struct("time_s", missionEndTime_s, "position_units", scenario.goalPosition_units);
     regionOptions = options;
-    [regionResults{regionIndex}, regionDiagnoses{regionIndex}] = obstacleAvoidance.planTrajectory(obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
+    [regionResults{regionIndex}, regionDiagnoses{regionIndex}] = planner(obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
 end
 
 %% Section 5: Validate Result

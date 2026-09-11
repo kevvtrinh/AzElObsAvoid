@@ -17,13 +17,13 @@ function [result, diagnosis] = exampleMovingBarrierWait(exampleOverrides)
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
 
-% Keep fixed-arrival timing so waiting can be part of the solution.
+% Search earliest arrival with waiting available in the complete motion.
 
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
@@ -36,20 +36,20 @@ end
 % represent time, not only position. It can wait in free space and cross later.
 
 obstacleTime_s             = [0; 6; 6.5; 12];
-barrierCenterElevation_deg = [0; 0; 8; 8];
-sourcePosition_deg         = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
-azimuthBySlice_deg         = cell(numel(obstacleTime_s), 1);
-elevationBySlice_deg       = cell(numel(obstacleTime_s), 1);
+barrierCenterY_units = [0; 0; 8; 8];
+sourcePosition_units         = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+xBySlice_units         = cell(numel(obstacleTime_s), 1);
+yBySlice_units       = cell(numel(obstacleTime_s), 1);
 
-% Move the same barrier through its sampled elevations. Each cell stores the
+% Move the same barrier through its sampled ys. Each cell stores the
 % complete boundary at one time.
 for sampleIndex = 1:numel(obstacleTime_s)
-    translatedPosition_deg = sourcePosition_deg + [0 barrierCenterElevation_deg(sampleIndex)];
-    azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
-    elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
+    translatedPosition_units = sourcePosition_units + [0 barrierCenterY_units(sampleIndex)];
+    xBySlice_units{sampleIndex} = translatedPosition_units(:, 1);
+    yBySlice_units{sampleIndex} = translatedPosition_units(:, 2);
 end
-safetyMargin_deg = 0.1;
-obstacles        = obstacleAvoidance.obstacles.createObstacle("translating barrier", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
+safetyMargin_units = 0.1;
+obstacles        = obstacleAvoidance.obstacles.createObstacle("translating barrier", obstacleTime_s, xBySlice_units, yBySlice_units, safetyMargin_units);
 
 %% Section 3: Create Planner Inputs
 
@@ -58,13 +58,13 @@ obstacles        = obstacleAvoidance.obstacles.createObstacle("translating barri
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [-5 0];
+initialState.position_units = [-5 0];
 goalState = struct();
 goalState.time_s       = 12;
-goalState.position_deg = [5 0];
-limits = struct("maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, "azimuthInterval_deg", [-6 6], "elevationInterval_deg", [-3 3]);
+goalState.position_units = [5 0];
+limits = struct("maxVelocity_units_s", [2 2], ...
+    "maxAcceleration_units_s2", [1 1], ...
+    "maxJerk_units_s3", displayOptions.MaxJerk_units_s3, "xInterval_units", [-6 6], "yInterval_units", [-3 3]);
 
 %% Section 4: Run Planner
 
@@ -74,7 +74,7 @@ warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
 warningCleanup = onCleanup(@() warning(warningState));
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 clear warningCleanup;
 
 %% Section 5: Validate Result
@@ -83,11 +83,11 @@ clear warningCleanup;
 % barrier too early even if its geometric path looks correct.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
-waitSeedSelected  = result.Success && diagnosis.SelectedAttemptIndex > 0 && diagnosis.Routes(diagnosis.SelectedAttemptIndex).Source == "directWait";
-exampleValidation.WaitSeedSelected = waitSeedSelected;
-exampleValidation.Passed           = exampleValidation.Passed && waitSeedSelected;
-if ~waitSeedSelected
-    exampleValidation.Message = exampleValidation.Message + " The planner did not select the direct waiting seed.";
+hasStationarySpan = result.Success && any(all(result.Polynomial.positionPower_units(:,:,2:end)==0,[2,3]));
+exampleValidation.HasStationarySpan = hasStationarySpan;
+exampleValidation.Passed           = exampleValidation.Passed && hasStationarySpan;
+if ~hasStationarySpan
+    exampleValidation.Message = exampleValidation.Message + " The returned motion has no stationary waiting interval.";
 end
 if ~exampleValidation.Passed
     warning("exampleMovingBarrierWait:ValidationFailed", "%s", exampleValidation.Message);

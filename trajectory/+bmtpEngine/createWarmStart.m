@@ -1,189 +1,156 @@
 function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
-% SYNTAX
-%   warmStart = bmtpEngine.createWarmStart(request)
-%
-% PURPOSE
-%   - Convert the proposed path into an initial smooth curve for optimization.
-%   - Return route resampling, active obstacle pairs, controls, and duration.
-%
-% INPUTS
-%   - request (scalar BMTP solve-request struct)
-%       Validated seed, regions, coverage, representation, limits, and horizon.
-%
-% OUTPUTS
-%   - warmStart (scalar struct)
-%       Route, controls, uniform segment time, active pairs, counts, and
-%       resampling evidence.
-%
-% UNITS
-%   - Position is degrees and segment time is seconds.
-%
+% SYNTAX: warmStart = bmtpEngine.createWarmStart(request)
+% PURPOSE: Convert the exact visibility route into BMTP Bezier controls.
+% INPUTS: request: validated BMTP request with static or timed exclusion cells.
+% OUTPUTS: warmStart: route, control points, time, and all-pair region mask.
+% UNITS: Position is coordinate units and time is seconds.
 
-%% Section 1: Create The Timed Or Spatial Warm Route
-
-% Start from the seed's route. Preserve timed cells and spatial corners;
-% allocate spatial spans by length rather than input vertex density.
-
-seed = request.Seed;
-% Interpolate the seed on timed cell boundaries when topology changes with time; static seeds use their spatial parameterization.
-if request.UsesTimedCells
-    route_deg          = createTimedWarmRoute(seed, request.Coverage.TimedSegmentCount, request.MaximumWarmSegmentCount);
-    warmRouteResampled = size(seed.position_deg, 1) - 1 > request.MaximumWarmSegmentCount;
-else
-    [route_deg, warmRouteResampled] = createSpatialWarmRoute(double(seed.position_deg), request.SplitCount, request.MaximumWarmSegmentCount);
+%% Section 1: Use The Exact Visibility Route
+route_units = double(request.Seed.position_units);
+route_units([1 end], :) = [request.InitialState.position_units; request.GoalState.position_units];
+originalSegmentCount = size(route_units, 1) - 1;
+usesLengthBalancedMesh=request.Options.GoalTimeMode=="earliestArrival" && ...
+    ~isfield(request.Coverage,'ActiveTimeInterval_s') && request.SplitCount>1;
+solverRoute_units=route_units;
+if usesLengthBalancedMesh
+    targetSegmentCount=originalSegmentCount*request.SplitCount;
+    segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount);
+    solverRoute_units=splitRouteByCount(route_units,segmentCountByEdge);
 end
-route_deg([1 end], :) = [request.InitialState.position_deg; ...
-    request.GoalState.position_deg];
-segmentCount          = size(route_deg, 1) - 1;
-regionActiveBySegment = createRegionActiveMask(segmentCount, numel(request.Regions_deg), request.Coverage);
+segmentCount = size(solverRoute_units, 1) - 1;
+regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
 
-%% Section 2: Create Feasible Initial Controls And Timing
-
-% Repeat endpoint controls to enforce rest. Choose initial segment time
-% from derivative bounds.
-
-controlPoint_deg         = createWarmControl(route_deg, request.Degree);
-segmentTime_s            = bmtpEngine.findRequiredSegmentTime(controlPoint_deg, request.Limits);
-originalSeedSegmentCount = size(seed.position_deg, 1) - 1;
-warmStart                = struct("Route_deg", route_deg, ...
-    "ControlPoint_deg", controlPoint_deg, ...
-    "SegmentTime_s", segmentTime_s, ...
-    "Duration_s", segmentCount * segmentTime_s, ...
-    "SegmentCount", segmentCount, ...
-    "RegionActiveBySegment", regionActiveBySegment, ...
-    "OriginalSeedSegmentCount", originalSeedSegmentCount, ...
-    "WarmRouteResampled", warmRouteResampled);
-end
-%% Section 3: Local Functions
-
-function activePairs = createRegionActiveMask(segmentCount, regionCount, coverage)
-    % Find caller-supplied cells overlapping each equal-duration span.
-    activePairs = true(segmentCount, regionCount);
-    if ~isfield(coverage, "RegionActiveTauInterval")
-        return;
-    end
-    activeInterval   = double(coverage.RegionActiveTauInterval);
-    segmentStartTau  = (0:segmentCount - 1).' / segmentCount;
-    segmentFinishTau = (1:segmentCount).' / segmentCount;
-    activePairs      = segmentStartTau < activeInterval(:, 2).' & segmentFinishTau > activeInterval(:, 1).';
-end
-
-function route_deg = createTimedWarmRoute(seed, requestedSegmentCount, maximumSegmentCount)
-    % Sample the timed seed on the equal-duration grid used by the optimizer.
-    segmentCount = min(round(double(requestedSegmentCount)), maximumSegmentCount);
-    queryTau     = linspace(0, 1, segmentCount + 1).';
-    route_deg    = interp1(double(seed.tau(:)), double(seed.position_deg), queryTau, "linear");
-end
-
-function [route_deg, wasCanonicalized] = createSpatialWarmRoute(seedRoute_deg, splitCount, maximumSegmentCount)
-    % Preserve true corners while making the optimizer independent of vertex density.
-    [canonicalRoute_deg, wasCanonicalized] = removeRedundantRoutePoints(seedRoute_deg);
-    edgeCount = size(canonicalRoute_deg, 1) - 1;
-
-    % Allow the span count to exceed the cap when needed to preserve corners.
-    subdivisionEdgeCount = min(edgeCount, maximumSegmentCount);
-    targetSegmentCount   = max(edgeCount, subdivisionEdgeCount * splitCount);
-    segmentCountByEdge   = allocateSegmentsByLength(canonicalRoute_deg, targetSegmentCount);
-    route_deg            = splitRouteByCount(canonicalRoute_deg, segmentCountByEdge);
-    wasCanonicalized     = wasCanonicalized || edgeCount > maximumSegmentCount;
-end
-
-function [route_deg, wasReduced] = removeRedundantRoutePoints(route_deg)
-    % Remove only roundoff-scale duplicates and points lying on a straight edge.
-    [~, geometryTolerance_deg] = bmtpEngine.createCoordinateTolerances(route_deg);
-    originalPointCount = size(route_deg, 1);
-
-    distinctRoute_deg  = zeros(size(route_deg));
-    distinctPointCount = 1;
-    distinctRoute_deg(1, :) = route_deg(1, :);
-    % Process each point needed to complete remove redundant route points.
-    for pointIndex = 2:originalPointCount
-        % Retain points separated beyond the geometry tolerance and drop near-duplicate consecutive points.
-        if norm(route_deg(pointIndex, :) - distinctRoute_deg(distinctPointCount, :)) > geometryTolerance_deg
-            distinctPointCount = distinctPointCount + 1;
-            distinctRoute_deg(distinctPointCount, :) = route_deg(pointIndex, :);
+%% Section 2: Create Linear Rest-To-Rest Controls
+degree = request.Degree;
+fraction = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
+start_units = reshape(solverRoute_units(1:end - 1, :), segmentCount, 1, 2);
+finish_units = reshape(solverRoute_units(2:end, :), segmentCount, 1, 2);
+controlPoint_units = (1 - fraction) .* start_units + fraction .* finish_units;
+segmentTime_s = bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits);
+if request.SplitCount>1 && ~usesLengthBalancedMesh
+    subdivisions = request.SplitCount;
+    refined_units = zeros(segmentCount*subdivisions,degree+1,2);
+    for k = 1:segmentCount
+        for j = 1:subdivisions
+            refined_units((k-1)*subdivisions+j,:,:) = bmtpEngine.restrictBezier(squeeze(controlPoint_units(k,:,:)),[(j-1),j]/subdivisions);
         end
     end
-    distinctRoute_deg = distinctRoute_deg(1:distinctPointCount, :);
-    % Duplicate the lone surviving waypoint so the motion engine still receives a valid two-endpoint route.
-    if distinctPointCount == 1
-        route_deg  = [distinctRoute_deg; distinctRoute_deg];
-        wasReduced = originalPointCount > 2;
-        return;
-    end
-
-    route_deg          = zeros(size(distinctRoute_deg));
-    retainedPointCount = 0;
-    % Process each point needed to complete remove redundant route points.
-    for pointIndex = 1:distinctPointCount
-        retainedPointCount = retainedPointCount + 1;
-        route_deg(retainedPointCount, :) = distinctRoute_deg(pointIndex, :);
-        % Continue iterating until the stopping condition for complete remove redundant route points is satisfied.
-        while retainedPointCount >= 3 && pointLiesOnSegment(route_deg(retainedPointCount - 1, :), route_deg(retainedPointCount - 2, :), route_deg(retainedPointCount, :), geometryTolerance_deg)
-            route_deg(retainedPointCount - 1, :) = route_deg(retainedPointCount, :);
-            retainedPointCount = retainedPointCount - 1;
-        end
-    end
-    route_deg  = route_deg(1:retainedPointCount, :);
-    wasReduced = retainedPointCount < originalPointCount;
+    controlPoint_units = refined_units;
+    segmentTime_s = repelem(segmentTime_s,subdivisions)/subdivisions;
+    regionActiveBySegment = repelem(regionActiveBySegment,subdivisions,1);
+    segmentCount = segmentCount*subdivisions;
 end
 
-function isOnSegment = pointLiesOnSegment(point_deg, start_deg, finish_deg, tolerance_deg)
-    % Recognize subdivision points without erasing reversals or genuine turns.
-    chord_deg               = finish_deg - start_deg;
-    chordLengthSquared_deg2 = dot(chord_deg, chord_deg);
-    if chordLengthSquared_deg2 <= tolerance_deg ^ 2
-        isOnSegment = false;
-        return;
-    end
-    progress       = dot(point_deg - start_deg, chord_deg) / chordLengthSquared_deg2;
-    projection_deg = start_deg + progress * chord_deg;
-    isOnSegment    = progress >= 0 && progress <= 1 && norm(point_deg - projection_deg) <= tolerance_deg;
+%% Section 3: Return The Solver Initialization
+warmStart = struct();
+warmStart.Route_units = route_units;
+warmStart.ControlPoint_units = controlPoint_units;
+warmStart.SegmentTime_s = segmentTime_s(:);
+warmStart.Duration_s = sum(segmentTime_s);
+warmStart.SegmentRatio = segmentTime_s(:) / mean(segmentTime_s);
+warmStart.SegmentCount = segmentCount;
+warmStart.RegionActiveBySegment = regionActiveBySegment;
+warmStart.OriginalSeedSegmentCount = originalSegmentCount;
+warmStart.WarmRouteResampled = false;
+if isfield(request.Coverage,'BreakTime_s') && request.Options.GoalTimeMode~="fixedArrival"
+    sourceBreaks_s = request.Coverage.BreakTime_s;
+    % Natural obstacle events already supply phases on a detailed clock.
+    % Keep at least eight spans (up to four per interval) on sparse clocks
+    % so the endpoint constraints do not consume the steering freedom.
+    subdivisions = min(4,max(1,ceil(8/(numel(sourceBreaks_s)-1))));
+    breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:subdivisions)/subdivisions,[],1));
+    segmentTime_s = diff(breakTime_s);
+    segmentCount = numel(segmentTime_s);
+    tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
+        segmentTime_s.*((0:degree)/degree))/request.MotionHorizon_s;
+    controls = interp1(request.Seed.tau,route_units,tau(:),'linear');
+    controlPoint_units = reshape(controls,segmentCount,degree+1,2);
+    controlPoint_units(1,1:3,:) = reshape(repmat(request.InitialState.position_units,3,1),1,3,2);
+    controlPoint_units(end,end-2:end,:) = reshape(repmat(request.GoalState.position_units,3,1),1,3,2);
+    intervals_s = request.Coverage.ActiveTimeInterval_s;
+    warmStart.ControlPoint_units = controlPoint_units;
+    warmStart.SegmentTime_s = segmentTime_s(:);
+    warmStart.SegmentRatio = segmentTime_s/mean(segmentTime_s);
+    warmStart.Duration_s = sum(segmentTime_s);
+    warmStart.SegmentCount = segmentCount;
+    warmStart.RegionActiveBySegment = breakTime_s(1:end-1) < intervals_s(:,2).' & ...
+        breakTime_s(2:end) > intervals_s(:,1).';
+    warmStart.WarmRouteResampled = true;
 end
 
-function segmentCountByEdge = allocateSegmentsByLength(route_deg, targetSegmentCount)
-    % Give each true edge one span, then allocate the remainder by arc length.
-    edgeLength_deg        = vecnorm(diff(route_deg, 1, 1), 2, 2);
-    edgeCount             = numel(edgeLength_deg);
-    segmentCountByEdge    = ones(edgeCount, 1);
-    remainingSegmentCount = targetSegmentCount - edgeCount;
-    if remainingSegmentCount <= 0 || sum(edgeLength_deg) <= 0
-        segmentCountByEdge(1) = segmentCountByEdge(1) + remainingSegmentCount;
-        return;
+if request.Options.GoalTimeMode=="fixedArrival"
+    % The motion mesh follows the guide, not the obstacle sampling frequency.
+    % Every source interval still constrains its exact overlap with these spans.
+    minimumSegmentCount = 8;
+    if request.Degree>=8, minimumSegmentCount = 16; end
+    segmentCount=max(minimumSegmentCount,originalSegmentCount);
+    isTimedSeed = isfield(request.Seed,'Source') && ...
+        string(request.Seed.Source)=="timeExpandedVisibilityGraph";
+    if isTimedSeed
+        routeTau = linspace(0,1,segmentCount+1).';
+        timedRoute_units = interp1(request.Seed.tau,route_units,routeTau,'linear');
+        start_units = reshape(timedRoute_units(1:end-1,:),segmentCount,1,2);
+        finish_units = reshape(timedRoute_units(2:end,:),segmentCount,1,2);
+        warmStart.ControlPoint_units = (1-fraction).*start_units+fraction.*finish_units;
+        warmStart.Route_units = timedRoute_units;
+    else
+        tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
+        controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
+        warmStart.ControlPoint_units=reshape(controls,segmentCount,degree+1,2);
     end
-
-    exactAdditionalCount = remainingSegmentCount * edgeLength_deg / sum(edgeLength_deg);
-    additionalCount      = floor(exactAdditionalCount);
-    segmentCountByEdge   = segmentCountByEdge + additionalCount;
-    unassignedCount      = remainingSegmentCount - sum(additionalCount);
-    fractionalCount      = exactAdditionalCount - additionalCount;
-    [~, allocationOrder] = sortrows([-fractionalCount, (1:edgeCount).'], [1 2]);
-    segmentCountByEdge(allocationOrder(1:unassignedCount)) = segmentCountByEdge(allocationOrder(1:unassignedCount)) + 1;
+    warmStart.SegmentTime_s=repmat(request.MotionHorizon_s/segmentCount,segmentCount,1);
+    warmStart.SegmentRatio=ones(segmentCount,1);
+    warmStart.SegmentCount=segmentCount;
+    warmStart.RegionActiveBySegment=true(segmentCount,numel(request.Regions_units));
+    if isfield(request.Coverage,'ActiveTimeInterval_s')
+        breaks_s=request.InitialState.time_s+[0;cumsum(warmStart.SegmentTime_s)];
+        intervals_s=request.Coverage.ActiveTimeInterval_s;
+        warmStart.RegionActiveBySegment=breaks_s(1:end-1)<intervals_s(:,2).' & ...
+            breaks_s(2:end)>intervals_s(:,1).';
+    end
+    warmStart.WarmRouteResampled=true;
+end
+if request.Options.GoalTimeMode=="fixedArrival"
+    warmStart.SegmentTime_s = warmStart.SegmentTime_s * request.MotionHorizon_s/sum(warmStart.SegmentTime_s);
+    warmStart.Duration_s = request.MotionHorizon_s;
+end
+warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
+    warmStart.SegmentTime_s,request.InitialState,request.GoalState);
+if isfield(request.Seed, 'Source') && ...
+        string(request.Seed.Source) == "timeExpandedVisibilityGraph"
+    commonSegmentTime_s = max(bmtpEngine.findRequiredSegmentTime( ...
+        warmStart.ControlPoint_units, request.Limits));
+    warmStart.SegmentTime_s = repmat(commonSegmentTime_s, warmStart.SegmentCount, 1);
+    warmStart.SegmentRatio = ones(warmStart.SegmentCount, 1);
+    warmStart.Duration_s = warmStart.SegmentCount * commonSegmentTime_s;
+end
 end
 
-function route_deg = splitRouteByCount(seedRoute_deg, segmentCountByEdge)
-    % Subdivide each straight edge without moving any original corner.
-    edgeCount       = size(seedRoute_deg, 1) - 1;
-    route_deg       = zeros(sum(segmentCountByEdge) + 1, 2);
-    routePointIndex = 1;
-    % Process each geometric edge while constructing or checking the region topology.
-    for edgeIndex = 1:edgeCount
-        segmentCount      = segmentCountByEdge(edgeIndex);
-        fractions         = (0:segmentCount - 1).' / segmentCount;
-        routePointIndices = routePointIndex: routePointIndex + segmentCount - 1;
-        route_deg(routePointIndices, :) = seedRoute_deg(edgeIndex, :) + fractions .* (seedRoute_deg(edgeIndex + 1, :) - seedRoute_deg(edgeIndex, :));
-        routePointIndex = routePointIndex + segmentCount;
-    end
-    route_deg(end, :) = seedRoute_deg(end, :);
+function segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount)
+    edgeLength_units=vecnorm(diff(route_units),2,2);
+    edgeCount=numel(edgeLength_units);
+    segmentCountByEdge=ones(edgeCount,1);
+    remainingCount=targetSegmentCount-edgeCount;
+    if remainingCount<=0 || sum(edgeLength_units)<=0, return; end
+    exactCount=remainingCount*edgeLength_units/sum(edgeLength_units);
+    additional=floor(exactCount);
+    segmentCountByEdge=segmentCountByEdge+additional;
+    unassigned=remainingCount-sum(additional);
+    [~,order]=sortrows([-mod(exactCount,1),(1:edgeCount).'],[1 2]);
+    segmentCountByEdge(order(1:unassigned))=segmentCountByEdge(order(1:unassigned))+1;
 end
 
-
-function controlPoint_deg = createWarmControl(route_deg, degree)
-    % Build initial controls with continuous position through jerk and resting endpoints.
-    segmentCount     = size(route_deg, 1) - 1;
-    fraction         = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
-    start_deg        = reshape(route_deg(1:end - 1, :), segmentCount, 1, 2);
-    finish_deg       = reshape(route_deg(2:end, :), segmentCount, 1, 2);
-    controlPoint_deg = (1 - fraction) .* start_deg + fraction .* finish_deg;
+function refined_units=splitRouteByCount(route_units,segmentCountByEdge)
+    refined_units=zeros(sum(segmentCountByEdge)+1,2);
+    target=1;
+    for edgeIndex=1:numel(segmentCountByEdge)
+        count=segmentCountByEdge(edgeIndex);
+        fraction=(0:count-1).'/count;
+        rows=target:target+count-1;
+        refined_units(rows,:)=route_units(edgeIndex,:)+ ...
+            fraction.*(route_units(edgeIndex+1,:)-route_units(edgeIndex,:));
+        target=target+count;
+    end
+    refined_units(end,:)=route_units(end,:);
 end

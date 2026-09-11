@@ -1,36 +1,26 @@
-function handles = plotTrajectory(result, optionOverrides, diagnosis)
+function handles = plotTrajectory(result, optionOverrides, ~)
 %% Section 0: Header & Readme
-% SYNTAX
-%   options = obstacleAvoidance.plotting.plotTrajectory()
+% SYNTAX: options = obstacleAvoidance.plotting.plotTrajectory()
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides, diagnosis)
-%
-% PURPOSE
-%   - Plot retained motion, search diagnostics, and physical limits.
-%   - Animate returned samples against time-varying obstacles and targets.
-%
-% INPUTS
-%   - result (scalar planTrajectory result)
-%       Success or failure record; plotting never reruns the planner.
-%   - optionOverrides (scalar struct, optional; default struct())
-%       Display, animation, and GIF controls. Hidden figures never pause.
-%   - diagnosis (optional second planner output)
-%       Adds candidate routes, search edges, and frontier diagnostics.
-%
-% OUTPUTS
-%   - handles (scalar struct)
-%       Stable workspace, visibility, kinematic, and animation handles.
-%
-% UNITS
-%   - Axes use degrees, seconds, deg/s, deg/s^2, and deg/s^3.
-%
+%   handles = obstacleAvoidance.plotting.plotTrajectory(result, axesHandle)
+% PURPOSE: Plot retained core geometry, visibility graph, motion, and physical limits. Animate
+%   returned samples against time-varying obstacles and targets.
+% INPUTS: result (scalar planner result) Success or failure record; plotting never reruns the
+%   planner. optionOverrides (scalar struct, optional; default struct()) Display, animation, and GIF
+%   controls. Hidden figures never pause. A Cartesian axes handle instead selects a workspace-only
+%   plot. ShowSeedPaths, ShowSweptSurfaces, and MaximumDisplayed* are retained for example
+%   compatibility; the core has no such diagnostic histories. diagnosis (optional compatibility
+%   argument, unused) The retained visibility graph is read directly from result.
+% OUTPUTS: handles (scalar struct) Stable workspace, visibility, kinematic, and animation handles,
+%   plus the core Axes, obstacle, graph, Route, Trajectory, Endpoint aliases.
+% UNITS: Axes use coordinate units, seconds, units/s, units/s^2, and units/s^3.
 
 %% Section 1: Resolve Display Controls
-
 defaults = struct();
 defaults.FigureVisible                       = "on";
-defaults.Title                               = "Az/El motion plan";
+defaults.Title                               = "X/Y motion plan";
 defaults.ShowWorkspace                       = true;
 defaults.ShowKinematics                      = true;
 defaults.ShowAnimation                       = true;
@@ -52,11 +42,21 @@ end
 if nargin < 2 || isempty(optionOverrides)
     optionOverrides = struct();
 end
-if nargin < 3, diagnosis = struct(); end
-requiredNames = {'Inputs', 'Options', 'Success', 'Route_deg', 'BestPartialRoute_deg'};
+requiredNames = {'Inputs', 'Options', 'Limits', 'RequestedLimits', 'Success', ...
+    'TerminationReason', 'PreparedObstacles', 'VisibilityGraph', 'Route_units', ...
+    'time_s', 'position_units', 'velocity_units_s', 'acceleration_units_s2', 'jerk_units_s3'};
 if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredNames))
     error("plotTrajectory:InvalidResult", "result must be a scalar planner result.");
 end
+workspaceAxes = gobjects(0);
+if ~isstruct(optionOverrides)
+    if ~isscalar(optionOverrides) || ~isgraphics(optionOverrides, "axes")
+        error("plotTrajectory:InvalidAxes", "The second input must be plot options or Cartesian axes.");
+    end
+    workspaceAxes = optionOverrides;
+    optionOverrides = struct('ShowKinematics', false, 'ShowAnimation', false);
+end
+useSuppliedAxes = ~isempty(workspaceAxes);
 [options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, normalizePlotAliases(optionOverrides));
 if ~isempty(unknownNames)
     warning("plotTrajectory:UnknownOptions", "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -72,38 +72,50 @@ if ~isscalar(options.Title) || ~isscalar(options.AnimationGifFile) || strlength(
 end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", "ShowSeedPaths", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces", "SaveAnimationGif"];
-% Apply the required validation or transfer to each name.
 for name = logicalNames
     options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name), name, "plotTrajectory:InvalidLogicalOption");
 end
 nonnegativeNames = ["Pause_s", "AnimationGifDelay_s"];
-% Apply the required validation or transfer to each name.
 for name = nonnegativeNames
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end
 validateattributes(options.FrameStride, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+for name = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"]
+    validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+end
 handles    = createEmptyHandles(options);
-obstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.Inputs.obstacles);
-gridRecord = struct();
-routes     = struct([]);
-if isfield(diagnosis, "Search"), gridRecord = diagnosis.Search; end
-if isfield(diagnosis, "Routes"), routes = diagnosis.Routes; end
+plotTimeRange_s=[result.Inputs.initialState.time_s,result.Inputs.goalState.time_s];
+obstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles,plotTimeRange_s);
+originalObstacles = obstacles;
+if options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimation || options.SaveAnimationGif
+    % Reuse protected geometry verbatim. Cache the original histories once
+    % for display, without constructing or applying another safety margin.
+    for obstacleIndex = 1:numel(originalObstacles)
+        originalObstacles(obstacleIndex).x_units = obstacles(obstacleIndex).originalX_units;
+        originalObstacles(obstacleIndex).y_units = obstacles(obstacleIndex).originalY_units;
+        originalObstacles(obstacleIndex).safetyMargin_units = 0;
+        originalObstacles(obstacleIndex).InternalPreparation = struct();
+    end
+    originalObstacles = obstacleAvoidance.obstacles.prepareObstacles(originalObstacles,plotTimeRange_s);
+end
 
 %% Section 2: Plot Workspace And Failure Diagnostics
-
 if options.ShowWorkspace
-    workspaceFigure = figure("Name", options.Title, "Visible", options.FigureVisible);
-    workspaceAxes   = axes(workspaceFigure);
+    if isempty(workspaceAxes)
+        workspaceFigure = figure("Name", options.Title, "Visible", options.FigureVisible);
+        workspaceAxes   = axes(workspaceFigure);
+    else
+        workspaceFigure = ancestor(workspaceAxes, 'figure');
+        cla(workspaceAxes);
+    end
     configureSpatialAxes(workspaceAxes, result);
-    drawObstacles(workspaceAxes, obstacles, result.Inputs.initialState.time_s);
-    drawSearchDiagnostics(workspaceAxes, gridRecord, options.ShowSearchEdges);
-    if options.ShowSeedPaths
-        % Evaluate each seed before retaining the best admissible candidate.
-        for seedIndex = 1:numel(routes)
-            route_deg = displayPath(result, routes(seedIndex).position_deg);
-            label     = "Route " + seedIndex + ": " + routes(seedIndex).Source;
-            drawLine(workspaceAxes, route_deg, "-o", label, 1);
-        end
+    if useSuppliedAxes
+        xlim(workspaceAxes, result.RequestedLimits.xInterval_units);
+        ylim(workspaceAxes, result.RequestedLimits.yInterval_units);
+    end
+    drawObstacles(workspaceAxes, obstacles, originalObstacles, result.Inputs.initialState.time_s);
+    if options.ShowVisibilityGraphs
+        drawSearchDiagnostics(workspaceAxes, result, options.ShowSearchEdges);
     end
     drawPlannerRoute(workspaceAxes, result);
     drawTarget(workspaceAxes, result, result.Inputs.initialState.time_s);
@@ -113,17 +125,16 @@ if options.ShowWorkspace
     handles.WorkspaceAxes   = workspaceAxes;
 end
 doesCross = false;
-if result.Success && result.Options.AllowAzimuthWrapping
-    seamPath_deg = displayPath(result, result.position_deg);
-    doesCross    = any(isnan(seamPath_deg(:, 1)));
+if result.Success && (result.Options.WrapX || result.Options.WrapY)
+    seamPath_units = displayPath(result, result.position_units);
+    doesCross    = any(isnan(seamPath_units(:, 1)));
 end
-if (options.ShowWorkspace || options.ShowAnimation || options.SaveAnimationGif) && doesCross
+if (options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimation || options.SaveAnimationGif) && doesCross && ~useSuppliedAxes
     [handles.ContinuousWorkspaceFigure, handles.ContinuousWorkspaceAxes] = createContinuousWorkspace(result, options);
 end
 
-%% Section 3: Plot Time-Expanded Diagnostics
-
-if options.ShowVisibilityGraphs && ~isempty(fieldnames(gridRecord))
+%% Section 3: Plot The Retained Visibility Graph
+if options.ShowVisibilityGraphs
     if options.ShowWorkspace
         handles.VisibilityFigure = handles.WorkspaceFigure;
         handles.VisibilityAxes   = handles.WorkspaceAxes;
@@ -131,10 +142,10 @@ if options.ShowVisibilityGraphs && ~isempty(fieldnames(gridRecord))
         handles.VisibilityFigure = figure("Name", options.Title + " search", "Visible", options.FigureVisible);
         handles.VisibilityAxes   = axes(handles.VisibilityFigure);
         configureSpatialAxes(handles.VisibilityAxes, result);
-        drawObstacles(handles.VisibilityAxes, obstacles, result.Inputs.initialState.time_s);
-        drawSearchDiagnostics(handles.VisibilityAxes, gridRecord, options.ShowSearchEdges);
+        drawObstacles(handles.VisibilityAxes, obstacles, originalObstacles, result.Inputs.initialState.time_s);
+        drawSearchDiagnostics(handles.VisibilityAxes, result, options.ShowSearchEdges);
         drawPlannerRoute(handles.VisibilityAxes, result);
-        drawTarget(handles.VisibilityAxes, result, result.Inputs.goalState.time_s);
+        drawTarget(handles.VisibilityAxes, result, result.Inputs.initialState.time_s);
         drawEndpoints(handles.VisibilityAxes, result);
         finishAxes(handles.VisibilityAxes, result, options.Title);
     end
@@ -142,7 +153,6 @@ if options.ShowVisibilityGraphs && ~isempty(fieldnames(gridRecord))
 end
 
 %% Section 4: Plot Returned Kinematics
-
 if options.ShowKinematics && result.Success
     kinematicFigure = figure("Name", options.Title + " kinematics", "Visible", options.FigureVisible);
     kinematicLayout = tiledlayout(kinematicFigure, 4, 1, "TileSpacing", "compact", "Padding", "compact");
@@ -155,7 +165,6 @@ if options.ShowKinematics && result.Success
 end
 
 %% Section 5: Animate Returned Motion
-
 if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     animationVisibility = options.FigureVisible;
     if options.SaveAnimationGif
@@ -167,22 +176,21 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     kinematicAxes   = createKinematicPanels(animationLayout, result, true);
     animationLegend = legend(kinematicAxes(1), "Location", "best");
     frameIndices    = unique([1:options.FrameStride:numel(result.time_s), numel(result.time_s)]);
-    [complete_deg, sourceIndex] = displayPath(result, result.position_deg);
+    [complete_units, sourceIndex] = displayPath(result, result.position_units);
     gifFrameCount = 0;
-    % Process each frame in temporal order and accumulate its result.
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes, result);
-        drawObstacles(animationAxes, obstacles, result.time_s(frameIndex));
+        drawObstacles(animationAxes, obstacles, originalObstacles, result.time_s(frameIndex));
         drawTarget(animationAxes, result, result.time_s(frameIndex));
-        drawLine(animationAxes, complete_deg, "-", "Complete timed path", 1);
+        drawLine(animationAxes, complete_units, "-", "Complete timed path", 1);
         elapsedEnd  = find(sourceIndex <= frameIndex, 1, "last");
-        elapsed_deg = complete_deg(1:elapsedEnd, :);
-        current_deg = displayPath(result, result.position_deg(frameIndex, :));
-        drawLine(animationAxes, elapsed_deg, "c-", "Elapsed path", 3);
-        scatter(animationAxes, current_deg(1), current_deg(2), 60, [0.95 0.25 0.15], "filled", "DisplayName", "Current state");
-        xlabel(animationAxes, "Azimuth (deg)");
-        ylabel(animationAxes, "Elevation (deg)");
+        elapsed_units = complete_units(1:elapsedEnd, :);
+        current_units = displayPath(result, result.position_units(frameIndex, :));
+        drawLine(animationAxes, elapsed_units, "c-", "Elapsed path", 3);
+        scatter(animationAxes, current_units(1), current_units(2), 60, [0.95 0.25 0.15], "filled", "DisplayName", "Current state");
+        xlabel(animationAxes, "X (units)");
+        ylabel(animationAxes, "Y (units)");
         title(animationAxes, sprintf("%s | t = %.3f s", options.Title, result.time_s(frameIndex)));
         drawnow;
         if options.SaveAnimationGif
@@ -213,18 +221,29 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
         "ElapsedKinematicLines", gobjects(0), "TimeCursors", gobjects(0), ...
         "Legend", animationLegend, "GifFile", handles.AnimationGifFile);
 end
+
+% Preserve the core's existing handles for callers that use one spatial view.
+handles.Axes = handles.WorkspaceAxes;
+if isempty(handles.Axes), handles.Axes = handles.VisibilityAxes; end
+if ~isempty(handles.Axes)
+    handles.OriginalObstacle = findobj(handles.Axes, 'DisplayName', 'Original obstacle');
+    handles.ProtectedObstacle = findobj(handles.Axes, 'DisplayName', 'Protected obstacle');
+    handles.VisibilityEdge = findobj(handles.Axes, 'DisplayName', 'Accepted visibility edge');
+    handles.VisibilityNode = findobj(handles.Axes, 'DisplayName', 'Visibility node');
+    handles.Route = findobj(handles.Axes, 'DisplayName', 'Selected geometric route');
+    handles.Trajectory = findobj(handles.Axes, 'DisplayName', 'Timed motion');
+    handles.Endpoint = [findobj(handles.Axes, 'DisplayName', 'Start'); findobj(handles.Axes, 'DisplayName', 'Goal')];
+end
 end
 
 %% Section 6: Local Functions
-
 function options = normalizePlotAliases(options)
-    % Normalize deprecated aliases and discard example-only reporting fields.
+    % Normalize the display aliases used by existing examples.
     if ~isstruct(options) || ~isscalar(options)
         error("plotTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
     end
     aliases = ["AnimationFrameStride", "FrameStride"; ...
         "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
-    % Process each alias needed to prepare plot aliases.
     for aliasIndex = 1:size(aliases, 1)
         oldName = aliases(aliasIndex, 1);
         newName = aliases(aliasIndex, 2);
@@ -238,117 +257,127 @@ function options = normalizePlotAliases(options)
 end
 
 function configureSpatialAxes(axesHandle, result)
-    % Apply periodic-axis display settings.
+    % Fit ordinary scenes; keep periodic views in the requested workspace.
     hold(axesHandle, "on");
     grid(axesHandle, "on");
     box(axesHandle, "on");
     axis(axesHandle, "equal");
-    if result.Options.AllowAzimuthWrapping
-        xlim(axesHandle, result.Inputs.limits.azimuthInterval_deg);
+    if result.Options.WrapX || result.Options.WrapY
+        xlim(axesHandle, result.RequestedLimits.xInterval_units);
+        ylim(axesHandle, result.RequestedLimits.yInterval_units);
     end
 end
 
-function [position_deg, sourceIndex] = displayPath(result, position_deg)
+function [position_units, sourceIndex] = displayPath(result, position_units)
     % Apply the result's wrap settings to the displayed path.
-    [position_deg, sourceIndex] = obstacleAvoidance.plotting.createWrappedSpatialPath(position_deg, result.Inputs.limits.azimuthInterval_deg, result.Options.AllowAzimuthWrapping);
+    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    [position_units, sourceIndex] = obstacleAvoidance.plotting.createWrappedSpatialPath(position_units, intervals_units, [result.Options.WrapX result.Options.WrapY]);
 end
 
 function [figureHandle, axesHandle] = createContinuousWorkspace(result, options)
     % Show the unwrapped path and crossed wrap boundaries.
-    figureHandle = figure("Name", options.Title + " continuous azimuth", "Visible", options.FigureVisible);
+    figureHandle = figure("Name", options.Title + " continuous coordinates", "Visible", options.FigureVisible);
     axesHandle   = axes(figureHandle);
     hold(axesHandle, "on");
     grid(axesHandle, "on");
     box(axesHandle, "on");
     axis(axesHandle, "equal");
-    drawLine(axesHandle, result.position_deg, "k-", "Timed motion", 2);
-    interval_deg    = result.Inputs.limits.azimuthInterval_deg;
-    period_deg      = diff(interval_deg);
-    seamMultipliers = ceil((min(result.position_deg(:, 1)) - interval_deg(1)) / period_deg): floor((max(result.position_deg(:, 1)) - interval_deg(1)) / period_deg);
-    % Process each seam deg needed to build continuous workspace.
-    for seam_deg = interval_deg(1) + period_deg * seamMultipliers
-        xline(axesHandle, seam_deg, ":", "HandleVisibility", "off");
+    drawLine(axesHandle, result.position_units, "k-", "Timed motion", 2);
+    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    wrapAxes = [result.Options.WrapX result.Options.WrapY];
+    for axisIndex = find(wrapAxes)
+        interval_units = intervals_units(axisIndex, :);
+        period_units = diff(interval_units);
+        seamMultipliers = ceil((min(result.position_units(:, axisIndex)) - interval_units(1)) / period_units):floor((max(result.position_units(:, axisIndex)) - interval_units(1)) / period_units);
+        for seam_units = interval_units(1) + period_units * seamMultipliers
+            if axisIndex == 1
+                xline(axesHandle, seam_units, ":", "HandleVisibility", "off");
+            else
+                yline(axesHandle, seam_units, ":", "HandleVisibility", "off");
+            end
+        end
     end
-    xlabel(axesHandle, "Continuous azimuth (deg)");
-    ylabel(axesHandle, "Elevation (deg)");
+    xlabel(axesHandle, "Continuous x (units)");
+    ylabel(axesHandle, "Continuous y (units)");
 end
 
 function drawPlannerRoute(axesHandle, result)
-    % Draw the successful selected/timed path or the retained best partial route.
-    if result.Success
-        selected_deg = displayPath(result, result.Route_deg);
-        motion_deg   = displayPath(result, result.position_deg);
-        drawLine(axesHandle, selected_deg, "--", "Selected geometric route", 1);
-        drawLine(axesHandle, motion_deg, "k-", "Timed motion", 2);
-    elseif ~isempty(result.BestPartialRoute_deg)
-        partial_deg = displayPath(result, result.BestPartialRoute_deg);
-        drawLine(axesHandle, partial_deg, "--", "Best partial route", 1);
+    % Failed solves can still retain a geometric guide or candidate motion.
+    if ~isempty(result.Route_units)
+        selected_units = displayPath(result, result.Route_units);
+        drawLine(axesHandle, selected_units, "--", "Selected geometric route", 1);
+    end
+    if ~isempty(result.position_units)
+        motion_units = displayPath(result, result.position_units);
+        drawLine(axesHandle, motion_units, "k-", "Timed motion", 2);
     end
 end
 
 function drawEndpoints(axesHandle, result)
     % Draw the requested start and terminal positions under the wrap policy.
-    start_deg = displayPath(result, result.Inputs.initialState.position_deg);
-    goal_deg  = obstacleAvoidance.input.goalPositionAtTime(result.Inputs.goalState, result.Inputs.goalState.time_s);
-    goal_deg  = displayPath(result, goal_deg);
-    plot(axesHandle, start_deg(1), start_deg(2), "go", "DisplayName", "Start");
-    plot(axesHandle, goal_deg(1), goal_deg(2), "ro", "DisplayName", "Goal");
+    start_units = displayPath(result, result.Inputs.initialState.position_units);
+    goal_units = result.Inputs.goalState.position_units;
+    if result.Success && hasData(result, 'Intercept') && isfinite(result.Intercept.Time_s)
+        goal_units = result.Intercept.TargetPosition_units;
+    end
+    goal_units  = displayPath(result, goal_units);
+    plot(axesHandle, start_units(1), start_units(2), "go", "DisplayName", "Start");
+    plot(axesHandle, goal_units(1), goal_units(2), "ro", "DisplayName", "Goal");
 end
 
-function lineHandle = drawLine(axesHandle, position_deg, style, name, width)
-    % Draw one labelled two-dimensional path on explicit axes.
-    lineHandle = plot(axesHandle, position_deg(:, 1), position_deg(:, 2), style, "LineWidth", width, "DisplayName", name);
+function lineHandle = drawLine(axesHandle, position_units, style, name, width)
+    lineHandle = plot(axesHandle, position_units(:, 1), position_units(:, 2), style, "LineWidth", width, "DisplayName", name);
 end
 
-function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
-    % Draw explored nodes, accepted/rejected edges, and the search frontier.
-    edgeNames  = ["AcceptedEdges_deg", "RejectedEdges_deg"];
+function drawSearchDiagnostics(axesHandle, result, showEdges)
+    % Draw only edges and nodes retained by the exact visibility search.
+    graphRecord = result.VisibilityGraph;
+    nodes_units = graphRecord.NodePosition_units;
+    edgeNames  = ["AcceptedNodeIndex", "RejectedNodeIndex"];
     edgeStyles = ["-", ":"];
     edgeLabels = ["Accepted visibility edge", "Collision-rejected edge"];
     if showEdges
-        % Process each category needed to complete s.
         for categoryIndex = 1:2
-            if hasData(gridRecord, edgeNames(categoryIndex))
-                edges_deg     = gridRecord.(edgeNames(categoryIndex));
-                edgeCount     = size(edges_deg, 1);
-                azimuth_deg   = reshape([edges_deg(:, [1 3]), nan(edgeCount, 1)].', [], 1);
-                elevation_deg = reshape([edges_deg(:, [2 4]), nan(edgeCount, 1)].', [], 1);
-                plot(axesHandle, azimuth_deg, elevation_deg, edgeStyles(categoryIndex), "DisplayName", edgeLabels(categoryIndex));
+            if hasData(graphRecord, edgeNames(categoryIndex))
+                indices = graphRecord.(edgeNames(categoryIndex));
+                edgeCount = size(indices, 1);
+                x_units = reshape([nodes_units(indices(:, 1), 1), nodes_units(indices(:, 2), 1), nan(edgeCount, 1)].', [], 1);
+                y_units = reshape([nodes_units(indices(:, 1), 2), nodes_units(indices(:, 2), 2), nan(edgeCount, 1)].', [], 1);
+                if result.Options.WrapX || result.Options.WrapY
+                    paths_units = cell(edgeCount, 1);
+                    for edgeIndex = 1:edgeCount
+                        paths_units{edgeIndex} = [displayPath(result, nodes_units(indices(edgeIndex, :), :)); NaN NaN];
+                    end
+                    paths_units = vertcat(paths_units{:});
+                    x_units = paths_units(:, 1); y_units = paths_units(:, 2);
+                end
+                plot(axesHandle, x_units, y_units, edgeStyles(categoryIndex), "DisplayName", edgeLabels(categoryIndex));
             end
         end
     end
-    pointNames  = ["ExploredNodes_deg", "FrontierNodes_deg"];
-    pointLabels = ["Expanded search node", "Final search frontier"];
-    % Process each category needed to complete s.
-    for categoryIndex = 1:2
-        if hasData(gridRecord, pointNames(categoryIndex))
-            points_deg = gridRecord.(pointNames(categoryIndex));
-            scatter(axesHandle, points_deg(:, 1), points_deg(:, 2), 8 + 9 * categoryIndex, "filled", "DisplayName", pointLabels(categoryIndex));
-        end
+    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    for axisIndex = find([result.Options.WrapX result.Options.WrapY])
+        nodes_units(:, axisIndex) = intervals_units(axisIndex, 1) + ...
+            mod(nodes_units(:, axisIndex) - intervals_units(axisIndex, 1), diff(intervals_units(axisIndex, :)));
+    end
+    if ~isempty(nodes_units)
+        scatter(axesHandle, nodes_units(:, 1), nodes_units(:, 2), 17, "filled", "DisplayName", "Visibility node");
     end
 end
 
-function drawObstacles(axesHandle, obstacles, time_s)
+function drawObstacles(axesHandle, obstacles, originalObstacles, time_s)
     % Draw original and safety-adjusted geometry from retained obstacle histories.
     colors = lines(max(1, numel(obstacles)));
-    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
-        original = obstacle;
-        original.az_deg = obstacle.originalAz_deg;
-        original.el_deg = obstacle.originalEl_deg;
-        if isfield(original, "InternalPreparation")
-            original = rmfield(original, "InternalPreparation");
-        end
-        shape = obstacleAvoidance.obstacles.shapeAtTime(original, time_s);
+        shape = obstacleAvoidance.obstacles.preparedShapeAtTime(originalObstacles(obstacleIndex), time_s);
         drawShape(axesHandle, shape, colors(obstacleIndex, :), "-", "Original obstacle");
-        shape = obstacleAvoidance.obstacles.shapeAtTime(obstacle, time_s);
+        shape = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s);
         drawShape(axesHandle, shape, "none", "--", "Protected obstacle");
     end
 end
 
 function drawShape(axesHandle, shape, faceColor, style, name)
-    % Draw one nonempty polygon on explicit axes.
     if ~isempty(shape.Vertices)
         plot(axesHandle, shape, "FaceColor", faceColor, "FaceAlpha", 0.18, "LineStyle", style, "LineWidth", 1.2, "DisplayName", name);
     end
@@ -357,24 +386,28 @@ end
 function drawTarget(axesHandle, result, displayTime_s)
     % Draw the moving target's track and current position.
     goalState = result.Inputs.goalState;
-    if ~hasData(goalState, "targetPosition_deg")
+    if ~hasData(goalState, "targetMotion")
         return;
     end
-    track_deg = displayPath(result, goalState.targetPosition_deg);
-    drawLine(axesHandle, track_deg, "-.", "Moving target track", 1);
-    target_deg = obstacleAvoidance.input.goalPositionAtTime(goalState, displayTime_s);
-    target_deg = displayPath(result, target_deg);
-    plot(axesHandle, target_deg(1), target_deg(2), "md", "MarkerFaceColor", "m", "DisplayName", "Moving target");
+    target = goalState.targetMotion;
+    trackTime_s = unique([target.time_s(:); linspace(target.time_s(1), target.time_s(end), 200).']);
+    track_units = displayPath(result, obstacleAvoidance.input.targetPositionAtTime(target, trackTime_s));
+    drawLine(axesHandle, track_units, "-.", "Moving target track", 1);
+    if displayTime_s < target.time_s(1) || displayTime_s > target.time_s(end)
+        return;
+    end
+    target_units = obstacleAvoidance.input.targetPositionAtTime(target, displayTime_s);
+    target_units = displayPath(result, target_units);
+    plot(axesHandle, target_units(1), target_units(2), "md", "MarkerFaceColor", "m", "DisplayName", "Moving target");
 end
 
 function axesHandles = createKinematicPanels(layout, result, animated)
     % Plot position, velocity, acceleration, and jerk with their limits.
-    quantityNames = ["position_deg", "velocity_deg_s", "acceleration_deg_s2", "jerk_deg_s3"];
-    yLabels       = ["Position (deg)", "Velocity (deg/s)", "Acceleration (deg/s^2)", "Jerk (deg/s^3)"];
-    limits        = [nan(1, 2); result.Inputs.limits.maxVelocity_deg_s; ...
-        result.Inputs.limits.maxAcceleration_deg_s2; result.Inputs.limits.maxJerk_deg_s3];
+    quantityNames = ["position_units", "velocity_units_s", "acceleration_units_s2", "jerk_units_s3"];
+    yLabels       = ["Position (units)", "Velocity (units/s)", "Acceleration (units/s^2)", "Jerk (units/s^3)"];
+    limits        = [nan(1, 2); result.Limits.maxVelocity_units_s; ...
+        result.Limits.maxAcceleration_units_s2; result.Limits.maxJerk_units_s3];
     axesHandles = gobjects(4, 1);
-    % Process each quantity needed to build kinematic panels.
     for quantityIndex = 1:4
         tileIndex = quantityIndex * (1 + animated);
         axesHandles(quantityIndex) = nexttile(layout, tileIndex);
@@ -384,7 +417,7 @@ function axesHandles = createKinematicPanels(layout, result, animated)
         box(axesHandle, "on");
         values      = result.(quantityNames(quantityIndex));
         lineHandles = plot(axesHandle, result.time_s, values);
-        set(lineHandles, {'DisplayName'}, {'Azimuth'; 'Elevation'});
+        set(lineHandles, {'DisplayName'}, {'X'; 'Y'});
         if quantityIndex > 1
             yline(axesHandle, [-limits(quantityIndex, :), limits(quantityIndex, :)], "r--", "HandleVisibility", "off");
         end
@@ -396,20 +429,18 @@ function axesHandles = createKinematicPanels(layout, result, animated)
 end
 
 function finishAxes(axesHandle, result, prefix)
-    % Label the plot with search counts.
-    xlabel(axesHandle, "Azimuth (deg)");
-    ylabel(axesHandle, "Elevation (deg)");
+    % Label the plot with the planner's actual termination reason.
+    xlabel(axesHandle, "X (units)");
+    ylabel(axesHandle, "Y (units)");
     title(axesHandle, sprintf("%s | %s", prefix, result.TerminationReason));
     legend(axesHandle, "Location", "best");
 end
 
 function value = hasData(record, fieldName)
-    % Check whether an optional result field is present and nonempty.
     value = isfield(record, fieldName) && ~isempty(record.(fieldName));
 end
 
 function handles = createEmptyHandles(options)
-    % Initialize graphics handles before choosing a display mode.
     none    = gobjects(0);
     handles = struct("WorkspaceFigure", none, "WorkspaceAxes", none, ...
         "ContinuousWorkspaceFigure", none, "ContinuousWorkspaceAxes", none, ...
@@ -417,5 +448,8 @@ function handles = createEmptyHandles(options)
         "KinematicFigure", none, "KinematicAxes", none, "KinematicsFigure", none, ...
         "KinematicsAxes", none, "AnimationFigure", none, "AnimationAxes", none, ...
         "AnimationKinematicAxes", none, "AnimationLegend", none, "AnimationGifFile", "", ...
-        "Animation", struct(), "Options", options);
+        "Animation", struct(), "Options", options, "Axes", none, ...
+        "OriginalObstacle", none, "ProtectedObstacle", none, ...
+        "VisibilityEdge", none, "VisibilityNode", none, "Route", none, ...
+        "Trajectory", none, "Endpoint", none);
 end

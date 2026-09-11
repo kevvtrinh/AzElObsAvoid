@@ -6,21 +6,22 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %   sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Open one azimuth/elevation planning UI.
+%   - Open one x/y planning UI.
 %   - Keep interactive drawing outside the production planner.
 %**************************************************************************
 % INPUTS
 %   - sandboxOverrides (scalar struct, optional; default struct())
 %       Empty fields retain defaults. Supported fields are FigureVisible,
 %       FigurePosition, MissionTime_s,
-%       MaxVelocity_deg_s, MaxAcceleration_deg_s2, MaxJerk_deg_s3,
-%       PathObstacleRadius_deg, PathSafetyMargin_deg,
-%       ObstacleSafetyMargin_deg, WorkspaceAzimuthInterval_deg,
-%       WorkspaceElevationInterval_deg, Verbose, AnimateOnRun,
+%       MaxVelocity_units_s, MaxAcceleration_units_s2, MaxJerk_units_s3,
+%       PathObstacleRadius_units, PathSafetyMargin_units,
+%       ObstacleSafetyMargin_units, WorkspaceXInterval_units,
+%       WorkspaceYInterval_units, Verbose, AnimateOnRun,
 %       AnimationFrameStride, AnimationPause_s, and PlannerOptions.
-%       PlannerOptions is a partial planTrajectory options struct. Its
-%       sandbox defaults bound interactive HS3 work and favor responsiveness
-%       over the production planner's finer earliest-arrival search.
+%       Derivative maxima must all be combined scalars or all be per-axis
+%       pairs. Scalars are divided by sqrt(2) per axis before display.
+%       PlannerOptions is a partial planner options struct. The sandbox
+%       initially selects earliest arrival and preserves core tolerances.
 %       Goal-time mode and verbosity are owned by the active sandbox tab.
 %**************************************************************************
 % OUTPUTS
@@ -31,8 +32,8 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %       ExportBundle(filePath, modeName) to save without a file dialog.
 %**************************************************************************
 % UNITS
-%   - Positions and boundaries are N-by-2 [azimuth elevation] in degrees.
-%   - Time is in seconds. Derivatives use deg/s, deg/s^2, and deg/s^3.
+%   - Positions and boundaries are N-by-2 [x y] in coordinate units.
+%   - Time is in seconds. Derivatives use units/s, units/s^2, and units/s^3.
 %**************************************************************************
 
 %% Section 1: Resolve Sandbox Defaults
@@ -43,6 +44,8 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 if nargin < 1 || isempty(sandboxOverrides)
     sandboxOverrides = struct();
 end
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 options = resolveSandboxOptions(sandboxOverrides);
 
 %% Section 2: Create The Goal-Mode Figure
@@ -51,7 +54,7 @@ options = resolveSandboxOptions(sandboxOverrides);
 % current application data in guidata. Callbacks always read the latest guidata
 % value instead of keeping stale copies in nested functions.
 
-figureHandle   = figure("Name", "Az/El Interactive Sandbox", "NumberTitle", "off", "MenuBar", "none", "ToolBar", "figure", "Units", "pixels", "Position", options.FigurePosition, "Visible", options.FigureVisible, "Color", [0.94 0.94 0.94]);
+figureHandle   = figure("Name", "X/Y Interactive Sandbox", "NumberTitle", "off", "MenuBar", "none", "ToolBar", "figure", "Units", "pixels", "Position", options.FigurePosition, "Visible", options.FigureVisible, "Color", [0.94 0.94 0.94]);
 tabGroupHandle = uitabgroup(figureHandle, "Units", "normalized", "Position", [0 0 1 1]);
 goalTabHandle  = uitab(tabGroupHandle, "Title", "Goal Mode", "Tag", "goal");
 goalHandles    = createGoalControls(goalTabHandle, options);
@@ -86,14 +89,14 @@ function defaults = sandboxDefaults()
     defaults = struct("FigureVisible", "on", ...
         "FigurePosition", [60 60 1460 860], ...
         "MissionTime_s", 180, ...
-        "MaxVelocity_deg_s", [2 2], ...
-        "MaxAcceleration_deg_s2", [0.75 0.75], ...
-        "MaxJerk_deg_s3", [2.5 2.5], ...
-        "PathObstacleRadius_deg", 0.5, ...
-        "PathSafetyMargin_deg", 0, ...
-        "ObstacleSafetyMargin_deg", 0.2, ...
-        "WorkspaceAzimuthInterval_deg", [-180 180], ...
-        "WorkspaceElevationInterval_deg", [-90 90], ...
+        "MaxVelocity_units_s", [2 2], ...
+        "MaxAcceleration_units_s2", [0.75 0.75], ...
+        "MaxJerk_units_s3", [2.5 2.5], ...
+        "PathObstacleRadius_units", 0.5, ...
+        "PathSafetyMargin_units", 0, ...
+        "ObstacleSafetyMargin_units", 0.2, ...
+        "WorkspaceXInterval_units", [-180 180], ...
+        "WorkspaceYInterval_units", [-90 90], ...
         "Verbose", true, ...
         "AnimateOnRun", true, ...
         "AnimationFrameStride", 20, ...
@@ -102,11 +105,8 @@ function defaults = sandboxDefaults()
 end
 
 function options = interactivePlannerDefaults()
-    % Bound nonlinear work for an interactive preview. Returned motions still pass
-    % the public planner's collision, kinematic, and independent validation gates.
-    options = struct();
-    options.MaximumSeedCount       = 3;
-    options.ArrivalTimeTolerance_s = 0.05;
+    % Only display-owned choices differ from the public planner defaults.
+    options = struct("GoalTimeMode", "earliestArrival", "WrapX", false, "WrapY", false);
 end
 
 function options = resolveSandboxOptions(overrides)
@@ -128,31 +128,44 @@ function options = resolveSandboxOptions(overrides)
     options.AnimateOnRun = obstacleAvoidance.input.normalizeLogicalScalar(options.AnimateOnRun, "AnimateOnRun", "obstacleAvoidanceSandbox:InvalidLogicalOption");
     validateattributes(options.FigurePosition, {'numeric'}, {'real', 'finite', 'vector', 'numel', 4});
     options.FigurePosition = reshape(double(options.FigurePosition), 1, 4);
-    positiveScalarNames = ["MissionTime_s", "PathObstacleRadius_deg"];
+    positiveScalarNames = ["MissionTime_s", "PathObstacleRadius_units"];
 
     % Validate each duration or radius that must be strictly positive.
     for name = positiveScalarNames
         validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'positive'}, "obstacleAvoidanceSandbox", name);
     end
-    nonnegativeScalarNames = ["PathSafetyMargin_deg", "ObstacleSafetyMargin_deg"];
+    nonnegativeScalarNames = ["PathSafetyMargin_units", "ObstacleSafetyMargin_units"];
 
     % A safety margin can be zero. It cannot be negative or nonfinite.
     for name = nonnegativeScalarNames
         validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'}, "obstacleAvoidanceSandbox", name);
     end
-    pairNames = ["MaxVelocity_deg_s", "MaxAcceleration_deg_s2", "MaxJerk_deg_s3"];
-
-    % Normalize each azimuth/elevation derivative limit into one row pair.
-    for name = pairNames
-        validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2, 'positive'}, "obstacleAvoidanceSandbox", name);
-        options.(name) = reshape(double(options.(name)), 1, 2);
+    optionNames = ["MaxVelocity_units_s", "MaxAcceleration_units_s2", "MaxJerk_units_s3", "WorkspaceXInterval_units", "WorkspaceYInterval_units"];
+    limitNames  = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3", "xInterval_units", "yInterval_units"];
+    limits      = struct();
+    % Resolve the public limit contract before displaying per-axis controls.
+    for fieldIndex = 1:numel(limitNames)
+        limits.(limitNames(fieldIndex)) = options.(optionNames(fieldIndex));
     end
-    intervalNames = ["WorkspaceAzimuthInterval_deg", "WorkspaceElevationInterval_deg"];
-
-    % Require an increasing lower/upper interval for each workspace axis.
-    for name = intervalNames
-        validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2, 'increasing'}, "obstacleAvoidanceSandbox", name);
-        options.(name) = reshape(double(options.(name)), 1, 2);
+    physicalNames = limitNames(1:3);
+    sizes = arrayfun(@(name) numel(limits.(name)), physicalNames);
+    if ~all(sizes == 1) && ~all(sizes == 2)
+        error("obstacleAvoidanceSandbox:InvalidLimits", "Derivative maxima must all be scalars or all be [x y] pairs.");
+    end
+    for name = physicalNames
+        validateattributes(limits.(name), {'numeric'}, {'real', 'finite', 'vector', 'positive'});
+        if all(sizes == 1), limits.(name) = repmat(limits.(name)/sqrt(2), 1, 2); end
+        limits.(name) = reshape(double(limits.(name)), 1, 2);
+    end
+    for name = limitNames(4:5)
+        validateattributes(limits.(name), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2});
+        limits.(name) = reshape(double(limits.(name)), 1, 2);
+        if diff(limits.(name)) <= 0
+            error("obstacleAvoidanceSandbox:InvalidLimits", "Workspace intervals must increase.");
+        end
+    end
+    for fieldIndex = 1:numel(limitNames)
+        options.(optionNames(fieldIndex)) = limits.(limitNames(fieldIndex));
     end
     countNames = "AnimationFrameStride";
 
@@ -163,7 +176,21 @@ function options = resolveSandboxOptions(overrides)
     if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
         error("obstacleAvoidanceSandbox:InvalidPlannerOptions", "PlannerOptions must be a scalar partial options struct.");
     end
-    options.PlannerOptions = obstacleAvoidance.input.resolvePlannerOptions(options.PlannerOptions);
+    % Resolve the three controls needed to construct the UI. Remaining partial
+    % options are passed to planner, which owns their validation and defaults.
+    displayDefaults = interactivePlannerDefaults();
+    for name = ["GoalTimeMode", "WrapX", "WrapY"]
+        if ~isfield(options.PlannerOptions, name) || isempty(options.PlannerOptions.(name))
+            options.PlannerOptions.(name) = displayDefaults.(name);
+        end
+    end
+    options.PlannerOptions.GoalTimeMode = string(options.PlannerOptions.GoalTimeMode);
+    if ~isscalar(options.PlannerOptions.GoalTimeMode) || ~any(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"])
+        error("obstacleAvoidanceSandbox:InvalidGoalTimeMode", "GoalTimeMode must be earliestArrival or fixedArrival.");
+    end
+    for name = ["WrapX", "WrapY"]
+        options.PlannerOptions.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.PlannerOptions.(name), name, "obstacleAvoidanceSandbox:InvalidLogicalOption");
+    end
     validateattributes(options.AnimationPause_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'}, "obstacleAvoidanceSandbox", "AnimationPause_s");
 end
 
@@ -171,15 +198,15 @@ function handles = createGoalControls(tabHandle, options)
     % Create the goal canvas, controls, actions, status, and planner log.
 
     % Reserve the complete outer rectangle for axes ticks and labels. A smaller
-    % Position can move the azimuth label under the action-button row.
+    % Position can move the x label under the action-button row.
     axesHandle = axes(tabHandle, "Units", "normalized", "OuterPosition", [0.02 0.34 0.68 0.63], "PositionConstraint", "outerposition");
     hold(axesHandle, "on");
     grid(axesHandle, "on");
     box(axesHandle, "on");
-    axis(axesHandle, [options.WorkspaceAzimuthInterval_deg, options.WorkspaceElevationInterval_deg]);
+    axis(axesHandle, [options.WorkspaceXInterval_units, options.WorkspaceYInterval_units]);
     axis(axesHandle, "equal");
-    xlabel(axesHandle, "Azimuth (deg)");
-    ylabel(axesHandle, "Elevation (deg)");
+    xlabel(axesHandle, "X (units)");
+    ylabel(axesHandle, "Y (units)");
     controlPanelHandle = uipanel(tabHandle, "Title", "Planning controls", "Units", "normalized", "Position", [0.71 0.30 0.275 0.66]);
     controls           = struct();
 
@@ -187,23 +214,23 @@ function handles = createGoalControls(tabHandle, options)
     % remains readable when Windows display scaling increases text height.
     addControlSectionLabel(controlPanelHandle, "Workspace", 0.89);
     addPairColumnLabels(controlPanelHandle, "Lower", "Upper", 0.835);
-    controls.WorkspaceAzimuthHandles   = addCompactPairControl(controlPanelHandle, "Azimuth (deg)", 0.775, options.WorkspaceAzimuthInterval_deg);
-    controls.WorkspaceElevationHandles = addCompactPairControl(controlPanelHandle, "Elevation (deg)", 0.71, options.WorkspaceElevationInterval_deg);
+    controls.WorkspaceXHandles   = addCompactPairControl(controlPanelHandle, "X (units)", 0.775, options.WorkspaceXInterval_units);
+    controls.WorkspaceYHandles = addCompactPairControl(controlPanelHandle, "Y (units)", 0.71, options.WorkspaceYInterval_units);
 
     addControlSectionLabel(controlPanelHandle, "Kinematic limits", 0.625);
-    addPairColumnLabels(controlPanelHandle, "Azimuth", "Elevation", 0.57);
-    controls.VelocityHandles     = addCompactPairControl(controlPanelHandle, "Velocity (deg/s)", 0.51, options.MaxVelocity_deg_s);
-    controls.AccelerationHandles = addCompactPairControl(controlPanelHandle, "Acceleration (deg/s^2)", 0.445, options.MaxAcceleration_deg_s2);
-    controls.JerkHandles         = addCompactPairControl(controlPanelHandle, "Jerk (deg/s^3)", 0.38, options.MaxJerk_deg_s3);
+    addPairColumnLabels(controlPanelHandle, "X", "Y", 0.57);
+    controls.VelocityHandles     = addCompactPairControl(controlPanelHandle, "Velocity (units/s)", 0.51, options.MaxVelocity_units_s);
+    controls.AccelerationHandles = addCompactPairControl(controlPanelHandle, "Acceleration (units/s^2)", 0.445, options.MaxAcceleration_units_s2);
+    controls.JerkHandles         = addCompactPairControl(controlPanelHandle, "Jerk (units/s^3)", 0.38, options.MaxJerk_units_s3);
 
     horizonLabel = "Mission horizon (s)";
     horizonValue = options.MissionTime_s;
 
     addControlSectionLabel(controlPanelHandle, "Timing and obstacle geometry", 0.295);
     controls.HorizonHandle        = addScalarControl(controlPanelHandle, horizonLabel, 0.235, horizonValue);
-    controls.PathRadiusHandle     = addScalarControl(controlPanelHandle, "Line/capsule radius (deg)", 0.17, options.PathObstacleRadius_deg);
-    controls.PathMarginHandle     = addScalarControl(controlPanelHandle, "Line safety margin (deg)", 0.105, options.PathSafetyMargin_deg);
-    controls.ObstacleMarginHandle = addScalarControl(controlPanelHandle, "Polygon safety margin (deg)", 0.04, options.ObstacleSafetyMargin_deg);
+    controls.PathRadiusHandle     = addScalarControl(controlPanelHandle, "Line/capsule radius (units)", 0.17, options.PathObstacleRadius_units);
+    controls.PathMarginHandle     = addScalarControl(controlPanelHandle, "Line safety margin (units)", 0.105, options.PathSafetyMargin_units);
+    controls.ObstacleMarginHandle = addScalarControl(controlPanelHandle, "Polygon safety margin (units)", 0.04, options.ObstacleSafetyMargin_units);
 
     % The narrow strip below the panel keeps the verbose flag visible without
     % adding another row to the already compact planning panel.
@@ -231,9 +258,9 @@ function handles = createGoalControls(tabHandle, options)
     statusHandle              = uicontrol(statusPanelHandle, "Style", "text", "String", "Ready", "Units", "normalized", "Position", [0.015 0.08 0.33 0.86], "HorizontalAlignment", "left");
     logHandle                 = uicontrol(statusPanelHandle, "Style", "listbox", "String", {"Planner output will appear here."}, "Units", "normalized", "Position", [0.36 0.08 0.625 0.86], "HorizontalAlignment", "left", "Min", 0, "Max", 2);
     plannerOptionsPanelHandle = uipanel(tabHandle, "Title", "Planner options", "Units", "normalized", "Position", [0.71 0.025 0.275 0.23]);
-    controls.UnsupportedTimedTopologyHandle = addPopupControl(plannerOptionsPanelHandle, "Unsupported timed route", 0.76, ["Fail and diagnose", "Ruckig stop at waypoints"], 1 + double(options.PlannerOptions.UnsupportedTimedTopologyPolicy == "ruckigStopAtWaypoints"), "Choose whether an unsupported smooth timed route may stop at every waypoint.");
-    controls.GoalTimeModeHandle             = addPopupControl(plannerOptionsPanelHandle, "Goal timing", 0.49, ["Earliest arrival", "Minimum travel at horizon"], find(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"], 1), "Choose earliest arrival or minimum travel at the mission horizon.");
-    controls.AllowAzimuthWrappingHandle     = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Allow azimuth wrapping", "Units", "normalized", "Position", [0.05 0.08 0.90 0.18], "Value", options.PlannerOptions.AllowAzimuthWrapping, "HorizontalAlignment", "left", "TooltipString", "Allow equivalent azimuth positions separated by 360 degrees.");
+    controls.GoalTimeModeHandle             = addPopupControl(plannerOptionsPanelHandle, "Goal timing", 0.49, ["Earliest arrival", "Arrive at mission time"], find(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"], 1), "Choose earliest arrival or arrival at the mission horizon.");
+    controls.WrapXHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap x", "Units", "normalized", "Position", [0.05 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapX, "HorizontalAlignment", "left", "TooltipString", "Use periodic x for obstacle-free fixed goals only.");
+    controls.WrapYHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap y", "Units", "normalized", "Position", [0.52 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapY, "HorizontalAlignment", "left", "TooltipString", "Use periodic y for obstacle-free fixed goals only.");
     handles = struct("Tab", tabHandle, ...
         "Axes", axesHandle, ...
         "ControlPanel", controlPanelHandle, ...
@@ -270,12 +297,12 @@ function handles = addCompactPairControl(panelHandle, labelText, rowPosition, va
     uicontrol(panelHandle, "Style", "text", "String", labelText, "Units", "normalized", "Position", [0.05 rowPosition 0.44 0.045], "HorizontalAlignment", "left");
     handles = struct("FirstHandle", uicontrol(panelHandle, ...
             "Style", "edit", ...
-            "String", sprintf("%.8g", values(1)), ...
+            "String", sprintf("%.17g", values(1)), ...
             "Units", "normalized", ...
             "Position", [0.52 rowPosition 0.20 0.045]), ...
         "SecondHandle", uicontrol(panelHandle, ...
             "Style", "edit", ...
-            "String", sprintf("%.8g", values(2)), ...
+            "String", sprintf("%.17g", values(2)), ...
             "Units", "normalized", ...
             "Position", [0.76 rowPosition 0.20 0.045]));
 end
@@ -318,7 +345,7 @@ function applicationState = initializeApplicationState(figureHandle, options, go
         "Options", options, ...
         "ActiveMode", "goal", ...
         "InteractionState", "idle", ...
-        "ActiveStroke_deg", zeros(0, 2), ...
+        "ActiveStroke_units", zeros(0, 2), ...
         "ActiveTraceHandle", gobjects(0), ...
         "GoalMode", emptyModeState(goalHandles));
 end
@@ -328,18 +355,18 @@ function modeState = emptyModeState(graphicsHandles)
     % field set so callbacks can read state without optional-field branches.
     instruction = "Click the start and goal. Choose an obstacle from the Add panel, " + "then Run.";
 
-    modeState = struct("StartPosition_deg", zeros(0, 2), ...
-        "GoalPosition_deg", zeros(0, 2), ...
-        "RawObstacleStrokes_deg", {cell(0, 1)}, ...
-        "LineObstaclePositions_deg", {cell(0, 1)}, ...
-        "PolygonObstaclePositions_deg", {cell(0, 1)}, ...
-        "PolygonMotionVectors_deg", zeros(0, 2), ...
+    modeState = struct("StartPosition_units", zeros(0, 2), ...
+        "GoalPosition_units", zeros(0, 2), ...
+        "RawObstacleStrokes_units", {cell(0, 1)}, ...
+        "LineObstaclePositions_units", {cell(0, 1)}, ...
+        "PolygonObstaclePositions_units", {cell(0, 1)}, ...
+        "PolygonMotionVectors_units", zeros(0, 2), ...
         "PolygonMotionProfiles", strings(0, 1), ...
         "SelectedPolygonIndex", 0, ...
         "CanonicalObstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
         "LastPlannerResult", struct(), ...
         "LastDiagnosis", struct(), ...
-        "LastValidation", obstacleAvoidance.validateTrajectory(), ...
+        "LastValidation", obstacleAvoidance.validateTrajectory(struct("Success", false)), ...
         "GraphicsHandles", graphicsHandles, ...
         "InteractionState", "idle", ...
         "Status", instruction, ...
@@ -456,9 +483,9 @@ function beginGuidedScene(figureHandle)
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
 
-    if isempty(modeState.StartPosition_deg)
+    if isempty(modeState.StartPosition_units)
         requestedState = "placingStart";
-    elseif isempty(modeState.GoalPosition_deg)
+    elseif isempty(modeState.GoalPosition_units)
         requestedState = "placingGoal";
     else
         requestedState = "";
@@ -499,9 +526,9 @@ function handleFigureMouseDown(figureHandle, ~)
     if selectionType ~= "normal"
         return;
     end
-    point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
+    point_units = cursorPoint(modeState.GraphicsHandles.Axes);
     controls  = readControls(applicationState);
-    if ~pointInWorkspace(point_deg, controls)
+    if ~pointInWorkspace(point_units, controls)
         modeState.Status = "The selected point is outside the workspace limits.";
         applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
@@ -510,7 +537,7 @@ function handleFigureMouseDown(figureHandle, ~)
     end
     interactionState = applicationState.InteractionState;
     if endsWith(interactionState, "CircleCenter") || endsWith(interactionState, "SquareCorner")
-        applicationState.ActiveStroke_deg = point_deg;
+        applicationState.ActiveStroke_units = point_units;
         if endsWith(interactionState, "CircleCenter")
             nextState = "placingGoalCircleEdge";
             modeState.Status = "Circle center set. Click a point on its edge.";
@@ -526,9 +553,9 @@ function handleFigureMouseDown(figureHandle, ~)
         return;
     end
     if endsWith(interactionState, "CircleEdge")
-        center_deg = applicationState.ActiveStroke_deg(1, :);
-        radius_deg = norm(point_deg - center_deg);
-        if radius_deg <= 1e-6
+        center_units = applicationState.ActiveStroke_units(1, :);
+        radius_units = norm(point_units - center_units);
+        if radius_units <= 1e-6
             modeState.Status = "The circle radius must have nonzero length.";
             applicationState.GoalMode = modeState;
             guidata(figureHandle, applicationState);
@@ -536,11 +563,11 @@ function handleFigureMouseDown(figureHandle, ~)
             return;
         end
         angle_rad         = linspace(0, 2 * pi, 25).';
-        circle_deg        = center_deg + radius_deg * [ cos(angle_rad(1:end - 1)), sin(angle_rad(1:end - 1))];
+        circle_units        = center_units + radius_units * [ cos(angle_rad(1:end - 1)), sin(angle_rad(1:end - 1))];
         isInsideWorkspace = true;
         % Process each vertex needed by the sandbox workflow.
-        for vertexIndex = 1:size(circle_deg, 1)
-            isInsideWorkspace = isInsideWorkspace && pointInWorkspace(circle_deg(vertexIndex, :), controls);
+        for vertexIndex = 1:size(circle_units, 1)
+            isInsideWorkspace = isInsideWorkspace && pointInWorkspace(circle_units(vertexIndex, :), controls);
         end
         if ~isInsideWorkspace
             modeState.Status = "The circle extends outside the workspace limits.";
@@ -549,30 +576,30 @@ function handleFigureMouseDown(figureHandle, ~)
             updateModeStatusDisplay(modeState);
             return;
         end
-        completeCreatedPolygon(figureHandle, circle_deg, "Circle");
+        completeCreatedPolygon(figureHandle, circle_units, "Circle");
         return;
     end
     if endsWith(interactionState, "SquareOpposite")
-        firstCorner_deg  = applicationState.ActiveStroke_deg(1, :);
-        cornerOffset_deg = point_deg - firstCorner_deg;
-        sideLength_deg   = max(abs(cornerOffset_deg));
-        if sideLength_deg <= 1e-6
+        firstCorner_units  = applicationState.ActiveStroke_units(1, :);
+        cornerOffset_units = point_units - firstCorner_units;
+        sideLength_units   = max(abs(cornerOffset_units));
+        if sideLength_units <= 1e-6
             modeState.Status = "The square side must have nonzero length.";
             applicationState.GoalMode = modeState;
             guidata(figureHandle, applicationState);
             updateModeStatusDisplay(modeState);
             return;
         end
-        direction = sign(cornerOffset_deg);
+        direction = sign(cornerOffset_units);
         direction(direction == 0) = 1;
-        oppositeCorner_deg = firstCorner_deg + direction * sideLength_deg;
-        square_deg         = [ ...
-            firstCorner_deg; ...
-            oppositeCorner_deg(1), firstCorner_deg(2); oppositeCorner_deg; firstCorner_deg(1), oppositeCorner_deg(2)];
+        oppositeCorner_units = firstCorner_units + direction * sideLength_units;
+        square_units         = [ ...
+            firstCorner_units; ...
+            oppositeCorner_units(1), firstCorner_units(2); oppositeCorner_units; firstCorner_units(1), oppositeCorner_units(2)];
         isInsideWorkspace = true;
         % Process each corner needed by the sandbox workflow.
         for cornerIndex = 1:4
-            isInsideWorkspace = isInsideWorkspace && pointInWorkspace(square_deg(cornerIndex, :), controls);
+            isInsideWorkspace = isInsideWorkspace && pointInWorkspace(square_units(cornerIndex, :), controls);
         end
         if ~isInsideWorkspace
             modeState.Status = "The square extends outside the workspace limits.";
@@ -581,23 +608,23 @@ function handleFigureMouseDown(figureHandle, ~)
             updateModeStatusDisplay(modeState);
             return;
         end
-        completeCreatedPolygon(figureHandle, square_deg, "Square");
+        completeCreatedPolygon(figureHandle, square_units, "Square");
         return;
     end
     if contains(applicationState.InteractionState, "selecting") && endsWith(applicationState.InteractionState, "ObstacleMotion")
-        polygonIndex = polygonIndexAtPoint(modeState.PolygonObstaclePositions_deg, point_deg);
+        polygonIndex = polygonIndexAtPoint(modeState.PolygonObstaclePositions_units, point_units);
         if polygonIndex == 0
             modeState.Status = "No polygon contains the selected point.";
         else
-            polygon_deg = modeState.PolygonObstaclePositions_deg{polygonIndex};
-            [centroidAzimuth_deg, centroidElevation_deg] = centroid(polyshape(polygon_deg));
+            polygon_units = modeState.PolygonObstaclePositions_units{polygonIndex};
+            [centroidX_units, centroidY_units] = centroid(polyshape(polygon_units));
             modeState.SelectedPolygonIndex = polygonIndex;
             modeState.InteractionState     = "placingGoalObstacleMotionEnd";
             modeState.Status               = "Polygon " + polygonIndex + " selected. " + "Click the arrow endpoint.";
             applicationState.InteractionState = modeState.InteractionState;
-            applicationState.ActiveStroke_deg = [ ...
-                centroidAzimuth_deg, centroidElevation_deg];
-            applicationState.ActiveTraceHandle = quiver(modeState.GraphicsHandles.Axes, centroidAzimuth_deg, centroidElevation_deg, 0, 0, 0, "Color", [0.15 0.55 0.15], "LineWidth", 2, "MaxHeadSize", 0.35, "HandleVisibility", "off");
+            applicationState.ActiveStroke_units = [ ...
+                centroidX_units, centroidY_units];
+            applicationState.ActiveTraceHandle = quiver(modeState.GraphicsHandles.Axes, centroidX_units, centroidY_units, 0, 0, 0, "Color", [0.15 0.55 0.15], "LineWidth", 2, "MaxHeadSize", 0.35, "HandleVisibility", "off");
             set(figureHandle, "WindowButtonMotionFcn", @handleObstacleMotionPreview);
         end
         applicationState.GoalMode = modeState;
@@ -606,12 +633,12 @@ function handleFigureMouseDown(figureHandle, ~)
         return;
     end
     if contains(applicationState.InteractionState, "placing") && endsWith(applicationState.InteractionState, "ObstacleMotionEnd")
-        finishObstacleMotionInteraction(figureHandle, point_deg);
+        finishObstacleMotionInteraction(figureHandle, point_units);
         return;
     end
     if contains(applicationState.InteractionState, "drawing")
-        applicationState.ActiveStroke_deg  = point_deg;
-        applicationState.ActiveTraceHandle = plot(modeState.GraphicsHandles.Axes, point_deg(1), point_deg(2), "b-", "LineWidth", 1.4, "HandleVisibility", "off");
+        applicationState.ActiveStroke_units  = point_units;
+        applicationState.ActiveTraceHandle = plot(modeState.GraphicsHandles.Axes, point_units(1), point_units(2), "b-", "LineWidth", 1.4, "HandleVisibility", "off");
         guidata(figureHandle, applicationState);
         set(figureHandle, "WindowButtonMotionFcn", @handleFigureMouseMotion, "WindowButtonUpFcn", @handleFigureMouseUp);
         return;
@@ -619,12 +646,12 @@ function handleFigureMouseDown(figureHandle, ~)
     nextInteraction = "";
     switch applicationState.InteractionState
         case "placingGoalStart"
-            modeState.StartPosition_deg = point_deg;
+            modeState.StartPosition_units = point_units;
             modeState = clearModeSolution(modeState);
             modeState.Status = "Start point set. Click the goal next.";
             nextInteraction = "placingGoal";
         case "placingGoalStop"
-            modeState.GoalPosition_deg = point_deg;
+            modeState.GoalPosition_units = point_units;
             modeState = clearModeSolution(modeState);
             modeState.Status = "Goal point set. Choose a shape from the Add panel, or Run.";
     end
@@ -645,10 +672,10 @@ function handleObstacleMotionPreview(figureHandle, ~)
         return;
     end
     modeState        = applicationState.GoalMode;
-    endpoint_deg     = cursorPoint(modeState.GraphicsHandles.Axes);
-    origin_deg       = applicationState.ActiveStroke_deg(1, :);
-    motionVector_deg = endpoint_deg - origin_deg;
-    set(applicationState.ActiveTraceHandle, "UData", motionVector_deg(1), "VData", motionVector_deg(2));
+    endpoint_units     = cursorPoint(modeState.GraphicsHandles.Axes);
+    origin_units       = applicationState.ActiveStroke_units(1, :);
+    motionVector_units = endpoint_units - origin_units;
+    set(applicationState.ActiveTraceHandle, "UData", motionVector_units(1), "VData", motionVector_units(2));
     drawnow("limitrate");
 end
 
@@ -656,30 +683,30 @@ function addPolygonVertex(figureHandle)
     % Add one distinct vertex to the active polygon preview.
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
-    point_deg        = cursorPoint(modeState.GraphicsHandles.Axes);
+    point_units        = cursorPoint(modeState.GraphicsHandles.Axes);
     controls         = readControls(applicationState);
-    if ~pointInWorkspace(point_deg, controls)
+    if ~pointInWorkspace(point_units, controls)
         modeState.Status = "The polygon vertex is outside the workspace limits.";
         applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
     end
-    minimumVertexSpacing_deg = 1e-6;
-    if ~isempty(applicationState.ActiveStroke_deg) && norm(point_deg - applicationState.ActiveStroke_deg(end, :)) <= minimumVertexSpacing_deg
+    minimumVertexSpacing_units = 1e-6;
+    if ~isempty(applicationState.ActiveStroke_units) && norm(point_units - applicationState.ActiveStroke_units(end, :)) <= minimumVertexSpacing_units
         modeState.Status = "That polygon vertex duplicates the previous vertex.";
         applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
     end
-    applicationState.ActiveStroke_deg(end + 1, :) = point_deg;
+    applicationState.ActiveStroke_units(end + 1, :) = point_units;
     if isempty(applicationState.ActiveTraceHandle) || ~isgraphics(applicationState.ActiveTraceHandle)
-        applicationState.ActiveTraceHandle = plot(modeState.GraphicsHandles.Axes, applicationState.ActiveStroke_deg(:, 1), applicationState.ActiveStroke_deg(:, 2), "bo-", "LineWidth", 1.4, "MarkerFaceColor", "b", "HandleVisibility", "off");
+        applicationState.ActiveTraceHandle = plot(modeState.GraphicsHandles.Axes, applicationState.ActiveStroke_units(:, 1), applicationState.ActiveStroke_units(:, 2), "bo-", "LineWidth", 1.4, "MarkerFaceColor", "b", "HandleVisibility", "off");
     else
-        set(applicationState.ActiveTraceHandle, "XData", applicationState.ActiveStroke_deg(:, 1), "YData", applicationState.ActiveStroke_deg(:, 2));
+        set(applicationState.ActiveTraceHandle, "XData", applicationState.ActiveStroke_units(:, 1), "YData", applicationState.ActiveStroke_units(:, 2));
     end
-    modeState.Status = "Polygon has " + size(applicationState.ActiveStroke_deg, 1) + " vertices. Right-click to finish.";
+    modeState.Status = "Polygon has " + size(applicationState.ActiveStroke_units, 1) + " vertices. Right-click to finish.";
     applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
@@ -690,15 +717,15 @@ function finishPolygonInteraction(figureHandle)
     % Validate and store the active polygon after a right-click.
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
-    polygon_deg      = applicationState.ActiveStroke_deg;
-    if size(polygon_deg, 1) < 3
+    polygon_units      = applicationState.ActiveStroke_units;
+    if size(polygon_units, 1) < 3
         modeState.Status = "A polygon needs at least three vertices. Continue with left-clicks.";
         applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
     end
-    polygonShape = polyshape(polygon_deg);
+    polygonShape = polyshape(polygon_units);
     if area(polygonShape) <= eps
         modeState.Status = "The polygon has no enclosed area. Add non-collinear vertices.";
         applicationState.GoalMode = modeState;
@@ -706,9 +733,9 @@ function finishPolygonInteraction(figureHandle)
         updateModeStatusDisplay(modeState);
         return;
     end
-    modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
-    modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
-    modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
+    modeState.RawObstacleStrokes_units{end + 1, 1} = polygon_units;
+    modeState.PolygonObstaclePositions_units{end + 1, 1} = polygon_units;
+    modeState.PolygonMotionVectors_units(end + 1, :) = [0 0];
     modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
     modeState = clearModeSolution(modeState);
     modeState.Status = "Polygon added. Use Set Motion to move it, or add another polygon.";
@@ -718,13 +745,13 @@ function finishPolygonInteraction(figureHandle)
     refreshApplication(figureHandle);
 end
 
-function completeCreatedPolygon(figureHandle, polygon_deg, shapeName)
+function completeCreatedPolygon(figureHandle, polygon_units, shapeName)
     % Store a circle or square through the same canonical polygon representation.
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
-    modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
-    modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
-    modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
+    modeState.RawObstacleStrokes_units{end + 1, 1} = polygon_units;
+    modeState.PolygonObstaclePositions_units{end + 1, 1} = polygon_units;
+    modeState.PolygonMotionVectors_units(end + 1, :) = [0 0];
     modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
     modeState = clearModeSolution(modeState);
     modeState.Status = shapeName + " added. Use Set Motion to move it, or add another obstacle.";
@@ -734,30 +761,30 @@ function completeCreatedPolygon(figureHandle, polygon_deg, shapeName)
     refreshApplication(figureHandle);
 end
 
-function polygonIndex = polygonIndexAtPoint(polygonCollection_deg, point_deg)
+function polygonIndex = polygonIndexAtPoint(polygonCollection_units, point_units)
     % Return the last drawn polygon that contains the selected point.
     polygonIndex = 0;
     % Process each candidate needed by the sandbox workflow.
-    for candidateIndex = numel(polygonCollection_deg):-1:1
-        polygonShape = polyshape(polygonCollection_deg{candidateIndex});
-        if isinterior(polygonShape, point_deg(1), point_deg(2))
+    for candidateIndex = numel(polygonCollection_units):-1:1
+        polygonShape = polyshape(polygonCollection_units{candidateIndex});
+        if isinterior(polygonShape, point_units(1), point_units(2))
             polygonIndex = candidateIndex;
             return;
         end
     end
 end
 
-function finishObstacleMotionInteraction(figureHandle, endpoint_deg)
+function finishObstacleMotionInteraction(figureHandle, endpoint_units)
     % Store one polygon motion vector and the selected motion profile.
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
     polygonIndex     = modeState.SelectedPolygonIndex;
-    if polygonIndex < 1 || polygonIndex > numel(modeState.PolygonObstaclePositions_deg)
+    if polygonIndex < 1 || polygonIndex > numel(modeState.PolygonObstaclePositions_units)
         error("obstacleAvoidanceSandbox:InvalidMotionSelection", "Select a polygon before setting its motion vector.");
     end
-    origin_deg       = applicationState.ActiveStroke_deg(1, :);
-    motionVector_deg = endpoint_deg - origin_deg;
-    if norm(motionVector_deg) <= 1e-9
+    origin_units       = applicationState.ActiveStroke_units(1, :);
+    motionVector_units = endpoint_units - origin_units;
+    if norm(motionVector_units) <= 1e-9
         modeState.Status = "The motion vector must have nonzero length.";
         applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
@@ -765,7 +792,7 @@ function finishObstacleMotionInteraction(figureHandle, endpoint_deg)
         return;
     end
     profile = selectedMotionProfile(modeState.GraphicsHandles.Controls.MotionProfileHandle);
-    modeState.PolygonMotionVectors_deg(polygonIndex, :) = motionVector_deg;
+    modeState.PolygonMotionVectors_units(polygonIndex, :) = motionVector_units;
     modeState.PolygonMotionProfiles(polygonIndex, 1) = profile;
     modeState.SelectedPolygonIndex = 0;
     modeState = clearModeSolution(modeState);
@@ -791,13 +818,13 @@ function handleFigureMouseMotion(figureHandle, ~)
         return;
     end
     modeState               = applicationState.GoalMode;
-    point_deg               = cursorPoint(modeState.GraphicsHandles.Axes);
-    minimumTraceSpacing_deg = 0.25;
-    if norm(point_deg - applicationState.ActiveStroke_deg(end, :)) < minimumTraceSpacing_deg
+    point_units               = cursorPoint(modeState.GraphicsHandles.Axes);
+    minimumTraceSpacing_units = 0.25;
+    if norm(point_units - applicationState.ActiveStroke_units(end, :)) < minimumTraceSpacing_units
         return;
     end
-    applicationState.ActiveStroke_deg(end + 1, :) = point_deg;
-    set(applicationState.ActiveTraceHandle, "XData", applicationState.ActiveStroke_deg(:, 1), "YData", applicationState.ActiveStroke_deg(:, 2));
+    applicationState.ActiveStroke_units(end + 1, :) = point_units;
+    set(applicationState.ActiveTraceHandle, "XData", applicationState.ActiveStroke_units(:, 1), "YData", applicationState.ActiveStroke_units(:, 2));
     guidata(figureHandle, applicationState);
     drawnow("limitrate");
 end
@@ -811,20 +838,20 @@ function handleFigureMouseUp(figureHandle, ~)
         return;
     end
     modeState = applicationState.GoalMode;
-    point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
-    if isempty(applicationState.ActiveStroke_deg) || norm(point_deg - applicationState.ActiveStroke_deg(end, :)) >= 0.25
-        applicationState.ActiveStroke_deg(end + 1, :) = point_deg;
+    point_units = cursorPoint(modeState.GraphicsHandles.Axes);
+    if isempty(applicationState.ActiveStroke_units) || norm(point_units - applicationState.ActiveStroke_units(end, :)) >= 0.25
+        applicationState.ActiveStroke_units(end + 1, :) = point_units;
     end
-    rawStroke_deg        = applicationState.ActiveStroke_deg;
-    simplifiedStroke_deg = simplifyFreehandBoundary(rawStroke_deg, 1);
-    if size(simplifiedStroke_deg, 1) >= 2
-        modeState.RawObstacleStrokes_deg{end + 1, 1} = rawStroke_deg;
-        if size(simplifiedStroke_deg, 1) == 2
-            modeState.LineObstaclePositions_deg{end + 1, 1} = simplifiedStroke_deg;
+    rawStroke_units        = applicationState.ActiveStroke_units;
+    simplifiedStroke_units = simplifyFreehandBoundary(rawStroke_units, 1);
+    if size(simplifiedStroke_units, 1) >= 2
+        modeState.RawObstacleStrokes_units{end + 1, 1} = rawStroke_units;
+        if size(simplifiedStroke_units, 1) == 2
+            modeState.LineObstaclePositions_units{end + 1, 1} = simplifiedStroke_units;
             geometryDescription = "line/capsule";
         else
-            modeState.PolygonObstaclePositions_deg{end + 1, 1} = simplifiedStroke_deg;
-            modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
+            modeState.PolygonObstaclePositions_units{end + 1, 1} = simplifiedStroke_units;
+            modeState.PolygonMotionVectors_units(end + 1, :) = [0 0];
             modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
             geometryDescription = "polygon";
         end
@@ -836,7 +863,7 @@ function handleFigureMouseUp(figureHandle, ~)
     applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     cancelInteraction(figureHandle);
-    if size(simplifiedStroke_deg, 1) >= 2
+    if size(simplifiedStroke_units, 1) >= 2
         refreshApplication(figureHandle);
     else
         % A rejected trace leaves no obstacle, so keep the initial draw step active.
@@ -861,21 +888,21 @@ function cancelInteraction(figureHandle)
     modeState.InteractionState = "idle";
     applicationState.GoalMode          = modeState;
     applicationState.InteractionState  = "idle";
-    applicationState.ActiveStroke_deg  = zeros(0, 2);
+    applicationState.ActiveStroke_units  = zeros(0, 2);
     applicationState.ActiveTraceHandle = gobjects(0);
     guidata(figureHandle, applicationState);
     set(figureHandle, "WindowButtonDownFcn", "", "WindowButtonMotionFcn", "", "WindowButtonUpFcn", "");
 end
 
-function point_deg = cursorPoint(axesHandle)
+function point_units = cursorPoint(axesHandle)
     % Read one N-by-2-compatible point from explicit axes coordinates.
     currentPoint = get(axesHandle, "CurrentPoint");
-    point_deg    = double(currentPoint(1, 1:2));
+    point_units    = double(currentPoint(1, 1:2));
 end
 
-function isInside = pointInWorkspace(point_deg, controls)
+function isInside = pointInWorkspace(point_units, controls)
     % Reject click geometry outside the explicitly configured workspace.
-    isInside = point_deg(1) >= controls.WorkspaceAzimuthInterval_deg(1) && point_deg(1) <= controls.WorkspaceAzimuthInterval_deg(2) && point_deg(2) >= controls.WorkspaceElevationInterval_deg(1) && point_deg(2) <= controls.WorkspaceElevationInterval_deg(2);
+    isInside = point_units(1) >= controls.WorkspaceXInterval_units(1) && point_units(1) <= controls.WorkspaceXInterval_units(2) && point_units(2) >= controls.WorkspaceYInterval_units(1) && point_units(2) <= controls.WorkspaceYInterval_units(2);
 end
 
 function executeGoalPlan(figureHandle)
@@ -885,17 +912,17 @@ function executeGoalPlan(figureHandle)
     cancelInteraction(figureHandle);
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
-    if isempty(modeState.StartPosition_deg) || isempty(modeState.GoalPosition_deg)
+    if isempty(modeState.StartPosition_units) || isempty(modeState.GoalPosition_units)
         error("obstacleAvoidanceSandbox:IncompleteGoalScene", "Goal Mode requires both a start point and a goal point.");
     end
     controls           = readControls(applicationState);
     obstacleTime_s     = [0; controls.MissionTime_s];
     canonicalObstacles = buildCanonicalObstacles(modeState, obstacleTime_s, controls);
-    [initialState, goalState, limits] = buildPlannerInputs(modeState.StartPosition_deg, modeState.GoalPosition_deg, 0, controls.MissionTime_s, controls);
+    [initialState, goalState, limits] = buildPlannerInputs(modeState.StartPosition_units, modeState.GoalPosition_units, 0, controls.MissionTime_s, controls);
     plannerOptions = applicationState.Options.PlannerOptions;
     plannerOptions.GoalTimeMode                   = controls.GoalTimeMode;
-    plannerOptions.UnsupportedTimedTopologyPolicy = controls.UnsupportedTimedTopologyPolicy;
-    plannerOptions.AllowAzimuthWrapping           = controls.AllowAzimuthWrapping;
+    plannerOptions.WrapX = controls.WrapX;
+    plannerOptions.WrapY = controls.WrapY;
     modeState = clearModeSolution(modeState);
     modeState.CanonicalObstacles = canonicalObstacles;
     modeState.ResolvedControls   = controls;
@@ -912,6 +939,9 @@ function executeGoalPlan(figureHandle)
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
     modeState.LastPlannerResult = result;
+    modeState.LastPlannerRequest = struct("PlannerInputs", ...
+        struct("obstacles", canonicalObstacles, "initialState", initialState, ...
+        "goalState", goalState, "limits", limits), "PlannerOptions", plannerOptions);
     modeState.LastDiagnosis     = diagnosis;
     modeState.LastValidation    = validation;
     modeState.PlannerLog        = [modeState.PlannerLog; logLines];
@@ -972,9 +1002,9 @@ function [result, validation, logLines, diagnosis] = callPlanner(obstacles, init
     result      = struct();
     plannerText = "";
     if captureVerbose
-        plannerText = string(evalc('[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);'));
+        plannerText = string(evalc('[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);'));
     else
-        [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+        [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
     end
     if result.Success
         validation = obstacleAvoidance.validateTrajectory(result);
@@ -990,22 +1020,22 @@ function [result, validation, logLines, diagnosis] = callPlanner(obstacles, init
     logLines(end + 1, 1) = sprintf("Result: success=%s, validation=%s, reason=%s, arrival=%.6g s", string(logical(result.Success)), string(logical(validation.Passed)), result.TerminationReason, result.ArrivalTime_s);
 end
 
-function [initialState, goalState, limits] = buildPlannerInputs(startPosition_deg, stopPosition_deg, startTime_s, goalTime_s, controls)
+function [initialState, goalState, limits] = buildPlannerInputs(startPosition_units, stopPosition_units, startTime_s, goalTime_s, controls)
     % Build initial and goal states with zero endpoint velocity and acceleration.
     % Build explicit physical limits and workspace bounds from current controls.
     initialState = struct("time_s", startTime_s, ...
-        "position_deg", reshape(startPosition_deg, 1, 2), ...
-        "velocity_deg_s", [0 0], ...
-        "acceleration_deg_s2", [0 0]);
+        "position_units", reshape(startPosition_units, 1, 2), ...
+        "velocity_units_s", [0 0], ...
+        "acceleration_units_s2", [0 0]);
     goalState = struct("time_s", goalTime_s, ...
-        "position_deg", reshape(stopPosition_deg, 1, 2), ...
-        "velocity_deg_s", [0 0], ...
-        "acceleration_deg_s2", [0 0]);
-    limits = struct("maxVelocity_deg_s", controls.MaxVelocity_deg_s, ...
-        "maxAcceleration_deg_s2", controls.MaxAcceleration_deg_s2, ...
-        "maxJerk_deg_s3", controls.MaxJerk_deg_s3, ...
-        "azimuthInterval_deg", controls.WorkspaceAzimuthInterval_deg, ...
-        "elevationInterval_deg", controls.WorkspaceElevationInterval_deg);
+        "position_units", reshape(stopPosition_units, 1, 2), ...
+        "velocity_units_s", [0 0], ...
+        "acceleration_units_s2", [0 0]);
+    limits = struct("maxVelocity_units_s", controls.MaxVelocity_units_s, ...
+        "maxAcceleration_units_s2", controls.MaxAcceleration_units_s2, ...
+        "maxJerk_units_s3", controls.MaxJerk_units_s3, ...
+        "xInterval_units", controls.WorkspaceXInterval_units, ...
+        "yInterval_units", controls.WorkspaceYInterval_units);
 end
 
 function controls = readControls(applicationState)
@@ -1013,33 +1043,32 @@ function controls = readControls(applicationState)
     % obstacle construction or planner call.
     modeState                      = applicationState.GoalMode;
     handles                        = modeState.GraphicsHandles.Controls;
-    workspaceAzimuthInterval_deg   = readAxisPairControl(handles.WorkspaceAzimuthHandles, "Workspace azimuth interval (deg)", false);
-    workspaceElevationInterval_deg = readAxisPairControl(handles.WorkspaceElevationHandles, "Workspace elevation interval (deg)", false);
-    if workspaceAzimuthInterval_deg(2) <= workspaceAzimuthInterval_deg(1)
-        error("obstacleAvoidanceSandbox:InvalidAzimuthInterval", "Workspace azimuth lower bound must be below the upper bound.");
+    workspaceXInterval_units   = readAxisPairControl(handles.WorkspaceXHandles, "Workspace x interval (units)", false);
+    workspaceYInterval_units = readAxisPairControl(handles.WorkspaceYHandles, "Workspace y interval (units)", false);
+    if workspaceXInterval_units(2) <= workspaceXInterval_units(1)
+        error("obstacleAvoidanceSandbox:InvalidXInterval", "Workspace x lower bound must be below the upper bound.");
     end
-    if workspaceElevationInterval_deg(2) <= workspaceElevationInterval_deg(1)
-        error("obstacleAvoidanceSandbox:InvalidElevationInterval", "Workspace elevation lower bound must be below the upper bound.");
+    if workspaceYInterval_units(2) <= workspaceYInterval_units(1)
+        error("obstacleAvoidanceSandbox:InvalidYInterval", "Workspace y lower bound must be below the upper bound.");
     end
-    maxVelocity_deg_s                = readAxisPairControl(handles.VelocityHandles, "Maximum velocity (deg/s)", true);
-    maxAcceleration_deg_s2           = readAxisPairControl(handles.AccelerationHandles, "Maximum acceleration (deg/s^2)", true);
-    maxJerk_deg_s3                   = readAxisPairControl(handles.JerkHandles, "Maximum jerk (deg/s^3)", true);
+    maxVelocity_units_s                = readAxisPairControl(handles.VelocityHandles, "Maximum velocity (units/s)", true);
+    maxAcceleration_units_s2           = readAxisPairControl(handles.AccelerationHandles, "Maximum acceleration (units/s^2)", true);
+    maxJerk_units_s3                   = readAxisPairControl(handles.JerkHandles, "Maximum jerk (units/s^3)", true);
     horizon_s                        = readScalarControl(handles.HorizonHandle, "Planning horizon (s)", true);
-    pathObstacleRadius_deg           = readScalarControl(handles.PathRadiusHandle, "Line/capsule radius (deg)", true);
-    pathSafetyMargin_deg             = readScalarControl(handles.PathMarginHandle, "Line safety margin (deg)", false);
-    obstacleSafetyMargin_deg         = readScalarControl(handles.ObstacleMarginHandle, "Polygon safety margin (deg)", false);
+    pathObstacleRadius_units           = readScalarControl(handles.PathRadiusHandle, "Line/capsule radius (units)", true);
+    pathSafetyMargin_units             = readScalarControl(handles.PathMarginHandle, "Line safety margin (units)", false);
+    obstacleSafetyMargin_units         = readScalarControl(handles.ObstacleMarginHandle, "Polygon safety margin (units)", false);
     goalTimeModes                    = ["earliestArrival", "fixedArrival"];
-    unsupportedTimedTopologyPolicies = ["fail", "ruckigStopAtWaypoints"];
-    controls                         = struct("WorkspaceAzimuthInterval_deg", workspaceAzimuthInterval_deg, ...
-        "WorkspaceElevationInterval_deg", workspaceElevationInterval_deg, ...
-        "MaxVelocity_deg_s", maxVelocity_deg_s, ...
-        "MaxAcceleration_deg_s2", maxAcceleration_deg_s2, ...
-        "MaxJerk_deg_s3", maxJerk_deg_s3, ...
+    controls                         = struct("WorkspaceXInterval_units", workspaceXInterval_units, ...
+        "WorkspaceYInterval_units", workspaceYInterval_units, ...
+        "MaxVelocity_units_s", maxVelocity_units_s, ...
+        "MaxAcceleration_units_s2", maxAcceleration_units_s2, ...
+        "MaxJerk_units_s3", maxJerk_units_s3, ...
         "MissionTime_s", horizon_s, ...
-        "PathObstacleRadius_deg", pathObstacleRadius_deg, ...
-        "PathSafetyMargin_deg", pathSafetyMargin_deg, ...
-        "ObstacleSafetyMargin_deg", obstacleSafetyMargin_deg, ...
-        "GoalTimeMode", goalTimeModes(get(handles.GoalTimeModeHandle, "Value")), "UnsupportedTimedTopologyPolicy", unsupportedTimedTopologyPolicies(get(handles.UnsupportedTimedTopologyHandle, "Value")), "AllowAzimuthWrapping", logical(get(handles.AllowAzimuthWrappingHandle, "Value")), "Verbose", logical(get(handles.VerboseHandle, "Value")));
+        "PathObstacleRadius_units", pathObstacleRadius_units, ...
+        "PathSafetyMargin_units", pathSafetyMargin_units, ...
+        "ObstacleSafetyMargin_units", obstacleSafetyMargin_units, ...
+        "GoalTimeMode", goalTimeModes(get(handles.GoalTimeModeHandle, "Value")), "WrapX", logical(get(handles.WrapXHandle, "Value")), "WrapY", logical(get(handles.WrapYHandle, "Value")), "Verbose", logical(get(handles.VerboseHandle, "Value")));
 end
 
 function restorePlanningControls(figureHandle)
@@ -1078,91 +1107,91 @@ end
 
 function applyDefaultControls(handles, options)
     % Restore the scene's editable controls.
-    writeAxisPair(handles.WorkspaceAzimuthHandles, options.WorkspaceAzimuthInterval_deg);
-    writeAxisPair(handles.WorkspaceElevationHandles, options.WorkspaceElevationInterval_deg);
-    writeAxisPair(handles.VelocityHandles, options.MaxVelocity_deg_s);
-    writeAxisPair(handles.AccelerationHandles, options.MaxAcceleration_deg_s2);
-    writeAxisPair(handles.JerkHandles, options.MaxJerk_deg_s3);
+    writeAxisPair(handles.WorkspaceXHandles, options.WorkspaceXInterval_units);
+    writeAxisPair(handles.WorkspaceYHandles, options.WorkspaceYInterval_units);
+    writeAxisPair(handles.VelocityHandles, options.MaxVelocity_units_s);
+    writeAxisPair(handles.AccelerationHandles, options.MaxAcceleration_units_s2);
+    writeAxisPair(handles.JerkHandles, options.MaxJerk_units_s3);
     horizon_s = options.MissionTime_s;
     set(handles.HorizonHandle, "String", sprintf("%.8g", horizon_s));
-    set(handles.PathRadiusHandle, "String", sprintf("%.8g", options.PathObstacleRadius_deg));
-    set(handles.PathMarginHandle, "String", sprintf("%.8g", options.PathSafetyMargin_deg));
-    set(handles.ObstacleMarginHandle, "String", sprintf("%.8g", options.ObstacleSafetyMargin_deg));
+    set(handles.PathRadiusHandle, "String", sprintf("%.8g", options.PathObstacleRadius_units));
+    set(handles.PathMarginHandle, "String", sprintf("%.8g", options.PathSafetyMargin_units));
+    set(handles.ObstacleMarginHandle, "String", sprintf("%.8g", options.ObstacleSafetyMargin_units));
     set(handles.VerboseHandle, "Value", options.Verbose);
     set(handles.MotionProfileHandle, "Value", 1);
-    set(handles.UnsupportedTimedTopologyHandle, "Value", 1 + double(options.PlannerOptions.UnsupportedTimedTopologyPolicy == "ruckigStopAtWaypoints"));
     set(handles.GoalTimeModeHandle, "Value", find(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"], 1));
-    set(handles.AllowAzimuthWrappingHandle, "Value", options.PlannerOptions.AllowAzimuthWrapping);
+    set(handles.WrapXHandle, "Value", options.PlannerOptions.WrapX);
+    set(handles.WrapYHandle, "Value", options.PlannerOptions.WrapY);
 end
 
 function writeAxisPair(handles, values)
-    % Write one two-value default into explicit edit handles.
-    set(handles.FirstHandle, "String", sprintf("%.8g", values(1)));
-    set(handles.SecondHandle, "String", sprintf("%.8g", values(2)));
+    % Retain enough digits to read back the exact normalized physical bounds.
+    set(handles.FirstHandle, "String", sprintf("%.17g", values(1)));
+    set(handles.SecondHandle, "String", sprintf("%.17g", values(2)));
 end
 
 function obstacles = buildCanonicalObstacles(modeState, obstacleTime_s, controls)
     % Rebuild protected obstacles from retained geometry. Apply each safety margin
     % one time during canonical obstacle construction.
-    pathObstacleData = cell(numel(modeState.LineObstaclePositions_deg), 1);
+    pathObstacleData = cell(numel(modeState.LineObstaclePositions_units), 1);
 
     % Convert each drawn line to a capsule obstacle. A capsule is the area within a
     % fixed radius of the line, with rounded ends.
-    for lineIndex = 1:numel(modeState.LineObstaclePositions_deg)
-        pathObstacleData{lineIndex} = pathToObstacleData(modeState.LineObstaclePositions_deg{lineIndex}, obstacleTime_s, controls.PathObstacleRadius_deg, controls.PathSafetyMargin_deg, lineIndex);
+    for lineIndex = 1:numel(modeState.LineObstaclePositions_units)
+        pathObstacleData{lineIndex} = pathToObstacleData(modeState.LineObstaclePositions_units{lineIndex}, obstacleTime_s, controls.PathObstacleRadius_units, controls.PathSafetyMargin_units, lineIndex);
     end
-    polygonObstacleData = obstaclePolygonsToData(modeState.PolygonObstaclePositions_deg, obstacleTime_s, controls.ObstacleSafetyMargin_deg, modeState.PolygonMotionVectors_deg, modeState.PolygonMotionProfiles);
+    polygonObstacleData = obstaclePolygonsToData(modeState.PolygonObstaclePositions_units, obstacleTime_s, controls.ObstacleSafetyMargin_units, modeState.PolygonMotionVectors_units, modeState.PolygonMotionProfiles);
     obstacles           = obstacleAvoidance.obstacles.combineObstacles(pathObstacleData, polygonObstacleData);
 end
 
-function obstacleData = pathToObstacleData(path_deg, time_s, radius_deg, safetyMargin_deg, lineIndex)
+function obstacleData = pathToObstacleData(path_units, time_s, radius_units, safetyMargin_units, lineIndex)
     % Convert one simplified freehand line into a continuous capsule with few
     % vertices. Fewer vertices reduce planning cost.
-    path_deg = double(path_deg);
-    path_deg = path_deg(all(isfinite(path_deg), 2), :);
-    if size(path_deg, 1) > 1
-        isDistinctPoint = [true; vecnorm(diff(path_deg, 1, 1), 2, 2) > eps];
-        path_deg        = path_deg(isDistinctPoint, :);
+    path_units = double(path_units);
+    path_units = path_units(all(isfinite(path_units), 2), :);
+    if size(path_units, 1) > 1
+        isDistinctPoint = [true; vecnorm(diff(path_units, 1, 1), 2, 2) > eps];
+        path_units        = path_units(isDistinctPoint, :);
     end
-    if size(path_deg, 1) < 2
+    if size(path_units, 1) < 2
         obstacleData = cell(0, 1);
         return;
     end
-    pathShape    = buildPathCapsuleShape(path_deg, radius_deg);
-    vertices_deg = pathShape.Vertices;
-    if size(vertices_deg, 1) < 3
+    pathShape    = buildPathCapsuleShape(path_units, radius_units);
+    vertices_units = pathShape.Vertices;
+    if size(vertices_units, 1) < 3
         obstacleData = cell(0, 1);
         return;
     end
-    obstacleData = obstacleAvoidance.obstacles.createObstacle("drawn line obstacle " + lineIndex, time_s, vertices_deg(:, 1), vertices_deg(:, 2), safetyMargin_deg);
+    obstacleData = obstacleAvoidance.obstacles.createObstacle("drawn line obstacle " + lineIndex, time_s, vertices_units(:, 1), vertices_units(:, 2), safetyMargin_units);
 end
 
-function pathShape = buildPathCapsuleShape(path_deg, radius_deg)
+function pathShape = buildPathCapsuleShape(path_units, radius_units)
     % Combine segment capsules into one shape without gaps.
     endCapSegmentCount = 3;
     arcIncrement_rad   = pi / endCapSegmentCount;
     % Increase the construction radius to account for straight polygon edges. The
     % polygonal end cap then contains the requested circular radius.
-    constructionRadius_deg = radius_deg / cos(arcIncrement_rad / 2);
+    constructionRadius_units = radius_units / cos(arcIncrement_rad / 2);
     pathShape              = polyshape();
     hasSegment             = false;
 
     % Union one low-vertex capsule per nondegenerate path segment.
-    for segmentIndex = 1:size(path_deg, 1) - 1
-        startPosition_deg = path_deg(segmentIndex, :);
-        endPosition_deg   = path_deg(segmentIndex + 1, :);
-        direction_deg     = endPosition_deg - startPosition_deg;
-        segmentLength_deg = norm(direction_deg);
-        if segmentLength_deg <= eps
+    for segmentIndex = 1:size(path_units, 1) - 1
+        startPosition_units = path_units(segmentIndex, :);
+        endPosition_units   = path_units(segmentIndex + 1, :);
+        direction_units     = endPosition_units - startPosition_units;
+        segmentLength_units = norm(direction_units);
+        if segmentLength_units <= eps
             continue;
         end
-        direction_1        = direction_deg / segmentLength_deg;
+        direction_1        = direction_units / segmentLength_units;
         directionAngle_rad = atan2(direction_1(2), direction_1(1));
         startAngles_rad    = linspace(directionAngle_rad + pi / 2, directionAngle_rad + 3 * pi / 2, endCapSegmentCount + 1).';
         endAngles_rad      = linspace(directionAngle_rad - pi / 2, directionAngle_rad + pi / 2, endCapSegmentCount + 1).';
-        startCap_deg       = startPosition_deg + constructionRadius_deg * [cos(startAngles_rad), sin(startAngles_rad)];
-        endCap_deg         = endPosition_deg + constructionRadius_deg * [cos(endAngles_rad), sin(endAngles_rad)];
-        segmentShape       = polyshape([startCap_deg; endCap_deg]);
+        startCap_units       = startPosition_units + constructionRadius_units * [cos(startAngles_rad), sin(startAngles_rad)];
+        endCap_units         = endPosition_units + constructionRadius_units * [cos(endAngles_rad), sin(endAngles_rad)];
+        segmentShape       = polyshape([startCap_units; endCap_units]);
         if hasSegment
             pathShape = union(pathShape, segmentShape);
         else
@@ -1172,54 +1201,54 @@ function pathShape = buildPathCapsuleShape(path_deg, radius_deg)
     end
 end
 
-function obstacleData = obstaclePolygonsToData(polygonCollection_deg, time_s, safetyMargin_deg, motionVectors_deg, motionProfiles)
+function obstacleData = obstaclePolygonsToData(polygonCollection_units, time_s, safetyMargin_units, motionVectors_units, motionProfiles)
     % Construct protected static or moving polygons. Apply the margin once.
-    obstacleData = cell(numel(polygonCollection_deg), 1);
+    obstacleData = cell(numel(polygonCollection_units), 1);
 
     % Close and canonicalize every user-drawn polygon independently.
-    for polygonIndex = 1:numel(polygonCollection_deg)
-        polygon_deg = polygonCollection_deg{polygonIndex};
-        if ~isequal(polygon_deg(1, :), polygon_deg(end, :))
-            polygon_deg = [polygon_deg; polygon_deg(1, :)]; %#ok<AGROW>
+    for polygonIndex = 1:numel(polygonCollection_units)
+        polygon_units = polygonCollection_units{polygonIndex};
+        if ~isequal(polygon_units(1, :), polygon_units(end, :))
+            polygon_units = [polygon_units; polygon_units(1, :)]; %#ok<AGROW>
         end
-        motionVector_deg = [0 0];
+        motionVector_units = [0 0];
         motionProfile    = "stationary";
-        if polygonIndex <= size(motionVectors_deg, 1)
-            motionVector_deg = motionVectors_deg(polygonIndex, :);
+        if polygonIndex <= size(motionVectors_units, 1)
+            motionVector_units = motionVectors_units(polygonIndex, :);
         end
         if polygonIndex <= numel(motionProfiles) && strlength(motionProfiles(polygonIndex)) > 0
             motionProfile = motionProfiles(polygonIndex);
         end
-        [profileTime_s, azimuthBySlice_deg, elevationBySlice_deg] = createSandboxPolygonMotionHistory(polygon_deg, time_s, motionVector_deg, motionProfile);
-        obstacleData{polygonIndex} = obstacleAvoidance.obstacles.createObstacle("drawn polygon obstacle " + polygonIndex, profileTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
+        [profileTime_s, xBySlice_units, yBySlice_units] = createSandboxPolygonMotionHistory(polygon_units, time_s, motionVector_units, motionProfile);
+        obstacleData{polygonIndex} = obstacleAvoidance.obstacles.createObstacle("drawn polygon obstacle " + polygonIndex, profileTime_s, xBySlice_units, yBySlice_units, safetyMargin_units);
     end
 end
 
-function simplified_deg = simplifyFreehandBoundary(points_deg, tolerance_deg)
+function simplified_units = simplifyFreehandBoundary(points_units, tolerance_units)
     % Keep points that define turns. Remove dense mouse-event samples along nearly
     % straight parts. If geometry loses an important corner, inspect this tolerance.
-    if size(points_deg, 1) <= 2
-        simplified_deg = points_deg;
+    if size(points_units, 1) <= 2
+        simplified_units = points_units;
         return;
     end
-    lineVector_deg     = points_deg(end, :) - points_deg(1, :);
-    lineLength_deg     = norm(lineVector_deg);
-    interiorPoints_deg = points_deg(2:end - 1, :);
-    if lineLength_deg <= eps
-        distance_deg = vecnorm(interiorPoints_deg - points_deg(1, :), 2, 2);
+    lineVector_units     = points_units(end, :) - points_units(1, :);
+    lineLength_units     = norm(lineVector_units);
+    interiorPoints_units = points_units(2:end - 1, :);
+    if lineLength_units <= eps
+        distance_units = vecnorm(interiorPoints_units - points_units(1, :), 2, 2);
     else
-        relativePoints_deg = interiorPoints_deg - points_deg(1, :);
-        distance_deg       = abs(relativePoints_deg(:, 1) * lineVector_deg(2) - relativePoints_deg(:, 2) * lineVector_deg(1)) / lineLength_deg;
+        relativePoints_units = interiorPoints_units - points_units(1, :);
+        distance_units       = abs(relativePoints_units(:, 1) * lineVector_units(2) - relativePoints_units(:, 2) * lineVector_units(1)) / lineLength_units;
     end
-    [maximumDistance_deg, maximumIndex] = max(distance_deg);
-    if maximumDistance_deg <= tolerance_deg
-        simplified_deg = points_deg([1 end], :);
+    [maximumDistance_units, maximumIndex] = max(distance_units);
+    if maximumDistance_units <= tolerance_units
+        simplified_units = points_units([1 end], :);
         return;
     end
     splitIndex     = maximumIndex + 1;
-    firstHalf_deg  = simplifyFreehandBoundary(points_deg(1:splitIndex, :), tolerance_deg);
-    secondHalf_deg = simplifyFreehandBoundary(points_deg(splitIndex:end, :), tolerance_deg);
-    simplified_deg = [firstHalf_deg(1:end - 1, :); secondHalf_deg];
+    firstHalf_units  = simplifyFreehandBoundary(points_units(1:splitIndex, :), tolerance_units);
+    secondHalf_units = simplifyFreehandBoundary(points_units(splitIndex:end, :), tolerance_units);
+    simplified_units = [firstHalf_units(1:end - 1, :); secondHalf_units];
 end
 
 % --- Rendering, Status, Reset, And State Access -------------------------
@@ -1252,54 +1281,56 @@ function redrawScene(applicationState)
     box(axesHandle, "on");
     try
         controls              = readControls(applicationState);
-        azimuthInterval_deg   = controls.WorkspaceAzimuthInterval_deg;
-        elevationInterval_deg = controls.WorkspaceElevationInterval_deg;
+        xInterval_units   = controls.WorkspaceXInterval_units;
+        yInterval_units = controls.WorkspaceYInterval_units;
     catch
-        azimuthInterval_deg   = applicationState.Options.WorkspaceAzimuthInterval_deg;
-        elevationInterval_deg = applicationState.Options.WorkspaceElevationInterval_deg;
-        controls              = struct("WorkspaceAzimuthInterval_deg", azimuthInterval_deg, ...
-            "AllowAzimuthWrapping", ...
-            applicationState.Options.PlannerOptions.AllowAzimuthWrapping);
+        xInterval_units   = applicationState.Options.WorkspaceXInterval_units;
+        yInterval_units = applicationState.Options.WorkspaceYInterval_units;
+        controls = struct();
+        controls.WorkspaceXInterval_units = xInterval_units;
+        controls.WorkspaceYInterval_units = yInterval_units;
+        controls.WrapX = applicationState.Options.PlannerOptions.WrapX;
+        controls.WrapY = applicationState.Options.PlannerOptions.WrapY;
     end
-    axis(axesHandle, [azimuthInterval_deg, elevationInterval_deg]);
+    axis(axesHandle, [xInterval_units, yInterval_units]);
     axis(axesHandle, "equal");
-    xlabel(axesHandle, "Azimuth (deg)");
-    ylabel(axesHandle, "Elevation (deg)");
+    xlabel(axesHandle, "X (units)");
+    ylabel(axesHandle, "Y (units)");
 
     % Redraw raw mouse traces first as low-emphasis provenance.
-    for strokeIndex = 1:numel(modeState.RawObstacleStrokes_deg)
-        stroke_deg = modeState.RawObstacleStrokes_deg{strokeIndex};
-        plot(axesHandle, stroke_deg(:, 1), stroke_deg(:, 2), ":", "Color", [0.45 0.45 0.65], "LineWidth", 0.8, "HandleVisibility", "off");
+    for strokeIndex = 1:numel(modeState.RawObstacleStrokes_units)
+        stroke_units = modeState.RawObstacleStrokes_units{strokeIndex};
+        plot(axesHandle, stroke_units(:, 1), stroke_units(:, 2), ":", "Color", [0.45 0.45 0.65], "LineWidth", 0.8, "HandleVisibility", "off");
     end
 
     % Overlay simplified line centerlines used to construct capsule obstacles.
     % Obstacle graphics stay out of the legend because their count can be large.
-    for lineIndex = 1:numel(modeState.LineObstaclePositions_deg)
-        line_deg = modeState.LineObstaclePositions_deg{lineIndex};
-        plot(axesHandle, line_deg(:, 1), line_deg(:, 2), "--", "Color", [0.75 0.15 0.15], "LineWidth", 1.4, "HandleVisibility", "off");
+    for lineIndex = 1:numel(modeState.LineObstaclePositions_units)
+        line_units = modeState.LineObstaclePositions_units{lineIndex};
+        plot(axesHandle, line_units(:, 1), line_units(:, 2), "--", "Color", [0.75 0.15 0.15], "LineWidth", 1.4, "HandleVisibility", "off");
     end
 
     % Draw user polygon boundaries before protected obstacle geometry. This shows
     % how canonicalization and safety margin change the drawn shape.
-    for polygonIndex = 1:numel(modeState.PolygonObstaclePositions_deg)
-        polygon_deg = modeState.PolygonObstaclePositions_deg{polygonIndex};
-        fill(axesHandle, polygon_deg(:, 1), polygon_deg(:, 2), [0.25 0.35 0.85], "FaceAlpha", 0.10, "EdgeColor", [0.25 0.35 0.85], "LineStyle", ":", "HandleVisibility", "off");
-        if polygonIndex <= size(modeState.PolygonMotionVectors_deg, 1)
-            motionVector_deg = modeState.PolygonMotionVectors_deg(polygonIndex, :);
-            if norm(motionVector_deg) > 1e-12
-                [centroidAzimuth_deg, centroidElevation_deg] = centroid(polyshape(polygon_deg));
-                quiver(axesHandle, centroidAzimuth_deg, centroidElevation_deg, motionVector_deg(1), motionVector_deg(2), 0, "Color", [0.15 0.55 0.15], "LineWidth", 2, "MaxHeadSize", 0.35, "HandleVisibility", "off");
+    for polygonIndex = 1:numel(modeState.PolygonObstaclePositions_units)
+        polygon_units = modeState.PolygonObstaclePositions_units{polygonIndex};
+        fill(axesHandle, polygon_units(:, 1), polygon_units(:, 2), [0.25 0.35 0.85], "FaceAlpha", 0.10, "EdgeColor", [0.25 0.35 0.85], "LineStyle", ":", "HandleVisibility", "off");
+        if polygonIndex <= size(modeState.PolygonMotionVectors_units, 1)
+            motionVector_units = modeState.PolygonMotionVectors_units(polygonIndex, :);
+            if norm(motionVector_units) > 1e-12
+                [centroidX_units, centroidY_units] = centroid(polyshape(polygon_units));
+                quiver(axesHandle, centroidX_units, centroidY_units, motionVector_units(1), motionVector_units(2), 0, "Color", [0.15 0.55 0.15], "LineWidth", 2, "MaxHeadSize", 0.35, "HandleVisibility", "off");
                 if polygonIndex <= numel(modeState.PolygonMotionProfiles)
                     profileLabel = motionProfileLabel(modeState.PolygonMotionProfiles(polygonIndex));
-                    text(axesHandle, centroidAzimuth_deg + motionVector_deg(1), centroidElevation_deg + motionVector_deg(2), "  " + profileLabel, "Color", [0.10 0.40 0.10], "FontSize", 8, "HandleVisibility", "off");
+                    text(axesHandle, centroidX_units + motionVector_units(1), centroidY_units + motionVector_units(2), "  " + profileLabel, "Color", [0.10 0.40 0.10], "FontSize", 8, "HandleVisibility", "off");
                 end
             end
         end
     end
     renderCanonicalObstacles(axesHandle, modeState.CanonicalObstacles);
 
-    if ~isempty(modeState.StartPosition_deg)
-        plot(axesHandle, modeState.StartPosition_deg(1), modeState.StartPosition_deg(2), "go", "MarkerFaceColor", "g", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Start");
+    if ~isempty(modeState.StartPosition_units)
+        plot(axesHandle, modeState.StartPosition_units(1), modeState.StartPosition_units(2), "go", "MarkerFaceColor", "g", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Start");
     end
     redrawGoalRequest(axesHandle, modeState, controls);
     if ~isempty(findobj(axesHandle, "-property", "DisplayName"))
@@ -1327,37 +1358,35 @@ end
 function redrawGoalRequest(axesHandle, modeState, controls)
     % Show Goal Mode request geometry. Show the result or retained partial route
     % when available.
-    if ~isempty(modeState.GoalPosition_deg)
-        plot(axesHandle, modeState.GoalPosition_deg(1), modeState.GoalPosition_deg(2), "ro", "MarkerFaceColor", "r", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Goal");
+    if ~isempty(modeState.GoalPosition_units)
+        plot(axesHandle, modeState.GoalPosition_units(1), modeState.GoalPosition_units(2), "ro", "MarkerFaceColor", "r", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Goal");
     end
-    if ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg)
-        request_deg = [modeState.StartPosition_deg; modeState.GoalPosition_deg];
-        if controls.AllowAzimuthWrapping
-            period_deg = diff(controls.WorkspaceAzimuthInterval_deg);
-            request_deg(2, 1) = request_deg(2, 1) + period_deg * round((request_deg(1, 1) - request_deg(2, 1)) / period_deg);
-        end
-        request_deg = obstacleAvoidance.plotting.createWrappedSpatialPath(request_deg, controls.WorkspaceAzimuthInterval_deg, controls.AllowAzimuthWrapping);
-        plot(axesHandle, request_deg(:, 1), request_deg(:, 2), "--", "Color", [0.35 0.55 0.85], "LineWidth", 1.2, "DisplayName", "Requested direct geometry");
+    if ~isempty(modeState.StartPosition_units) && ~isempty(modeState.GoalPosition_units)
+        request_units = [modeState.StartPosition_units; modeState.GoalPosition_units];
+        displayLimits = struct("xInterval_units", controls.WorkspaceXInterval_units, "yInterval_units", controls.WorkspaceYInterval_units);
+        request_units(2, :) = resolveDisplayGoal(request_units(1, :), request_units(2, :), displayLimits, controls);
+        request_units = obstacleAvoidance.plotting.createWrappedSpatialPath(request_units, [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units], [controls.WrapX controls.WrapY]);
+        plot(axesHandle, request_units(:, 1), request_units(:, 2), "--", "Color", [0.35 0.55 0.85], "LineWidth", 1.2, "DisplayName", "Requested direct geometry");
     end
     result = modeState.LastPlannerResult;
     if isempty(fieldnames(result))
         return;
     end
     if result.Success
-        displayPosition_deg = obstacleAvoidance.plotting.createWrappedSpatialPath(result.position_deg, result.Inputs.limits.azimuthInterval_deg, result.Options.AllowAzimuthWrapping);
-        plot(axesHandle, displayPosition_deg(:, 1), displayPosition_deg(:, 2), "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
-    elseif ~isempty(result.BestPartialRoute_deg)
-        partialRoute_deg = result.BestPartialRoute_deg;
-        partialRoute_deg = obstacleAvoidance.plotting.createWrappedSpatialPath(partialRoute_deg, result.Inputs.limits.azimuthInterval_deg, result.Options.AllowAzimuthWrapping);
-        plot(axesHandle, partialRoute_deg(:, 1), partialRoute_deg(:, 2), "-.", "Color", [0.90 0.55 0.10], "LineWidth", 1.8, "DisplayName", "Best partial route");
+        displayPosition_units = obstacleAvoidance.plotting.createWrappedSpatialPath(result.position_units, [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units], [result.Options.WrapX result.Options.WrapY]);
+        plot(axesHandle, displayPosition_units(:, 1), displayPosition_units(:, 2), "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
+    elseif ~isempty(result.Route_units)
+        partialRoute_units = result.Route_units;
+        partialRoute_units = obstacleAvoidance.plotting.createWrappedSpatialPath(partialRoute_units, [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units], [result.Options.WrapX result.Options.WrapY]);
+        plot(axesHandle, partialRoute_units(:, 1), partialRoute_units(:, 2), "-.", "Color", [0.90 0.55 0.10], "LineWidth", 1.8, "DisplayName", "Unvalidated geometric guide");
     end
 end
 
 function renderCanonicalObstacles(axesHandle, obstacles)
     % Draw obstacle geometry without allowing obstacle count to expand the legend.
     for obstacleIndex = 1:numel(obstacles)
-        originalShape  = polyshape(obstacles(obstacleIndex).originalAz_deg{1}, obstacles(obstacleIndex).originalEl_deg{1});
-        protectedShape = polyshape(obstacles(obstacleIndex).az_deg{1}, obstacles(obstacleIndex).el_deg{1});
+        originalShape  = polyshape(obstacles(obstacleIndex).originalX_units{1}, obstacles(obstacleIndex).originalY_units{1});
+        protectedShape = polyshape(obstacles(obstacleIndex).x_units{1}, obstacles(obstacleIndex).y_units{1});
         plot(axesHandle, originalShape, "FaceColor", [0.80 0.82 0.86], "FaceAlpha", 0.25, "EdgeColor", [0.20 0.20 0.20], "LineStyle", "-", "LineWidth", 1.0, "HandleVisibility", "off");
         plot(axesHandle, protectedShape, "FaceColor", "none", "EdgeColor", [0.80 0.15 0.15], "LineStyle", "--", "LineWidth", 1.5, "HandleVisibility", "off");
     end
@@ -1396,12 +1425,12 @@ function updateControlEnablement(applicationState)
         if isPlanning
             return;
         end
-        canRun = ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg);
+        canRun = ~isempty(modeState.StartPosition_units) && ~isempty(modeState.GoalPosition_units);
         setObstacleConstructorAvailability(modeState, canRun);
-        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
+        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", onOff(~isempty(modeState.PolygonObstaclePositions_units)));
         set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
         hasResult    = ~isempty(fieldnames(modeState.LastPlannerResult));
-        hasSceneData = ~isempty(modeState.StartPosition_deg) || ~isempty(modeState.GoalPosition_deg) || ~isempty(modeState.RawObstacleStrokes_deg);
+        hasSceneData = ~isempty(modeState.StartPosition_units) || ~isempty(modeState.GoalPosition_units) || ~isempty(modeState.RawObstacleStrokes_units);
         set(modeState.GraphicsHandles.Actions.Diagnostics, "Enable", onOff(hasResult));
         set(modeState.GraphicsHandles.Actions.Export, "Enable", onOff(hasResult || hasSceneData));
 end
@@ -1437,8 +1466,9 @@ function modeState = clearModeSolution(modeState)
     % for a changed request.
     modeState.CanonicalObstacles = obstacleAvoidance.obstacles.combineObstacles();
     modeState.LastPlannerResult  = struct();
+    modeState.LastPlannerRequest = struct();
     modeState.LastDiagnosis      = struct();
-    modeState.LastValidation     = obstacleAvoidance.validateTrajectory();
+    modeState.LastValidation     = obstacleAvoidance.validateTrajectory(struct("Success", false));
     modeState.ResolvedControls   = struct();
 end
 
@@ -1476,7 +1506,7 @@ end
 function exportDiagnosis(figureHandle)
     % Save retained scene, input, result, and validation data for diagnosis.
     timestamp   = string(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
-    defaultName = "az_el_sandbox_goal_" + timestamp + ".mat";
+    defaultName = "xy_sandbox_goal_" + timestamp + ".mat";
     [fileName, folderName] = uiputfile({'*.mat', 'MATLAB diagnosis bundle (*.mat)'}, 'Export sandbox input and result', char(defaultName));
     if isequal(fileName, 0) || isequal(folderName, 0)
         return;
@@ -1515,14 +1545,14 @@ function applicationState = prepareSandboxStateForExport(applicationState)
     modeState      = applicationState.GoalMode;
     controls       = readControls(applicationState);
     plannerOptions = applicationState.Options.PlannerOptions;
-    plannerOptions.UnsupportedTimedTopologyPolicy = controls.UnsupportedTimedTopologyPolicy;
-    plannerOptions.AllowAzimuthWrapping           = controls.AllowAzimuthWrapping;
+    plannerOptions.WrapX = controls.WrapX;
+    plannerOptions.WrapY = controls.WrapY;
     plannerInputs     = struct();
     obstacleEndTime_s = controls.MissionTime_s;
-    hasCompleteScene  = ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg);
+    hasCompleteScene  = ~isempty(modeState.StartPosition_units) && ~isempty(modeState.GoalPosition_units);
     plannerOptions.GoalTimeMode = controls.GoalTimeMode;
     if hasCompleteScene
-        [initialState, goalState, limits] = buildPlannerInputs(modeState.StartPosition_deg, modeState.GoalPosition_deg, 0, controls.MissionTime_s, controls);
+        [initialState, goalState, limits] = buildPlannerInputs(modeState.StartPosition_units, modeState.GoalPosition_units, 0, controls.MissionTime_s, controls);
         plannerInputs = struct("obstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
             "initialState", initialState, ...
             "goalState", goalState, ...
@@ -1537,8 +1567,8 @@ function applicationState = prepareSandboxStateForExport(applicationState)
     modeState.ExportRequest      = struct("HasCompleteScene", hasCompleteScene, ...
         "PlannerInputs", plannerInputs, ...
         "PlannerOptions", plannerOptions, ...
-        "RequestedStart_deg", modeState.StartPosition_deg, ...
-        "RequestedGoal_deg", modeState.GoalPosition_deg);
+        "RequestedStart_units", modeState.StartPosition_units, ...
+        "RequestedGoal_units", modeState.GoalPosition_units);
     applicationState.GoalMode = modeState;
 end
 
@@ -1560,5 +1590,19 @@ function setObstacleConstructorAvailability(modeState, isEnabled)
     % Process each constructor name needed by the sandbox workflow.
     for constructorName = constructorNames
         set(modeState.GraphicsHandles.Actions.(constructorName), "Enable", onOff(isEnabled));
+    end
+end
+
+function goal_units = resolveDisplayGoal(start_units, goal_units, limits, options)
+    % Display the nearest periodic image; planner owns feasibility checks.
+    names = ["xInterval_units", "yInterval_units"];
+    for axisIndex = find([options.WrapX options.WrapY])
+        period_units = diff(limits.(names(axisIndex)));
+        delta_units = goal_units(axisIndex) - start_units(axisIndex);
+        wrapped_units = mod(delta_units + period_units/2, period_units) - period_units/2;
+        if abs(abs(wrapped_units) - period_units/2) <= eps(period_units)*4
+            wrapped_units = period_units/2;
+        end
+        goal_units(axisIndex) = start_units(axisIndex) + wrapped_units;
     end
 end

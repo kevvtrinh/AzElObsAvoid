@@ -1,108 +1,78 @@
-function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
+function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, vertices_units, target_units, reserve_units, obstacleGeometry)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
-%       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
-%
-% PURPOSE
-%   - Solve and directly verify one degree-one maximum-margin separating line
-%     between a Bezier control hull and a convex region.
-%
-% INPUTS
-%   - controlPoint_deg (N-by-2 numeric array)
-%       One Bezier span's control points.
-%   - vertices_deg (M-by-2 numeric array)
-%       One convex exclusion-region boundary.
-%   - target_deg, reserve_deg (nonnegative numeric scalars)
-%       Obstacle-side target and trajectory-side numerical reserve.
-%   - options (coneprog options)
-%       Numerical solver controls.
-%
-% OUTPUTS
-%   - plane (scalar struct)
-%       Line normals, offsets, verified gap, and active state.
-%   - exitFlag (numeric scalar)
-%       Original coneprog exit flag.
-%   - output (scalar struct, optional output)
-%       Original coneprog diagnostics and measured solver time.
-%
-% UNITS
-%   - Positions, offsets, targets, reserves, and gaps are degrees.
-%
+% SYNTAX: [plane,exitFlag,output] = bmtpEngine.solveSeparatingLine(controls,vertices,target,reserve,geometry)
+% PURPOSE: Compute a convex supporting plane and verify its exact Bernstein
+%          clearance. Overlap selects the least-penetrating nonzero axis for
+%          the elastic trajectory subproblem; it is never marked verified.
+% INPUTS: Bezier control hull, N-by-2 static obstacle vertices or N-by-2-by-2
+%         affine endpoint vertices, clearance and reserve. Optional geometry
+%         caches obstacle-edge normals/supports for these exact vertices.
+% OUTPUTS: Supporting plane, construction status, and analytic diagnostics.
+% UNITS: Coordinate units.
 
-%% Section 1: Solve The Maximum-Margin Line
-
-offsetIndex   = 5:6;
-marginIndex   = 7;
-variableCount = 7;
-[A, b] = maximumMarginRows(controlPoint_deg, vertices_deg, target_deg);
-f = zeros(variableCount, 1);
-f(marginIndex) = 1;
-emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), -1);
-cones     = repmat(emptyCone, 2, 1);
-% Process each plane needed to find separating line.
-for planeIndex = 0:1
-    coneA = zeros(2, variableCount);
-    coneA(:, planeIndex * 2 + (1:2)) = eye(2);
-    cones(planeIndex + 1) = secondordercone(coneA, zeros(2, 1), zeros(variableCount, 1), -1);
-end
-solverTimer = tic;
-[x, ~, exitFlag, output] = coneprog(f, cones, A, b, [], [], [], [], options);
-output.TotalTime_s = toc(solverTimer);
-plane = emptyPlane();
-plane.ExitFlag = exitFlag;
-if isempty(x) || any(~isfinite(x))
-    return;
-end
-[plane.Active, plane.Normal, plane.Offset_deg] = deal(true, reshape(x(1:4), 2, []).', x(offsetIndex).');
-plane = bmtpEngine.verifySeparatingLine(plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg);
-end
-
-%% Section 2: Local Functions
-
-function [A, b] = maximumMarginRows(controlPoint_deg, vertices_deg, target_deg)
-    % Build inequalities for the maximum-margin separating line.
-    degree        = size(controlPoint_deg, 1) - 1;
-    variableCount = 7;
-    offsetIndex   = 5:6;
-    marginIndex   = 7;
-    A             = zeros(2 * size(vertices_deg, 1) + degree + 2, variableCount);
-    b             = zeros(size(A, 1), 1);
-    rowIndex      = 0;
-    % Process each plane needed to complete maximum margin rows.
-    for planeIndex = 0:1
-        targets = rowIndex + (1:size(vertices_deg, 1));
-        normal  = planeIndex * 2 + (1:2);
-        A(targets, normal) = -vertices_deg;
-        A(targets, offsetIndex(planeIndex + 1)) = -1;
-        b(targets) = -target_deg;
-        rowIndex = targets(end);
+%% Section 1: Evaluate Convex Supporting Axes
+first_units = vertices_units(:,:,1);
+last_units = vertices_units(:,:,end);
+fraction = (0:size(controlPoint_units,1)-1)'/(size(controlPoint_units,1)-1);
+relativeControl_units = controlPoint_units-fraction.*(mean(last_units,1)-mean(first_units,1));
+if nargin<5 || isempty(obstacleGeometry)
+    edges_units = diff([first_units;first_units(1,:)],1,1);
+    if size(vertices_units,3)>1
+        edges_units = [edges_units;diff([last_units;last_units(1,:)],1,1)];
     end
-    objectiveRows = variablePlaneRows(controlPoint_deg, variableCount);
-    targets       = rowIndex + (1:size(objectiveRows, 1));
-    A(targets, :) = objectiveRows;
-    A(targets, marginIndex) = -1;
+    [secondControl,firstControl] = find(tril(true(size(controlPoint_units,1)),-1));
+    edges_units = [edges_units;relativeControl_units(secondControl,:)-relativeControl_units(firstControl,:)];
+    length_units = vecnorm(edges_units,2,2);
+    edges_units = edges_units(length_units>0,:);
+    length_units = length_units(length_units>0);
+    normals = [-edges_units(:,2),edges_units(:,1)]./length_units;
+    normals = [normals;-normals];
+    firstSupport_units = min(first_units*normals.',[],1);
+    lastSupport_units = min(last_units*normals.',[],1);
+else
+    positiveObstacleNormals = obstacleGeometry.PositiveNormals;
+    firstObstaclePositive_units = obstacleGeometry.FirstPositiveSupport_units;
+    lastObstaclePositive_units = obstacleGeometry.LastPositiveSupport_units;
+    firstObstacleNegative_units = obstacleGeometry.FirstNegativeSupport_units;
+    lastObstacleNegative_units = obstacleGeometry.LastNegativeSupport_units;
+    [secondControl,firstControl] = find(tril(true(size(controlPoint_units,1)),-1));
+    controlEdges_units = relativeControl_units(secondControl,:)-relativeControl_units(firstControl,:);
+    controlLength_units = vecnorm(controlEdges_units,2,2);
+    controlEdges_units = controlEdges_units(controlLength_units>0,:);
+    controlLength_units = controlLength_units(controlLength_units>0);
+    positiveControlNormals = [-controlEdges_units(:,2),controlEdges_units(:,1)]./controlLength_units;
+    positiveNormals = [positiveObstacleNormals;positiveControlNormals];
+    normals = [positiveNormals;-positiveNormals];
+    firstControlProjection_units = first_units*positiveControlNormals.';
+    lastControlProjection_units = last_units*positiveControlNormals.';
+    firstControlPositive_units = min(firstControlProjection_units,[],1);
+    lastControlPositive_units = min(lastControlProjection_units,[],1);
+    firstControlNegative_units = -max(firstControlProjection_units,[],1);
+    lastControlNegative_units = -max(lastControlProjection_units,[],1);
+    firstSupport_units = [firstObstaclePositive_units,firstControlPositive_units, ...
+        firstObstacleNegative_units,firstControlNegative_units];
+    lastSupport_units = [lastObstaclePositive_units,lastControlPositive_units, ...
+        lastObstacleNegative_units,lastControlNegative_units];
 end
+supportDifference_units = controlPoint_units*normals.'-(1-fraction).*firstSupport_units-fraction.*lastSupport_units;
+gaps_units = -max(supportDifference_units,[],1);
+% Rank supporting directions by the original hull, but retain every direction
+% certified by the exact degree-D by degree-one product used by the verifier.
+beta = (0:size(controlPoint_units,1))'/size(controlPoint_units,1);
+productGaps_units = -max((1-beta).*[supportDifference_units;zeros(1,size(normals,1))]+ ...
+    beta.*[zeros(1,size(normals,1));supportDifference_units],[],1);
+certifiable = productGaps_units>=target_units+reserve_units;
+if any(certifiable), gaps_units(~certifiable) = -Inf; end
+[gap_units,index] = max(gaps_units);
+plane = struct('Active',false,'Verified',false,'ExitFlag',-2, ...
+    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN);
+exitFlag = -2;
+output = struct('TotalTime_s',0,'IsAnalytic',true,'message','Convex supporting-axis subproblem.');
+if isempty(gap_units), return; end
 
-function rows = variablePlaneRows(controlPoint_deg, variableCount)
-    % Multiply a variable separating line by fixed trajectory controls.
-    degree = size(controlPoint_deg, 1) - 1;
-    % Exact degree-N by degree-one Bernstein product weights.
-    beta  = (0:degree + 1).' / (degree + 1);
-    alpha = 1 - beta;
-    rows = zeros(degree + 2, variableCount);
-    rows(1:end - 1, 1:2) = alpha(1:end - 1) .* controlPoint_deg;
-    rows(2:end, 3:4) = beta(2:end) .* controlPoint_deg;
-    rows(:, 5:6) = [alpha beta];
-end
-
-function plane = emptyPlane()
-    % Initialize an inactive separating-plane record.
-    plane = struct();
-    plane.Active        = false;
-    plane.Verified      = false;
-    plane.ExitFlag      = NaN;
-    plane.Normal        = zeros(2, 2);
-    plane.Offset_deg    = zeros(1, 2);
-    plane.SignedGap_deg = NaN;
+%% Section 2: Verify The Proposed Separation
+plane.Active = true; plane.ExitFlag = 1; exitFlag = 1;
+plane.Normal = repmat(normals(index,:),2,1);
+plane.Offset_units = target_units-[firstSupport_units(index),lastSupport_units(index)];
+plane = bmtpEngine.verifySeparatingLine(plane,controlPoint_units,vertices_units,reserve_units,target_units);
 end

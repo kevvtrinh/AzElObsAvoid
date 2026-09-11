@@ -13,7 +13,7 @@ function [result, diagnosis] = exampleStraightTargetAlternatingOcclusion(example
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Planner overrides plus the shared FigureVisible, PlotOutputs,
-%       ShowAnimation, ShowKinematicPlot, and MaxJerk_deg_s3 controls.
+%       ShowAnimation, ShowKinematicPlot, and MaxJerk_units_s3 controls.
 %
 % OUTPUTS
 %   - result (scalar planner-result struct)
@@ -21,8 +21,8 @@ function [result, diagnosis] = exampleStraightTargetAlternatingOcclusion(example
 %       probes, scenario inputs, and optional plot handles.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s,
-%     deg/s^2, and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s,
+%     units/s^2, and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -35,9 +35,9 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 
-[options, jerkConfiguration] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "fixedArrival", "SampleTime_s", 0.05, "AllowAzimuthWrapping", false, "FigureVisible", "on", "Title", "Straight target with alternating occlusion"), [2.5 2.5]);
+[options, jerkConfiguration] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "fixedArrival", "SampleTime_s", 0.05, "WrapX", false, "FigureVisible", "on", "Title", "Straight target with alternating occlusion"), [2.5 2.5]);
 
-options.AllowAzimuthWrapping = false;
+options.WrapX = false;
 
 %% Section 2: Create Obstacles
 
@@ -47,33 +47,33 @@ options.AllowAzimuthWrapping = false;
 
 missionEndTime_s = 60;
 obstacleTime_s   = [0; missionEndTime_s];
-safetyMargin_deg = 0.15;
+safetyMargin_units = 0.15;
 
-squareCenter_deg    = [-9 0];
-squareHalfWidth_deg = 1.5;
-squarePosition_deg  = squareCenter_deg + [ -squareHalfWidth_deg -squareHalfWidth_deg; squareHalfWidth_deg -squareHalfWidth_deg; squareHalfWidth_deg  squareHalfWidth_deg; -squareHalfWidth_deg  squareHalfWidth_deg];
-squareObstacle      = obstacleAvoidance.obstacles.createObstacle("Square", obstacleTime_s, {squarePosition_deg(:, 1); squarePosition_deg(:, 1)}, {squarePosition_deg(:, 2); squarePosition_deg(:, 2)}, safetyMargin_deg);
+squareCenter_units    = [-9 0];
+squareHalfWidth_units = 1.5;
+squarePosition_units  = squareCenter_units + [ -squareHalfWidth_units -squareHalfWidth_units; squareHalfWidth_units -squareHalfWidth_units; squareHalfWidth_units  squareHalfWidth_units; -squareHalfWidth_units  squareHalfWidth_units];
+squareObstacle      = obstacleAvoidance.obstacles.createObstacle("Square", obstacleTime_s, {squarePosition_units(:, 1); squarePosition_units(:, 1)}, {squarePosition_units(:, 2); squarePosition_units(:, 2)}, safetyMargin_units);
 
-circleCenter_deg   = [-4 0];
-circleRadius_deg   = 1.5;
+circleCenter_units   = [-4 0];
+circleRadius_units   = 1.5;
 circleVertexCount  = 72;
 circleAngle_rad    = (0:circleVertexCount - 1).' * (2 * pi / circleVertexCount);
-circlePosition_deg = circleCenter_deg + circleRadius_deg * [cos(circleAngle_rad), sin(circleAngle_rad)];
-circleObstacle     = obstacleAvoidance.obstacles.createObstacle("Circle", obstacleTime_s, {circlePosition_deg(:, 1); circlePosition_deg(:, 1)}, {circlePosition_deg(:, 2); circlePosition_deg(:, 2)}, safetyMargin_deg);
+circlePosition_units = circleCenter_units + circleRadius_units * [cos(circleAngle_rad), sin(circleAngle_rad)];
+circleObstacle     = obstacleAvoidance.obstacles.createObstacle("Circle", obstacleTime_s, {circlePosition_units(:, 1); circlePosition_units(:, 1)}, {circlePosition_units(:, 2); circlePosition_units(:, 2)}, safetyMargin_units);
 
-starCenter_deg      = [2 0];
+starCenter_units      = [2 0];
 starPointCount      = 12;
-starOuterRadius_deg = 2.0;
-starInnerRadius_deg = 0.9;
+starOuterRadius_units = 2.0;
+starInnerRadius_units = 0.9;
 starVertexCount     = 2 * starPointCount;
 starAngle_rad       = (0:starVertexCount - 1).' * (2 * pi / starVertexCount);
-starRadius_deg      = repmat([starOuterRadius_deg; starInnerRadius_deg], starPointCount, 1);
-starPosition_deg    = starCenter_deg + starRadius_deg .* [cos(starAngle_rad), sin(starAngle_rad)];
-starObstacle        = obstacleAvoidance.obstacles.createObstacle("12-point star", obstacleTime_s, {starPosition_deg(:, 1); starPosition_deg(:, 1)}, {starPosition_deg(:, 2); starPosition_deg(:, 2)}, safetyMargin_deg);
+starRadius_units      = repmat([starOuterRadius_units; starInnerRadius_units], starPointCount, 1);
+starPosition_units    = starCenter_units + starRadius_units .* [cos(starAngle_rad), sin(starAngle_rad)];
+starObstacle        = obstacleAvoidance.obstacles.createObstacle("12-point star", obstacleTime_s, {starPosition_units(:, 1); starPosition_units(:, 1)}, {starPosition_units(:, 2); starPosition_units(:, 2)}, safetyMargin_units);
 
-uCenter_deg   = [9 0];
-uPosition_deg = uCenter_deg + [ -2.0  2.0; -1.2  2.0; -1.2 -1.2; 1.2 -1.2; 1.2  2.0; 2.0  2.0; 2.0 -2.0; -2.0 -2.0];
-uObstacle     = obstacleAvoidance.obstacles.createObstacle("U shape", obstacleTime_s, {uPosition_deg(:, 1); uPosition_deg(:, 1)}, {uPosition_deg(:, 2); uPosition_deg(:, 2)}, safetyMargin_deg);
+uCenter_units   = [9 0];
+uPosition_units = uCenter_units + [ -2.0  2.0; -1.2  2.0; -1.2 -1.2; 1.2 -1.2; 1.2  2.0; 2.0  2.0; 2.0 -2.0; -2.0 -2.0];
+uObstacle     = obstacleAvoidance.obstacles.createObstacle("U shape", obstacleTime_s, {uPosition_units(:, 1); uPosition_units(:, 1)}, {uPosition_units(:, 2); uPosition_units(:, 2)}, safetyMargin_units);
 
 obstacles = obstacleAvoidance.obstacles.combineObstacles(squareObstacle, circleObstacle, starObstacle, uObstacle);
 
@@ -84,26 +84,28 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(squareObstacle, circleO
 
 initialState = struct();
 initialState.time_s              = 0;
-initialState.position_deg        = [-14 3];
-initialState.velocity_deg_s      = [0 0];
-initialState.acceleration_deg_s2 = [0 0];
+initialState.position_units        = [-14 3];
+initialState.velocity_units_s      = [0 0];
+initialState.acceleration_units_s2 = [0 0];
 
 targetTime_s                  = [0; missionEndTime_s];
-targetPosition_deg            = [squareCenter_deg; 14 0];
-targetMotion                  = struct("time_s", targetTime_s, "position_deg", targetPosition_deg, "InterpolationMethod", "linear");
-specifiedInterceptAzimuth_deg = -1;
-specifiedInterceptTime_s      = missionEndTime_s * (specifiedInterceptAzimuth_deg - targetPosition_deg(1, 1)) / diff(targetPosition_deg(:, 1));
+targetPosition_units            = [squareCenter_units; 14 0];
+targetMotion                  = struct("time_s", targetTime_s, "position_units", targetPosition_units, "InterpolationMethod", "linear");
+specifiedInterceptX_units = -1;
+specifiedInterceptTime_s      = missionEndTime_s * (specifiedInterceptX_units - targetPosition_units(1, 1)) / diff(targetPosition_units(:, 1));
 
-limits = struct("maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.8 0.8], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
-interceptOptions = struct("InterceptMode", "specifiedTime", ...
-    "SpecifiedInterceptTime_s", specifiedInterceptTime_s, "MatchTargetVelocity", false, "PlannerOptions", options);
+limits = struct("maxVelocity_units_s", [2 2], ...
+    "maxAcceleration_units_s2", [0.8 0.8], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
+
 
 %% Section 4: Run Planner
 
 % Run the moving-target planner without a stored intercept choice.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
+goalState = struct("time_s",specifiedInterceptTime_s,"targetMotion",targetMotion);
+plannerOptions = options;
+plannerOptions.GoalTimeMode = "fixedArrival";
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 
@@ -115,9 +117,9 @@ obstacleQueryOptions = struct();
 
 occupancySampleCount = 1201;
 occupancyTime_s      = linspace(0, missionEndTime_s, occupancySampleCount).';
-targetAzimuth_deg    = interp1(targetTime_s, targetPosition_deg(:, 1), occupancyTime_s, "linear");
-targetElevation_deg  = interp1(targetTime_s, targetPosition_deg(:, 2), occupancyTime_s, "linear");
-[targetOccupied, blockingObstacleIndex] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, targetAzimuth_deg, targetElevation_deg, occupancyTime_s, obstacleQueryOptions);
+targetX_units    = interp1(targetTime_s, targetPosition_units(:, 1), occupancyTime_s, "linear");
+targetY_units  = interp1(targetTime_s, targetPosition_units(:, 2), occupancyTime_s, "linear");
+[targetOccupied, blockingObstacleIndex] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, targetX_units, targetY_units, occupancyTime_s, obstacleQueryOptions);
 
 blockedRunStart          = targetOccupied & [true; ~targetOccupied(1:end - 1)];
 clearRunStart            = ~targetOccupied & [true; targetOccupied(1:end - 1)];
@@ -125,26 +127,26 @@ blockedRunCount          = nnz(blockedRunStart);
 clearRunCount            = nnz(clearRunStart);
 occupancyTransitionCount = nnz(diff(targetOccupied) ~= 0);
 
-probeAzimuth_deg   = [-9; -4; 2; 7.4; 9; 10.6; 14];
-probeElevation_deg = zeros(size(probeAzimuth_deg));
-probeTime_s        = missionEndTime_s * (probeAzimuth_deg - targetPosition_deg(1, 1)) / diff(targetPosition_deg(:, 1));
-[probeOccupied, probeBlockingObstacleIndex] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, probeAzimuth_deg, probeElevation_deg, probeTime_s, obstacleQueryOptions);
+probeX_units   = [-9; -4; 2; 7.4; 9; 10.6; 14];
+probeY_units = zeros(size(probeX_units));
+probeTime_s        = missionEndTime_s * (probeX_units - targetPosition_units(1, 1)) / diff(targetPosition_units(:, 1));
+[probeOccupied, probeBlockingObstacleIndex] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, probeX_units, probeY_units, probeTime_s, obstacleQueryOptions);
 expectedProbeOccupied              = logical([1; 1; 1; 1; 0; 1; 0]);
 expectedProbeBlockingObstacleIndex = uint32([1; 2; 3; 4; 0; 4; 0]);
 
-targetTrackIsStraight = all(abs(targetElevation_deg) <= 1e-12);
-targetVelocity_deg_s  = diff(targetPosition_deg, 1, 1) ./ diff(targetTime_s);
-targetSpeed_deg_s     = norm(targetVelocity_deg_s);
-boresightIsFaster     = targetSpeed_deg_s < min(limits.maxVelocity_deg_s);
+targetTrackIsStraight = all(abs(targetY_units) <= 1e-12);
+targetVelocity_units_s  = diff(targetPosition_units, 1, 1) ./ diff(targetTime_s);
+targetSpeed_units_s     = norm(targetVelocity_units_s);
+boresightIsFaster     = targetSpeed_units_s < min(limits.maxVelocity_units_s);
 
-interShapeGapBounds_deg = [ ...
-    max(squarePosition_deg(:, 1)) + safetyMargin_deg, circleCenter_deg(1) - circleRadius_deg - safetyMargin_deg; circleCenter_deg(1) + circleRadius_deg + safetyMargin_deg, starCenter_deg(1) - starOuterRadius_deg - safetyMargin_deg; starCenter_deg(1) + starOuterRadius_deg + safetyMargin_deg, min(uPosition_deg(:, 1)) - safetyMargin_deg];
+interShapeGapBounds_units = [ ...
+    max(squarePosition_units(:, 1)) + safetyMargin_units, circleCenter_units(1) - circleRadius_units - safetyMargin_units; circleCenter_units(1) + circleRadius_units + safetyMargin_units, starCenter_units(1) - starOuterRadius_units - safetyMargin_units; starCenter_units(1) + starOuterRadius_units + safetyMargin_units, min(uPosition_units(:, 1)) - safetyMargin_units];
 interceptInInterShapeGap = false;
 interceptTargetIsClear   = false;
 if result.Success
-    interceptAzimuth_deg     = result.Intercept.TargetPosition_deg(1);
-    interceptInInterShapeGap = any(interceptAzimuth_deg > interShapeGapBounds_deg(:, 1) & interceptAzimuth_deg < interShapeGapBounds_deg(:, 2));
-    interceptTargetIsClear   = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, result.Intercept.TargetPosition_deg(1), result.Intercept.TargetPosition_deg(2), result.Intercept.Time_s, obstacleQueryOptions);
+    interceptX_units     = result.Intercept.TargetPosition_units(1);
+    interceptInInterShapeGap = any(interceptX_units > interShapeGapBounds_units(:, 1) & interceptX_units < interShapeGapBounds_units(:, 2));
+    interceptTargetIsClear   = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, result.Intercept.TargetPosition_units(1), result.Intercept.TargetPosition_units(2), result.Intercept.Time_s, obstacleQueryOptions);
 end
 catchOccurredBeforeTrackEnd = result.Success && result.Intercept.Time_s < missionEndTime_s;
 alternationIsPresent        = targetOccupied(1) && ~targetOccupied(end) && blockedRunCount >= 5 && clearRunCount >= 5 && occupancyTransitionCount >= 9;
@@ -154,12 +156,12 @@ scenarioValidation          = struct("Passed", targetTrackIsStraight && alternat
         interceptInInterShapeGap && interceptTargetIsClear && ...
         catchOccurredBeforeTrackEnd, ...
     "TargetTrackIsStraight", targetTrackIsStraight, ...
-    "TargetSpeed_deg_s", targetSpeed_deg_s, ...
+    "TargetSpeed_units_s", targetSpeed_units_s, ...
     "BoresightIsFaster", boresightIsFaster, ...
     "InterceptInInterShapeGap", interceptInInterShapeGap, ...
     "InterceptTargetIsClear", interceptTargetIsClear, ...
     "CatchOccurredBeforeTrackEnd", catchOccurredBeforeTrackEnd, ...
-    "InterShapeGapBounds_deg", interShapeGapBounds_deg, ...
+    "InterShapeGapBounds_units", interShapeGapBounds_units, ...
     "AlternationIsPresent", alternationIsPresent, ...
     "ShapeProbesPassed", shapeProbesPassed, ...
     "BlockedRunCount", blockedRunCount, ...
@@ -167,7 +169,7 @@ scenarioValidation          = struct("Passed", targetTrackIsStraight && alternat
     "OccupancyTransitionCount", occupancyTransitionCount, ...
     "TargetOccupied", targetOccupied, ...
     "BlockingObstacleIndex", blockingObstacleIndex, ...
-    "ProbeAzimuth_deg", probeAzimuth_deg, ...
+    "ProbeX_units", probeX_units, ...
     "ProbeTime_s", probeTime_s, ...
     "ProbeOccupied", probeOccupied, "ProbeBlockingObstacleIndex", probeBlockingObstacleIndex);
 

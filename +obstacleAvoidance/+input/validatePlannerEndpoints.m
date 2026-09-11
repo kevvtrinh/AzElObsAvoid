@@ -1,85 +1,48 @@
-function [feasible, message, reason] = validatePlannerEndpoints(obstacles, initialState, goalState, limits, options)
+function [feasible,message,reason] = validatePlannerEndpoints(obstacles,initialState,goalState,limits,options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [feasible, message, reason] = ...
-%       obstacleAvoidance.input.validatePlannerEndpoints( ...
-%       obstacles, initialState, goalState, limits, options)
-%
-% PURPOSE
-%   - Reject endpoint geometry, dynamics, timing, or workspace failures
-%     before route search or trajectory optimization begins.
-%
-% INPUTS
-%   - obstacles (canonical protected-obstacle array)
-%   - initialState, goalState, limits (normalized scalar structs)
-%   - options (scalar struct)
-%       Requires GoalTimeMode, ArrivalTimeTolerance_s, and
-%       AllowAzimuthWrapping.
-%
-% OUTPUTS
-%   - feasible (logical scalar)
-%   - message, reason (string scalars)
-%       Empty on success; otherwise actionable and machine-readable failure.
-%
-% UNITS
-%   - Position and workspace intervals are degrees; time is seconds;
-%     derivatives use deg/s and deg/s^2.
-%
+% SYNTAX: [ok,message,reason] = obstacleAvoidance.input.validatePlannerEndpoints(obstacles,initial,goal,limits,options)
+% PURPOSE: Reject physical endpoint violations at their actual physical times.
+% INPUTS: Prepared geometry, normalized full states, limits, and arrival policy.
+% OUTPUTS: Feasibility and stable expected-failure description.
+% UNITS: Coordinate units, seconds, and physical derivatives.
 
-%% Section 1: Check Protected Endpoint Geometry
-
-goalPosition_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
-startIsBlocked    = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, initialState.position_deg(1), initialState.position_deg(2), initialState.time_s);
-terminalIsBlocked = false;
-if options.GoalTimeMode == "fixedArrival"
-    terminalIsBlocked = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, goalPosition_deg(1), goalPosition_deg(2), goalState.time_s);
+%% Section 1: Check Occupancy At The Requested Endpoint Times
+feasible = false; message = ""; reason = "";
+positions = initialState.position_units;
+times = initialState.time_s;
+if options.GoalTimeMode=="fixedArrival"
+    positions(2,:) = goalState.position_units; times(2,1) = goalState.time_s;
 end
-if startIsBlocked || terminalIsBlocked
-    [feasible, message, reason] = failure("The protected geometry contains the start or fixed terminal point.", "endpointBlocked");
-    return;
+if any(obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles,positions(:,1),positions(:,2),times))
+    message = "A protected obstacle occupies the initial or fixed terminal state.";
+    reason = "endpointBlocked"; return;
 end
 
-%% Section 2: Check Endpoint Dynamics And Timing
-
-derivatives   = [initialState.velocity_deg_s; goalState.velocity_deg_s];
-accelerations = [initialState.acceleration_deg_s2; ...
-    goalState.acceleration_deg_s2];
-if any(abs(derivatives) > limits.maxVelocity_deg_s, "all") || any(abs(accelerations) > limits.maxAcceleration_deg_s2, "all")
-    [feasible, message, reason] = failure("An endpoint derivative exceeds its physical limit.", "dynamicEndpointInfeasible");
-    return;
+%% Section 2: Check Physical States And Necessary Travel Time
+checkGoal = options.GoalTimeMode=="fixedArrival" || isempty(goalState.targetMotion);
+states = initialState;
+if checkGoal
+    states(2).position_units = goalState.position_units;
+    states(2).velocity_units_s = goalState.velocity_units_s;
+    states(2).acceleration_units_s2 = goalState.acceleration_units_s2;
 end
-hasMovingGoal             = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
-checkTerminal             = options.GoalTimeMode == "fixedArrival" || ~hasMovingGoal;
-availableDuration_s       = goalState.time_s - initialState.time_s;
-minimumVelocityDuration_s = max(abs(goalPosition_deg - initialState.position_deg) ./ limits.maxVelocity_deg_s);
-if checkTerminal && minimumVelocityDuration_s > availableDuration_s + options.ArrivalTimeTolerance_s
-    message = sprintf("The time window is too short for the endpoint displacement " + "at the configured velocity limits (minimum %.6g s, " + "available %.6g s). Increase goalState.time_s or the " + "velocity limits.", minimumVelocityDuration_s, availableDuration_s);
-    [feasible, message, reason] = failure(message, "timeWindowInfeasible");
-    return;
+intervals = [limits.xInterval_units;limits.yInterval_units];
+for k = 1:numel(states)
+    if any(abs(states(k).velocity_units_s)>limits.maxVelocity_units_s) || ...
+            any(abs(states(k).acceleration_units_s2)>limits.maxAcceleration_units_s2)
+        message = "An endpoint derivative exceeds its physical limit.";
+        reason = "dynamicEndpointInfeasible"; return;
+    end
+    p = states(k).position_units;
+    if any(p<intervals(:,1).' | p>intervals(:,2).')
+        message = "An endpoint lies outside the workspace.";
+        reason = "endpointOutsideWorkspace"; return;
+    end
 end
-
-%% Section 3: Check The Workspace
-
-endpointPosition_deg = initialState.position_deg;
-if checkTerminal
-    endpointPosition_deg(2, :) = goalPosition_deg;
-end
-positionWithinBounds = all(endpointPosition_deg(:, 2) >= limits.elevationInterval_deg(1) & endpointPosition_deg(:, 2) <= limits.elevationInterval_deg(2));
-if ~options.AllowAzimuthWrapping
-    positionWithinBounds = positionWithinBounds && all(endpointPosition_deg(:, 1) >= limits.azimuthInterval_deg(1) & endpointPosition_deg(:, 1) <= limits.azimuthInterval_deg(2));
-end
-if ~positionWithinBounds
-    [feasible, message, reason] = failure("An endpoint is outside the configured workspace.", "endpointOutsideWorkspace");
-    return;
+if checkGoal && obstacleAvoidance.input.minimumTravelTime(initialState,goalState,limits)> ...
+        goalState.time_s-initialState.time_s+options.ArrivalTimeTolerance_s
+    message = "The horizon is below a necessary travel-time bound.";
+    reason = "timeWindowInfeasible"; return;
 end
 feasible = true;
-message  = "";
-reason   = "";
-end
-
-%% Section 4: Local Functions
-
-function [feasible, message, reason] = failure(message, reason)
-    % Return an expected failure without throwing an error.
-    feasible = false;
 end

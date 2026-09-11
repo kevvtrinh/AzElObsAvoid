@@ -16,8 +16,8 @@ function [result, diagnosis] = exampleInterceptMovingTargetEarliest(exampleOverr
 %       Unmodified public moving-target planner result.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -44,22 +44,21 @@ obstacles = [];
 
 initialState = struct();
 initialState.time_s              = 0;
-initialState.position_deg        = [0 0];
-initialState.velocity_deg_s      = [0 0];
-initialState.acceleration_deg_s2 = [0 0];
+initialState.position_units        = [0 0];
+initialState.velocity_units_s      = [0 0];
+initialState.acceleration_units_s2 = [0 0];
 targetTime_s       = (0:4:20).';
-targetPosition_deg = [ 6 + 0.2 * targetTime_s, 1 + 0.02 * targetTime_s];
-targetMotion       = struct("time_s", targetTime_s, "position_deg", targetPosition_deg, "InterpolationMethod", "linear");
-limits             = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
-interceptOptions = struct("InterceptMode", "earliest", ...
-    "MaximumSearchDuration_s", 20, ...
-    "MatchTargetVelocity", false, "MatchTargetAcceleration", false, "PlannerOptions", plannerOptions);
+targetPosition_units = [ 6 + 0.2 * targetTime_s, 1 + 0.02 * targetTime_s];
+targetMotion       = struct("time_s", targetTime_s, "position_units", targetPosition_units, "InterpolationMethod", "linear");
+limits             = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
+goalState = struct("time_s",20,"targetMotion",targetMotion);
+plannerOptions.GoalTimeMode = "earliestArrival";
 
 %% Section 4: Run Planner
 
 % Run the moving-target planner. It searches for the earliest valid meeting.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 

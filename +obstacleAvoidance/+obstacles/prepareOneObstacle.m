@@ -1,290 +1,234 @@
-function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot)
+function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous)
 %% Section 0: Header & Readme
-% SYNTAX
-%   obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
-%       obstacle, preparationVersion, sourceSnapshot)
-%
-% PURPOSE
-%   - Prepare one complete obstacle history for repeated geometry queries.
-%   - Retain the interval method, bounds, edges, motion, and static status.
-%
-% INPUTS
-%   - obstacle (scalar canonical obstacle struct)
-%       Protected and original source histories remain unchanged.
-%   - preparationVersion (positive integer scalar)
-%       Version written into the internal preparation record.
-%   - sourceSnapshot (scalar struct)
-%       Source fields assembled by prepareObstacles for cache validation.
-%
-% OUTPUTS
-%   - obstacle (scalar canonical obstacle struct)
-%       InternalPreparation contains reusable source-derived geometry data.
-%
-% UNITS
-%   - Geometry is degrees, time is seconds, and speed is degrees per second.
-%
+% SYNTAX: obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( obstacle, preparationVersion,
+%   sourceSnapshot, timeRange_s, previous)
+% PURPOSE: Prepare requested entries of one obstacle history for repeated geometry queries.
+%   Retain the interval method, bounds, edges, motion, and static status.
+% INPUTS: obstacle (scalar canonical obstacle struct) Protected and original source histories remain
+%   unchanged.
+%   preparationVersion (positive integer scalar) Version written into the internal preparation
+%   record.
+%   sourceSnapshot (scalar struct) Source fields assembled by prepareObstacles for cache validation.
+%   timeRange_s: requested closed interval; omitted means the full history.
+%   previous: source-checked preparation to extend; omitted means empty.
+% OUTPUTS: obstacle (scalar canonical obstacle struct) InternalPreparation contains reusable
+%   source-derived geometry data.
+% UNITS: Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 
-%% Section 1: Prepare Sample Geometry
+%% Section 1: Select Source Samples Without Changing The History
+validateattributes(preparationVersion, {'numeric'}, {'real','finite','scalar','integer','positive'});
+if nargin<4, timeRange_s=[-Inf,Inf]; end
+if nargin<5, previous=[]; end
+time_s=obstacle.time_s; sampleCount=numel(time_s); intervalCount=sampleCount-1;
+neededSamples=time_s>=timeRange_s(1) & time_s<=timeRange_s(2);
+neededIntervals=time_s(1:end-1)<timeRange_s(2) & time_s(2:end)>timeRange_s(1);
+intervalIndices=find(neededIntervals);
+neededSamples([intervalIndices;intervalIndices+1])=true;
+if sampleCount==1, neededSamples(1)=true; end
 
-% Cache shapes, bounds, and edges for repeated queries.
-
-validateattributes(preparationVersion, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-sampleCount                    = numel(obstacle.time_s);
-intervalCount                  = max(0, sampleCount - 1);
-sampleShapes                   = cell(sampleCount, 1);
-unionShapes                    = cell(intervalCount, 1);
-deltaAzimuth_deg               = cell(intervalCount, 1);
-deltaElevation_deg             = cell(intervalCount, 1);
-matchingTopology               = false(intervalCount, 1);
-intervalSpeed_deg_s            = Inf(intervalCount, 1);
-intervalGeometryMethod         = strings(intervalCount, 1);
-historyBounds_deg              = [Inf -Inf Inf -Inf];
-sampleBounds_deg               = NaN(sampleCount, 4);
-sampleEdgeStart_deg            = cell(sampleCount, 1);
-sampleEdgeEnd_deg              = cell(sampleCount, 1);
-sampleBoundaryRunBounds        = cell(sampleCount, 1);
-intervalBounds_deg             = NaN(intervalCount, 4);
-intervalUnionEdgeStart_deg     = cell(intervalCount, 1);
-intervalUnionEdgeEnd_deg       = cell(intervalCount, 1);
-intervalUnionBoundaryRunBounds = cell(intervalCount, 1);
-% Process each sample in temporal order and accumulate its result.
-for sampleIndex = 1:sampleCount
-    azimuth_deg   = double(obstacle.az_deg{sampleIndex}(:));
-    elevation_deg = double(obstacle.el_deg{sampleIndex}(:));
-    finiteVertex  = isfinite(azimuth_deg) & isfinite(elevation_deg);
-    if any(finiteVertex)
-        historyBounds_deg = [ ...
-            min(historyBounds_deg(1), min(azimuth_deg(finiteVertex))), max(historyBounds_deg(2), max(azimuth_deg(finiteVertex))), min(historyBounds_deg(3), min(elevation_deg(finiteVertex))), max(historyBounds_deg(4), max(elevation_deg(finiteVertex)))];
-    end
-    sampleShapes{sampleIndex} = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg);
-    [sampleBounds_deg(sampleIndex, :), ...
-        sampleEdgeStart_deg{sampleIndex}, ...
-        sampleEdgeEnd_deg{sampleIndex}, ...
-        sampleBoundaryRunBounds{sampleIndex}] = createShapeCache(sampleShapes{sampleIndex});
+%% Section 2: Extend The Single Source-Checked Preparation Record
+if isempty(previous)
+    preparation=struct('PreparationVersion',preparationVersion,'SourceSnapshot',sourceSnapshot, ...
+        'SamplePrepared',false(sampleCount,1),'IntervalPrepared',false(intervalCount,1), ...
+        'SampleShapes',{cell(sampleCount,1)}, ...
+        'SampleEdgeStart_units',{cell(sampleCount,1)},'SampleEdgeEnd_units',{cell(sampleCount,1)}, ...
+        'IntervalUnionShapes',{cell(intervalCount,1)}, ...
+        'IntervalUnionEdgeStart_units',{cell(intervalCount,1)}, ...
+        'IntervalUnionEdgeEnd_units',{cell(intervalCount,1)}, ...
+        'DeltaX_units',{cell(intervalCount,1)},'DeltaY_units',{cell(intervalCount,1)}, ...
+        'MatchingTopology',false(intervalCount,1),'IntervalGeometryModel',strings(intervalCount,1), ...
+        'IntervalSpeedBound_units_s',Inf(intervalCount,1), ...
+        'SampleSpeedBound_units_s',Inf(sampleCount,1),'IsTimeInvariant',false);
+    % Exact numeric equality can establish a globally static shape without
+    % constructing polygons outside the requested window. Activity still uses time_s.
+    preparation.SamplesExactlyEqual=all(cellfun(@(x,y)isequaln(x,obstacle.x_units{1}) && ...
+        isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+    preparation.IsTimeInvariant=preparation.SamplesExactlyEqual;
+else
+    preparation=previous;
+end
+for sampleIndex=reshape(find(neededSamples & ~preparation.SamplePrepared),1,[])
+    shape=obstacleAvoidance.geometry.boundaryToShape(obstacle.x_units{sampleIndex},obstacle.y_units{sampleIndex});
+    preparation.SampleShapes{sampleIndex}=shape;
+    [preparation.SampleEdgeStart_units{sampleIndex},preparation.SampleEdgeEnd_units{sampleIndex}]= ...
+        obstacleAvoidance.geometry.boundaryToEdges(shape,0);
+    preparation.SamplePrepared(sampleIndex)=true;
 end
 
-%% Section 2: Check Every History Interval
-
-% Interpolate only when vertex correspondence is verified.
-% Otherwise use geometry that conservatively covers the interval.
-
-intervalDuration_s = diff(double(obstacle.time_s(:)));
-% Process each interval while assembling the complete motion or interval result.
-for intervalIndex = 1:intervalCount
-    lowerAzimuth_deg   = double(obstacle.az_deg{intervalIndex}(:));
-    lowerElevation_deg = double(obstacle.el_deg{intervalIndex}(:));
-    upperAzimuth_deg   = double(obstacle.az_deg{intervalIndex + 1}(:));
-    upperElevation_deg = double(obstacle.el_deg{intervalIndex + 1}(:));
-    [matchingTopology(intervalIndex), alignedUpper_deg] = alignVerifiedSingleRing(lowerAzimuth_deg, lowerElevation_deg, upperAzimuth_deg, upperElevation_deg);
-    if matchingTopology(intervalIndex)
-        deltaAzimuth_deg{intervalIndex} = alignedUpper_deg(:, 1) - lowerAzimuth_deg;
-        deltaElevation_deg{intervalIndex} = alignedUpper_deg(:, 2) - lowerElevation_deg;
-        finiteVertex = isfinite(lowerAzimuth_deg) & isfinite(lowerElevation_deg);
-        speed_deg_s  = hypot(deltaAzimuth_deg{intervalIndex}(finiteVertex), deltaElevation_deg{intervalIndex}(finiteVertex)) / intervalDuration_s(intervalIndex);
-        intervalSpeed_deg_s(intervalIndex) = max([0; speed_deg_s]);
-        intervalGeometryMethod(intervalIndex) = "linearCorrespondingVertices";
+%% Section 3: Prepare Each Newly Requested Source Interval Once
+for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),1,[])
+    lowerX_units=obstacle.x_units{intervalIndex}; lowerY_units=obstacle.y_units{intervalIndex};
+    upperX_units=obstacle.x_units{intervalIndex+1}; upperY_units=obstacle.y_units{intervalIndex+1};
+    [matched,alignedUpper_units]=alignVerifiedSingleRing(lowerX_units,lowerY_units,upperX_units,upperY_units);
+    preparation.MatchingTopology(intervalIndex)=matched;
+    if matched
+        preparation.DeltaX_units{intervalIndex}=alignedUpper_units(:,1)-lowerX_units;
+        preparation.DeltaY_units{intervalIndex}=alignedUpper_units(:,2)-lowerY_units;
+        speed_units_s=hypot(preparation.DeltaX_units{intervalIndex},preparation.DeltaY_units{intervalIndex})/diff(time_s(intervalIndex:intervalIndex+1));
+        preparation.IntervalSpeedBound_units_s(intervalIndex)=max([0;speed_units_s]);
+        preparation.IntervalGeometryModel(intervalIndex)="linearCorrespondingVertices";
     else
-        [shapesAreEquivalent, shapesAreNested] = compareShapes(sampleShapes{intervalIndex}, sampleShapes{intervalIndex + 1});
-        if shapesAreEquivalent
-            unionShapes{intervalIndex} = sampleShapes{intervalIndex};
-            intervalGeometryMethod(intervalIndex) = "staticEquivalentSamples";
-        elseif shapesAreNested
-            % Use the exact union for nested shapes to preserve holes and concavities.
-            unionShapes{intervalIndex} = union(sampleShapes{intervalIndex}, sampleShapes{intervalIndex + 1});
-            intervalGeometryMethod(intervalIndex) = "conservativeNestedEndpointUnion";
+        firstShape=preparation.SampleShapes{intervalIndex}; lastShape=preparation.SampleShapes{intervalIndex+1};
+        [equivalent,nested]=compareShapes(firstShape,lastShape);
+        if equivalent
+            shape=firstShape; method="staticEquivalentSamples";
+        elseif nested
+            shape=union(firstShape,lastShape); method="conservativeNestedEndpointUnion";
         else
-            unionShapes{intervalIndex} = createEndpointConvexHull(lowerAzimuth_deg, lowerElevation_deg, upperAzimuth_deg, upperElevation_deg);
-            intervalGeometryMethod(intervalIndex) = "conservativeEndpointConvexHull";
+            shape=createEndpointConvexHull(lowerX_units,lowerY_units,upperX_units,upperY_units);
+            method="conservativeEndpointConvexHull";
         end
-        intervalSpeed_deg_s(intervalIndex) = 0;
+        preparation.IntervalUnionShapes{intervalIndex}=shape;
+        preparation.IntervalGeometryModel(intervalIndex)=method;
+        preparation.IntervalSpeedBound_units_s(intervalIndex)=0;
+        [preparation.IntervalUnionEdgeStart_units{intervalIndex},preparation.IntervalUnionEdgeEnd_units{intervalIndex}]= ...
+            obstacleAvoidance.geometry.boundaryToEdges(shape,0);
     end
-    intervalVertices_deg = [ ...
-        lowerAzimuth_deg, lowerElevation_deg; ...
-        upperAzimuth_deg, upperElevation_deg];
-    intervalBounds_deg(intervalIndex, :) = finiteBounds(intervalVertices_deg);
-    if ~isempty(unionShapes{intervalIndex})
-        [~, intervalUnionEdgeStart_deg{intervalIndex}, ...
-            intervalUnionEdgeEnd_deg{intervalIndex}, ...
-            intervalUnionBoundaryRunBounds{intervalIndex}] = createShapeCache(unionShapes{intervalIndex});
-    end
+    preparation.IntervalPrepared(intervalIndex)=true;
 end
 
-%% Section 3: Calculate Speed Bounds And Static Status
-
-% Cache sample speeds and whether the whole history is static.
-
-sampleSpeed_deg_s = zeros(sampleCount, 1);
-% Process each interval while assembling the complete motion or interval result.
-for intervalIndex = 1:intervalCount
-    sampleSpeed_deg_s(intervalIndex) = max(sampleSpeed_deg_s(intervalIndex), intervalSpeed_deg_s(intervalIndex));
-    sampleSpeed_deg_s(intervalIndex + 1) = max(sampleSpeed_deg_s(intervalIndex + 1), intervalSpeed_deg_s(intervalIndex));
-end
-staticInterval  = intervalGeometryMethod == "staticEquivalentSamples" | (intervalGeometryMethod == "linearCorrespondingVertices" & intervalSpeed_deg_s == 0);
-isTimeInvariant = sampleCount > 0 && (sampleCount == 1 || all(staticInterval));
-staticShape     = polyshape();
-if isTimeInvariant
-    staticShape = sampleShapes{1};
-end
-
-%% Section 4: Create The Prepared Obstacle Record
-
-% Save source data so later calls can detect stale caches.
-
-preparation = struct("PreparationVersion", preparationVersion, ...
-    "SourceSnapshot", sourceSnapshot, ...
-    "HistoryBounds_deg", historyBounds_deg, ...
-    "SampleShapes", {sampleShapes}, ...
-    "SampleBounds_deg", sampleBounds_deg, ...
-    "SampleEdgeStart_deg", {sampleEdgeStart_deg}, ...
-    "SampleEdgeEnd_deg", {sampleEdgeEnd_deg}, ...
-    "SampleBoundaryRunBounds", {sampleBoundaryRunBounds}, ...
-    "IntervalUnionShapes", {unionShapes}, ...
-    "IntervalBounds_deg", intervalBounds_deg, ...
-    "IntervalUnionEdgeStart_deg", {intervalUnionEdgeStart_deg}, ...
-    "IntervalUnionEdgeEnd_deg", {intervalUnionEdgeEnd_deg}, ...
-    "IntervalUnionBoundaryRunBounds", ...
-    {intervalUnionBoundaryRunBounds}, ...
-    "DeltaAzimuth_deg", {deltaAzimuth_deg}, ...
-    "DeltaElevation_deg", {deltaElevation_deg}, ...
-    "MatchingTopology", matchingTopology, ...
-    "IntervalGeometryModel", intervalGeometryMethod, ...
-    "IntervalSpeedBound_deg_s", intervalSpeed_deg_s, ...
-    "SelectedEdgeQueryIsExact", false, ...
-    "SampleSpeedBound_deg_s", sampleSpeed_deg_s, ...
-    "IsTimeInvariant", isTimeInvariant, ...
-    "StaticShape", staticShape);
-obstacle.InternalPreparation = preparation;
+%% Section 4: Retain Conservative Bounds At Unprepared Neighbor Intervals
+preparation.SampleSpeedBound_units_s=max([0;preparation.IntervalSpeedBound_units_s], ...
+    [preparation.IntervalSpeedBound_units_s;0]);
+staticIntervals=preparation.IntervalGeometryModel=="staticEquivalentSamples" | ...
+    (preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s==0);
+preparation.IsTimeInvariant=preparation.IsTimeInvariant || ...
+    (all(preparation.IntervalPrepared) && all(staticIntervals));
+if preparation.IsTimeInvariant, preparation.SampleSpeedBound_units_s(:)=0; end
+obstacle.InternalPreparation=preparation;
 end
 
 %% Section 5: Local Functions
-
-
-function [bounds_deg, edgeStart_deg, edgeEnd_deg, runBounds_deg] = createShapeCache(shape)
-    % Cache bounds and edges for repeated queries.
-    vertices_deg = shape.Vertices;
-    bounds_deg   = finiteBounds(vertices_deg);
-    [edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(shape, 0);
-    [azimuth_deg, elevation_deg] = boundary(shape);
-    boundary_deg  = [double(azimuth_deg(:)), double(elevation_deg(:))];
-    finiteRow     = all(isfinite(boundary_deg), 2);
-    runStart      = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
-    runEnd        = find(finiteRow & [~finiteRow(2:end); true]);
-    runBounds_deg = NaN(numel(runStart), 4);
-    % Process each run needed to build shape cache.
-    for runIndex = 1:numel(runStart)
-        runBounds_deg(runIndex, :) = finiteBounds(boundary_deg(runStart(runIndex):runEnd(runIndex), :));
-    end
-end
-
-function bounds_deg = finiteBounds(vertices_deg)
-    % Return [minimum azimuth, maximum azimuth, minimum elevation, maximum elevation].
-    finiteVertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
-    if isempty(finiteVertices_deg)
-        bounds_deg = [Inf -Inf Inf -Inf];
-    else
-        bounds_deg = [ ...
-            min(finiteVertices_deg(:, 1)), max(finiteVertices_deg(:, 1)), min(finiteVertices_deg(:, 2)), max(finiteVertices_deg(:, 2))];
-    end
-end
-
-function [verified, alignedUpper_deg] = alignVerifiedSingleRing(lowerAzimuth_deg, lowerElevation_deg, upperAzimuth_deg, upperElevation_deg)
+function [verified, alignedUpper_units] = alignVerifiedSingleRing(lowerX_units, lowerY_units, upperX_units, upperY_units)
     % Normalize rings and check whether linear vertex interpolation is safe.
-    lower_deg        = [lowerAzimuth_deg(:), lowerElevation_deg(:)];
-    upper_deg        = [upperAzimuth_deg(:), upperElevation_deg(:)];
+    lower_units        = [lowerX_units(:), lowerY_units(:)];
+    upper_units        = [upperX_units(:), upperY_units(:)];
     verified         = false;
-    alignedUpper_deg = zeros(0, 2);
-    isSingleRing     = size(lower_deg, 1) >= 3 && isequal(size(lower_deg), size(upper_deg)) && all(isfinite(lower_deg), "all") && all(isfinite(upper_deg), "all");
+    alignedUpper_units = zeros(0, 2);
+    isSingleRing     = size(lower_units, 1) >= 3 && isequal(size(lower_units), size(upper_units)) && all(isfinite(lower_units), "all") && all(isfinite(upper_units), "all");
     if ~isSingleRing
         return;
     end
-    vertexCount   = size(lower_deg, 1);
-    bestCost_deg2 = Inf;
-    % Process each orientation needed to complete align verified single ring.
+    % Identical rings already attain the first possible zero-distance match.
+    if isequal(lower_units,upper_units)
+        alignedUpper_units = upper_units;
+        verified = true;
+        return;
+    end
+    % Center and scale before FFT correlation: translation does not affect
+    % the least-squares correspondence, and normalization avoids cancellation
+    % when a small polygon is far from the coordinate origin.
+    centeredLower = lower_units-mean(lower_units,1);
+    centeredUpper = upper_units-mean(upper_units,1);
+    scale_units = max(abs([centeredLower;centeredUpper]),[],'all');
+    if scale_units==0, return; end
+    centeredLower = centeredLower/scale_units;
+    centeredUpper = centeredUpper/scale_units;
+    lowerSpectrum = fft(centeredLower);
+    anchorChoices = find(lower_units(:,1)==min(lower_units(:,1)));
+    [~,anchorChoice] = min(lower_units(anchorChoices,2));
+    anchorIndex = anchorChoices(anchorChoice);
+    bestSquaredCost = Inf;
+    % Circular correlation evaluates every cyclic alignment in O(N log N).
+    % Only the two selected shifts are materialized; there is no shift-loop fallback.
     for orientationIndex = 1:2
-        orientedUpper_deg = upper_deg;
+        orientedUpper_units = upper_units;
+        orientedUpper = centeredUpper;
         if orientationIndex == 2
-            orientedUpper_deg = flipud(orientedUpper_deg);
+            orientedUpper_units = flipud(orientedUpper_units);
+            orientedUpper = flipud(orientedUpper);
         end
-        % Repeat the shift alternatives needed to refine the current solution.
-        for shiftCount = 0:vertexCount - 1
-            candidateUpper_deg = circshift(orientedUpper_deg, shiftCount, 1);
-            cost_deg2          = sum((candidateUpper_deg - lower_deg) .^ 2, "all");
-            % Use the lower-cost vertex correspondence; ties retain the earlier deterministic match.
-            if cost_deg2 < bestCost_deg2
-                bestCost_deg2    = cost_deg2;
-                alignedUpper_deg = candidateUpper_deg;
-            end
+        correlation = sum(real(ifft(lowerSpectrum.*conj(fft(orientedUpper)))),2);
+        % Resolve numerically tied alignments at a physical anchor vertex,
+        % independent of either incoming ring's starting index.
+        tieTolerance = 64*ceil(log2(size(lower_units,1)))*eps(max(abs(correlation)));
+        shifts = find(correlation>=max(correlation)-tieTolerance);
+        anchorVertices_units = orientedUpper_units(mod(anchorIndex-shifts,size(lower_units,1))+1,:);
+        choices = find(anchorVertices_units(:,1)==min(anchorVertices_units(:,1)));
+        [~,choice] = min(anchorVertices_units(choices,2));
+        shiftIndex = shifts(choices(choice));
+        shiftCount = shiftIndex-1;
+        squaredCost = sum((circshift(orientedUpper,shiftCount,1)-centeredLower).^2,'all');
+        if squaredCost < bestSquaredCost
+            bestSquaredCost = squaredCost;
+            alignedUpper_units = circshift(orientedUpper_units,shiftCount,1);
         end
     end
-    delta_deg                = alignedUpper_deg - lower_deg;
-    coordinateScale_deg      = max([ 1; abs(lower_deg(:)); abs(alignedUpper_deg(:))]);
-    translationTolerance_deg = 512 * eps(coordinateScale_deg);
-    isTranslation            = max(abs(delta_deg - delta_deg(1, :)), [], "all") <= translationTolerance_deg;
-    verified                 = isTranslation || remainsStrictlyConvex(lower_deg, alignedUpper_deg, coordinateScale_deg);
+    delta_units                = alignedUpper_units - lower_units;
+    coordinateScale_units      = max([ 1; abs(lower_units(:)); abs(alignedUpper_units(:))]);
+    translationTolerance_units = 512 * eps(coordinateScale_units);
+    isTranslation            = max(abs(delta_units - delta_units(1, :)), [], "all") <= translationTolerance_units;
+    verified                 = isTranslation || remainsStrictlyConvex(lower_units, alignedUpper_units, coordinateScale_units);
     if ~verified
-        alignedUpper_deg = zeros(0, 2);
+        alignedUpper_units = zeros(0, 2);
     end
 end
 
-function verified = remainsStrictlyConvex(lower_deg, upper_deg, coordinateScale_deg)
+function verified = remainsStrictlyConvex(lower_units, upper_units, coordinateScale_units)
     % Check that interpolated turns keep the same nonzero sign on [0, 1].
-    lowerEdge_deg      = circshift(lower_deg, -1, 1) - lower_deg;
-    upperEdge_deg      = circshift(upper_deg, -1, 1) - upper_deg;
-    lowerTurn_deg2     = cross2d(lowerEdge_deg, circshift(lowerEdge_deg, -1, 1));
-    orientation        = sign(sum(lowerTurn_deg2));
-    turnTolerance_deg2 = 4096 * eps(coordinateScale_deg ^ 2);
-    if orientation == 0 || any(orientation * lowerTurn_deg2 <= turnTolerance_deg2)
+    lowerEdge_units      = circshift(lower_units, -1, 1) - lower_units;
+    upperEdge_units      = circshift(upper_units, -1, 1) - upper_units;
+    lowerTurn_units2     = cross2d(lowerEdge_units, circshift(lowerEdge_units, -1, 1));
+    orientation        = sign(sum(lowerTurn_units2));
+    turnTolerance_units2 = 4096 * eps(coordinateScale_units ^ 2);
+    if orientation == 0 || any(orientation * lowerTurn_units2 <= turnTolerance_units2)
         verified = false;
         return;
     end
-    edgeDelta_deg     = upperEdge_deg - lowerEdge_deg;
-    nextLowerEdge_deg = circshift(lowerEdge_deg, -1, 1);
-    nextEdgeDelta_deg = circshift(edgeDelta_deg, -1, 1);
-    constant_deg2     = cross2d(lowerEdge_deg, nextLowerEdge_deg);
-    linear_deg2       = cross2d(edgeDelta_deg, nextLowerEdge_deg) + cross2d(lowerEdge_deg, nextEdgeDelta_deg);
-    quadratic_deg2    = cross2d(edgeDelta_deg, nextEdgeDelta_deg);
+    edgeDelta_units     = upperEdge_units - lowerEdge_units;
+    nextLowerEdge_units = circshift(lowerEdge_units, -1, 1);
+    nextEdgeDelta_units = circshift(edgeDelta_units, -1, 1);
+    constant_units2     = cross2d(lowerEdge_units, nextLowerEdge_units);
+    linear_units2       = cross2d(edgeDelta_units, nextLowerEdge_units) + cross2d(lowerEdge_units, nextEdgeDelta_units);
+    quadratic_units2    = cross2d(edgeDelta_units, nextEdgeDelta_units);
     verified          = true;
-    % Process each geometric vertex while constructing or checking the region topology.
-    for vertexIndex = 1:size(lower_deg, 1)
+    for vertexIndex = 1:size(lower_units, 1)
         candidateTau = [0; 1];
-        if quadratic_deg2(vertexIndex) ~= 0
-            stationaryTau = -linear_deg2(vertexIndex) / (2 * quadratic_deg2(vertexIndex));
+        if quadratic_units2(vertexIndex) ~= 0
+            stationaryTau = -linear_units2(vertexIndex) / (2 * quadratic_units2(vertexIndex));
             if stationaryTau > 0 && stationaryTau < 1
                 candidateTau(end + 1, 1) = stationaryTau; %#ok<AGROW>
             end
         end
-        turn_deg2 = constant_deg2(vertexIndex) + linear_deg2(vertexIndex) * candidateTau + quadratic_deg2(vertexIndex) * candidateTau .^ 2;
-        if any(orientation * turn_deg2 <= turnTolerance_deg2)
+        turn_units2 = constant_units2(vertexIndex) + linear_units2(vertexIndex) * candidateTau + quadratic_units2(vertexIndex) * candidateTau .^ 2;
+        if any(orientation * turn_units2 <= turnTolerance_units2)
             verified = false;
             return;
         end
     end
 end
 
-function value = cross2d(first_deg, second_deg)
+function value = cross2d(first_units, second_units)
     % Return row-wise signed two-dimensional cross products.
-    value = first_deg(:, 1) .* second_deg(:, 2) - first_deg(:, 2) .* second_deg(:, 1);
+    value = first_units(:, 1) .* second_units(:, 2) - first_units(:, 2) .* second_units(:, 1);
 end
 
 function [equivalent, nested] = compareShapes(firstShape, secondShape)
     % Check equality and containment using shape differences.
-    areaScale_deg2     = max([1, area(firstShape), area(secondShape)]);
-    areaTolerance_deg2 = 512 * eps(areaScale_deg2);
-    firstIsContained   = area(subtract(firstShape, secondShape)) <= areaTolerance_deg2;
-    secondIsContained  = area(subtract(secondShape, firstShape)) <= areaTolerance_deg2;
+    firstArea_units2 = area(firstShape);
+    secondArea_units2 = area(secondShape);
+    areaScale_units2     = max([1, firstArea_units2, secondArea_units2]);
+    areaTolerance_units2 = 512 * eps(areaScale_units2);
+    % A larger polygon cannot fit inside a smaller one: the area difference
+    % bounds the subtraction from below. Keep a full extra tolerance of
+    % roundoff reserve and perform the original Boolean check near equality.
+    firstIsContained = firstArea_units2 <= secondArea_units2+2*areaTolerance_units2 && ...
+        area(subtract(firstShape, secondShape)) <= areaTolerance_units2;
+    secondIsContained = secondArea_units2 <= firstArea_units2+2*areaTolerance_units2 && ...
+        area(subtract(secondShape, firstShape)) <= areaTolerance_units2;
     equivalent         = firstIsContained && secondIsContained;
     nested             = firstIsContained || secondIsContained;
 end
 
-function shape = createEndpointConvexHull(lowerAzimuth_deg, lowerElevation_deg, upperAzimuth_deg, upperElevation_deg)
+function shape = createEndpointConvexHull(lowerX_units, lowerY_units, upperX_units, upperY_units)
     % Enclose both endpoint shapes and their linear vertex paths.
-    vertices_deg = [ ...
-        lowerAzimuth_deg(:), lowerElevation_deg(:); upperAzimuth_deg(:), upperElevation_deg(:)];
-    vertices_deg = unique(vertices_deg(all(isfinite(vertices_deg), 2), :), "rows", "stable");
-    if size(vertices_deg, 1) < 3
+    vertices_units = [ ...
+        lowerX_units(:), lowerY_units(:); upperX_units(:), upperY_units(:)];
+    vertices_units = unique(vertices_units(all(isfinite(vertices_units), 2), :), "rows", "stable");
+    if size(vertices_units, 1) < 3
         shape = polyshape();
         return;
     end
-    hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-    shape     = polyshape(vertices_deg(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
+    hullIndex = convhull(vertices_units(:, 1), vertices_units(:, 2));
+    shape     = polyshape(vertices_units(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
 end

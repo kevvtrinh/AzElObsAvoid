@@ -32,7 +32,7 @@ validateattributes(port, {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>
 port = double(port);
 
 sandboxFolder = fileparts(fileparts(mfilename("fullpath")));
-pagePath      = fullfile(sandboxFolder, "az_el_planner_sandbox.html");
+pagePath      = fullfile(sandboxFolder, "xy_planner_sandbox.html");
 if ~isfile(pagePath)
     error("serveSandbox:PageNotFound", "The sandbox page does not exist: %s", pagePath);
 end
@@ -59,7 +59,7 @@ serverSocket.setSoTimeout(int32(acceptTimeout_ms));
 serverCleanup = onCleanup(@() closeServer(serverSocket, stopFilePath, bundleFilePath, bundleRequestIdPath));
 
 url = "http://127.0.0.1:" + string(port) + "/";
-fprintf("Az/El planner sandbox: %s\n", url);
+fprintf("X/Y planner sandbox: %s\n", url);
 fprintf("Stop file: %s\n", stopFilePath);
 fprintf("Press Ctrl-C or create the stop file to stop the server.\n");
 
@@ -134,7 +134,7 @@ function [wasPlanRequest, wasBundleRequest] = serveClient(clientSocket, pageByte
         writeErrorResponse(clientSocket, 403, "serveSandbox:OriginNotAllowed", "Browser requests are accepted only from this loopback page or " + "from the local file page.", "");
         return;
     end
-    knownPath = any(path == ["/", "/health", "/plan", "/bundle", "/run-bundle"]);
+    knownPath = any(path == ["/", "/health", "/plan", "/bundle", "/save-bundle", "/run-bundle"]);
     if method == "OPTIONS" && knownPath
         writeHttpResponse(clientSocket, 204, "No Content", "text/plain; charset=utf-8", zeros(1, 0, 'uint8'), strings(0, 1), corsOrigin);
     elseif method == "GET" && path == "/"
@@ -151,6 +151,9 @@ function [wasPlanRequest, wasBundleRequest] = serveClient(clientSocket, pageByte
     elseif method == "POST" && path == "/bundle"
         wasBundleRequest = true;
         serveBundleRequest(clientSocket, request.BodyBytes, corsOrigin, bundleFilePath, bundleRequestIdPath);
+    elseif method == "POST" && path == "/save-bundle"
+        wasBundleRequest = true;
+        serveBundleRequest(clientSocket, request.BodyBytes, corsOrigin, bundleFilePath, bundleRequestIdPath, true);
     elseif knownPath
         writeErrorResponse(clientSocket, 405, "serveSandbox:MethodNotAllowed", "The requested HTTP method is not supported for this path.", corsOrigin);
     else
@@ -189,7 +192,7 @@ function servePlanningRequest(clientSocket, requestBytes, corsOrigin, bundleFile
     end
 
     serverTime_s  = toc(planningTimer);
-    plannerTime_s = response.result.ElapsedPlanningTime_s;
+    plannerTime_s = response.result.ElapsedTime_s;
     timingHeaders = [ ...
         "Server-Timing: planner;dur=" + compose("%.6f", 1000 * plannerTime_s) + ", server;dur=" + compose("%.6f", 1000 * serverTime_s); "X-Offline-Sandbox-Planner-Time-s: " + compose("%.9f", plannerTime_s); "X-Offline-Sandbox-Server-Time-s: " + compose("%.9f", serverTime_s)];
     writeHttpResponse(clientSocket, 200, "OK", "application/json; charset=utf-8", resultBytes, timingHeaders, corsOrigin);
@@ -226,7 +229,7 @@ function serveBundleReplayRequest(clientSocket, bundleBytes, corsOrigin, bundleF
     end
 
     serverTime_s  = toc(planningTimer);
-    plannerTime_s = response.result.ElapsedPlanningTime_s;
+    plannerTime_s = response.result.ElapsedTime_s;
     timingHeaders = [ ...
         "Server-Timing: planner;dur=" + compose("%.6f", 1000 * plannerTime_s) + ", server;dur=" + compose("%.6f", 1000 * serverTime_s); "X-Offline-Sandbox-Planner-Time-s: " + compose("%.9f", plannerTime_s); "X-Offline-Sandbox-Server-Time-s: " + compose("%.9f", serverTime_s)];
     writeHttpResponse(clientSocket, 200, "OK", "application/json; charset=utf-8", resultBytes, timingHeaders, corsOrigin);
@@ -234,11 +237,12 @@ function serveBundleReplayRequest(clientSocket, bundleBytes, corsOrigin, bundleF
     clear temporaryCleanup;
 end
 
-function serveBundleRequest(clientSocket, requestBytes, corsOrigin, bundleFilePath, bundleRequestIdPath)
+function serveBundleRequest(clientSocket, requestBytes, corsOrigin, bundleFilePath, bundleRequestIdPath, saveWithDialog)
     % Return the exact cached MAT diagnosis bundle for the matching live result.
+    if nargin < 6, saveWithDialog = false; end
     requestId = previewRequestId(requestBytes);
     if strlength(requestId) == 0
-        writeErrorResponse(clientSocket, 400, "serveSandbox:InvalidBundleRequest", "POST /bundle requires a nonempty JSON requestId.", corsOrigin);
+        writeErrorResponse(clientSocket, 400, "serveSandbox:InvalidBundleRequest", "Bundle export requires a nonempty JSON requestId.", corsOrigin);
         return;
     end
     if ~isfile(bundleFilePath) || ~isfile(bundleRequestIdPath)
@@ -250,9 +254,54 @@ function serveBundleRequest(clientSocket, requestBytes, corsOrigin, bundleFilePa
         writeErrorResponse(clientSocket, 409, "serveSandbox:BundleRequestMismatch", "The requested result is not the latest live plan on this server.", corsOrigin);
         return;
     end
+    if saveWithDialog
+        try
+            outcome = saveBundleWithDialog(bundleFilePath, requestId);
+            writeJsonResponse(clientSocket, 200, "OK", outcome, strings(0, 1), corsOrigin);
+        catch exception
+            if isUserInterruption(exception), rethrow(exception); end
+            writeErrorResponse(clientSocket, 500, "serveSandbox:BundleSaveFailed", exception.message, corsOrigin);
+        end
+        return;
+    end
     bundleBytes     = readFileBytes(bundleFilePath);
-    downloadHeaders = "Content-Disposition: attachment; filename=az-el-sandbox-bundle.mat";
+    downloadHeaders = "Content-Disposition: attachment; filename=x-y-sandbox-bundle.mat";
     writeHttpResponse(clientSocket, 200, "OK", "application/vnd.matlab.mat-file", bundleBytes, downloadHeaders, corsOrigin);
+end
+
+function outcome = saveBundleWithDialog(bundleFilePath, requestId, chooseFile)
+    % Only the native chooser supplies a destination; HTTP never supplies paths.
+    % The optional chooser makes save/cancel/error behavior testable without UI.
+    if nargin < 3, chooseFile = @uiputfile; end
+    outcome = struct("Saved", false, "Cancelled", false, "FilePath", "", "Bytes", 0);
+    fileStem = regexprep(char(requestId), '[^a-zA-Z0-9_-]', '_');
+    [fileName, folder] = chooseFile({'*.mat', 'MATLAB diagnosis bundle (*.mat)'}, ...
+        'Save diagnosis bundle', [fileStem '-diagnosis.mat']);
+    if isequal(fileName, 0) || isequal(folder, 0)
+        outcome.Cancelled = true;
+        return;
+    end
+    [~, ~, extension] = fileparts(fileName);
+    if isempty(extension)
+        fileName = [char(fileName) '.mat'];
+    elseif ~strcmpi(extension, '.mat')
+        error("serveSandbox:InvalidBundleExtension", "Choose a .mat file for the diagnosis bundle.");
+    end
+    destination = string(java.io.File(fullfile(folder, fileName)).getCanonicalPath());
+    temporaryPath = string(tempname(folder)) + ".mat";
+    cleanup = onCleanup(@() deleteFileIfPresent(temporaryPath));
+    [copied, message] = copyfile(bundleFilePath, temporaryPath);
+    if ~copied, error("serveSandbox:BundleSaveFailed", "%s", message); end
+    sourceInfo = dir(bundleFilePath);
+    savedInfo = dir(temporaryPath);
+    if isempty(savedInfo) || savedInfo.bytes ~= sourceInfo.bytes
+        error("serveSandbox:BundleSaveFailed", "The bundle copy was incomplete.");
+    end
+    [moved, message] = movefile(temporaryPath, destination, 'f');
+    if ~moved, error("serveSandbox:BundleSaveFailed", "%s", message); end
+    outcome.Saved = true;
+    outcome.FilePath = destination;
+    outcome.Bytes = savedInfo.bytes;
 end
 
 function cacheDiagnosisBundle(bundleFilePath, bundleRequestIdPath, requestId, diagnosisBundle)
@@ -521,7 +570,7 @@ end
 function isFailure = isRequestFailure(exception)
     % Distinguish invalid request/planner requirements from server defects.
     identifier = string(exception.identifier);
-    isFailure  = contains(identifier, "runPlanningRequest:") || startsWith(identifier, "planTrajectory:") || startsWith(identifier, "createObstacle:") || startsWith(identifier, "combineObstacles:") || startsWith(identifier, "bmtpEngine:") || startsWith(identifier, "ruckigEngine:");
+    isFailure  = contains(identifier, "runPlanningRequest:") || startsWith(identifier, "planTrajectory:") || startsWith(identifier, "planner:") || startsWith(identifier, "createObstacle:") || startsWith(identifier, "combineObstacles:") || startsWith(identifier, "bmtpEngine:");
 end
 
 function isTimeout = isSocketTimeout(exception)

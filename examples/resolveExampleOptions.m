@@ -1,9 +1,9 @@
-function [plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults, defaultMaxJerk_deg_s3)
+function [plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults, defaultMaxJerk_units_s3)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults)
 %   [plannerOptions, displayOptions] = resolveExampleOptions( ...
-%       exampleOverrides, scenarioDefaults, defaultMaxJerk_deg_s3)
+%       exampleOverrides, scenarioDefaults, defaultMaxJerk_units_s3)
 %
 % PURPOSE
 %   - Resolve uniform example display/runtime controls and planner overrides.
@@ -13,8 +13,10 @@ function [plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrid
 %   - exampleOverrides (scalar struct or []; empty uses defaults)
 %       Display controls and public planTrajectory options are accepted.
 %   - scenarioDefaults (scalar partial planTrajectory options struct)
-%   - defaultMaxJerk_deg_s3 (positive scalar or two-element vector)
-%       Optional default is [2.5 2.5]. MaxJerk_deg_s3 can override it.
+%   - defaultMaxJerk_units_s3 (positive two-element vector)
+%       Optional default is [2.5 2.5]. MaxJerk_units_s3 can override it.
+%       Examples use per-axis velocity and acceleration, so jerk must also
+%       be a two-element [x y] limit.
 %
 % OUTPUTS
 %   - plannerOptions (resolved planner options for the scenario)
@@ -36,8 +38,8 @@ end
 if nargin < 2 || isempty(scenarioDefaults)
     scenarioDefaults = struct();
 end
-if nargin < 3 || isempty(defaultMaxJerk_deg_s3)
-    defaultMaxJerk_deg_s3 = [2.5 2.5];
+if nargin < 3 || isempty(defaultMaxJerk_units_s3)
+    defaultMaxJerk_units_s3 = [2.5 2.5];
 end
 if ~isstruct(exampleOverrides) || ~isscalar(exampleOverrides) || ~isstruct(scenarioDefaults) || ~isscalar(scenarioDefaults)
     error("resolveExampleOptions:InvalidOptions", "exampleOverrides and scenarioDefaults must be scalar structs.");
@@ -45,7 +47,7 @@ end
 displayDefaults = struct();
 displayDefaults.PlotOutputs                         = true;
 displayDefaults.FigureVisible                       = "on";
-displayDefaults.Title                               = "Azimuth/elevation motion plan";
+displayDefaults.Title                               = "X/y motion plan";
 displayDefaults.ShowWorkspace                       = true;
 displayDefaults.ShowKinematics                      = true;
 displayDefaults.ShowAnimation                       = true;
@@ -77,18 +79,15 @@ for name = displayNames.'
         displayOptions.(name) = normalizedOverrides.(name);
     end
 end
-maxJerk_deg_s3 = defaultMaxJerk_deg_s3;
-if isfield(normalizedOverrides, "MaxJerk_deg_s3") && ~isempty(normalizedOverrides.MaxJerk_deg_s3)
-    maxJerk_deg_s3 = normalizedOverrides.MaxJerk_deg_s3;
+maxJerk_units_s3 = defaultMaxJerk_units_s3;
+if isfield(normalizedOverrides, "MaxJerk_units_s3") && ~isempty(normalizedOverrides.MaxJerk_units_s3)
+    maxJerk_units_s3 = normalizedOverrides.MaxJerk_units_s3;
 end
-validateattributes(maxJerk_deg_s3, {'numeric'}, {'real', 'finite', 'positive', 'nonempty'});
-if ~isscalar(maxJerk_deg_s3) && numel(maxJerk_deg_s3) ~= 2
-    error("resolveExampleOptions:InvalidMaxJerk", "MaxJerk_deg_s3 must be scalar or two-element.");
+validateattributes(maxJerk_units_s3, {'numeric'}, {'real', 'finite', 'positive', 'nonempty'});
+if ~isvector(maxJerk_units_s3) || numel(maxJerk_units_s3) ~= 2
+    error("resolveExampleOptions:InvalidMaxJerk", "MaxJerk_units_s3 must be a two-element [x y] limit because examples use per-axis velocity and acceleration limits.");
 end
-maxJerk_deg_s3 = reshape(double(maxJerk_deg_s3), 1, []);
-if isscalar(maxJerk_deg_s3)
-    maxJerk_deg_s3 = repmat(maxJerk_deg_s3, 1, 2);
-end
+maxJerk_units_s3 = reshape(double(maxJerk_units_s3), 1, []);
 logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
     "ShowAnimation", "ShowSearchEdges", "ShowVisibilityGraphs", ...
     "ShowSweptSurfaces", "SaveAnimationGif", "Verbose"];
@@ -124,7 +123,11 @@ end
 % Get the maintained planner defaults before scenario values are applied.
 % A list of public field names prevents display-only values from reaching the
 % planner and producing an unknown-option warning.
-plannerOptions = obstacleAvoidance.planTrajectory();
+plannerOptions = struct("GoalTimeMode", "earliestArrival", "FixedArrivalSearch", "spatial", "SampleTime_s", 0.05, ...
+    "ConstraintTolerance", 1e-8, "CollisionClearanceTolerance_units", 1e-7, ...
+    "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
+    "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
+    "TemporalResolution_s",0.5,"MaxArrivalTrials",100);
 plannerNames   = string(fieldnames(plannerOptions));
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.
@@ -134,7 +137,7 @@ for name = intersect(string(fieldnames(scenarioDefaults)), plannerNames, "stable
     end
 end
 overrideNames        = string(fieldnames(normalizedOverrides));
-aliasNames           = ["ShowKinematicPlot", "AnimationFrameStride", "AnimationPause_s", "MaxJerk_deg_s3"];
+aliasNames           = ["ShowKinematicPlot", "AnimationFrameStride", "AnimationPause_s", "MaxJerk_units_s3"];
 scenarioNames        = string(fieldnames(scenarioDefaults));
 unknownNames         = setdiff(overrideNames, [plannerNames; displayNames; aliasNames.'], "stable");
 unknownScenarioNames = setdiff(scenarioNames(:), [plannerNames; displayNames(:)], "stable");
@@ -151,8 +154,8 @@ for name = intersect(overrideNames, plannerNames, "stable").'
 end
 plotOptions = rmfield(displayOptions, ["PlotOutputs", "Verbose"]);
 displayOptions.JerkConstraintEnabled          = true;
-displayOptions.MaxJerk_deg_s3                 = maxJerk_deg_s3;
-displayOptions.ConfiguredFiniteMaxJerk_deg_s3 = maxJerk_deg_s3;
+displayOptions.MaxJerk_units_s3                 = maxJerk_units_s3;
+displayOptions.ConfiguredFiniteMaxJerk_units_s3 = maxJerk_units_s3;
 displayOptions.PlotOptions                    = plotOptions;
 end
 
