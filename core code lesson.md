@@ -215,6 +215,19 @@ Several targeted experiments explain why the expensive settings remain:
   self-time by only 0.089 seconds across 38 calls; geographic wall time changed
   from 47.696 to 47.881 profiled seconds. The setup-only saving is below run
   noise and does not justify another branch in the shared solver.
+- An exact-input trace over all 1,991 geographic plane solves found zero
+  duplicates when comparing the curve controls, convex-region vertices,
+  separation target, and reserve. Repeated span-region identifiers therefore do
+  not provide a valid memoization opportunity: each accepted feasible curve
+  changes the numerical maximum-margin problem.
+- The official Python implementation describes its plane update as an LP, but
+  its exact polyhedral formulation also bounds each plane normal with a Lorentz
+  cone. It is consequently an SOCP like this implementation. Its important
+  execution difference is parallel solution of independent plane programs.
+  This MATLAB installation has no process-based Parallel Computing Toolbox, and
+  `coneprog` explicitly rejects execution on the available six-worker
+  thread-based background pool. Parallel plane solves are therefore not an
+  available dependency-free optimization here.
 - An axis-aligned shortcut in final certification preserved every maintained
   motion exactly, but a complete three-run example sweep became slightly slower
   overall. It was removed rather than retained on an isolated-case timing win.
