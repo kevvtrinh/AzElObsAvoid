@@ -59,8 +59,13 @@ certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.position
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
 % Control hull bounds are sufficient, not necessary. The exported polynomial
 % is checked continuously against the actual physical limits before success.
-minimumDuration_s         = sum(segmentTime_s);
 isFixedArrival            = request.Options.GoalTimeMode == "fixedArrival";
+dilationScale=1;
+if ~isFixedArrival
+    dilationScale=max(1,max(requiredTime_s./segmentTime_s))*(1+64*eps);
+    segmentTime_s=segmentTime_s*dilationScale;
+end
+minimumDuration_s         = sum(segmentTime_s);
 if isFixedArrival && abs(sum(segmentTime_s)-request.MotionHorizon_s)<=64*eps(request.MotionHorizon_s)
     % Close only accumulation roundoff at the prescribed physical endpoint.
     for pass=1:2
@@ -88,7 +93,7 @@ preparedMotion    = struct("Success", success, ...
     "CertifiedControlPoint_units", certifiedControlPoint_units, ...
     "SegmentTime_s", segmentTime_s, ...
     "RequiredSegmentTime_s", requiredTime_s, ...
-    "DilationScale", 1, ...
+    "DilationScale", dilationScale, ...
     "ArrivalAtHorizon", isFixedArrival, ...
     "MotionCertificate", motionCertificate);
 preparedMotion.PrescribedPower_units = prescribedPower_units;

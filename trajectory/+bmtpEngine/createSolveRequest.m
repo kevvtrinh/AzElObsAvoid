@@ -25,11 +25,14 @@ end
 validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
 
 %% Section 2: Select The Polynomial Representation
-% Start static guide edges with three quintic subspans to limit model size
-% while retaining continuous-jerk steering freedom.
+% Start static guide edges with three degree-eight subspans to retain
+% continuous-jerk steering freedom. Other modes keep their established mesh.
 % Fixed-arrival clocks use their natural events and a minimum steering mesh.
 
 [degree, splitCount] = deal(5, 3);
+if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
+    degree=8;
+end
 if isfield(seed,'Source') && string(seed.Source)=="timeExpandedVisibilityGraph"
     [degree,splitCount] = deal(8,2);
 end

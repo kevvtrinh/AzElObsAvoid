@@ -1,8 +1,8 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units, minimizeLength)
 %% Section 0: Header & Readme
 % SYNTAX: [controlPoint_units, segmentTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(
 %   segmentCount, degree, initialState, goalState, limits, planes, reserve_units,
-%   maximumMotionDuration_s, options)
+%   maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units, minimizeLength)
 % PURPOSE: Solve one convex trajectory step for fixed separating lines, timing policy, and
 %   derivative limits.
 % INPUTS: segmentCount, degree (positive integer scalars) Composite Bezier representation size.
@@ -13,7 +13,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   restricts a plane to a closed part of a fixed-duration motion span.
 %   reserve_units (nonnegative scalar) Numerical separation reserve.
 %   maximumMotionDuration_s (positive scalar) Upper bound on the internal minimum-time solve.
-%   options (coneprog options) Numerical solver controls.
+%   options (coneprog options) Numerical solver controls. Optional mesh ratio, fixed-clock,
+%   prescribed-control, and length-objective inputs follow.
 % OUTPUTS: controlPoint_units (S-by-(D+1)-by-2 numeric array) Solved control points, or an empty
 %   array on expected solve failure.
 %   segmentTime_s (scalar numeric) Per-segment durations, or NaN on expected solve failure.
@@ -25,6 +26,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
+if nargin < 13, minimizeLength = true; end
 originalPlaneCount=nnz([planes.Active]);
 partialPlanes=false;
 if isfield(planes,'TimeFraction') && ~isempty(planes)
@@ -41,7 +43,7 @@ end
 prescribedAxis = nargin>=12 && ~isempty(fixedControl_units) && any(isfinite(fixedControl_units(:)));
 % Larger clocks have surplus phases that can oscillate under length alone.
 % Preserve the compact eight-span steering solve used on sparse clocks.
-intrinsicVariation=fixedClock && ~prescribedAxis && segmentCount>8;
+intrinsicVariation=fixedClock && degree==5 && ~prescribedAxis && segmentCount>8;
 start_units = initialState.position_units; goal_units = goalState.position_units;
 isRest = all([initialState.velocity_units_s initialState.acceleration_units_s2 goalState.velocity_units_s goalState.acceleration_units_s2]==0);
 assert(fixedClock || isRest,'bmtpEngine:NonrestRelaxedClock','Nonzero boundary states require physical fixed durations.');
@@ -86,7 +88,7 @@ for segmentIndex = 1:segmentCount
         end
         [rows, offset_units] = bmtpEngine.createPlaneRows(plane, degree, variableCount, segmentIndex);
         targets = inequalityIndex + (1:size(rows, 1));
-        A(targets, :) = rows; %#ok<SPRIX>
+        A(targets, :) = rows;
         if fixedClock
             if ~sharedSlack, slackIndex=slackIndex+1; end
             A(targets,slackIndex) = -1;
@@ -146,7 +148,7 @@ output.TotalTime_s = toc(solverTimer);
 output.SolveCount = 1;
 output.OptimizationConverged = exitFlag>0;
 output.IntrinsicJerkVariation = intrinsicVariation;
-if ~fixedClock && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7)
+if ~fixedClock && minimizeLength && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7)
     % Lexicographic optimization: preserve the first time-power value while
     % minimizing path length. Unconstrained lateral motion must not be chosen
     % arbitrarily merely because another axis determines the arrival time.

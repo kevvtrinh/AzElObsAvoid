@@ -81,12 +81,12 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
         power_units(:, :, order + 1) = reshape(difference(:, 1, :), segmentCount, 2) * scale / factorial(order);
         target(:, :, order + 1) = reshape(difference(:, end, :), segmentCount, 2) * scale;
     end
-    % Share position, velocity, and acceleration. Jerk has bounded one-sided
-    % values and may jump at a join.
+    % Share position through jerk so the returned degree-eight motion retains
+    % the C3 continuity imposed by the trajectory problem.
     % A small normalized solver residual can otherwise be amplified by the
     % inverse square of a short span's duration. This changes the returned curve;
     % all derivative bounds and collision certificates are rebuilt afterward.
-    for order = 0:2
+    for order = 0:3
         left = target(1:end-1,:,order+1)./segmentTime_s(1:end-1).^order;
         right = power_units(2:end,:,order+1)*factorial(order)./segmentTime_s(2:end).^order;
         common = (left+right)/2;

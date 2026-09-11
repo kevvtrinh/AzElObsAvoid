@@ -1,7 +1,7 @@
 function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
 % SYNTAX: warmStart = bmtpEngine.createWarmStart(request)
-% PURPOSE: Convert the exact visibility route into quintic BMTP controls.
+% PURPOSE: Convert the exact visibility route into BMTP Bezier controls.
 % INPUTS: request: validated BMTP request with static or timed exclusion cells.
 % OUTPUTS: warmStart: route, control points, time, and all-pair region mask.
 % UNITS: Position is coordinate units and time is seconds.
@@ -9,18 +9,26 @@ function warmStart = createWarmStart(request)
 %% Section 1: Use The Exact Visibility Route
 route_units = double(request.Seed.position_units);
 route_units([1 end], :) = [request.InitialState.position_units; request.GoalState.position_units];
-segmentCount = size(route_units, 1) - 1;
+originalSegmentCount = size(route_units, 1) - 1;
+usesLengthBalancedMesh=request.Options.GoalTimeMode=="earliestArrival" && ...
+    ~isfield(request.Coverage,'ActiveTimeInterval_s') && request.SplitCount>1;
+solverRoute_units=route_units;
+if usesLengthBalancedMesh
+    targetSegmentCount=originalSegmentCount*request.SplitCount;
+    segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount);
+    solverRoute_units=splitRouteByCount(route_units,segmentCountByEdge);
+end
+segmentCount = size(solverRoute_units, 1) - 1;
 regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
 
 %% Section 2: Create Linear Rest-To-Rest Controls
 degree = request.Degree;
 fraction = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
-start_units = reshape(route_units(1:end - 1, :), segmentCount, 1, 2);
-finish_units = reshape(route_units(2:end, :), segmentCount, 1, 2);
+start_units = reshape(solverRoute_units(1:end - 1, :), segmentCount, 1, 2);
+finish_units = reshape(solverRoute_units(2:end, :), segmentCount, 1, 2);
 controlPoint_units = (1 - fraction) .* start_units + fraction .* finish_units;
 segmentTime_s = bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits);
-originalSegmentCount = segmentCount;
-if request.SplitCount>1
+if request.SplitCount>1 && ~usesLengthBalancedMesh
     subdivisions = request.SplitCount;
     refined_units = zeros(segmentCount*subdivisions,degree+1,2);
     for k = 1:segmentCount
@@ -70,6 +78,7 @@ if isfield(request.Coverage,'BreakTime_s') && request.Options.GoalTimeMode~="fix
         breakTime_s(2:end) > intervals_s(:,1).';
     warmStart.WarmRouteResampled = true;
 end
+
 if request.Options.GoalTimeMode=="fixedArrival"
     % The motion mesh follows the guide, not the obstacle sampling frequency.
     % Every source interval still constrains its exact overlap with these spans.
@@ -116,4 +125,32 @@ if isfield(request.Seed, 'Source') && ...
     warmStart.SegmentRatio = ones(warmStart.SegmentCount, 1);
     warmStart.Duration_s = warmStart.SegmentCount * commonSegmentTime_s;
 end
+end
+
+function segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount)
+    edgeLength_units=vecnorm(diff(route_units),2,2);
+    edgeCount=numel(edgeLength_units);
+    segmentCountByEdge=ones(edgeCount,1);
+    remainingCount=targetSegmentCount-edgeCount;
+    if remainingCount<=0 || sum(edgeLength_units)<=0, return; end
+    exactCount=remainingCount*edgeLength_units/sum(edgeLength_units);
+    additional=floor(exactCount);
+    segmentCountByEdge=segmentCountByEdge+additional;
+    unassigned=remainingCount-sum(additional);
+    [~,order]=sortrows([-mod(exactCount,1),(1:edgeCount).'],[1 2]);
+    segmentCountByEdge(order(1:unassigned))=segmentCountByEdge(order(1:unassigned))+1;
+end
+
+function refined_units=splitRouteByCount(route_units,segmentCountByEdge)
+    refined_units=zeros(sum(segmentCountByEdge)+1,2);
+    target=1;
+    for edgeIndex=1:numel(segmentCountByEdge)
+        count=segmentCountByEdge(edgeIndex);
+        fraction=(0:count-1).'/count;
+        rows=target:target+count-1;
+        refined_units(rows,:)=route_units(edgeIndex,:)+ ...
+            fraction.*(route_units(edgeIndex+1,:)-route_units(edgeIndex,:));
+        target=target+count;
+    end
+    refined_units(end,:)=route_units(end,:);
 end

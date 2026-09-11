@@ -1,0 +1,59 @@
+function tests = testStaticActivePairBmtp
+%% Section 0: Header & Readme
+% SYNTAX: results = runtests('tests/testStaticActivePairBmtp.m')
+% PURPOSE: Regress collision-driven static BMTP on structurally different concave and multi-obstacle routes.
+% INPUTS: MATLAB unit test framework.
+% OUTPUTS: Independent validation and solver-representation checks.
+% UNITS: Coordinate units and seconds.
+tests=functiontests(localfunctions);
+end
+
+function setupOnce(~)
+    root=fileparts(fileparts(mfilename('fullpath')));
+    addpath(root,fullfile(root,'trajectory'));
+end
+
+function testConcaveCavityEscape(testCase)
+    angle_rad=linspace(pi/3,5*pi/3,10).';
+    vertices_units=[8*cos(angle_rad),8*sin(angle_rad); ...
+        4*cos(flipud(angle_rad)),4*sin(flipud(angle_rad))];
+    obstacle=obstacleAvoidance.obstacles.createObstacle( ...
+        'C cavity',[0;260],vertices_units(:,1),vertices_units(:,2),0.1);
+    limits=struct('xInterval_units',[-23,23],'yInterval_units',[-23,23], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[0.8,0.8], ...
+        'maxJerk_units_s3',[3,3]);
+    result=planner(obstacle,state([0,0],0),state([-13,0],260),limits,options());
+    verifyValidatedStaticBmtp(testCase,result);
+end
+
+function testSeparatedSlalomBarriers(testCase)
+    center_units=[-6,-2.5;0,2.5;6,-2.5];
+    obstacleList=cell(3,1);
+    for obstacleIndex=1:3
+        vertices_units=center_units(obstacleIndex,:)+[-0.7,-3;0.7,-3;0.7,3;-0.7,3];
+        obstacleList{obstacleIndex}=obstacleAvoidance.obstacles.createObstacle( ...
+            "barrier "+obstacleIndex,[0;110],vertices_units(:,1),vertices_units(:,2),0.1);
+    end
+    obstacles=obstacleAvoidance.obstacles.combineObstacles(obstacleList{:});
+    limits=struct('xInterval_units',[-17,17],'yInterval_units',[-10,10], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[1,1], ...
+        'maxJerk_units_s3',[2,2]);
+    result=planner(obstacles,state([-13,0],0),state([13,0],110),limits,options());
+    verifyValidatedStaticBmtp(testCase,result);
+end
+
+function verifyValidatedStaticBmtp(testCase,result)
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpStaticDegree8");
+    verifyGreaterThan(testCase,result.SolverDiagnostics.TaggedPairCount,0);
+end
+
+function value=state(position_units,time_s)
+    value=struct('time_s',time_s,'position_units',position_units);
+end
+
+function value=options()
+    value=struct('GoalTimeMode','earliestArrival','SampleTime_s',0.1, ...
+        'PathLengthTimeAllowance_s',0.49);
+end

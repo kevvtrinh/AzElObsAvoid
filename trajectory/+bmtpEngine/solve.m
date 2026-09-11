@@ -3,7 +3,7 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 % SYNTAX: [candidate, diagnostics] = bmtpEngine.solve( seed, regions_units, coverage, initialState,
 %   goalState, limits, options)
 % PURPOSE: Turn one proposed path into a smooth motion that respects motion limits. Adjust the curve
-%   and obstacle-separating boundaries in alternating steps. Use quintic Bezier segments; the
+%   and obstacle-separating boundaries in alternating steps. Use Bezier segments; the
 %   planner independently validates the result.
 % INPUTS: seed (scalar struct) position_units is N-by-2; tau strictly increases from zero to one.
 %   regions_units (R-by-1 cell array) Each cell contains one finite convex N-by-2 exclusion polygon.
@@ -124,33 +124,9 @@ if preparedMotion.Success && certificate.Passed
 else
     prescribedPower_units = [];
     if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
-        alternatingResult=struct('Success',false);
-        if request.IsRest
-            % Reuse exact source facets for monotone routes. The locked axis
-            % uses smoothed quintic spans; free-axis jerk is C0 across joins.
-            distance_units=abs(goalState.position_units-initialState.position_units);
-            axisTime_s=max([1.875*distance_units./limits.maxVelocity_units_s; ...
-                sqrt((10/sqrt(3))*distance_units./limits.maxAcceleration_units_s2); ...
-                (60*distance_units./limits.maxJerk_units_s3).^(1/3)],[],1);
-            [~,corridorTimes_s,corridorPower_units]=bmtpEngine.createC3Chord( ...
-                initialState.position_units,goalState.position_units,limits);
-            corridorWarm=warmStart;
-            corridorWarm.SegmentCount=numel(corridorTimes_s);
-            corridorWarm.SegmentTime_s=corridorTimes_s;
-            corridorWarm.FixedPower_units=corridorPower_units;
-            corridorWarm.AxisMinimumTime_s=axisTime_s;
-            corridorWarm.ClockGuide=struct('Route_units',route_units);
-            [alternatingResult,diagnostics]=bmtpEngine.solveStaticCorridor(request,corridorWarm,diagnostics,obstacleTarget_units,roundoffReserve_units);
-        end
-        if ~alternatingResult.Success
-            previousConic=diagnostics.ConicSolver;
-            previousSolveCount=diagnostics.TrajectorySocpCount;
-            [alternatingResult,diagnostics] = bmtpEngine.solveQuinticTrajectory(request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
-            diagnostics.ConicSolver.CallCount=diagnostics.ConicSolver.CallCount+previousConic.CallCount;
-            diagnostics.ConicSolver.TotalTime_s=diagnostics.ConicSolver.TotalTime_s+previousConic.TotalTime_s;
-            diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+previousSolveCount;
-        end
-        prescribedPower_units = alternatingResult.PositionPower_units;
+        [alternatingResult,diagnostics] = bmtpEngine.solveActivePairTrajectory( ...
+            request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
+        prescribedPower_units = [];
     else
         usesTimedSolver = isfield(seed, 'Source') && ...
             string(seed.Source) == "timeExpandedVisibilityGraph";
@@ -297,7 +273,7 @@ function diagnostics = createEmptyDiagnostics(degree, splitCount, segmentCount, 
     % Initialize solver, timing, and certificate diagnostics.
     diagnostics = struct("Identifier", "bmtpStaticDegree" + string(degree), ...
         "ConstraintRepresentation", "thirdOrderTimePowerSocp", ...
-        "Representation", "C3CompositeQuintic", "Attempted", true, ...
+        "Representation", "C3CompositeBezier", "Attempted", true, ...
         "Accepted", false, "Degree", degree, ...
         "SubspansPerSeedEdge", splitCount, "OriginalSeedSegmentCount", segmentCount, ...
         "WarmRouteResampled", false, "OptimizerSpanCount", segmentCount, ...
