@@ -45,3 +45,7 @@ generation, independent validation, and plots of those returned core results.
 - Measure runtime and correctness on identical inputs before retaining an
   algorithm change. Report limitations and unfavorable results plainly.
 - Review the final diff and keep generated artifacts out of source control.
+- Before finishing, remove temporary files and directories created during the
+  task, including unneeded scratch, profiling, and benchmark outputs. Preserve
+  user-created inputs and any reusable evidence that is intentionally retained
+  and documented.

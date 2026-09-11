@@ -61,6 +61,8 @@ end
 % for rest states. This avoids a degenerate length solve at the conic time bound.
 repairDuration_s=sum(times_s);
 if request.IsRest, repairDuration_s=min(request.MotionHorizon_s,repairDuration_s*(1+1e-5)); end
+[planes,diagnostics.CorridorConsolidation]=bmtpEngine.consolidateStaticCorridor( ...
+    planes,request.Regions_units,request.SeparatingLineGeometry,request.Limits,target_units,reserve_units);
 [controls_units,times_s,exitFlag,final]=solveQuinticStep(request,planes,times_s/mean(times_s),reserve_units,true,repairDuration_s);
 diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+final.SolveCount;
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,final);
