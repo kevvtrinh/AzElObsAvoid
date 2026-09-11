@@ -35,10 +35,17 @@ solverMessage="The active-pair BMTP iteration limit was reached.";
 maximumIterationCount=16;
 for iterationIndex=1:maximumIterationCount
     diagnostics.IterationCount=iterationIndex;
+    trajectoryPlanes=planes;
+    if isempty(bestControl_units) && nnz([planes.Active])>segmentCount*request.Degree
+        trajectoryPlanes=bmtpEngine.removeRedundantPlanes( ...
+            planes,request.Limits,reserve_units,true);
+    end
     [trialControl_units,trialTimes_s,exitFlag,output]=bmtpEngine.solveTrajectoryStep( ...
         segmentCount,request.Degree,request.InitialState,request.GoalState,request.Limits, ...
-        planes,reserve_units,request.MotionHorizon_s,request.TrajectoryOptions, ...
+        trajectoryPlanes,reserve_units,request.MotionHorizon_s,request.TrajectoryOptions, ...
         ones(segmentCount,1),false,[],false);
+    output.OriginalPlaneCount=nnz([planes.Active]);
+    output.RetainedPlaneCount=nnz([trajectoryPlanes.Active]);
     diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+output.SolveCount;
     diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,output);
     diagnostics.FinalTrajectoryExitFlag=exitFlag;

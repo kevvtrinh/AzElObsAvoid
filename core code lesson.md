@@ -232,20 +232,45 @@ Several targeted experiments explain why the expensive settings remain:
   motion exactly, but a complete three-run example sweep became slightly slower
   overall. It was removed rather than retained on an isolated-case timing win.
 
-The conclusion is deliberately narrow: current profiling does not establish a
-safe redundant block inside the remaining hot path. A material improvement now
-requires a mathematically equivalent, cheaper solution of the small
-time-varying maximum-margin SOCPs or of the repeated trajectory SOCPs. Removing
-exact regions, retaining stale planes, weakening tolerances, or truncating the
-alternation merely buys runtime by changing the optimization problem.
+## Exact transient plane consolidation
+
+The overlap exists in the trajectory formulation, not in the plane-update
+inputs. A degree-one target plane block is implied by one retained block when
+the same nonnegative scale relates both endpoint normals and the retained
+offset plus arrival reserve dominates at both endpoints. Any floating normal
+residual is bounded over the existing workspace box. Because the Bernstein
+product is linear, that one proof implies all ten degree-eight product rows.
+
+A diagnostic over the geographic example found 1,002 removable blocks among
+4,173 arrival-plane appearances with the one-source proof. It cost 1.29 seconds.
+A two-source proof found 1,627 but cost 15.44 seconds, so it was rejected. Static
+U had no removable block among 349 arrival-plane appearances.
+
+Production consolidation is deliberately narrower than the proof permits. It
+runs only while collision discovery has not yet produced a feasible iterate,
+and only when plane rows outnumber the trajectory's control-polygon edges. The
+complete plane array and tagged-pair set remain upstream, every scheduled
+maximum-margin plane is still recomputed, and all planes return for feasible
+improvement and final length refinement. This changes neither exact geometry
+nor the mathematical pre-feasibility corridor, although removing redundant
+rows can change the finite-precision solution selected by `coneprog`.
+
+On the complete 20-example, three-repetition benchmark, all expected outcomes
+remained independently valid. The sum of median wall times fell from 96.446 to
+91.933 seconds and the maximum median fell from 41.949 to 36.588 seconds. The
+only maintained motion change was the Philippines path, from 18.83204 to
+18.84937 units (+0.092%); its arrival changed by about one microsecond in the
+faster direction. The 160 deterministic random azimuth cases remained 160/160
+valid. This is the accepted runtime/length trade: the user prioritized runtime,
+while the complete corridor after first feasibility limits the path change.
 
 ## Remaining limitations
 
 - BMTP alternation is biconvex and does not guarantee a globally shortest or globally minimum-time trajectory.
 - Sampled collisions drive constraint discovery. The independent exact validator prevents false success, but a missed pair can still produce an expected failure instead of a solution.
-- The 33-case corpus is deterministic and structurally varied, but it is still synthetic 2-D evidence, not a proof over all scenes.
+- The maintained examples and randomized corpus are deterministic and structurally varied, but remain synthetic 2-D evidence rather than a proof over all scenes.
 - Hard curved cavities remain the dominant runtime family.
-- The cleanup branch remains faster in aggregate, so further work should profile trajectory SOCP construction and repeated plane SOCP calls on those hard cases. Any future optimization must preserve the current 33/33 validation result.
+- The cleanup branch remains faster on the dense outline, so further work should profile mathematically equivalent trajectory and plane SOCP solution on hard curved cavities. Any future optimization must preserve the current maintained and randomized validation results.
 
 ## Sources
 

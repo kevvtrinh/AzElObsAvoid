@@ -147,3 +147,42 @@ the median of medians fell from 1.5277 to 0.7496 seconds, and historical runtime
 passes increased from 15/20 to 17/20. The maximum median was 41.9489 seconds.
 All 58 MATLAB tests passed after adding disconnected and finite-route-bound
 regressions.
+
+## Continuous improvement: transient implied-plane removal
+
+The remaining dense-static profile showed many separating planes whose
+trajectory inequalities overlap even though their maximum-margin update inputs
+are distinct. A lifted one-source implication proof now removes only transient
+arrival rows: one nonnegative scale must reconstruct both endpoint normals, and
+offset dominance includes the unchanged arrival reserve and a conservative
+workspace bound on floating residual. The complete upstream plane/tag set is
+unchanged. Consolidation stops after the first feasible iterate, so every later
+feasible-improvement and final-length solve receives the full corridor.
+
+The cheap one-source diagnostic found 1,002 removable plane blocks among 4,173
+geographic arrival-plane appearances in 1.29 seconds. A broader two-source
+diagnostic found 1,627 but required 15.44 seconds and was not retained. Static U
+had zero removable blocks among 349 arrival-plane appearances.
+
+The identical 20-example, three-repetition benchmark remained 20/20 valid:
+
+| Measure | Before | After | Change |
+|---|---:|---:|---:|
+| Sum of median wall times | 96.4458 s | 91.9332 s | -4.7% |
+| Median of median wall times | 0.7496 s | 0.7650 s | +2.1% |
+| Maximum median wall time | 41.9489 s | 36.5875 s | -12.8% |
+| Historical quality passes | 11/20 | 11/20 | unchanged |
+| Historical runtime passes | 17/20 | 17/20 | unchanged |
+| Both historical gates | 10/20 | 10/20 | unchanged |
+
+Every maintained duration and motion length matched the retained baseline
+except the Philippines subcase. Its duration changed from 5.26417518 to
+5.26417412 seconds and its length from 18.83203950 to 18.84936528 units
+(+0.092%). This small path trade is recorded rather than hidden; runtime was the
+stated priority. The other two geographic motions were unchanged.
+
+The deterministic random-azimuth corpus also remained 160/160 successful and
+independently valid. Combined median, mean, and maximum wall times were 0.1534,
+0.1698, and 0.8590 seconds. The moving-only and moving-plus-static medians were
+0.1342 and 0.1813 seconds respectively. The final MATLAB suite passed 60/60,
+including two focused regressions for the lifted implication proof.

@@ -43,6 +43,24 @@ function testSeparatedSlalomBarriers(testCase)
     verifyTrue(testCase,result.SolverDiagnostics.TravelRefinementAccepted);
 end
 
+function testAffinePlaneBlockConsolidation(testCase)
+    limits=struct('xInterval_units',[-100,100],'yInterval_units',[-100,100]);
+    source=plane([1,0;0.5,0.5],[-2,-2]);
+    target=plane(0.5*source.Normal,[-1.1,-1.1]);
+    reduced=bmtpEngine.removeRedundantPlanes([source,target],limits,0.1,true);
+    verifyTrue(testCase,reduced(1).Active);
+    verifyFalse(testCase,reduced(2).Active);
+end
+
+function testAffinePlaneNeedsOneEndpointWeight(testCase)
+    limits=struct('xInterval_units',[-10,10],'yInterval_units',[-10,10]);
+    source=plane([1,0;1,0],[0,0]);
+    differentEndpointScale=plane([0.5,0;0.75,0],[0,0]);
+    reduced=bmtpEngine.removeRedundantPlanes( ...
+        [source,differentEndpointScale],limits,0,true);
+    verifyTrue(testCase,all([reduced.Active]));
+end
+
 function verifyValidatedStaticBmtp(testCase,result)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
@@ -56,4 +74,9 @@ end
 
 function value=options()
     value=struct('GoalTimeMode','earliestArrival','SampleTime_s',0.1);
+end
+
+function value=plane(normal,offset_units)
+    value=struct('Active',true,'Verified',true,'ExitFlag',1, ...
+        'Normal',normal,'Offset_units',offset_units,'SignedGap_units',1);
 end
