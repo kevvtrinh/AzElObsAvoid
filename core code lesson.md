@@ -122,6 +122,23 @@ its length-delay and jerk-penalty consumers were already gone. Removing its
 default and validation makes the active interface honest; old callers now get
 the existing unknown-option warning instead of a silently ineffective control.
 
+The next runtime regression was not inside `coneprog`; it was ownership of when
+to call it. Two dynamic waiting examples already had an independently certified
+analytic delayed chord, but chronological improvement search then launched 176
+and 246 trajectory SOCPs respectively, failed every earlier arrival, and returned
+the original candidate. An exact initial visibility route plus the optimistic
+velocity lower bound `route length / norm(max velocity)` now decides whether an
+initial spatial detour could beat the incumbent before those trials run. When it
+cannot, the certified wait is returned immediately. When it can, as in the
+moving-circle control case, the original chronological search remains active.
+
+This small ownership change reduced the complete maintained-example sum of
+medians from 128.8134 to 96.4458 seconds without changing any returned duration
+or length. The lesson is broader than this case: before tuning a solver called
+hundreds of times, verify that the caller still needs those solves and already
+has not computed a validated incumbent that dominates the search family under a
+cheap necessary bound.
+
 ## Code-retention rule
 
 A suggestion is a hypothesis, not a specification. Core code is retained only when all of the following are true:

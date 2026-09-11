@@ -151,9 +151,12 @@ fixed-arrival trials, with `TemporalResolution_s` (default 0.5 s) and
 For fixed-position goals, physically impossible times are excluded using the
 same necessary travel-time bound as endpoint validation before applying the
 trial budget. A validated delayed straight crossing remains an incumbent while
-earlier detours are tested; it is retained if those trials fail or exhaust the
-budget. Immediate certified crossings keep their direct path.
-`TemporalSearch` reports trials, budget, unsearched intervals, and the absence
+earlier detours are tested. Those trials are skipped when the exact initial
+visibility route is disconnected or its optimistic route-length/maximum-speed
+bound cannot beat the incumbent. Immediate certified crossings keep their
+direct path. `SolverDiagnostics.DepartureSchedule.InitialRouteTimeBound_s`
+records the skip bound.
+When trials run, `TemporalSearch` reports their budget, unsearched intervals, and the absence
 of a global earliest proof. `arrivalSearchExhausted` means no tested time was
 certified; it does not prove physical infeasibility.
 
@@ -278,8 +281,10 @@ guarantee. Static optimization uses a visibility-selected topology and a finite
 polynomial family. Dense rest-to-rest histories first use a time-expanded
 visibility proposal over declared source, midpoint, and uniform time layers.
 The selected layer is not a continuous-time global-optimality proof. Sparse
-histories and unsuccessful timed proposals retain chronological fixed-arrival
-search; feasible times may be disconnected and open gaps remain unsearched.
+histories and unsuccessful timed proposals use a certified delayed chord when
+available; chronological fixed-arrival search continues only when the initial
+spatial-route bound can beat it. Feasible times may be disconnected and open
+gaps remain unsearched.
 Nonlinear optimization and fixed-clock conic failures do not prove physical
 infeasibility. These cases return stable failure outcomes without weakening
 validation.

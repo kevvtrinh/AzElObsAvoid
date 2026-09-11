@@ -1,7 +1,8 @@
 function tests = testArrivalSearchRegressions
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testArrivalSearchRegressions.m')
-% PURPOSE: Exercise late feasible arrivals and selection against waiting motions.
+% PURPOSE: Exercise late feasible arrivals, selection against waiting motions, and proven skips of
+%   fixed-arrival trials that cannot beat a certified wait incumbent.
 % INPUTS: MATLAB unit test framework and deterministic public planner inputs.
 % OUTPUTS: Independent validation and arrival-search regression checks.
 % UNITS: Coordinate units, seconds, and physical derivatives.
@@ -41,14 +42,23 @@ function testLongRequestUsesBudgetAfterPhysicalBound(testCase)
     verifyLessThanOrEqual(testCase,result.ArrivalTime_s,82.5);
 end
 
-function testFailedEarlierTrialPreservesValidatedWait(testCase)
+function testDisconnectedSnapshotReturnsValidatedWaitWithoutTrials(testCase)
     result = exampleMovingBarrierWait(struct('PlotOutputs',false,'Verbose',false,'MaxArrivalTrials',1));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyTrue(testCase,result.TemporalSearch.RetainedIncumbent);
-    verifyEqual(testCase,result.ArrivalTime_s,result.TemporalSearch.IncumbentArrival_s);
-    verifyEqual(testCase,numel(result.TemporalSearch.TrialTime_s),1);
-    verifyNotEqual(testCase,result.TemporalSearch.TrialTerminationReason,"goalReached");
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"c3DepartureSchedule");
+    verifyFalse(testCase,isfield(result,'TemporalSearch'));
     verifyGreaterThan(testCase,result.SolverDiagnostics.DepartureSchedule.DepartureDelay_s,0);
+    verifyEqual(testCase,result.SolverDiagnostics.DepartureSchedule.InitialRouteTimeBound_s,Inf);
     verifyFalse(testCase,isfield(result,'FixedArrivalTrialTime_s'));
+end
+
+function testInitialRouteBoundReturnsValidatedWaitWithoutTrials(testCase)
+    result = exampleOpeningUShapedObstacle(struct('PlotOutputs',false,'Verbose',false));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyFalse(testCase,isfield(result,'TemporalSearch'));
+    routeBound_s=result.SolverDiagnostics.DepartureSchedule.InitialRouteTimeBound_s;
+    verifyGreaterThanOrEqual(testCase,routeBound_s,result.TrajectoryDuration_s);
+    verifyGreaterThan(testCase,result.SolverDiagnostics.DepartureSchedule.DepartureDelay_s,0);
 end

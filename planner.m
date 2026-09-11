@@ -171,7 +171,22 @@ if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
             result.ElapsedTime_s=toc(totalTimer);
             hasWait = isfield(diagnostics,'DepartureSchedule') && ...
                 diagnostics.DepartureSchedule.DepartureDelay_s>options.ArrivalTimeTolerance_s;
-            if result.Success && ~hasWait, return; end
+            if result.Success
+                if ~hasWait, return; end
+                initialVisibilityGraph=obstacleAvoidance.search.createVisibilityGraph( ...
+                    scene,initialState.position_units,goalState.position_units,limits,options);
+                initialRouteTimeBound_s=Inf;
+                if initialVisibilityGraph.IsConnected
+                    initialRouteTimeBound_s=initialVisibilityGraph.RouteLength_units/ ...
+                        norm(limits.maxVelocity_units_s);
+                end
+                diagnostics.DepartureSchedule.InitialRouteTimeBound_s=initialRouteTimeBound_s;
+                if initialRouteTimeBound_s>=result.TrajectoryDuration_s-options.ArrivalTimeTolerance_s
+                    result.SolverDiagnostics=diagnostics;
+                    result.Message="The initial visibility route cannot beat the certified delayed chord under the velocity bound; fixed-arrival trials were skipped.";
+                    return;
+                end
+            end
         end
     end
     result = obstacleAvoidance.input.searchArrivalTimes(result);

@@ -112,3 +112,38 @@ no longer appears in resolved options. The permanently false
 Verification after these changes: 57/57 MATLAB tests passed. Generated MAT,
 CSV, profiler, and scratch outputs were excluded from source control and removed
 after their aggregate results were recorded here.
+
+## Continuous improvement: skip dominated arrival trials
+
+Profiling the two waiting examples exposed a second, independent bottleneck.
+`exampleMovingBarrierWait` made 176 trajectory SOCP calls across six failed
+fixed-arrival trials after already finding a certified 10.140089-second delayed
+chord. `exampleOpeningUShapedObstacle` made 246 trajectory SOCP calls across
+eight failed trials after already finding its certified 11.614334-second motion.
+Both searches ultimately returned the original incumbent unchanged.
+
+The planner now constructs the exact initial visibility graph before launching
+those trials. Let `L` be its shortest spatial route length and let
+`norm(maxVelocity_units_s)` be an optimistic upper bound on Euclidean speed.
+If there is no initial route, or `L/norm(maxVelocity_units_s)` cannot beat the
+certified delayed chord, the fixed-arrival trials are skipped. This is a
+necessary velocity-only bound for that exact initial route, not a claim of
+global time optimality in changing geometry. If the route can beat the
+incumbent, chronological search remains active.
+
+The moving-circle regression is the structurally different control: its initial
+route can beat the wait incumbent, so it still searches and returns the earlier
+9-second detour.
+
+| Example | Before (s) | After (s) | Duration unchanged | Length unchanged |
+|---|---:|---:|---:|---:|
+| Moving barrier wait | 12.9770 | 0.1008 | yes | yes |
+| Opening U-shaped obstacle | 17.6380 | 0.1325 | yes | yes |
+| Moving circle control | 0.4119 | 0.4713 | yes | yes |
+
+The complete 20-example, three-repetition rerun remained 20/20 independently
+valid. The sum of example medians fell from 128.8134 to 96.4458 seconds (25.1%),
+the median of medians fell from 1.5277 to 0.7496 seconds, and historical runtime
+passes increased from 15/20 to 17/20. The maximum median was 41.9489 seconds.
+All 58 MATLAB tests passed after adding disconnected and finite-route-bound
+regressions.
