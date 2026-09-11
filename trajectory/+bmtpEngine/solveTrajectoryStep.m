@@ -51,8 +51,9 @@ boundaryControls = bmtpEngine.imposeEndpointControls(zeros(segmentCount,degree+1
     maximumMotionDuration_s*segmentRatio/sum(segmentRatio),initialState,goalState);
 powerIndex             = controlCount + (1:4);
 lengthCount = segmentCount * degree;
-activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
-planeCountBySegment = sum(reshape([planes.Active],size(planes)),2);
+planeActiveBySegment = reshape([planes.Active], size(planes));
+activePlaneCount = nnz(planeActiveBySegment);
+planeCountBySegment = sum(planeActiveBySegment, 2);
 % Share elastic variables only when they dominate the length-cone variables.
 % The weighted maximum penalizes every retained plane; zero slack recovers
 % the same hard corridor, which is independently checked before acceptance.
@@ -81,11 +82,8 @@ for segmentIndex = 1:segmentCount
     if sharedSlack && planeCountBySegment(segmentIndex)>0
         slackIndex = slackIndex+1;
     end
-    for regionIndex = 1:size(planes, 2)
+    for regionIndex = reshape(find(planeActiveBySegment(segmentIndex, :)), 1, [])
         plane = planes(segmentIndex, regionIndex);
-        if ~plane.Active
-            continue;
-        end
         [rows, offset_units] = bmtpEngine.createPlaneRows(plane, degree, variableCount, segmentIndex);
         targets = inequalityIndex + (1:size(rows, 1));
         A(targets, :) = rows;

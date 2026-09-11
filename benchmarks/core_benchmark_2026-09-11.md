@@ -237,3 +237,54 @@ One attempted stage baseline was discarded after MATLAB current-folder
 precedence resolved the production checkout instead of the detached baseline.
 The driver was corrected to change into the selected planner root before
 measurement; retained baseline runs report zero current-only plane removals.
+
+## Follow-up: active-plane iteration and conic formulation limits
+
+After visibility filtering, the slow US-outline profile attributed about 27.8
+seconds to BMTP, 20.4 seconds to `coneprog`, 15.1 seconds to trajectory SOCPs,
+7.6 seconds to maximum-margin plane SOCPs, and 4.5 seconds to the visibility
+graph. Visiting inactive entries in the rectangular trajectory-plane table cost
+0.615 seconds across 442,296 visits. Iterating the already-computed active
+indices in their original ascending order removes that work without changing
+any solver row or its order. Focused trajectory-step inclusive time fell from
+15.145 to 14.474 seconds; conic time was unchanged within run noise.
+
+The four deterministic high-density cases were then run three times:
+
+| Case | Median wall (s) | Arrival (s) | Length (units) |
+|---:|---:|---:|---:|
+| 1 | 14.8959 | 14.6400 | 30.6023 |
+| 2 | 13.6470 | 14.7940 | 26.2370 |
+| 3 | 11.7802 | 14.7580 | 26.1060 |
+| 4 | 17.7979 | 14.2010 | 26.2240 |
+
+All 12 runs succeeded and independently validated with unchanged motion
+metrics. The median sum was 58.1210 seconds versus 58.4761 before the loop
+change (-0.61%). A focused three-run US median was 35.8386 seconds versus
+36.5722 (-2.01%), with identical arrival and length. The complete maintained
+rerun was also 20/20 valid with unchanged motion metrics, but its median sum was
+99.1605 seconds versus 91.9071; the US case measured 37.6424 seconds in that
+suite. This unfavorable aggregate is retained because solver variance is larger
+than the loop change's small direct saving.
+
+Three exact conic-formulation experiments were also evaluated:
+
+1. One block-diagonal solve for 137 independent Philippines maximum-margin
+   planes took about 1.89 seconds versus 0.63 seconds for scalar solves (roughly
+   200% slower). A per-span batch was 0.98% slower and verified only 134/137
+   planes. The batched solves also returned global exit flag -7, so batching was
+   rejected.
+2. A 37-call trajectory trace separated nine-span row-count scaling from
+   27-span iteration/conditioning cost. Within those groups, solve-time
+   correlations were 0.960 with row count for nine spans and 0.984 with
+   iterations for 27 spans. Across all calls, active-plane count alone had only
+   0.182 correlation with elapsed time.
+3. Eight captured trajectory programs were solved three times with no scaling,
+   equality-row scaling, inequality-row scaling, or both. Median time/iterations
+   were respectively 0.4639/33, 0.4741/34, 0.6010/44, and 0.6180/45.5. All
+   residuals were evaluated in original coordinates. The mathematically exact
+   row scalings were slower and therefore rejected.
+
+A proposed sparse one-shot plane-row staging layer was not implemented because
+the remaining row creation and insertion cost was only about 0.25 seconds, less
+than 1% of the profiled planner time.

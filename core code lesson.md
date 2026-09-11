@@ -382,6 +382,73 @@ its small absolute graph saving in the geographic example. The 160-case random
 azimuth rerun also remained 160/160 valid, with median, mean, and maximum wall
 times of 0.1542, 0.1696, and 0.8472 seconds.
 
+## Trajectory-SOCP formulation experiments after graph filtering
+
+The post-filter profile moved the optimization target decisively into BMTP. On
+the slow US-outline example, the planner spent about 34.9 seconds in planning,
+27.8 seconds in BMTP, and 20.4 seconds in 1,609 `coneprog` calls. Trajectory
+programs accounted for about 15.1 seconds and maximum-margin plane programs for
+7.6 seconds, while the now-filtered visibility graph accounted for about 4.5
+seconds. This means another graph-only change cannot provide a large whole-case
+gain: most remaining time is the required alternating conic work.
+
+One exact bookkeeping change was retained. The plane table is rectangular, but
+most entries are inactive; the trajectory builder formerly visited all 442,296
+slots in the profiled run merely to reject the inactive ones. It now computes
+the same active mask once and iterates the active region indices in the same
+ascending order. The rows, offsets, solver options, and row ordering are
+unchanged. The 0.615-second measured slot-visitation hotspot disappeared and
+inclusive trajectory-step time fell from 15.145 to 14.474 seconds in the focused
+profile, while `solveConic` time remained within noise.
+
+Three repetitions of the four high-density random static cases remained 12/12
+valid and preserved every arrival time and path length. Their median wall times
+were 14.896, 13.647, 11.780, and 17.798 seconds; the sum was 58.1210 seconds
+versus 58.4761 before this loop change (-0.61%). A separate three-repetition
+focused US run had a 35.8386-second median versus the prior 36.5722-second
+median (-2.01%), with the same 5.264174121-second arrival and
+18.849365277-unit length. The complete 20-example rerun was 20/20 valid with
+unchanged motion metrics, but its median-time sum was an unfavorable 99.1605
+seconds versus 91.9071; the slow US case alone measured 37.6424 seconds in that
+run. The direct profile and dense corpus support retaining the exact low-level
+work reduction, but the suite result shows that its small benefit is easily
+overwhelmed by conic-solver timing variability.
+
+Several larger-looking formulations were tested and rejected:
+
+- Batching 137 independent maximum-margin plane updates into one exact
+  block-diagonal SOCP increased median time from about 0.63 seconds for the
+  scalar solves to about 1.89 seconds, roughly 200% slower. The global solver
+  returned exit flag -7 even though all 137 recovered planes passed their
+  per-plane checks, and the selected non-unique normals differed. Grouping only
+  by optimizer span was still 0.98% slower and verified only 134 of 137 planes;
+  all four nonempty batch solves returned -7. Independent scalar plane solves
+  remain both faster and more reliable.
+- Reassembling all active plane rows through another sparse staging layer was
+  not implemented. After inactive-slot removal, row creation and insertion were
+  only about 0.25 seconds of the roughly 34-second profile, below 1%; another
+  representation would add complexity with no material whole-run ceiling.
+- An exact trace of 37 trajectory programs showed two different cost regimes.
+  For nine-span programs, solve time tracked inequality-row count strongly
+  (correlation 0.960 within the nonfixed group). For 27-span programs, row count
+  did not explain time, while interior-point iterations did (correlation 0.984).
+  Across all calls, elapsed time correlated 0.802 with inequality rows and only
+  0.182 with active-plane count. Thus “fewer planes” is not itself a sufficient
+  optimization target; the induced program dimensions and conditioning matter.
+- Positive row normalization was tested on eight captured trajectory programs
+  with three counterbalanced repetitions per variant and all residuals checked
+  in the original unscaled formulation. The unscaled median was 0.4639 seconds
+  at 33 iterations. Equality-only scaling was 0.4741 seconds at 34 iterations,
+  inequality-only scaling was 0.6010 seconds at 44 iterations, and scaling both
+  was 0.6180 seconds at 45.5 iterations. Row scaling preserves the feasible set
+  mathematically but worsened this solver's numerical path, so it was rejected.
+
+These results narrow the credible remaining opportunity. Small exact MATLAB-side
+reductions can still recover low-single-digit percentages, but a further
+double-digit improvement must reduce the intrinsic trajectory/plane conic work
+or improve its conditioning without changing the accepted motion, tolerances,
+or independent validation.
+
 ## Remaining limitations
 
 - BMTP alternation is biconvex and does not guarantee a globally shortest or globally minimum-time trajectory.
