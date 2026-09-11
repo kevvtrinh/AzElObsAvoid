@@ -1,4 +1,8 @@
-# Intrinsic jerk variation and profile reuse
+# Intrinsic jerk variation and profile reuse (historical experiment)
+
+This document records a superseded formulation. The current active-pair BMTP
+core does not use the jerk-variation objective or `PathLengthTimeAllowance_s`.
+The option was removed after its last production consumers were retired.
 
 This experiment changes motion generation. It does not filter returned samples
 or apply a separate smoothing pass. Original geometry, margins, continuity,
@@ -33,11 +37,9 @@ gives a dimensionless measure bounded by one over the full clock. Its weight
 is 0.005 times the start-to-goal distance. It bounds the added *objective*
 cost; control-polygon length is not exactly continuous arc length.
 
-In the variable-clock solve, the sum of squared normalized jerk differences,
-divided by 16 times the phase count, is at most one. Multiplying it by the
-existing PathLengthTimeAllowance_s (default 0.49 seconds) bounds that penalty.
-The subsequent fixed-clock repair spends no additional arrival allowance.
-Setting the option to zero removes this variable-clock penalty.
+In that historical variable-clock solve, the sum of squared normalized jerk
+differences, divided by 16 times the phase count, was at most one. Multiplying it
+by the then-active `PathLengthTimeAllowance_s` bounded that penalty.
 
 These bounded penalties establish trade bounds for globally solved instances
 of the same formulation. The nonlinear solve is local, and changing phase

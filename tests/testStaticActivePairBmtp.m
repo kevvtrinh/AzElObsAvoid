@@ -40,6 +40,7 @@ function testSeparatedSlalomBarriers(testCase)
         'maxJerk_units_s3',[2,2]);
     result=planner(obstacles,state([-13,0],0),state([13,0],110),limits,options());
     verifyValidatedStaticBmtp(testCase,result);
+    verifyTrue(testCase,result.SolverDiagnostics.TravelRefinementAccepted);
 end
 
 function verifyValidatedStaticBmtp(testCase,result)
@@ -54,6 +55,5 @@ function value=state(position_units,time_s)
 end
 
 function value=options()
-    value=struct('GoalTimeMode','earliestArrival','SampleTime_s',0.1, ...
-        'PathLengthTimeAllowance_s',0.49);
+    value=struct('GoalTimeMode','earliestArrival','SampleTime_s',0.1);
 end

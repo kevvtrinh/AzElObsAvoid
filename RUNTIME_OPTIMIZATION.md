@@ -160,9 +160,10 @@ The retained changes address those costs without changing obstacle geometry:
 - Skip the optional extra-time length trial only when the exact static
   visibility route, with a numerical guard, rules out its existing required
   one-percent gain. The first length polish at the earliest clock still runs.
-  Dynamic snapshot routes are not used as geometric lower bounds. The default
-  arrival allowance remains 0.49 seconds, and examples now forward an explicit
-  `PathLengthTimeAllowance_s` override.
+  Dynamic snapshot routes are not used as geometric lower bounds. At the time of
+  this historical experiment, examples forwarded an explicit
+  `PathLengthTimeAllowance_s` override; that option and its consumers have since
+  been removed from the active core.
 - Return immediately when obstacle rings match exactly, and use a bounded
   direct index comparison when merging short convex faces. Ring alignment,
   convex regions, source geometry, margins, and collision predicates retain

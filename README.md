@@ -174,28 +174,13 @@ joining a stationary wait. No new snap limit is imposed.
 
 Direct earliest-arrival rest motion uses the jerk-limited chord with continuous
 jerk smoothing. Fixed-arrival direct motion retains its minimum-jerk quintic.
-Static monotone detours reuse exact source facet corridors with a smoothed
-quintic locked coordinate and integrated quadratic jerk in the free coordinate.
-Additional phase knots near guide turns let the free coordinate turn locally.
-The solver first finds a feasible arrival, then shortens at that clock. It may
-also try `PathLengthTimeAllowance_s` later (default 0.49 s, range `[0,0.5)`) and
-accept that delay only for at least a further 1% reduction in continuous arc
-length. Set this option to zero to keep the earliest feasible corridor clock.
-The bounded refinement keeps all source facets and physical constraints;
-`SolverDiagnostics.PathLengthRefinement` records its outcome and solver exits.
-It does not establish globally optimal arrival or length, and can increase
-planning runtime. Other static detours jointly optimize quadratic jerk
-and phase durations, followed by a conic repair. Fixed-arrival motion enforces
-C3 joins in the shared Bernstein equations. Timed obstacles retain their exact
-affine cells and absolute activity intervals. No example identity selects a
-production method.
-
-The general static variable-clock generator also uses `PathLengthTimeAllowance_s`
-as a bounded jerk-variation penalty during phase optimization. Larger fixed-clock
-models minimize length with a small intrinsic snap penalty and use fewer artificial
-phases. These are local optimization heuristics; the measured arrival/path trade,
-conditioning checks, and profile-precomputation opportunities are documented in
-[BMTP_GENERATION.md](BMTP_GENERATION.md).
+Static detours alternate between a common-clock BMTP trajectory and separating
+planes only for curve-region pairs encountered by the current iterate. After
+finding the earliest retained feasible motion, the solver minimizes travel at
+that same arrival time and keeps it only after exact continuous certification.
+Fixed-arrival motion enforces C3 joins in the shared Bernstein equations. Timed
+obstacles retain their exact affine cells and absolute activity intervals. No
+example identity selects a production method.
 
 Export preserves the physical clock. A global continuity projection stays in
 the quintic spline space, and every corrected motion is checked again. Exact
@@ -219,8 +204,8 @@ addpath('trajectory', 'examples', 'tests');
 assertSuccess(runtests('tests'));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks([], 3);
-disp(summary(:, {'Case','Valid','MeetsQuality'}));
-disp(summary(:, {'Case','WallTime_s','ReferenceWallTime_s','MeetsAll'}));
+disp(summary(:, {'Case','Valid','MeetsHistoricalQuality'}));
+disp(summary(:, {'Case','WallTime_s','ReferenceWallTime_s','MeetsAllHistorical'}));
 ```
 
 Inspect validity and historical quality/runtime gates separately. C3 results

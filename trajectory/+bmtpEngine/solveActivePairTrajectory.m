@@ -5,7 +5,8 @@ function [result,diagnostics] = solveActivePairTrajectory(request,warmStart,diag
 %   curve-region pairs encountered by the current iterate. This is a proposal generator; public
 %   independent validation remains authoritative.
 % INPUTS: Checked request and warm start, diagnostics, and exact separation targets in units.
-% OUTPUTS: Best sampled-clear BMTP controls and diagnostics. Expected failure is returned normally.
+% OUTPUTS: Best sampled-clear BMTP controls, the exact prepared/certified travel refinement when
+%   accepted, and diagnostics. Expected failure is returned normally.
 % UNITS: Position and clearance are coordinate units; time is seconds.
 
 %% Section 1: Initialize The Active Pair Set
@@ -21,6 +22,8 @@ diagnostics.PlaneSocpCount=0;
 bestControl_units=zeros(0,request.Degree+1,2);
 bestTimes_s=NaN;
 bestDuration_s=Inf;
+bestPreparedMotion=struct('Success',false);
+bestCertificate=struct('Passed',false);
 diagnostics.RetainedBestTrialDuration_s=bestDuration_s;
 taggedPairs=false(segmentCount,regionCount);
 emptyPlane=struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
@@ -120,11 +123,13 @@ if ~isempty(bestControl_units)
         if ~any(overlaps,'all')
             originalLength_units=sum(vecnorm(diff(bestControl_units,1,2),2,3),'all');
             shortLength_units=sum(vecnorm(diff(shortControl_units,1,2),2,3),'all');
-            shortCertificate=certifyTravelCandidate(request,warmStart, ...
+            [shortCertificate,shortPreparedMotion]=certifyTravelCandidate(request,warmStart, ...
                 shortControl_units,shortTimes_s,reserve_units,target_units);
             if shortLength_units<=originalLength_units && shortCertificate.Passed
                 bestControl_units=shortControl_units;
                 bestTimes_s=shortTimes_s;
+                bestPreparedMotion=shortPreparedMotion;
+                bestCertificate=shortCertificate;
                 diagnostics.TravelRefinementAccepted=true;
             end
         end
@@ -136,11 +141,12 @@ diagnostics.TaggedPairCount=nnz(taggedPairs);
 diagnostics.SolverMessage=solverMessage;
 result=struct('Success',~isempty(bestControl_units),'SolverMessage',solverMessage, ...
     'ControlPoint_units',bestControl_units,'SegmentTime_s',bestTimes_s, ...
-    'Planes',planes,'TaggedPairs',taggedPairs);
+    'Planes',planes,'TaggedPairs',taggedPairs,'PreparedMotion',bestPreparedMotion, ...
+    'Certificate',bestCertificate);
 end
 
 %% Section 5: Local Functions
-function certificate=certifyTravelCandidate(request,warmStart,controls_units,times_s,reserve_units,target_units)
+function [certificate,prepared]=certifyTravelCandidate(request,warmStart,controls_units,times_s,reserve_units,target_units)
     prepared=bmtpEngine.prepareFinalMotion(request,controls_units,times_s);
     [certificate,cache]=bmtpEngine.checkFinalMotion( ...
         request,warmStart,prepared,reserve_units,target_units);

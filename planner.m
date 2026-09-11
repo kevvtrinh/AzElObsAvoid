@@ -22,9 +22,6 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
 %     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
 %     FixedArrivalSearch: spatial (default) or timeExpanded for timed visibility.
-%     PathLengthTimeAllowance_s (default 0.49, range [0,0.5)) permits static
-%     monotone corridor refinement to spend arrival time for at least 1% shorter
-%     motion. Set zero to shorten only at the earliest feasible corridor clock.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
@@ -298,7 +295,7 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
         "CollisionClearanceTolerance_units", 1e-7, ...
         "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
         "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
-        "TemporalResolution_s",0.5,"MaxArrivalTrials",100,"PathLengthTimeAllowance_s",0.49);
+        "TemporalResolution_s",0.5,"MaxArrivalTrials",100);
 end
 
 function state = normalizeState(state, defaults, argumentName)
@@ -359,7 +356,7 @@ function limits = normalizeLimits(limits, defaults)
     end
     for fieldName = physicalNames
         value = double(limits.(fieldName));
-        if isscalar(value), value = [value value]/sqrt(2); end %#ok<AGROW>
+        if isscalar(value), value = [value value]/sqrt(2); end
         if ~isnumeric(limits.(fieldName)) || ~isreal(value) || ~isvector(value) || numel(value) ~= 2 || any(~isfinite(value)) || any(value <= 0)
             error("planTrajectory:InvalidDerivativeLimit", "%s must be a positive scalar or finite 1-by-2 row.", fieldName);
         end
@@ -399,13 +396,6 @@ function options = resolveOptions(options, defaults)
     for name = ["WrapX","WrapY","MatchTargetVelocity","MatchTargetAcceleration"]
         options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name),name,"planner:InvalidLogicalOption");
     end
-    allowance_s = options.PathLengthTimeAllowance_s;
-    if ~isnumeric(allowance_s) || ~isreal(allowance_s) || ~isscalar(allowance_s) || ...
-            ~isfinite(allowance_s) || allowance_s<0 || allowance_s>=0.5
-        error('planner:InvalidPathLengthTimeAllowance', ...
-            'PathLengthTimeAllowance_s must be a finite scalar in [0,0.5).');
-    end
-    options.PathLengthTimeAllowance_s = double(allowance_s);
     validateattributes(options.MaxArrivalTrials,{'numeric'},{'scalar','finite','integer','positive'});
 end
 

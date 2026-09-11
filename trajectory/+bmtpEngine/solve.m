@@ -114,7 +114,6 @@ if seed.Source=="departureSchedule" && ~(preparedMotion.Success && certificate.P
     end
     analyticIdentifier = "c3DepartureSchedule";
 end
-boundRecord = struct('Attempted',false,'Passed',false,'Time_s',NaN,'ElapsedTime_s',0,'TrajectorySocpCount',0);
 if preparedMotion.Success && certificate.Passed
     diagnostics.Identifier = analyticIdentifier;
     diagnostics.ConstraintRepresentation = analyticRepresentation;
@@ -126,7 +125,6 @@ else
     if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
         [alternatingResult,diagnostics] = bmtpEngine.solveActivePairTrajectory( ...
             request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
-        prescribedPower_units = [];
     else
         usesTimedSolver = isfield(seed, 'Source') && ...
             string(seed.Source) == "timeExpandedVisibilityGraph";
@@ -157,12 +155,18 @@ else
     if isfield(alternatingResult,'CertificateEventTime_s')
         certificateEventTime_s=alternatingResult.CertificateEventTime_s;
     end
-    % Endpoint correction and export can increase the derivative bounds.
-    preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s,prescribedPower_units);
-    certificate = struct('Passed',false);
-    certificateCache=[];
+    if isfield(alternatingResult,'PreparedMotion') && alternatingResult.PreparedMotion.Success && ...
+            isfield(alternatingResult,'Certificate') && alternatingResult.Certificate.Passed
+        % The certificate belongs to this prepared motion, not to the raw controls above.
+        preparedMotion=alternatingResult.PreparedMotion;
+        certificate=alternatingResult.Certificate;
+    else
+        % Endpoint correction and export can increase the derivative bounds.
+        preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s,prescribedPower_units);
+        certificate = struct('Passed',false);
+        certificateCache=[];
+    end
 end
-diagnostics.LowerBoundAttempt = boundRecord;
 
 %% Section 3: Prepare And Check The Final Motion
 diagnostics.EndpointProjectionApplied = true;

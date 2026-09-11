@@ -90,6 +90,38 @@ Other mesh experiments were unfavorable: a substantially reduced span count fail
 - Explicit `coneprog` linear-solver choices (`normal`, `prodchol`, and `schur`) were all slower on the saved request than MATLAB's automatic augmented-system choice. No solver-option override was retained. MATLAB documents the conic solver and its algorithm at [coneprog](https://www.mathworks.com/help/optim/ug/coneprog.html) and [Cone Programming Algorithm](https://www.mathworks.com/help/optim/ug/cone-programming-algorithm.html).
 - The old nonlinear phase repeatedly reached its iteration cap and dominated runtime. General advice for diagnosing slow Optimization Toolbox solves is consistent with profiling the formulation before tuning options; see [When the Solver Takes Too Long](https://www.mathworks.com/help/optim/ug/solver-takes-too-long.html) and [fmincon](https://www.mathworks.com/help/optim/ug/fmincon.html).
 
+## Final benchmark and cleanup lesson
+
+The complete post-cleanup audit is recorded in
+[`benchmarks/core_benchmark_2026-09-11.md`](benchmarks/core_benchmark_2026-09-11.md).
+All 20 maintained examples passed over three repetitions, all 160 paired random
+azimuth cases passed, and all 57 MATLAB tests passed.
+
+The slowest maintained example showed why optimization has to preserve the
+representation being checked. Travel refinement already called
+`prepareFinalMotion` and continuously certified the corrected, subdivided, and
+possibly time-dilated curve. Re-preparing the raw controls immediately afterward
+discarded that work and repeated the certificate. Passing that exact prepared
+motion and its certificate forward reduced the hard-example median from 46.2960
+to 42.8925 seconds while preserving duration and continuous arc length. The
+independent public validator remains the final authority.
+
+By contrast, removing unused-looking length-cone variables from time-only SOCPs
+changed the numerical problem layout and therefore the active-pair iteration.
+It made the alternating slalom slower and measurably lengthened both inspected
+paths. That experiment had also been rejected earlier; it was restored rather
+than rationalized after the fact. Algebraic redundancy is not sufficient
+evidence for changing an iterative conic formulation.
+
+Dead code also needs historical context. The removed Ruckig and clock-guide code
+implemented genuine alternate algorithms; BMTP does not replace every standalone
+capability they once exposed. They were removed because the current repository
+contract has one BMTP planner entry point and repository dependency analysis
+found no callers. `PathLengthTimeAllowance_s` had likewise been meaningful, but
+its length-delay and jerk-penalty consumers were already gone. Removing its
+default and validation makes the active interface honest; old callers now get
+the existing unknown-option warning instead of a silently ineffective control.
+
 ## Code-retention rule
 
 A suggestion is a hypothesis, not a specification. Core code is retained only when all of the following are true:
