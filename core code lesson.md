@@ -152,6 +152,80 @@ A suggestion is a hypothesis, not a specification. Core code is retained only wh
 
 This rule is why the final change removes the older static solver instead of keeping both implementations “just in case.” It is also why raw triangle decomposition, four-plane layouts, explicit cone-solver modes, route-point canonicalization, reduced meshes, and horizon retry schedules are absent from production.
 
+## Why the remaining static examples are slower
+
+A focused profile of `exampleUSOutlineExtremeVisibility` attributes the current
+47.696-second profiled wall time as follows. These are inclusive timings and
+must not be summed across callers:
+
+| Owner | Inclusive time (s) | Calls |
+|---|---:|---:|
+| Active-pair BMTP | 32.224 | 3 |
+| `coneprog` | 24.063 | 2,029 |
+| Trajectory steps | 17.100 | 38 |
+| Maximum-margin plane steps | 9.507 | 1,991 |
+| Final motion certification | 4.889 | 6 |
+| Exact visibility graphs | 4.892 | 3 |
+| Geographic fixture construction | 5.285 | 3 |
+
+Certificate reuse has already reduced final checking enough that validation is
+not the principal remaining owner. The expensive work is inside the conic
+solver: both the number of alternating programs and their numerical solution.
+
+The exact Hawaii, Croatia, and Philippines outlines decompose into 278, 340,
+and 2,193 convex regions. Only 46, 44, and 322 span-region pairs are eventually
+tagged, but a collision-free improvement changes the curve-dependent rows of
+every tagged maximum-margin problem. The solver therefore refreshes the full
+tagged set before the next trajectory step. This produces 305, 220, and 1,466
+plane SOCPs respectively. Those refreshes are optimization work, not duplicate
+certification.
+
+The `bmtp-cleanup-codex` branch completed the identical geographic example in
+21.888 profiled seconds with 185 conic calls. Its advantage is not generic code
+cleanliness: when an outline has more than 64 exact convex regions, that branch
+replaces them with eight conservative convex hulls and retains an exact-region
+retry. It also routes through older fixed-time excursion and candidate-search
+paths. The hulls change the occupied set and the fallback changes the solve
+policy, so this is not an implementation-equivalent comparison under the
+current exact-geometry, one-method, no-retry contract.
+
+Several targeted experiments explain why the expensive settings remain:
+
+- Longest-shared-edge-first exact face merging increased the region counts to
+  299, 343, and 2,216. The default deterministic merge order is better for
+  these inputs.
+- Replacing maximum-margin planes with analytic supporting axes kept static U
+  valid but worsened arrival from 20.8452 to 20.9236 seconds, worsened length
+  from 39.3457 to 39.4043 units, and did not reduce wall time. The rotating
+  degree-one maximum-margin plane is materially different from a cheap constant
+  separator.
+- Refreshing only planes with trajectory dual weight above the conic optimality
+  tolerance reduced static-U plane solves from 350 to 100. On the Philippines
+  outline it reduced plane solves from 1,466 to 403 and total geographic wall
+  time from about 42.9 to 36.7 seconds, but arrival regressed from 5.2642 to
+  5.9417 seconds and length from 18.8320 to 19.4574 units. A plane that is
+  inactive for the current trajectory can constrain the next optimum after
+  neighboring planes move.
+- Stopping on a coarser arrival plateau and omitting the terminal plane refresh
+  saved iterations but changed the final length-refinement corridor. The dense
+  outline and static U returned different, sometimes longer paths. The final
+  refresh is live optimization input rather than dead end-of-loop work.
+- Deferring construction of length-cone objects unused by arrival-only calls
+  preserved solver inputs and exact outputs. It reduced trajectory-step profile
+  self-time by only 0.089 seconds across 38 calls; geographic wall time changed
+  from 47.696 to 47.881 profiled seconds. The setup-only saving is below run
+  noise and does not justify another branch in the shared solver.
+- An axis-aligned shortcut in final certification preserved every maintained
+  motion exactly, but a complete three-run example sweep became slightly slower
+  overall. It was removed rather than retained on an isolated-case timing win.
+
+The conclusion is deliberately narrow: current profiling does not establish a
+safe redundant block inside the remaining hot path. A material improvement now
+requires a mathematically equivalent, cheaper solution of the small
+time-varying maximum-margin SOCPs or of the repeated trajectory SOCPs. Removing
+exact regions, retaining stale planes, weakening tolerances, or truncating the
+alternation merely buys runtime by changing the optimization problem.
+
 ## Remaining limitations
 
 - BMTP alternation is biconvex and does not guarantee a globally shortest or globally minimum-time trajectory.
