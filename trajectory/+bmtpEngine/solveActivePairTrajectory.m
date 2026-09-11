@@ -19,6 +19,7 @@ diagnostics.WarmStartDuration_s=segmentCount*commonTime_s;
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
 diagnostics.TrajectorySocpCount=0;
 diagnostics.PlaneSocpCount=0;
+diagnostics.TransientPlaneRemovalCount=0;
 bestControl_units=zeros(0,request.Degree+1,2);
 bestTimes_s=NaN;
 bestDuration_s=Inf;
@@ -39,6 +40,8 @@ for iterationIndex=1:maximumIterationCount
     if isempty(bestControl_units) && nnz([planes.Active])>segmentCount*request.Degree
         trajectoryPlanes=bmtpEngine.removeRedundantPlanes( ...
             planes,request.Limits,reserve_units,true);
+        diagnostics.TransientPlaneRemovalCount=diagnostics.TransientPlaneRemovalCount+ ...
+            nnz([planes.Active])-nnz([trajectoryPlanes.Active]);
     end
     [trialControl_units,trialTimes_s,exitFlag,output]=bmtpEngine.solveTrajectoryStep( ...
         segmentCount,request.Degree,request.InitialState,request.GoalState,request.Limits, ...

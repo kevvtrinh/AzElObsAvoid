@@ -261,8 +261,126 @@ remained independently valid. The sum of median wall times fell from 96.446 to
 only maintained motion change was the Philippines path, from 18.83204 to
 18.84937 units (+0.092%); its arrival changed by about one microsecond in the
 faster direction. The 160 deterministic random azimuth cases remained 160/160
-valid. This is the accepted runtime/length trade: the user prioritized runtime,
-while the complete corridor after first feasibility limits the path change.
+valid, but those fixed-arrival dynamic requests do not exercise the static
+active-pair consolidation path.
+
+Restoring the complete corridor after first feasibility does not bound the
+eventual path perturbation. Removing implied rows can change the finite-precision
+first feasible point selected by `coneprog`; that changes later maximum-margin
+planes and the local optimum. Runtime is the stated priority, but every observed
+motion-quality change must therefore be reported rather than assumed small.
+
+## Held-out static random corpora
+
+The retained reproducer is `benchmarks/benchmarkRandomStaticBmtp.m`; it records
+compact validation, motion, graph, BMTP, conic, and removal diagnostics without
+retaining full result objects.
+
+The first three fixed-seed corpora were useful negative evidence because they
+showed that region count alone does not create a consolidation opportunity:
+
+- seed 20260911: 21 cases comprising six cavities, six separated slaloms, six
+  star outlines, and three direct controls. All 18 active BMTP cases and all
+  three controls validated, but tagged-pair count stayed at or below 22;
+- seed 20260912: eight clouds of 24--36 overlapping rectangles. All validated,
+  with 58--109 tagged pairs and 9--21 optimizer spans, but the production
+  plane-density guard was not crossed;
+- seed 20260913: eight serrated bands with 45--75 teeth, 123--197 exact convex
+  regions, 31--46 tagged pairs, and 15 optimizer spans. All validated and the
+  transient removal count was zero.
+
+Seed 20260914 deliberately scaled the same structural family to four bands with
+250--350 teeth. These cases contained 514, 643, 527, and 626 exact regions and
+finally exercised the production proof. Three independent repetitions per
+version produced 12 runs per version, 24 total; all succeeded and passed the
+public validator.
+
+| Case | Baseline median (s) | Consolidated median (s) | Wall change | Length change | Arrival change | Cumulative removed block appearances |
+|---|---:|---:|---:|---:|---:|---:|
+| highDensity 1 | 18.5471 | 18.5369 | -0.055% | +0.027735% | +0.160861 us | 100 |
+| highDensity 2 | 17.5999 | 17.5439 | -0.318% | -0.002366% | -0.004931 us | 288 |
+| highDensity 3 | 14.8474 | 13.9985 | -5.717% | +0.474115% | -0.000114 us | 236 |
+| highDensity 4 | 20.7135 | 21.0344 | +1.549% | -0.005380% | -0.001847 us | 134 |
+
+The median sums changed from 71.7079 to 71.1138 seconds, only -0.828%.
+Removal count did not predict speedup, and the largest gain accompanied the
+largest length increase. This held-out result supports keeping the already
+narrow proof because the maintained dense geographic case benefits, but it does
+not support a general static-planner speedup claim, a new density threshold, or
+a bound on path-quality change. The diagnostic counts cumulative appearances of
+removed blocks across trajectory solves, not unique planes or avoided plane
+SOCPs.
+
+A corrected one-repetition stage attribution found identical iteration,
+trajectory-SOCP, plane-SOCP, and total conic-call counts between versions. The
+aggregate BMTP time changed by -0.519% and raw `coneprog` time by -0.912%.
+Case 3's wall/BMTP/conic changes were -6.065%, -9.218%, and -10.175%, while
+case 4's were +3.266%, +4.436%, and +4.529%. Thus the mixed behavior belongs to
+the numerical cost of the changed trajectory programs, not extra retries.
+
+Benchmark isolation mattered. The first follow-up baseline attribution was
+launched from the production checkout; MATLAB's current-folder precedence
+overrode the detached baseline on the path, and the supposed baseline reported
+the current-only removal counter. That run was interrupted and discarded. The
+driver now changes to the requested planner root before warming or measuring.
+The retained three-repetition baseline files were separately checked to contain
+zero removals; the corrected stage run also resolved the old implementation.
+
+## Exact visibility-graph relevance filtering
+
+After consolidation, a focused dense-static profile still assigned about five
+seconds to the exact visibility graph. On highDensity 3, an unprofiled graph
+took 4.864 seconds for 1,308 nodes and 129,315 collision queries. The profiled
+graph took 5.088 seconds inclusive: `segmentIntervals` owned 3.960 seconds,
+`inpolygon` 0.558 seconds, and endpoint-cone rejection 0.353 seconds. The hot
+lines were the dense edge-by-candidate outer products, divisions, and logical
+masks. Shortest-path search, polygon union, and triangulation were negligible.
+
+A six-size fixed-seed microbenchmark confirmed the scaling mechanism. Before
+the change, log-log runtime slope was 2.059 against node count and 1.080 against
+the number of collision queries.
+
+| Teeth | Nodes | Queries | Before median (s) | Relevant-edge median (s) | Change |
+|---:|---:|---:|---:|---:|---:|
+| 40 | 246 | 5,535 | 0.1678 | 0.1630 | -2.8% |
+| 80 | 486 | 21,062 | 0.4903 | 0.4026 | -17.9% |
+| 120 | 726 | 46,937 | 1.0637 | 0.9192 | -13.6% |
+| 180 | 846 | 55,193 | 1.4066 | 0.9701 | -31.0% |
+| 250 | 1,325 | 132,646 | 4.7139 | 2.6456 | -43.9% |
+| 320 | 1,489 | 180,776 | 6.9528 | 3.5729 | -48.6% |
+
+The sum of these medians fell from 14.7952 to 8.6735 seconds (-41.4%). The
+implementation still enumerates every node pair and retains the per-candidate
+AABB mask. It only omits cross-product arithmetic for a boundary edge when that
+edge's AABB is disjoint from every candidate segment in the current bounded
+batch. Such an edge cannot intersect any candidate in the batch, so this is an
+exact work reduction rather than route pruning. The complete highDensity 3
+graph was bit-for-bit equal before and after, including every accepted and
+rejected edge.
+
+Increasing the existing temporary-array budget was tested and rejected. On the
+same dense graph, median times for budgets 2^17, 2^18, 2^19, and 2^20 elements
+were 4.8037, 4.6788, 4.5338, and 4.6182 seconds. Although 2^19 saved 2.4% across
+the six sizes, one size regressed 1.6%, the effect was hardware-sensitive, and
+it doubled the intended temporary matrix budget. Production retains 2^18.
+
+At whole-planner level, three repetitions of the four high-density cases with
+both accepted optimizations reduced the median sum from the original 71.7079
+seconds to 58.4761 seconds (-18.45%). Isolating the visibility change against
+the already consolidated version gives 71.1138 to 58.4761 seconds (-17.77%),
+with per-case reductions of 19.33%, 21.28%, 15.02%, and 15.30%. All 12 filtered
+runs passed independent validation, and every arrival time and path length was
+numerically unchanged from the same consolidated inputs. The complete MATLAB
+suite passed 60/60 after the change.
+
+The complete 20-example, three-repetition rerun was 20/20 valid and preserved
+all maintained durations and lengths. Its median-time sum was 91.9071 seconds
+versus 91.9332 before filtering (-0.03%), with a 36.5722-second maximum. This is
+correctly treated as neutral: the maintained suite contains little of the
+high-node-count geometry targeted by the filter, and solver variability hides
+its small absolute graph saving in the geographic example. The 160-case random
+azimuth rerun also remained 160/160 valid, with median, mean, and maximum wall
+times of 0.1542, 0.1696, and 0.8472 seconds.
 
 ## Remaining limitations
 

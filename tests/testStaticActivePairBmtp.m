@@ -66,6 +66,8 @@ function verifyValidatedStaticBmtp(testCase,result)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpStaticDegree8");
     verifyGreaterThan(testCase,result.SolverDiagnostics.TaggedPairCount,0);
+    verifyGreaterThanOrEqual(testCase, ...
+        result.SolverDiagnostics.TransientPlaneRemovalCount,0);
 end
 
 function value=state(position_units,time_s)

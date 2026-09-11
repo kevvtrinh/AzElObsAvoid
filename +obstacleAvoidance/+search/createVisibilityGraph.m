@@ -132,18 +132,26 @@ function [clear,midpoints_units,owners] = segmentIntervals(first_units,last_unit
         upper_units = max(first_units,last_units(indices,:))+tolerance_units;
         relevant = bounds_units(:,3)>=lower_units(:,1).' & bounds_units(:,4)>=lower_units(:,2).' & ...
             bounds_units(:,1)<=upper_units(:,1).' & bounds_units(:,2)<=upper_units(:,2).';
-        denominator_units2 = edge_units(:,2)*direction_units(:,1).'-edge_units(:,1)*direction_units(:,2).';
-        crossOffset_units2 = offset_units(:,1)*direction_units(:,2).'-offset_units(:,2)*direction_units(:,1).';
-        nonparallel = abs(denominator_units2)>parallelTolerance_units2;
-        t = numerator_units2./denominator_units2; u = crossOffset_units2./denominator_units2;
+        % Rows outside every candidate AABB cannot intersect any segment in
+        % this block. Remove only those rows before the exact cross products.
+        relevantEdgeMask=any(relevant,2);
+        relevant=relevant(relevantEdgeMask,:);
+        localEdges_units=edge_units(relevantEdgeMask,:);
+        localOffset_units=offset_units(relevantEdgeMask,:);
+        localEndOffset_units=endOffset_units(relevantEdgeMask,:);
+        denominator_units2 = localEdges_units(:,2)*direction_units(:,1).'-localEdges_units(:,1)*direction_units(:,2).';
+        crossOffset_units2 = localOffset_units(:,1)*direction_units(:,2).'-localOffset_units(:,2)*direction_units(:,1).';
+        nonparallel = abs(denominator_units2)>parallelTolerance_units2(relevantEdgeMask);
+        t = numerator_units2(relevantEdgeMask)./denominator_units2;
+        u = crossOffset_units2./denominator_units2;
         crosses = relevant & nonparallel & t>parameterTolerance & t<1-parameterTolerance & u>parameterTolerance & u<1-parameterTolerance;
         clear(indices) = ~any(crosses,1).';
         % Retain every contact-partition interval, including collinear edges.
         contact = relevant & nonparallel & t>=0 & t<=1 & u>=-parameterTolerance & u<=1+parameterTolerance;
         collinear = relevant & ~nonparallel & abs(crossOffset_units2)<=tolerance_units*lengths_units;
         for k = find(clear(indices)).'
-            projection = (offset_units(collinear(:,k),:)*direction_units(k,:).')/sum(direction_units(k,:).^2);
-            endProjection = (endOffset_units(collinear(:,k),:)*direction_units(k,:).')/sum(direction_units(k,:).^2);
+            projection = (localOffset_units(collinear(:,k),:)*direction_units(k,:).')/sum(direction_units(k,:).^2);
+            endProjection = (localEndOffset_units(collinear(:,k),:)*direction_units(k,:).')/sum(direction_units(k,:).^2);
             cuts = unique([0;1;t(contact(:,k),k);min(1,max(0,projection));min(1,max(0,endProjection))]);
             points{indices(k)} = first_units+((cuts(1:end-1)+cuts(2:end))/2).*direction_units(k,:);
             pointOwners{indices(k)} = repmat(indices(k),numel(cuts)-1,1);

@@ -186,3 +186,54 @@ independently valid. Combined median, mean, and maximum wall times were 0.1534,
 0.1698, and 0.8590 seconds. The moving-only and moving-plus-static medians were
 0.1342 and 0.1813 seconds respectively. The final MATLAB suite passed 60/60,
 including two focused regressions for the lifted implication proof.
+
+## Follow-up: exact visibility relevance filtering
+
+The retained reproducer is `benchmarkRandomStaticBmtp.m`; it emits compact MAT
+and CSV evidence only when an output folder is requested.
+
+Four fixed-seed static serrated bands with 250--350 teeth were run three times
+per version. They contain 514--643 exact convex regions and exercise the
+transient plane proof. Against the pre-proof baseline, consolidation alone
+changed the sum of medians from 71.7079 to 71.1138 seconds (-0.83%). The four
+runtime changes were -0.055%, -0.318%, -5.717%, and +1.549%. All 24
+paired-version runs validated. The largest observed length change was +0.4741%,
+so the smaller maintained +0.092% change is not a general bound.
+
+Profiling then located the dominant non-solver cost in the exact visibility
+graph's edge-by-candidate interval kernel. Filtering arithmetic rows whose edge
+AABB is disjoint from every candidate AABB in the current bounded batch retains
+every candidate segment and every exact contact test. A six-size random scaling
+experiment measured:
+
+| Teeth | Nodes | Before graph (s) | Filtered graph (s) | Change |
+|---:|---:|---:|---:|---:|
+| 40 | 246 | 0.1678 | 0.1630 | -2.8% |
+| 80 | 486 | 0.4903 | 0.4026 | -17.9% |
+| 120 | 726 | 1.0637 | 0.9192 | -13.6% |
+| 180 | 846 | 1.4066 | 0.9701 | -31.0% |
+| 250 | 1,325 | 4.7139 | 2.6456 | -43.9% |
+| 320 | 1,489 | 6.9528 | 3.5729 | -48.6% |
+
+The graph-median sum fell 41.4%. The complete 1,308-node held-out graph was
+bit-for-bit equal before and after. Increasing the temporary matrix budget was
+also tested: it saved only 2.4% across the sizes, regressed one size, and doubled
+the memory budget, so that experiment was rejected and the original 2^18 bound
+was retained.
+
+At planner level, filtering reduced the already-consolidated four-case median
+sum from 71.1138 to 58.4761 seconds (-17.77%). Per-case reductions were 19.33%,
+21.28%, 15.02%, and 15.30%; all 12 runs independently validated and every
+arrival and length was unchanged. Relative to the original pre-proof baseline,
+the combined reduction was 18.45%.
+
+The complete maintained rerun remained 20/20 valid with unchanged motion
+metrics. Its sum of medians was 91.9071 seconds versus 91.9332 seconds before
+filtering, which is runtime-neutral at this scale. The random azimuth rerun was
+160/160 valid (median 0.1542 seconds, mean 0.1696, maximum 0.8472), and the full
+MATLAB suite passed 60/60.
+
+One attempted stage baseline was discarded after MATLAB current-folder
+precedence resolved the production checkout instead of the detached baseline.
+The driver was corrected to change into the selected planner root before
+measurement; retained baseline runs report zero current-only plane removals.
