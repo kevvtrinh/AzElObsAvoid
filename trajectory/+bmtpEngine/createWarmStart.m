@@ -85,8 +85,7 @@ if request.Options.GoalTimeMode=="fixedArrival"
     minimumSegmentCount = 8;
     if request.Degree>=8, minimumSegmentCount = 16; end
     segmentCount=max(minimumSegmentCount,originalSegmentCount);
-    isTimedSeed = isfield(request.Seed,'Source') && ...
-        string(request.Seed.Source)=="timeExpandedVisibilityGraph";
+    isTimedSeed = request.UsesVariableClock;
     if isTimedSeed
         routeTau = linspace(0,1,segmentCount+1).';
         timedRoute_units = interp1(request.Seed.tau,route_units,routeTau,'linear');
@@ -117,8 +116,7 @@ if request.Options.GoalTimeMode=="fixedArrival"
 end
 warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s,request.InitialState,request.GoalState);
-if isfield(request.Seed, 'Source') && ...
-        string(request.Seed.Source) == "timeExpandedVisibilityGraph"
+if request.UsesVariableClock
     commonSegmentTime_s = max(bmtpEngine.findRequiredSegmentTime( ...
         warmStart.ControlPoint_units, request.Limits));
     warmStart.SegmentTime_s = repmat(commonSegmentTime_s, warmStart.SegmentCount, 1);

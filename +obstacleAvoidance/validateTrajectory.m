@@ -232,7 +232,11 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
         authoritativeInput = rmfield(authoritativeInput,'InternalPreparation');
     end
     coverageEnd_s = result.Inputs.goalState.time_s;
-    if isfield(result,'FixedArrivalTrialTime_s'), coverageEnd_s = result.Polynomial.FinalTime_s; end
+    if isfield(result,'TrajectoryCoverageEndTime_s')
+        coverageEnd_s=result.TrajectoryCoverageEndTime_s;
+    elseif isfield(result,'FixedArrivalTrialTime_s')
+        coverageEnd_s=result.Polynomial.FinalTime_s;
+    end
     authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput, ...
         [result.Inputs.initialState.time_s,coverageEnd_s]);
     endpoints_units = [result.Inputs.initialState.position_units;result.Inputs.goalState.position_units];

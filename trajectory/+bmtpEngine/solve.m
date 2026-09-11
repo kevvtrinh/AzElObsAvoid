@@ -126,8 +126,7 @@ else
         [alternatingResult,diagnostics] = bmtpEngine.solveActivePairTrajectory( ...
             request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
     else
-        usesTimedSolver = isfield(seed, 'Source') && ...
-            string(seed.Source) == "timeExpandedVisibilityGraph";
+        usesTimedSolver = request.UsesVariableClock;
         if usesTimedSolver
             [alternatingResult, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( ...
                 request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);

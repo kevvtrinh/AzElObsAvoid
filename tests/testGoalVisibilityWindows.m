@@ -52,6 +52,50 @@ function testMissedFirstWindowWaitsAtNearestSafeNode(testCase)
     verifyLessThan(testCase,routeTime_s(end),goal.time_s);
 end
 
+function testRampBoundSkipsPhysicallyImpossibleFirstWindow(testCase)
+    blocker=createGoalBlocker(10,3);
+    nodes_units=[0,0;10,0];
+    costs_units=[0,10;10,0];
+    initial=struct('time_s',0,'position_units',nodes_units(1,:), ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    goal=struct('time_s',12,'position_units',nodes_units(2,:), ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    limits=struct('maxVelocity_units_s',[20,20], ...
+        'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
+    options=struct('GoalTimeMode',"earliestArrival");
+    [route_units,routeTime_s,record]= ...
+        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+        nodes_units,costs_units,blocker,initial,goal,limits,(0:12).',options);
+    verifyGreaterThan(testCase,record.MinimumGoalArrivalTime_s,3);
+    verifyLessThan(testCase,record.MinimumGoalArrivalTime_s,7);
+    verifyGreaterThan(testCase,routeTime_s(end),7);
+    verifyEqual(testCase,route_units(end,:),goal.position_units,'AbsTol',1e-12);
+    verifyLessThan(testCase,routeTime_s(end),goal.time_s);
+end
+
+function testPublicPlannerChoosesAReopenedGoalWindow(testCase)
+    goalX_units=10;
+    vertices_units=[goalX_units-0.5,-0.5;goalX_units+0.5,-0.5; ...
+        goalX_units+0.5,0.5;goalX_units-0.5,0.5];
+    sourceTimes_s=linspace(3,7,17).';
+    blocker=obstacleAvoidance.obstacles.createObstacle('dense goal blocker', ...
+        sourceTimes_s,repmat({vertices_units(:,1)},17,1), ...
+        repmat({vertices_units(:,2)},17,1),0);
+    initial=struct('time_s',0,'position_units',[0,0], ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    goal=struct('time_s',12,'position_units',[goalX_units,0], ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    limits=struct('xInterval_units',[-2,12],'yInterval_units',[-3,3], ...
+        'maxVelocity_units_s',[20,20], ...
+        'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
+    result=planner(blocker,initial,goal,limits, ...
+        struct('GoalTimeMode',"earliestArrival"));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,result.Validation.Passed,result.Validation.Message);
+    verifyGreaterThan(testCase,result.ArrivalTime_s,7);
+    verifyLessThan(testCase,result.ArrivalTime_s,goal.time_s);
+end
+
 function blocker=createGoalBlocker(goalX_units,blockStart_s)
     vertices_units=[goalX_units-0.5,-0.5;goalX_units+0.5,-0.5; ...
         goalX_units+0.5,0.5;goalX_units-0.5,0.5];
