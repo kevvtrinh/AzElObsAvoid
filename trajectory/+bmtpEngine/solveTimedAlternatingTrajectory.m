@@ -1,155 +1,126 @@
-function [result, diagnostics] = solveTimedAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units)
+function [result, diagnostics] = solveTimedAlternatingTrajectory( ...
+        request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
-% SYNTAX: [result, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( request, warmStart,
-%   diagnostics, obstacleTarget_units, roundoffReserve_units)
-% PURPOSE: Alternate trajectory and separating-line solves until a sampled-clear motion is retained
-%   or the bounded iteration fails.
-% INPUTS: request, warmStart, diagnostics (scalar structs) Checked engine request, feasible starting
-%   curve, and diagnostics. obstacleTarget_units, roundoffReserve_units (finite scalars) Required
-%   obstacle-side target and numerical reserve in coordinate units.
-% OUTPUTS: result (scalar struct) Best sampled-clear controls, timing, planes, tags, and failure
-%   reason. diagnostics (scalar struct) Updated iteration, solver, overlap, and separating-line
-%   evidence.
-% UNITS: Position and clearance are coordinate units; time is seconds.
+% SYNTAX: [result,diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory(
+%   request,warmStart,diagnostics,obstacleTarget,reserve)
+% PURPOSE: Minimize arrival while rebuilding every moving-cell constraint on
+%   the current physical clock and the exact timed visibility-guide homotopy.
+% INPUTS: Checked solve request, timed warm start, diagnostics, and separation
+%   targets in coordinate units.
+% OUTPUTS: Earliest exactly time-scoped BMTP candidate and solver diagnostics.
+% UNITS: Position is coordinate units and time is seconds.
 
-%% Section 1: Initialize The Alternating State
-segmentCount = warmStart.SegmentCount;
-diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
-diagnostics.RetainedHorizonRetryCount = 0;
-diagnostics.PlaneReuseApplied = false;
-diagnostics.PlaneReuseCount = 0;
-degree                = request.Degree;
-regions_units           = request.Regions_units;
-regionActiveBySegment = warmStart.RegionActiveBySegment;
-feasibleControl_units   = warmStart.ControlPoint_units;
-feasibleSegmentTime_s = mean(warmStart.SegmentTime_s);
-diagnostics.WarmStartDuration_s = segmentCount * feasibleSegmentTime_s;
-bestControl_units = zeros(0, degree + 1, 2);
-[bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
-diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
-taggedPairs           = false(segmentCount, numel(regions_units));
-emptyPlane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
-planes = repmat(emptyPlane, segmentCount, numel(regions_units));
-optimizationHorizon_s = request.MotionHorizon_s;
-solverMessage         = "The biconvex iteration limit was reached.";
-timedOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
-planeOptions = optimoptions("coneprog", "Display", "none");
+%% Section 1: Initialize The Variable-Clock Formulation
+segmentCount=warmStart.SegmentCount;
+segmentRatio=warmStart.SegmentRatio(:);
+emptyPlane=struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
+    'Normal',zeros(2,2),'Offset_units',zeros(1,2), ...
+    'SignedGap_units',NaN,'TimeFraction',[0,1]);
+planes=repmat(emptyPlane,segmentCount,numel(request.Regions_units));
+selectedControl_units=zeros(0,request.Degree+1,2);
+selectedSegmentTime_s=NaN;
+selectedPlanes=planes;
+selectedPairs=false(size(planes));
+previousFailedPairs=false(size(planes));
+previousDuration_s=Inf;
+solverMessage="The time-scoped alternating iteration limit was reached.";
+trajectoryOptions=optimoptions("coneprog","Display","none", ...
+    "MaxIterations",300);
+diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
+diagnostics.WarmStartDuration_s=warmStart.Duration_s;
+diagnostics.RetainedHorizonRetryCount=0;
+diagnostics.PlaneReuseApplied=false;
+diagnostics.PlaneReuseCount=0;
 
-%% Section 2: Alternate Trajectory And Separating-Line Solves
-for iterationIndex = 1:35
-    diagnostics.IterationCount = iterationIndex;
-    usedRequestHorizon = optimizationHorizon_s == request.MotionHorizon_s;
-    [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTimedTrajectoryStep(segmentCount, degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, optimizationHorizon_s, "earliestArrival", timedOptions);
-    diagnostics.TrajectorySocpCount     = diagnostics.TrajectorySocpCount + 1;
-    diagnostics.ConicSolver             = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
-    diagnostics.FinalTrajectoryExitFlag = exitFlag;
-    if exitFlag <= 0 || isempty(trialControl_units)
-        % Allow the longer starting duration while finding separating planes.
-        % The final motion must still meet the requested horizon.
-        canExpandHorizon = exitFlag == -2 && isempty(bestControl_units) && optimizationHorizon_s < diagnostics.WarmStartDuration_s;
-        if canExpandHorizon
-            optimizationHorizon_s = min(2 * optimizationHorizon_s, diagnostics.WarmStartDuration_s);
-            continue;
-        end
-        % If fixed planes make the deadline infeasible, continue improving the
-        % collision-free curve at its current duration within the iteration budget.
-        if exitFlag == -2 && ~isempty(bestControl_units) && optimizationHorizon_s < bestDuration_s
-            diagnostics.RetainedHorizonRetryCount = diagnostics.RetainedHorizonRetryCount + 1;
-            optimizationHorizon_s = bestDuration_s;
-            continue;
-        end
-        solverMessage = "Trajectory SOCP failed: " + string(output.message);
-        break;
+%% Section 2: Solve And Rebuild Constraints On Every Returned Clock
+for iterationIndex=1:35
+    diagnostics.IterationCount=iterationIndex;
+    trajectoryGoalTimeMode=request.Options.GoalTimeMode;
+    [trialControl_units,trialSegmentTime_s,exitFlag,output]= ...
+        bmtpEngine.solveTimedTrajectoryStep(segmentCount,request.Degree, ...
+        request.InitialState.position_units,request.GoalState.position_units, ...
+        request.Limits,planes,roundoffReserve_units,request.MotionHorizon_s, ...
+        trajectoryGoalTimeMode,trajectoryOptions,request.MinimumMotionDuration_s, ...
+        segmentRatio);
+    diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+1;
+    diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics( ...
+        diagnostics.ConicSolver,output);
+    diagnostics.FinalTrajectoryExitFlag=exitFlag;
+    if exitFlag<=0 || isempty(trialControl_units)
+        solverMessage="Trajectory SOCP failed: "+string(output.message);
+        break
     end
-    collisionPairs = bmtpEngine.findSampledObstacleOverlaps(trialControl_units, regions_units, request.RegionMinimum_units, request.RegionMaximum_units, regionActiveBySegment, 1201);
-    diagnostics.TrialDuration_s(iterationIndex) = segmentCount * trialTime_s;
-    diagnostics.CollisionPairCountHistory(iterationIndex) = nnz(collisionPairs);
-    diagnostics.TrialWasCollisionFree(iterationIndex) = ~any(collisionPairs, "all");
-    diagnostics.FinalCollisionPairCount = nnz(collisionPairs);
-    previousTaggedPairs = taggedPairs;
-    newPairs            = collisionPairs & ~taggedPairs;
-    taggedPairs         = taggedPairs | newPairs;
-    if ~any(collisionPairs, "all")
-        optimizationHorizon_s     = request.MotionHorizon_s;
-        previousDuration_s        = segmentCount * feasibleSegmentTime_s;
-        feasibleControl_units       = trialControl_units;
-        feasibleSegmentTime_s     = trialTime_s;
-        duration_s                = segmentCount * trialTime_s;
-        retainedBestImprovement_s = bestDuration_s - duration_s;
-        % Promote this feasible trajectory only when its duration improves the incumbent.
-        if duration_s < bestDuration_s
-            bestControl_units   = trialControl_units;
-            bestSegmentTime_s = trialTime_s;
-            bestDuration_s    = duration_s;
-            diagnostics.BestDuration_s              = duration_s;
-            diagnostics.RetainedBestTrialDuration_s = duration_s;
+    duration_s=sum(trialSegmentTime_s);
+    trialMotion=struct('CertifiedControlPoint_units',trialControl_units, ...
+        'ControlPoint_units',trialControl_units, ...
+        'SegmentTime_s',trialSegmentTime_s(:), ...
+        'PrescribedPower_units',[]);
+    trialCertificate=bmtpEngine.checkFinalMotion(request,warmStart,trialMotion, ...
+        roundoffReserve_units,obstacleTarget_units);
+    failedPairs=~reshape([trialCertificate.Planes.Verified], ...
+        size(trialCertificate.Planes)) & trialCertificate.RegionActiveBySegment;
+    collisionFree=~any(failedPairs,'all');
+    diagnostics.TrialDuration_s(iterationIndex)=duration_s;
+    diagnostics.CollisionPairCountHistory(iterationIndex)=nnz(failedPairs);
+    diagnostics.TrialWasCollisionFree(iterationIndex)=collisionFree;
+    diagnostics.FinalCollisionPairCount=nnz(failedPairs);
+    diagnostics.UnverifiedPairs=indicesOf(failedPairs);
+    diagnostics.UnverifiedGaps_units=reshape( ...
+        [trialCertificate.Planes(failedPairs).SignedGap_units],[],1);
+    if collisionFree && trialCertificate.DynamicsPassed && ...
+            trialCertificate.ContinuityPassed
+        [selectedPlanes,selectedPairs,complete,planeStatistics]= ...
+            bmtpEngine.createTimeScopedPlanes(trialControl_units, ...
+            trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
+        diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
+        diagnostics.UnverifiedPlaneInitializationCount= ...
+            planeStatistics.ActivePairCount-planeStatistics.VerifiedPairCount;
+        if ~complete
+            solverMessage="The feasible timed motion did not produce a complete exact plane set.";
+            break
         end
-        improvement_s = previousDuration_s - duration_s;
-        if improvement_s >= 0 && improvement_s <= request.Options.ArrivalTimeTolerance_s
-            diagnostics.Converged = true;
-            solverMessage = "The feasible arrival improvement reached tolerance.";
-            break;
-        end
-        taggedPairSetUnchanged = isequal(taggedPairs, previousTaggedPairs);
-        reusePlanes            = retainedBestImprovement_s <= request.Options.ArrivalTimeTolerance_s && taggedPairSetUnchanged;
-        if reusePlanes
-            diagnostics.PlaneReuseApplied = true;
-            diagnostics.PlaneReuseCount   = diagnostics.PlaneReuseCount + 1;
-            if usedRequestHorizon
-                diagnostics.Converged = true;
-                solverMessage = "The next trajectory SOCP would be unchanged.";
-                break;
-            end
-            continue;
-        end
-        planes(:) = emptyPlane;
-        activePairs = taggedPairs;
-    % Restart alternating optimization when new obstacle-time pairs are discovered; otherwise the active set has stabilized.
-    elseif any(newPairs, "all")
-        activePairs = newPairs;
-    else
-        solverMessage = "A tagged pair crossed its retained separating plane.";
-        break;
+        selectedControl_units=trialControl_units;
+        selectedSegmentTime_s=trialSegmentTime_s;
+        diagnostics.BestDuration_s=duration_s;
+        diagnostics.RetainedBestTrialDuration_s=duration_s;
+        diagnostics.Converged=output.OptimizationConverged;
+        solverMessage="A complete time-scoped feasible iterate was found.";
+        break
     end
-
-    % Add separating lines where samples overlap. Final certification follows later.
-    updateFailed      = false;
-    activePairIndices = reshape(find(activePairs), 1, []);
-    for activeIndex = 1:numel(activePairIndices)
-        pairIndex = activePairIndices(activeIndex);
-        [segmentIndex, regionIndex]         = ind2sub(size(activePairs), pairIndex);
-        [plane, planeExitFlag, planeOutput] = bmtpEngine.solveTimedSeparatingLine( ...
-            squeeze(feasibleControl_units(segmentIndex,:,:)),regions_units{regionIndex}, ...
-            obstacleTarget_units,roundoffReserve_units,planeOptions);
-        plane.TimeFraction = [0,1];
-        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
-            ~(isfield(planeOutput, 'IsAnalytic') && planeOutput.IsAnalytic);
-        diagnostics.ConicSolver    = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
-        if planeExitFlag <= 0 || ~plane.Active
-            [diagnostics.FailedPlaneSegmentIndex, ...
-                diagnostics.FailedPlaneRegionIndex, diagnostics.FailedPlane] = deal(segmentIndex, regionIndex, plane);
-            solverMessage = "A maximum-margin plane solve failed.";
-            updateFailed  = true;
-            break;
-        end
-        if ~plane.Verified
-            diagnostics.UnverifiedPlaneInitializationCount = diagnostics.UnverifiedPlaneInitializationCount + 1;
-        end
-        planes(segmentIndex, regionIndex) = plane;
+    [planes,activePairs,complete,planeStatistics]= ...
+        bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
+        trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
+    diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
+    diagnostics.UnverifiedPlaneInitializationCount= ...
+        planeStatistics.ActivePairCount-planeStatistics.VerifiedPairCount;
+    diagnostics.FailedPlaneSegmentIndex=planeStatistics.FailedSegmentIndex;
+    diagnostics.FailedPlaneRegionIndex=planeStatistics.FailedRegionIndex;
+    if ~complete
+        solverMessage="The timed visibility guide could not initialize every exact clock pair.";
+        break
     end
-    % Terminate with the recorded failure if an alternating update cannot produce a valid control or separating plane.
-    if updateFailed
-        break;
+    unchangedClock=abs(duration_s-previousDuration_s)<= ...
+        request.Options.ArrivalTimeTolerance_s;
+    if unchangedClock && isequal(failedPairs,previousFailedPairs)
+        solverMessage="The exact timed pair set stopped changing before feasibility.";
+        break
     end
+    previousDuration_s=duration_s;
+    previousFailedPairs=failedPairs;
+    selectedPairs=activePairs;
 end
 
-%% Section 3: Return The Best Sampled-Clear Attempt
-[diagnostics.TaggedPairCount, diagnostics.SolverMessage] = deal(nnz(taggedPairs), solverMessage);
-result = struct("Success", ~isempty(bestControl_units), ...
-    "SolverMessage", solverMessage, ...
-    "ControlPoint_units", bestControl_units, ...
-    "SegmentTime_s", bestSegmentTime_s, ...
-    "Planes", planes, ...
-    "TaggedPairs", taggedPairs);
+%% Section 3: Return Only A Clock-Consistent Feasible Iterate
+diagnostics.TaggedPairCount=nnz(selectedPairs);
+diagnostics.SolverMessage=solverMessage;
+result=struct('Success',~isempty(selectedControl_units), ...
+    'SolverMessage',solverMessage, ...
+    'ControlPoint_units',selectedControl_units, ...
+    'SegmentTime_s',selectedSegmentTime_s, ...
+    'Planes',selectedPlanes,'TaggedPairs',selectedPairs);
+end
+
+function indices=indicesOf(mask)
+    [segmentIndex,regionIndex]=find(mask);
+    indices=[segmentIndex,regionIndex];
 end

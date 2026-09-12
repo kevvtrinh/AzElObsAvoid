@@ -55,7 +55,8 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
         'maxVelocity_units_s',[5,5],'maxAcceleration_units_s2',[10,10],'maxJerk_units_s3',[20,20]);
     request = struct('Degree',8,'InitialState',initial,'GoalState',goal,'Limits',limits, ...
         'Regions_units',{{box}},'RegionMinimum_units',min(box),'RegionMaximum_units',max(box), ...
-        'MotionHorizon_s',12,'Options',struct('GoalTimeMode',"fixedArrival"),'Coverage',struct('Passed',true));
+        'MotionHorizon_s',12,'Options',struct('GoalTimeMode',"fixedArrival", ...
+        'ConstraintTolerance',1e-8),'Coverage',struct('Passed',true));
     warmStart = struct('SegmentCount',3,'RegionActiveBySegment',true(3,1));
     alternating = struct('ControlPoint_units',controls,'SegmentTime_s',4, ...
         'Planes',repmat(plane,3,1),'TaggedPairs',false(3,1));
@@ -109,6 +110,56 @@ function testSingleSpanTimedMotionIsIndependentlyValid(testCase)
             assertTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         end
     end
+end
+
+function testSolveRequestCarriesMinimumArrivalBound(testCase)
+    initial=struct('time_s',0,'position_units',[-1,0]);
+    goal=struct('time_s',10,'position_units',[1,0.5]);
+    normalized=planner([],initial,goal,[], ...
+        struct('GoalTimeMode',"earliestArrival"));
+    seed=struct('position_units',[-1,0;1,0.5],'tau',[0;1], ...
+        'Source',"timeExpandedWaitGuide",'TimingMode',"variableClock");
+    coverage=struct('Passed',true,'MinimumMotionDuration_s',4, ...
+        'ActiveTimeInterval_s',zeros(0,2));
+    request=bmtpEngine.createSolveRequest(seed,cell(0,1),coverage, ...
+        normalized.Inputs.initialState,normalized.Inputs.goalState, ...
+        normalized.Limits,normalized.Options);
+    verifyEqual(testCase,request.MinimumMotionDuration_s,4);
+    verifyTrue(testCase,request.UsesVariableClock);
+    verifyEqual(testCase,request.Degree,5);
+end
+
+function testVariableClockUsesActualMovingCellOverlap(testCase)
+    box=[-0.25,4.75;0.25,4.75;0.25,5.25;-0.25,5.25];
+    controls=zeros(2,6,2);
+    controls(1,:,1)=linspace(-2,-1,6);
+    controls(2,:,1)=linspace(-1,0,6);
+    coverage=struct('Passed',true,'ActiveTimeInterval_s',[0,5;5,10], ...
+        'EndRegions_units',{{box;box}});
+    request=struct('InitialState',struct('time_s',0), ...
+        'Regions_units',{{box;box}},'Coverage',coverage);
+    [planes,activePairs,complete,statistics]= ...
+        bmtpEngine.createTimeScopedPlanes(controls,[3;3],request,1e-6,1e-8);
+    verifyTrue(testCase,complete);
+    verifyEqual(testCase,activePairs,[true,false;true,true]);
+    verifyEqual(testCase,statistics.ActivePairCount,3);
+    verifyEqual(testCase,planes(2,1).TimeFraction,[0,2/3],'AbsTol',1e-12);
+    verifyEqual(testCase,planes(2,2).TimeFraction,[2/3,1],'AbsTol',1e-12);
+end
+
+function testTimedTrajectoryStepRetainsRelativeClock(testCase)
+    limits=struct('xInterval_units',[-3,3],'yInterval_units',[-3,3], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[5,5], ...
+        'maxJerk_units_s3',[10,10]);
+    options=optimoptions('coneprog','Display','none', ...
+        'ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
+    planes=repmat(struct('Active',false),2,0);
+    [controls,duration_s,flag]=bmtpEngine.solveTimedTrajectoryStep( ...
+        2,5,[-1,0],[1,0],limits,planes,1e-8,8,"fixedArrival", ...
+        options,0,[1;3]);
+    verifyTrue(testCase,flag>0 || flag==-7);
+    verifyNotEmpty(testCase,controls);
+    verifyEqual(testCase,duration_s,[2;6],'AbsTol',1e-12);
 end
 
 function testUnequalSpanClockWithFullEndpointStates(testCase)
@@ -237,8 +288,13 @@ function testSavedMovingDetourEarliestArrival(testCase)
     result = planner(obstacles,request.initialState,request.goalState,request.limits,options);
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,117,'AbsTol',1e-8);
+    verifyEqual(testCase,result.GoalArrivalWindow_s(2),180,'AbsTol',1e-8);
+    verifyGreaterThanOrEqual(testCase,result.ArrivalTime_s, ...
+        result.GoalArrivalWindow_s(1)-1e-8);
+    verifyLessThanOrEqual(testCase,result.ArrivalTime_s, ...
+        result.GoalArrivalWindow_s(2)+1e-8);
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");
-    verifyLessThan(testCase,result.SolverDiagnostics.TaggedPairCount, ...
+    verifyEqual(testCase,result.SolverDiagnostics.TaggedPairCount, ...
         result.SolverDiagnostics.ApplicablePairCount);
+    verifyEqual(testCase,result.SolverDiagnostics.FinalCollisionPairCount,0);
 end

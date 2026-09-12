@@ -32,9 +32,13 @@ partialPlanes=false;
 if isfield(planes,'TimeFraction') && ~isempty(planes)
     fractions=reshape([planes.TimeFraction],2,[]).';
     validateattributes(fractions,{'numeric'},{'real','finite','ncols',2,'>=',0,'<=',1});
-    assert(all(fractions(:,1)<fractions(:,2)),'bmtpEngine:InvalidPlaneTimeScope');
+    assert(all(fractions(:,1)<fractions(:,2)), ...
+        'bmtpEngine:InvalidPlaneTimeScope', ...
+        'Every plane time scope must have positive duration.');
     partialPlanes=any(fractions~=[0,1],'all');
-    assert(fixedClock || ~partialPlanes,'bmtpEngine:InvalidPlaneTimeScope');
+    assert(fixedClock || ~partialPlanes, ...
+        'bmtpEngine:InvalidPlaneTimeScope', ...
+        'Partial plane time scopes require a fixed trajectory clock.');
 end
 % Half-spaces on different physical intervals cannot eliminate each other.
 if fixedClock && ~partialPlanes && originalPlaneCount>segmentCount*degree

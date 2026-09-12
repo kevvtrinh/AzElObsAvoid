@@ -29,7 +29,7 @@ if partCount > 0
     proposalShape = union([parts{1:partCount}]);
 end
 
-%% Section 2: Find A Connected Offset Node Set
+%% Section 2: Build The Exact-Boundary Node Set
 allPositions_units = [initialState.position_units; ...
     goalState.position_units; proposalShape.Vertices];
 coordinateScale_units = bmtpEngine.createCoordinateTolerances(allPositions_units);
@@ -54,13 +54,37 @@ while true
 end
 
 %% Section 3: Search Physical Time Layers
-nodes_units = attempts(end).Nodes.Positions_units;
-timedCost_units = hypot(nodes_units(:,1) - nodes_units(:,1).', ...
-    nodes_units(:,2) - nodes_units(:,2).');
-[route_units,routeTime_s,timedRecord] = ...
-    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
-    nodes_units,timedCost_units,obstacles,initialState,goalState,limits,sampleTimes_s,options);
+% Search the closest exact-boundary nodes first. A swept envelope can
+% disconnect start and goal even while its moving geometry opens a route,
+% so spatial disconnection does not justify discarding these staging nodes.
+[route_units,routeTime_s]=deal(zeros(0,2),zeros(0,1));
+timedRecord=struct();
+timedNodeAttemptIndex=0;
+attemptOrder=numel(attempts):-1:1;
+if options.GoalTimeMode=="earliestArrival" && numel(attempts)>1
+    % Preserve a connected recovered graph when one exists. If its enlarged
+    % envelope discarded temporal staging nodes, recover from the exact-side
+    % attempts starting with the closest boundary.
+    attemptOrder=[numel(attempts),1:numel(attempts)-1];
+end
+for attemptIndex=attemptOrder
+    nodes_units = attempts(attemptIndex).Nodes.Positions_units;
+    timedCost_units = hypot(nodes_units(:,1) - nodes_units(:,1).', ...
+        nodes_units(:,2) - nodes_units(:,2).');
+    [attemptRoute_units,attemptRouteTime_s,timedRecord] = ...
+        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+        nodes_units,timedCost_units,obstacles,initialState,goalState, ...
+        limits,sampleTimes_s,options);
+    timedNodeAttemptIndex=attemptIndex;
+    if ~isempty(attemptRouteTime_s)
+        route_units=attemptRoute_units;
+        routeTime_s=attemptRouteTime_s;
+        break;
+    end
+end
 record = struct('ProposalShape',proposalShape,'SampleTimes_s',sampleTimes_s, ...
     'Attempts',attempts,'CandidateOffset_units',candidateOffset_units, ...
-    'OffsetRetryCount',offsetRetryCount,'TimedSearch',timedRecord);
+    'OffsetRetryCount',offsetRetryCount, ...
+    'TimedNodeAttemptIndex',timedNodeAttemptIndex, ...
+    'TimedSearch',timedRecord);
 end
