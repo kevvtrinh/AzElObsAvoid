@@ -116,6 +116,18 @@ function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = up
                 if isfield(request.Coverage,'ActiveTimeInterval_s')
                     active_s=request.Coverage.ActiveTimeInterval_s(regionIndex,:);
                     interval_s=[max(interval_s(1),active_s(1)),min(interval_s(2),active_s(2))];
+                    if interval_s(2)<=interval_s(1)
+                        % Adjacent closed cells can meet a span at one instant.
+                        % That zero-measure contact creates no trajectory
+                        % constraint and must not become a degenerate scope.
+                        plane=planes(segmentIndex,regionIndex);
+                        plane.Active=false;
+                        plane.Verified=false;
+                        plane.TimeFraction=[0,1];
+                        planes(segmentIndex,regionIndex)=plane;
+                        verifiedPairs(segmentIndex,regionIndex)=true;
+                        continue
+                    end
                     timeFraction=max(0,min(1,(interval_s-breaks_s(segmentIndex))/segmentTime_s(segmentIndex)));
                     controls_units=bmtpEngine.restrictBezier(controls_units,timeFraction);
                 end

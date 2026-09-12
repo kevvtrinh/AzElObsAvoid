@@ -9,12 +9,18 @@ function warmStart = createWarmStart(request)
 %% Section 1: Use The Exact Visibility Route
 route_units = double(request.Seed.position_units);
 route_units([1 end], :) = [request.InitialState.position_units; request.GoalState.position_units];
-originalSegmentCount = size(route_units, 1) - 1;
+suppliedSegmentCount = size(route_units, 1) - 1;
 usesLengthBalancedMesh=request.Options.GoalTimeMode=="earliestArrival" && ...
     ~isfield(request.Coverage,'ActiveTimeInterval_s') && request.SplitCount>1;
+if usesLengthBalancedMesh
+    route_units=removeRedundantRouteVertices(route_units);
+end
+originalSegmentCount = size(route_units, 1) - 1;
 solverRoute_units=route_units;
 if usesLengthBalancedMesh
-    targetSegmentCount=originalSegmentCount*request.SplitCount;
+    minimumSteeringSegmentCount=2*(request.Degree-2);
+    targetSegmentCount=max(minimumSteeringSegmentCount, ...
+        originalSegmentCount*request.SplitCount);
     segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount);
     solverRoute_units=splitRouteByCount(route_units,segmentCountByEdge);
 end
@@ -52,18 +58,37 @@ warmStart.SegmentRatio = segmentTime_s(:) / mean(segmentTime_s);
 warmStart.SegmentCount = segmentCount;
 warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = originalSegmentCount;
+warmStart.SuppliedSeedSegmentCount = suppliedSegmentCount;
 warmStart.WarmRouteResampled = false;
 if isfield(request.Coverage,'BreakTime_s') && request.Options.GoalTimeMode~="fixedArrival"
     sourceBreaks_s = request.Coverage.BreakTime_s;
-    % Natural obstacle events already supply phases on a detailed clock.
-    % Keep at least eight spans (up to four per interval) on sparse clocks
-    % so the endpoint constraints do not consume the steering freedom.
-    subdivisions = min(4,max(1,ceil(8/(numel(sourceBreaks_s)-1))));
-    breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:subdivisions)/subdivisions,[],1));
-    segmentTime_s = diff(breakTime_s);
-    segmentCount = numel(segmentTime_s);
-    tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
-        segmentTime_s.*((0:degree)/degree))/request.MotionHorizon_s;
+    if request.UsesVariableClock
+        % The timed guide's knots are physical events. Preserve every knot
+        % and subdivide its normalized intervals so changing the arrival
+        % clock scales the complete guide instead of deleting its waits.
+        routeTau=double(request.Seed.tau(:));
+        minimumSegmentCount=max([8,numel(sourceBreaks_s)-1, ...
+            originalSegmentCount*request.SplitCount]);
+        segmentCountByEdge=allocateSegmentsByMeasure(diff(routeTau), ...
+            minimumSegmentCount);
+        meshTau=splitScalarByCount(routeTau,segmentCountByEdge);
+        segmentRatio=diff(meshTau)/mean(diff(meshTau));
+        segmentTime_s=request.MotionHorizon_s*diff(meshTau);
+        segmentCount=numel(segmentTime_s);
+        tau=meshTau(1:end-1)+diff(meshTau).*((0:degree)/degree);
+        breakTime_s=request.InitialState.time_s+[0;cumsum(segmentTime_s)];
+    else
+        % Natural obstacle events already supply phases on a detailed clock.
+        % Keep at least eight spans (up to four per interval) on sparse clocks
+        % so the endpoint constraints do not consume the steering freedom.
+        subdivisions = min(4,max(1,ceil(8/(numel(sourceBreaks_s)-1))));
+        breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:subdivisions)/subdivisions,[],1));
+        segmentTime_s = diff(breakTime_s);
+        segmentCount = numel(segmentTime_s);
+        tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
+            segmentTime_s.*((0:degree)/degree))/request.MotionHorizon_s;
+        segmentRatio=segmentTime_s/mean(segmentTime_s);
+    end
     controls = interp1(request.Seed.tau,route_units,tau(:),'linear');
     controlPoint_units = reshape(controls,segmentCount,degree+1,2);
     controlPoint_units(1,1:3,:) = reshape(repmat(request.InitialState.position_units,3,1),1,3,2);
@@ -71,7 +96,7 @@ if isfield(request.Coverage,'BreakTime_s') && request.Options.GoalTimeMode~="fix
     intervals_s = request.Coverage.ActiveTimeInterval_s;
     warmStart.ControlPoint_units = controlPoint_units;
     warmStart.SegmentTime_s = segmentTime_s(:);
-    warmStart.SegmentRatio = segmentTime_s/mean(segmentTime_s);
+    warmStart.SegmentRatio = segmentRatio;
     warmStart.Duration_s = sum(segmentTime_s);
     warmStart.SegmentCount = segmentCount;
     warmStart.RegionActiveBySegment = breakTime_s(1:end-1) < intervals_s(:,2).' & ...
@@ -85,21 +110,29 @@ if request.Options.GoalTimeMode=="fixedArrival"
     minimumSegmentCount = 8;
     if request.Degree>=8, minimumSegmentCount = 16; end
     segmentCount=max(minimumSegmentCount,originalSegmentCount);
-    isTimedSeed = request.UsesVariableClock;
+    isTimedSeed = request.UsesTimeScopedSolver;
     if isTimedSeed
-        routeTau = linspace(0,1,segmentCount+1).';
+        segmentCount=max(segmentCount,originalSegmentCount*request.SplitCount);
+        segmentCountByEdge=allocateSegmentsByMeasure(diff(request.Seed.tau), ...
+            segmentCount);
+        routeTau=splitScalarByCount(request.Seed.tau(:),segmentCountByEdge);
+        segmentCount=numel(routeTau)-1;
         timedRoute_units = interp1(request.Seed.tau,route_units,routeTau,'linear');
         start_units = reshape(timedRoute_units(1:end-1,:),segmentCount,1,2);
         finish_units = reshape(timedRoute_units(2:end,:),segmentCount,1,2);
         warmStart.ControlPoint_units = (1-fraction).*start_units+fraction.*finish_units;
         warmStart.Route_units = timedRoute_units;
+        warmStart.SegmentTime_s=diff(routeTau)*request.MotionHorizon_s;
+        warmStart.SegmentRatio=warmStart.SegmentTime_s/ ...
+            mean(warmStart.SegmentTime_s);
     else
         tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
         controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
         warmStart.ControlPoint_units=reshape(controls,segmentCount,degree+1,2);
+        warmStart.SegmentTime_s=repmat( ...
+            request.MotionHorizon_s/segmentCount,segmentCount,1);
+        warmStart.SegmentRatio=ones(segmentCount,1);
     end
-    warmStart.SegmentTime_s=repmat(request.MotionHorizon_s/segmentCount,segmentCount,1);
-    warmStart.SegmentRatio=ones(segmentCount,1);
     warmStart.SegmentCount=segmentCount;
     warmStart.RegionActiveBySegment=true(segmentCount,numel(request.Regions_units));
     if isfield(request.Coverage,'ActiveTimeInterval_s')
@@ -117,26 +150,81 @@ end
 warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s,request.InitialState,request.GoalState);
 if request.UsesVariableClock
-    commonSegmentTime_s = max(bmtpEngine.findRequiredSegmentTime( ...
-        warmStart.ControlPoint_units, request.Limits));
-    warmStart.SegmentTime_s = repmat(commonSegmentTime_s, warmStart.SegmentCount, 1);
-    warmStart.SegmentRatio = ones(warmStart.SegmentCount, 1);
-    warmStart.Duration_s = warmStart.SegmentCount * commonSegmentTime_s;
+    requiredSegmentTime_s=bmtpEngine.findRequiredSegmentTime( ...
+        warmStart.ControlPoint_units,request.Limits);
+    commonSegmentTime_s=max(requiredSegmentTime_s./warmStart.SegmentRatio);
+    warmStart.SegmentTime_s=commonSegmentTime_s*warmStart.SegmentRatio;
+    warmStart.Duration_s=sum(warmStart.SegmentTime_s);
+    if isfield(request.Coverage,'ActiveTimeInterval_s')
+        breaks_s=request.InitialState.time_s+[0;cumsum(warmStart.SegmentTime_s)];
+        intervals_s=request.Coverage.ActiveTimeInterval_s;
+        warmStart.RegionActiveBySegment=breaks_s(1:end-1)<intervals_s(:,2).' & ...
+            breaks_s(2:end)>intervals_s(:,1).';
+    end
 end
+end
+
+function route_units=removeRedundantRouteVertices(route_units)
+    keep=true(size(route_units,1),1);
+    scale_units=max(1,max(abs(route_units),[],'all'));
+    tolerance_units=128*eps(scale_units);
+    changed=true;
+    while changed
+        changed=false;
+        indices=find(keep);
+        for localIndex=2:numel(indices)-1
+            previous=route_units(indices(localIndex-1),:);
+            current=route_units(indices(localIndex),:);
+            following=route_units(indices(localIndex+1),:);
+            first=current-previous;
+            second=following-current;
+            firstLength=norm(first);
+            secondLength=norm(second);
+            sameDirection=dot(first,second)>=-tolerance_units^2;
+            area=abs(first(1)*second(2)-first(2)*second(1));
+            collinear=area<=tolerance_units*(firstLength+secondLength);
+            if firstLength<=tolerance_units || secondLength<=tolerance_units || ...
+                    (sameDirection && collinear)
+                keep(indices(localIndex))=false;
+                changed=true;
+                break
+            end
+        end
+    end
+    route_units=route_units(keep,:);
 end
 
 function segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount)
     edgeLength_units=vecnorm(diff(route_units),2,2);
-    edgeCount=numel(edgeLength_units);
+    segmentCountByEdge=allocateSegmentsByMeasure(edgeLength_units,targetSegmentCount);
+end
+
+function segmentCountByEdge=allocateSegmentsByMeasure(edgeMeasure,targetSegmentCount)
+    edgeMeasure=edgeMeasure(:);
+    edgeCount=numel(edgeMeasure);
     segmentCountByEdge=ones(edgeCount,1);
     remainingCount=targetSegmentCount-edgeCount;
-    if remainingCount<=0 || sum(edgeLength_units)<=0, return; end
-    exactCount=remainingCount*edgeLength_units/sum(edgeLength_units);
+    if remainingCount<=0 || sum(edgeMeasure)<=0, return; end
+    exactCount=remainingCount*edgeMeasure/sum(edgeMeasure);
     additional=floor(exactCount);
     segmentCountByEdge=segmentCountByEdge+additional;
     unassigned=remainingCount-sum(additional);
     [~,order]=sortrows([-mod(exactCount,1),(1:edgeCount).'],[1 2]);
     segmentCountByEdge(order(1:unassigned))=segmentCountByEdge(order(1:unassigned))+1;
+end
+
+function refined=splitScalarByCount(values,segmentCountByEdge)
+    refined=zeros(sum(segmentCountByEdge)+1,1);
+    target=1;
+    for edgeIndex=1:numel(segmentCountByEdge)
+        count=segmentCountByEdge(edgeIndex);
+        fraction=(0:count-1).'/count;
+        rows=target:target+count-1;
+        refined(rows)=values(edgeIndex)+ ...
+            fraction*(values(edgeIndex+1)-values(edgeIndex));
+        target=target+count;
+    end
+    refined(end)=values(end);
 end
 
 function refined_units=splitRouteByCount(route_units,segmentCountByEdge)

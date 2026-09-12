@@ -126,6 +126,10 @@ else
         [alternatingResult,diagnostics] = bmtpEngine.solveActivePairTrajectory( ...
             request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
     else
+        % Only a variable clock needs the dedicated solver that rebuilds
+        % obstacle/time overlap after every duration change. A prescribed
+        % clock uses the mature fixed-duration alternating SOCP; its active
+        % intervals are already exact and do not move between iterations.
         usesTimedSolver = request.UsesVariableClock;
         if usesTimedSolver
             [alternatingResult, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( ...
@@ -200,7 +204,8 @@ for refinement=1:10
     [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
 end
 diagnostics.SegmentCount=numel(preparedMotion.SegmentTime_s);
-diagnostics.FinalCollisionPairCount = certificate.AllPairCount;
+diagnostics.FinalCollisionPairCount = ...
+    certificate.AllPairCount-certificate.VerifiedPairCount;
 diagnostics.MotionCertificate = preparedMotion.MotionCertificate;
 diagnostics.PlaneCertificate  = certificate;
 candidate.PlaneCertificate = certificate;

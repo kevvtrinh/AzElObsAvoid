@@ -61,6 +61,34 @@ function testAffinePlaneNeedsOneEndpointWeight(testCase)
     verifyTrue(testCase,all([reduced.Active]));
 end
 
+function testStaticMeshIgnoresCollinearSeedVertices(testCase)
+    limits=struct('xInterval_units',[-10,10],'yInterval_units',[-10,10], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[1,1], ...
+        'maxJerk_units_s3',[3,3]);
+    initial=state([-6,4],0);
+    goal=state([6,-1],100);
+    normalized=planner([],initial,goal,limits,options());
+    route=[initial.position_units;-2,1;goal.position_units];
+    midpointRoute=[route(1,:);mean(route(1:2,:),1);route(2,:); ...
+        mean(route(2:3,:),1);route(3,:)];
+    coverage=struct('Passed',true);
+    firstRequest=bmtpEngine.createSolveRequest(seed(route),cell(0,1),coverage, ...
+        normalized.Inputs.initialState,normalized.Inputs.goalState, ...
+        normalized.Limits,normalized.Options);
+    secondRequest=bmtpEngine.createSolveRequest(seed(midpointRoute),cell(0,1), ...
+        coverage,normalized.Inputs.initialState,normalized.Inputs.goalState, ...
+        normalized.Limits,normalized.Options);
+    firstWarm=bmtpEngine.createWarmStart(firstRequest);
+    secondWarm=bmtpEngine.createWarmStart(secondRequest);
+    verifyEqual(testCase,firstWarm.SegmentCount,12);
+    verifyEqual(testCase,secondWarm.SegmentCount,firstWarm.SegmentCount);
+    verifyEqual(testCase,secondWarm.Route_units,firstWarm.Route_units,'AbsTol',1e-12);
+    verifyEqual(testCase,secondWarm.ControlPoint_units, ...
+        firstWarm.ControlPoint_units,'AbsTol',1e-12);
+    verifyEqual(testCase,secondWarm.SegmentTime_s, ...
+        firstWarm.SegmentTime_s,'AbsTol',1e-12);
+end
+
 function verifyValidatedStaticBmtp(testCase,result)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
@@ -76,6 +104,13 @@ end
 
 function value=options()
     value=struct('GoalTimeMode','earliestArrival','SampleTime_s',0.1);
+end
+
+function value=seed(route_units)
+    edgeLength_units=vecnorm(diff(route_units),2,2);
+    value=struct('position_units',route_units, ...
+        'tau',[0;cumsum(edgeLength_units)]/sum(edgeLength_units), ...
+        'Source',"visibilityGraph");
 end
 
 function value=plane(normal,offset_units)
