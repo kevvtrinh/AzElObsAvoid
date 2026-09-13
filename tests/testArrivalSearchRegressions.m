@@ -62,3 +62,31 @@ function testInitialRouteBoundReturnsValidatedWaitWithoutTrials(testCase)
     verifyGreaterThanOrEqual(testCase,routeBound_s,result.TrajectoryDuration_s);
     verifyGreaterThan(testCase,result.SolverDiagnostics.DepartureSchedule.DepartureDelay_s,0);
 end
+
+function testChallengedDelayedChordIncumbentIsRetained(testCase)
+    box=[-0.6,-1.5;0.6,-1.5;0.6,1.5;-0.6,1.5];
+    obstacleTime_s=[0;5.5;6.5;15];
+    obstacle=obstacleAvoidance.obstacles.createObstacle('moving box', ...
+        obstacleTime_s,{box(:,1);box(:,1);box(:,1);box(:,1)}, ...
+        {box(:,2);box(:,2);box(:,2)+4;box(:,2)+4},0.1);
+    initial=struct('time_s',0,'position_units',[-5,0]);
+    goal=struct('time_s',15,'position_units',[5,0]);
+    limits=struct('xInterval_units',[-6,6], ...
+        'yInterval_units',[-4,4],'maxVelocity_units_s',[2,2], ...
+        'maxAcceleration_units_s2',[0.5,0.5], ...
+        'maxJerk_units_s3',[2.5,2.5]);
+    options=struct('GoalTimeMode','earliestArrival', ...
+        'TemporalResolution_s',0.5,'MaxArrivalTrials',1);
+    result=planner(obstacle,initial,goal,limits,options);
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"c3DepartureSchedule");
+    verifyTrue(testCase,isfield(result,'TemporalSearch'));
+    verifyTrue(testCase,result.TemporalSearch.RetainedIncumbent);
+    verifyEqual(testCase,numel(result.TemporalSearch.TrialTime_s),1);
+    verifyNotEqual(testCase,result.TemporalSearch.TrialTerminationReason, ...
+        "goalReached");
+    verifyEqual(testCase,result.ArrivalTime_s, ...
+        result.TemporalSearch.IncumbentArrival_s,'AbsTol',1e-10);
+    verifyFalse(testCase,isfield(result,'FixedArrivalTrialTime_s'));
+end

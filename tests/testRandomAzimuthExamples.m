@@ -72,3 +72,20 @@ function testSuiteReturnsValidatedCoreResults(testCase)
     verifyTrue(testCase,single.Success,single.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(single).Passed);
 end
+
+function testTimedFixedArrivalRepairsSpatialSeedFailures(testCase)
+    caseIndices=[26,36,62,62];
+    withStatic=[true,true,false,true];
+    overrides=struct('PlotOutputs',false,'Verbose',false, ...
+        'FixedArrivalSearch','timeExpanded');
+    for caseNumber=1:numel(caseIndices)
+        result=exampleRandomAzimuth(caseIndices(caseNumber), ...
+            withStatic(caseNumber),overrides);
+        verifyTrue(testCase,result.Success,result.Message);
+        verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+        verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+            "timeExpandedVisibilityGraph");
+        verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-10);
+        verifyLessThanOrEqual(testCase,result.SolverDiagnostics.IterationCount,2);
+    end
+end

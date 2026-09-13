@@ -47,6 +47,7 @@ distinctions, not alternative planner policies.
 | Fixed time-expanded detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree8`; `testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline` | Necessary absolute-time geometry; fixed-clock and variable-clock implementations can share more machinery. |
 | Dense dynamic earliest detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree5`; `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival` | Necessary absolute-time geometry. Current sampled graph and uniformly scaled clock are not a final general formulation. |
 | Analytic delayed direct chord | `c3DepartureSchedule`; `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, and arrival-search regressions | Exact for this single route, but currently reached as a fallback and selected with an invalid initial-snapshot bound. It belongs as an exact timed edge, not a competing planner. |
+| Delayed chord challenged and retained | `TemporalSearch.RetainedIncumbent=true`; `testArrivalSearchRegressions/testChallengedDelayedChordIncumbentIsRetained` | Necessary selection behavior until one common search replaces the ladder. A failed earlier proposal must not discard an independently certified incumbent. |
 | Chronological fixed clocks | `TemporalSearch`, `FixedArrivalTrialTime_s`; `testPlannerDecisionFlow/testEarliestMovingTargetUsesChronologicalClock` and `exampleMovingCircleNoWrap` | Target position changes with time and the sparse fixed-goal timed clock can miss a faster detour. The recursive full planner invocation is implementation duplication, not the desired common solve. |
 
 ## Remaining policy splits that block completion
@@ -347,3 +348,53 @@ pass; arrival and length changes are numerical zero. The graph must therefore
 search polynomial edges with reachable-jet labels. Protected-boundary vertices
 are guide features, not pinned physical waypoints. Adding further scalar bounds
 to `(position,time)` labels cannot solve the remaining consolidation.
+
+The follow-up joint nonlinear trial confirms that putting every missing state
+into one generic SQP is not the practical implementation of that graph. With a
+minimum BMTP mesh it returned a valid moving-barrier motion at `11.0601244`
+seconds and essentially unchanged length, but missed arrival by `9.073%` and
+spent `51.420` seconds inside the optimizer alone versus a warmed production
+median of `0.058349` seconds. An input-derived phase-accurate mesh then exceeded
+two minutes before completing one useful timing step. This is over three orders
+of magnitude outside the runtime gate, so opening-U and moving-circle were not
+run with the same already-rejected method.
+
+That trial also exposed two numerical requirements for any future joint clock:
+collision residuals cannot be weakened in proportion to overlap duration, and
+model-feasible iterates cannot replace an earlier continuously certified
+incumbent. The rejected candidate missed one exact separating-plane gap by only
+`1.7466e-12` coordinate units, but the independent validator correctly rejected
+it. Neither tighter plotting samples nor accepting optimizer tolerance is a
+valid repair.
+
+## Fixed-arrival moving-obstacle seed diagnosis
+
+The eighty paired random-azimuth cases expose a clean, input-driven split in
+the fixed-arrival path. The default initial-snapshot spatial guide succeeds and
+independently validates in 156 of 160 requests. Cases 26 with the static
+obstacle, 36 with the static obstacle, and case 62 with and without the static
+obstacle all construct short spatial routes, but their length-proportional
+physical clocks collide with the translating obstacle before BMTP begins. The
+subsequent uniform warm-route resampling does not repair that mismatch. Each
+failed request exhausts 35 alternating iterations, three mesh refinements, and
+103--138 trajectory SOCP solves before returning
+`noOptimizedFeasibleIterate`.
+
+The existing fixed-arrival time-expanded flow solves and independently
+validates all four unchanged requests in one or two BMTP iterations. Across all
+160 paired requests it improves success from 156/160 to 160/160 and eliminates
+the 55--106 second failed-solve tail. A separate hand construction also proves
+all four inputs feasible: exact full-translation sweep geometry, exhaustive
+visibility on that diagnostic geometry, and two rest-to-rest quintics per
+geometric edge produce complete motions that pass the all-region certificate
+and public validator without optimization. The diagnostic sweep is only a
+feasibility witness, not a proposed conservative production search.
+
+Always using the current sampled time-expanded proposal is not yet the final
+consolidation. It raises the median paired-case runtime from about 0.39 to 0.94
+seconds and changes more than one percent of the path length in 62 of the 156
+previous successes, usually by finding a shorter route. The supported next
+step is one lazy timed-seed pipeline: retain the exhaustive spatial route as an
+initial label only when its assigned physical clock is continuously clear, and
+otherwise expand wait/move labels before the single BMTP solve. That removes
+the failing time-blind handoff without a seed retry schedule.
