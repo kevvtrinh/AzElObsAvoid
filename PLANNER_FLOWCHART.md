@@ -131,6 +131,14 @@ forward.
   length branch were removed.
 - Decision-flow tests now assert the branch signatures instead of only checking
   `Success`.
+- Public decision fixtures now also cover nonfinite time, scalar-limit
+  normalization, empty known-option defaults, noninteger arrival trials,
+  WrapY and dual-axis wrap, target-driven periodic rejection, equal explicit
+  and matched target derivatives, acceleration-only matching, and outward
+  boundary acceleration.
+- Exact-row fixtures compare every materialized plane-row residual with the
+  omission oracle, prove an omitted conflicting row is loaded through another
+  solve, and prove a retained row cannot hide a different violated pair.
 - Timed proposal acceptance uses one BMTP call. The former second wait-guide
   retry was unreachable because the same selected-window condition had already
   selected that guide before the first solve.
@@ -157,3 +165,9 @@ The event-aware independent-duration sandbox in
 `sandbox/eventAwareTimingTrial/` is negative evidence, not a production
 replacement. Its four raw proposals all failed independent endpoint/C3
 validation (two also exceeded acceleration bounds), so none was adopted.
+The follow-up degree-eight Hermite formulation makes endpoints and C3 exact by
+construction and rebuilds absolute-time coverage before validation. A timed
+graph barrier seed remains valid but stays near 10.5 seconds versus the
+10.1400889188-second reference, outside the one-percent arrival gate; the
+opening-U timing step retains only its unchanged 15-second feasible seed versus
+the 11.6133888606-second reference. It is therefore also not productionized.

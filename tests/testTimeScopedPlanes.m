@@ -23,6 +23,64 @@ function testUsableConicIteratePolicy(testCase)
     verifyFalse(testCase,bmtpEngine.hasUsableConicIterate(0,0));
 end
 
+function testGeneratedPlaneRowsMatchExactOmissionOracle(testCase)
+    degree=5;
+    segmentCount=2;
+    regionCount=3;
+    controlCount=segmentCount*(degree+1)*2;
+    variableCount=controlCount+4;
+    controls=reshape(linspace(-1.3,1.7,controlCount),controlCount,1);
+    x=[controls;zeros(4,1)];
+    template=struct('Active',true,'Normal',[1,0;0.8,0.6], ...
+        'Offset_units',[-0.2,0.1],'TimeFraction',[0,1]);
+    planes=repmat(template,segmentCount,regionCount);
+    planes(1,2).Normal=[-1,0;-0.6,0.8];
+    planes(1,2).Offset_units=[0.3,-0.1];
+    planes(1,2).TimeFraction=[0.15,0.8];
+    planes(1,3).Normal=[0,-1;0.4,-sqrt(0.84)];
+    planes(1,3).Offset_units=[-0.05,0.2];
+    planes(2,1).Normal=[0.6,0.8;1,0];
+    planes(2,1).TimeFraction=[0.2,0.65];
+    planes(2,2).Normal=[-0.8,0.6;-1,0];
+    planes(2,2).Offset_units=[0.15,0.25];
+    planes(2,3).Normal=[0,-1;-0.8,-0.6];
+    planes(2,3).TimeFraction=[0.4,0.9];
+    activePairs=true(segmentCount,regionCount);
+    slackColumnByPair=zeros(size(activePairs));
+    reserve_units=2e-4;
+    [rows,bounds]=bmtpEngine.createSelectedPlaneRows(planes,activePairs, ...
+        degree,variableCount,slackColumnByPair,reserve_units);
+    rowResidual=rows*x-bounds;
+    pairResidual=reshape(max(reshape(rowResidual,degree+2,[]),[],1), ...
+        regionCount,segmentCount).';
+    [selectedPairs,maximumResidual]=bmtpEngine.findViolatedPlanePairs( ...
+        x,planes,activePairs,false(size(activePairs)),degree, ...
+        slackColumnByPair,reserve_units,-1e9);
+    expected=false(size(activePairs));
+    for segmentIndex=1:segmentCount
+        [~,regionIndex]=max(pairResidual(segmentIndex,:));
+        expected(segmentIndex,regionIndex)=true;
+    end
+    verifyEqual(testCase,maximumResidual,max(pairResidual,[],'all'), ...
+        'AbsTol',32*eps(max(1,abs(maximumResidual))));
+    verifyEqual(testCase,selectedPairs,expected);
+end
+
+function testRetainedPlaneCannotHideAnotherViolatedPair(testCase)
+    degree=5;
+    variableCount=2*(degree+1)+4;
+    x=zeros(variableCount,1);
+    planes=repmat(struct('Active',true,'Normal',[1,0;1,0], ...
+        'Offset_units',[0.25,0.25],'TimeFraction',[0,1]),1,2);
+    planes(2).Offset_units=[0.5,0.5];
+    activePairs=true(1,2);
+    retainedPairs=[true,false];
+    [selectedPairs,maximumResidual]=bmtpEngine.findViolatedPlanePairs( ...
+        x,planes,activePairs,retainedPairs,degree,zeros(1,2),0,1e-10);
+    verifyEqual(testCase,selectedPairs,[false,true]);
+    verifyEqual(testCase,maximumResidual,0.5,'AbsTol',1e-12);
+end
+
 function testDifferentTimeWindowsDoNotConflict(testCase)
     initial = struct('time_s',0,'position_units',[-1,0],'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
     goal = initial; goal.time_s = 6; goal.position_units = [1,0];
@@ -44,6 +102,9 @@ function testDifferentTimeWindowsDoNotConflict(testCase)
     planes(1).TimeFraction = [0,1]; planes(2).TimeFraction = [0,1];
     [~,~,flag,output] = bmtpEngine.solveTrajectoryStep(1,5,initial,goal,limits,planes,1e-8,6,options,1,true);
     verifyTrue(testCase,flag<=0 || output.MaximumClearanceSlack_units>0.4);
+    verifyTrue(testCase,output.ConstraintGenerationApplied);
+    verifyGreaterThan(testCase,output.SolveCount,1);
+    verifyEqual(testCase,output.LoadedPlanePairCount,2);
 end
 
 function testTravelRefinementAddsNewCollisionPlanes(testCase)

@@ -58,6 +58,16 @@ function testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning(testCase)
         struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded'));
     verifyFailure(testCase,result,"dynamicEndpointInfeasible");
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"notSearched");
+
+    initial=state(0,[1,0]); initial.acceleration_units_s2=[1,0];
+    result=planner([],initial,state(10,[0,0]),limits, ...
+        struct('GoalTimeMode','fixedArrival'));
+    verifyFailure(testCase,result,"dynamicEndpointInfeasible");
+
+    goal=state(10,[-1,0]); goal.acceleration_units_s2=[-1,0];
+    result=planner([],state(0,[0,0]),goal,limits, ...
+        struct('GoalTimeMode','fixedArrival'));
+    verifyFailure(testCase,result,"dynamicEndpointInfeasible");
 end
 
 function testWorkspaceOvershootFallsThroughToBmtp(testCase)
@@ -179,6 +189,31 @@ function testPeriodicRequestWithObstacleIsRejected(testCase)
     verifyError(testCase,call,'planner:UnsupportedPeriodicRequest');
 end
 
+function testPeriodicYAndDualAxisWrap(testCase)
+    limits=standardLimits();
+    limits.xInterval_units=[-180,180];
+    limits.yInterval_units=[-90,90];
+    yResult=planner([],state(0,[0,89]),state(10,[0,-89]),limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapY',true));
+    verifyTrue(testCase,yResult.Success,yResult.Message);
+    verifyEqual(testCase,yResult.Inputs.goalState.position_units,[0,91]);
+    verifyEqual(testCase,yResult.MotionLength_units,2,'AbsTol',1e-8);
+    bothResult=planner([],state(0,[179,89]),state(10,[-179,-89]),limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapX',true,'WrapY',true));
+    verifyTrue(testCase,bothResult.Success,bothResult.Message);
+    verifyEqual(testCase,bothResult.Inputs.goalState.position_units,[181,91]);
+    verifyEqual(testCase,bothResult.MotionLength_units,sqrt(8),'AbsTol',1e-8);
+end
+
+function testPeriodicMovingTargetIsRejected(testCase)
+    limits=standardLimits(); limits.yInterval_units=[-90,90];
+    targetMotion=struct('time_s',[0;10], ...
+        'position_units',[0,89;0,-89],'InterpolationMethod','linear');
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    verifyError(testCase,@()planner([],state(0,[0,89]),goal,limits, ...
+        struct('WrapY',true)),'planner:UnsupportedPeriodicRequest');
+end
+
 function testTimedMovingTargetIsExplicitlyUnsupported(testCase)
     targetMotion=struct('time_s',[0;10], ...
         'position_units',[4,0;5,0],'InterpolationMethod','linear');
@@ -287,6 +322,9 @@ function testStateValidationDecisions(testCase)
     initial=state(0,[0,0]); initial.position_units=[0,NaN];
     verifyError(testCase,@()planner([],initial,goal,standardLimits(),struct()), ...
         'planTrajectory:InvalidState');
+    initial=state(NaN,[0,0]);
+    verifyError(testCase,@()planner([],initial,goal,standardLimits(),struct()), ...
+        'MATLAB:expectedFinite');
     verifyError(testCase,@()planner([],state(0,[0,0]),state(0,[4,0]), ...
         standardLimits(),struct()),'planTrajectory:InvalidTimeOrder');
     verifyError(testCase,@()planner([],state(0,[0,0]),state(10,[0,0]), ...
@@ -309,6 +347,15 @@ function testLimitValidationDecisions(testCase)
     limits=standardLimits(); limits.maxJerk_units_s3=[4,0];
     verifyError(testCase,@()planner([],initial,goal,limits,struct()), ...
         'planTrajectory:InvalidDerivativeLimit');
+
+    limits=standardLimits();
+    limits.maxVelocity_units_s=2;
+    limits.maxAcceleration_units_s2=2;
+    limits.maxJerk_units_s3=4;
+    result=planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.Limits.maxVelocity_units_s,[sqrt(2),sqrt(2)], ...
+        'AbsTol',1e-12);
 end
 
 function testOptionValidationDecisions(testCase)
@@ -323,6 +370,11 @@ function testOptionValidationDecisions(testCase)
         struct('SampleTime_s',0)),'MATLAB:expectedPositive');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('MaxArrivalTrials',0)),'MATLAB:expectedPositive');
+    verifyError(testCase,@()planner([],initial,goal,limits, ...
+        struct('MaxArrivalTrials',1.5)),'MATLAB:expectedInteger');
+    defaulted=planner([],initial,goal,limits,struct('SampleTime_s',[]));
+    verifyTrue(testCase,defaulted.Success,defaulted.Message);
+    verifyEqual(testCase,defaulted.Options.SampleTime_s,0.05);
     verifyWarning(testCase,@()planner([],initial,goal,limits, ...
         struct('unusedOption',1)),'planTrajectory:UnknownOptions');
 end
@@ -338,6 +390,20 @@ function testTargetDerivativeValidationDecisions(testCase)
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('MatchTargetVelocity',true)), ...
         'planner:ConflictingTargetDerivative');
+
+    goal.velocity_units_s=[0.1,0];
+    matched=planner([],initial,goal,limits, ...
+        struct('GoalTimeMode','fixedArrival','MatchTargetVelocity',true));
+    verifyTrue(testCase,matched.Success,matched.Message);
+    verifyEqual(testCase,matched.velocity_units_s(end,:),[0.1,0], ...
+        'AbsTol',1e-8);
+
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    accelerationOnly=planner([],initial,goal,limits, ...
+        struct('GoalTimeMode','fixedArrival','MatchTargetAcceleration',true));
+    verifyTrue(testCase,accelerationOnly.Success,accelerationOnly.Message);
+    verifyEqual(testCase,accelerationOnly.acceleration_units_s2(end,:),[0,0], ...
+        'AbsTol',1e-8);
 end
 
 function testTargetHistoryValidationDecisions(testCase)
