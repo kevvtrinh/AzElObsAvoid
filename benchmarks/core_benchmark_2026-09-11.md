@@ -54,7 +54,7 @@ has no finite route length.
 
 ## Randomized azimuth corpus
 
-`benchmarkRandomAzimuth(1:80,"spatial",...)` ran 80 deterministic random
+`benchmarkRandomAzimuth(1:80,...)` ran 80 deterministic random
 wide-azimuth requests twice: once with a moving obstacle and once with the same
 moving obstacle plus a static obstacle. All 160 planner results succeeded and
 passed independent validation.

@@ -47,20 +47,18 @@ default request arrives at 3000 s from a 2770 s start. Use
 [benchmark report](benchmarks/vietnam_boundary.md) document the data, declared
 interpolation, continuous motion, and measured preparation improvement.
 
-Fixed-arrival requests can explicitly select the existing time-expanded guide:
-
-```matlab
-options = struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded');
-result = planner(obstacles,initialState,goalState,limits,options);
-```
-
-`FixedArrivalSearch` defaults to `'spatial'`. The timed option supports a
-fixed-position goal and zero endpoint velocity and acceleration; intermediate
-motion carries derivatives continuously through BMTP joins. It returns an
-explicit failure if the timed method cannot produce validated motion. See the
-[fixed-arrival comparison](benchmarks/fixed_arrival_timed_visibility.md): it
-solves a moving-detour request that the spatial method fails, but costs more
-time and produces a slightly longer path on the supplied Vietnam fixture.
+Fixed-arrival moving-obstacle requests use one deterministic two-guide policy.
+The exact initial visibility route receives the initial BMTP solve and one
+refined collision-mesh solve. If neither returns a complete certified motion,
+the planner evaluates the existing exact timed visibility route once. This proof
+boundary preserves the shorter spatial result when it works and changes
+homotopy before repeated optimization of the same failing seed becomes costly.
+The timed guide supports a fixed-position goal and zero endpoint velocity and
+acceleration; intermediate motion carries derivatives continuously through BMTP
+joins. `VisibilityGraph.SpatialSeedDiagnostics` retains the rejected spatial
+attempt when the timed guide is selected. Legacy `FixedArrivalSearch` values are
+accepted for input compatibility but no longer split planner behavior. See the
+[fixed-arrival consolidation](benchmarks/fixed_arrival_timed_visibility.md).
 
 The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
 workspace/visibility, four kinematic panels, animation, GIF export, and paired
@@ -190,7 +188,7 @@ finding the earliest retained feasible motion, the solver minimizes travel at
 that same arrival time and keeps it only after exact continuous certification.
 Fixed-arrival motion enforces C3 joins in the shared Bernstein equations. Timed
 obstacles retain their exact affine cells and absolute activity intervals. No
-example identity selects a production method.
+example identity or caller-selected search mode chooses a production method.
 
 Export preserves the physical clock. A global continuity projection stays in
 the quintic spline space, and every corrected motion is checked again. Exact

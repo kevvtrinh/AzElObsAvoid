@@ -1,7 +1,7 @@
 function tests = testFixedTimedVisibility
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testFixedTimedVisibility.m')
-% PURPOSE: Verify explicit fixed-arrival timed search and physical validation.
+% PURPOSE: Verify unified fixed-arrival seed selection and physical validation.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Fixed-clock motion, unsupported request, and expected failure checks.
 % UNITS: Coordinate units and seconds.
@@ -15,7 +15,7 @@ function setupOnce(testCase)
     testCase.TestData.Goal=struct('time_s',10,'position_units',[5,0]);
     testCase.TestData.Limits=struct('xInterval_units',[-1,6],'yInterval_units',[-2,2], ...
         'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
-    testCase.TestData.Options=struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded');
+    testCase.TestData.Options=struct('GoalTimeMode','fixedArrival');
 end
 
 function testPrescribedArrivalAndContinuousMotion(testCase)
@@ -24,8 +24,8 @@ function testPrescribedArrivalAndContinuousMotion(testCase)
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,10,'AbsTol',1e-8);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");
-    verifyFalse(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
     verifyLessThan(testCase,size(result.Route_units,1),9);
 end
 
@@ -34,7 +34,7 @@ function testNoSilentSpatialFallback(testCase)
     wall=struct('Vertices_units',[2,-3;3,-3;3,3;2,3]);
     result=planner(wall,data.Initial,data.Goal,data.Limits,data.Options);
     verifyFalse(testCase,result.Success);
-    verifyEqual(testCase,result.TerminationReason,"noTimedRoute");
+    verifyEqual(testCase,result.TerminationReason,"noVisibilityRoute");
     verifyEmpty(testCase,result.time_s);
 end
 
@@ -65,16 +65,16 @@ function testSavedDetourUsesPrescribedDeadline(testCase)
             arrayfun(@(f)f.vertices_units(:,2),frames,'UniformOutput',false),source.safetyMargin_units);
     end
     options=request.options;
-    options.GoalTimeMode='fixedArrival'; options.FixedArrivalSearch='timeExpanded';
+    options.GoalTimeMode='fixedArrival';
     result=planner(obstacleAvoidance.obstacles.combineObstacles(sources), ...
         request.initialState,request.goalState,request.limits,options);
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-8);
-    verifyEqual(testCase,result.VisibilityGraph.RouteTime_s([1,end]),[0;180]);
-    verifyLessThan(testCase,result.MotionLength_units,230);
-    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpTimeCellsDegree8");
-    verifyGreaterThan(testCase,result.SolverDiagnostics.MeshRefinementCount,0);
+    % The unified spatial result stays within one percent of the former
+    % explicitly selected timed motion (229.400575729 units).
+    verifyLessThan(testCase,result.MotionLength_units,232);
+    verifyEqual(testCase,result.SeedSource,"initialSpatialSnapshot");
     verifyGreaterThan(testCase,result.SolverDiagnostics.OptimizerSpanCount,16);
 end
 
@@ -106,12 +106,26 @@ function testMovingCrossingRetainsCertifiedEndpointJerk(testCase)
         'maxVelocity_units_s',[3,3],'maxAcceleration_units_s2',[2,2], ...
         'maxJerk_units_s3',[4,4]);
     options=struct('GoalTimeMode','fixedArrival', ...
-        'FixedArrivalSearch','timeExpanded','SampleTime_s',0.05, ...
+        'SampleTime_s',0.05, ...
         'TemporalResolution_s',0.75);
     result=planner(obstacle,initial,goal,limits,options);
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.RouteTime_s,[0;7.5;12]);
+    verifyEqual(testCase,result.ArrivalTime_s,missionEndTime_s,'AbsTol',1e-8);
     verifyLessThanOrEqual(testCase,max(abs(result.jerk_units_s3),[],1), ...
         limits.maxJerk_units_s3+result.Options.ConstraintTolerance);
+end
+
+function testPersistentSpatialPairsUseTimedSeed(testCase)
+    scenario=createRandomAzimuthScenario(26,true);
+    result=planner(scenario.Obstacles,scenario.InitialState, ...
+        scenario.GoalState,scenario.Limits,scenario.Options);
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.SeedSource,"timeExpandedVisibilityGraph");
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+        "timeExpandedVisibilityGraph");
+    spatial=result.VisibilityGraph.SpatialSeedDiagnostics;
+    verifyEqual(testCase,spatial.IterationCount,2);
+    verifyGreaterThan(testCase,spatial.FinalCollisionPairCount,0);
 end

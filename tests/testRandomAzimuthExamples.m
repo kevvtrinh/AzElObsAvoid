@@ -76,8 +76,7 @@ end
 function testTimedFixedArrivalRepairsSpatialSeedFailures(testCase)
     caseIndices=[26,36,62,62];
     withStatic=[true,true,false,true];
-    overrides=struct('PlotOutputs',false,'Verbose',false, ...
-        'FixedArrivalSearch','timeExpanded');
+    overrides=struct('PlotOutputs',false,'Verbose',false);
     for caseNumber=1:numel(caseIndices)
         result=exampleRandomAzimuth(caseIndices(caseNumber), ...
             withStatic(caseNumber),overrides);

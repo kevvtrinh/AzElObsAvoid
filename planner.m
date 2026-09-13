@@ -8,8 +8,9 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
 %     then construct independently certified C3 quintic BMTP motion.
-%   - Moving-obstacle requests may use the initial exact snapshot or an
-%     explicitly selected time-expanded visibility guide.
+%   - Fixed-arrival moving-obstacle requests retain the exact spatial guide
+%     when its first refined BMTP proof succeeds, otherwise they use one
+%     time-expanded guide for a different homotopy.
 %
 % INPUTS
 %   - obstacles: static polygon structs or canonical polygon histories.
@@ -21,7 +22,7 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %     magnitudes allocated equally, and two-element vectors are per-axis.
 %   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
 %     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
-%     FixedArrivalSearch: spatial (default) or timeExpanded for timed visibility.
+%     Legacy FixedArrivalSearch values are accepted but no longer split the flow.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
@@ -164,11 +165,6 @@ else
 end
 isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
     goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
-if options.GoalTimeMode=="fixedArrival" && options.FixedArrivalSearch=="timeExpanded"
-    result.ElapsedTime_s = toc(totalTimer);
-    [result,~] = obstacleAvoidance.input.tryTimedArrival(result);
-    return;
-end
 if options.GoalTimeMode=="earliestArrival" && ...
         (isDynamic || earliestTarget || ~isRest)
     result.ElapsedTime_s = toc(totalTimer);
@@ -258,8 +254,26 @@ route_units = visibilityGraph.Route_units;
 edgeLength_units = vecnorm(diff(route_units,1,1),2,2);
 seed = struct('position_units',route_units,'tau',[0;cumsum(edgeLength_units)]/sum(edgeLength_units), ...
     'Index',1,'Source',visibilityGraph.SearchKind,'ObstacleEnvelope_units',zeros(0,2));
+if isDynamic && options.GoalTimeMode=="fixedArrival"
+    % Give the exact spatial route its initial BMTP pass and one pass on the
+    % resulting refined mesh. If neither pass certifies complete motion,
+    % construct the exact timed route instead of repeatedly optimizing the
+    % same failed homotopy.
+    seed.MaximumAlternatingIterations=2;
+end
 [candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
     initialState,motionGoalState,limits,options);
+
+if isDynamic && options.GoalTimeMode=="fixedArrival" && ...
+        isempty(goalState.targetMotion) && ~candidate.Success && ...
+        candidate.TerminationReason=="noOptimizedFeasibleIterate"
+    result=obstacleAvoidance.input.finalizeCandidate( ...
+        result,candidate,route_units,solverDiagnostics);
+    result.VisibilityGraph.SpatialSeedDiagnostics=solverDiagnostics;
+    result.ElapsedTime_s=toc(totalTimer);
+    [result,~]=obstacleAvoidance.input.tryTimedArrival(result);
+    return
+end
 
 %% Section 4: Independently Validate The Complete Returned Motion
 
@@ -282,7 +296,7 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
     limits = struct("xInterval_units", [-180 180], "yInterval_units", [-90 90], ...
         "maxVelocity_units_s", [2 2], ...
         "maxAcceleration_units_s2", [2 2], "maxJerk_units_s3", [4 4]);
-    options = struct("GoalTimeMode", "fixedArrival", "FixedArrivalSearch", "spatial", ...
+    options = struct("GoalTimeMode", "fixedArrival", ...
         "SampleTime_s", 0.05, "ConstraintTolerance", 1e-8, ...
         "CollisionClearanceTolerance_units", 1e-7, ...
         "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
@@ -361,6 +375,17 @@ function options = resolveOptions(options, defaults)
     if ~isstruct(options) || ~isscalar(options)
         error("planTrajectory:InvalidOptions", "options must be a scalar struct.");
     end
+    % Accept the former selector as an input-only compatibility alias. Both
+    % values now use the same deterministic spatial-then-timed seed policy.
+    if isfield(options,'FixedArrivalSearch')
+        legacySearch=string(options.FixedArrivalSearch);
+        if ~isscalar(legacySearch) || ...
+                ~any(legacySearch==["spatial","timeExpanded"])
+            error("planner:UnsupportedFixedArrivalSearch", ...
+                "FixedArrivalSearch must be spatial or timeExpanded.");
+        end
+        options=rmfield(options,'FixedArrivalSearch');
+    end
     knownFields = string(fieldnames(defaults));
     unknownFields = setdiff(string(fieldnames(options)), knownFields);
     if ~isempty(unknownFields)
@@ -374,10 +399,6 @@ function options = resolveOptions(options, defaults)
         end
     end
     options.GoalTimeMode = string(options.GoalTimeMode);
-    options.FixedArrivalSearch = string(options.FixedArrivalSearch);
-    if ~isscalar(options.FixedArrivalSearch) || ~any(options.FixedArrivalSearch==["spatial","timeExpanded"])
-        error("planner:UnsupportedFixedArrivalSearch","FixedArrivalSearch must be spatial or timeExpanded.");
-    end
     if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["fixedArrival", "earliestArrival"])
         error("planner:UnsupportedGoalTimeMode", "GoalTimeMode must be fixedArrival or earliestArrival.");
     end

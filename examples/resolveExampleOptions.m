@@ -123,12 +123,13 @@ end
 % Get the maintained planner defaults before scenario values are applied.
 % A list of public field names prevents display-only values from reaching the
 % planner and producing an unknown-option warning.
-plannerOptions = struct("GoalTimeMode", "earliestArrival", "FixedArrivalSearch", "spatial", "SampleTime_s", 0.05, ...
+plannerOptions = struct("GoalTimeMode", "earliestArrival", "SampleTime_s", 0.05, ...
     "ConstraintTolerance", 1e-8, "CollisionClearanceTolerance_units", 1e-7, ...
     "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
     "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
     "TemporalResolution_s",0.5,"MaxArrivalTrials",100);
 plannerNames   = string(fieldnames(plannerOptions));
+legacyPlannerNames = "FixedArrivalSearch";
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.
 for name = intersect(string(fieldnames(scenarioDefaults)), plannerNames, "stable").'
@@ -139,8 +140,8 @@ end
 overrideNames        = string(fieldnames(normalizedOverrides));
 aliasNames           = ["ShowKinematicPlot", "AnimationFrameStride", "AnimationPause_s", "MaxJerk_units_s3"];
 scenarioNames        = string(fieldnames(scenarioDefaults));
-unknownNames         = setdiff(overrideNames, [plannerNames; displayNames; aliasNames.'], "stable");
-unknownScenarioNames = setdiff(scenarioNames(:), [plannerNames; displayNames(:)], "stable");
+unknownNames         = setdiff(overrideNames, [plannerNames; legacyPlannerNames; displayNames; aliasNames.'], "stable");
+unknownScenarioNames = setdiff(scenarioNames(:), [plannerNames; legacyPlannerNames; displayNames(:)], "stable");
 unknownNames         = unique([unknownNames(:); unknownScenarioNames(:)], "stable");
 if ~isempty(unknownNames)
     warning("resolveExampleOptions:UnknownOptions", "Ignoring unknown example fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -151,6 +152,15 @@ for name = intersect(overrideNames, plannerNames, "stable").'
     if ~isempty(normalizedOverrides.(name))
         plannerOptions.(name) = normalizedOverrides.(name);
     end
+end
+
+% Forward the retired selector only when a caller supplied it. The planner
+% validates both historical values and then applies its unified policy.
+if isfield(scenarioDefaults, legacyPlannerNames) && ~isempty(scenarioDefaults.(legacyPlannerNames))
+    plannerOptions.(legacyPlannerNames) = scenarioDefaults.(legacyPlannerNames);
+end
+if isfield(normalizedOverrides, legacyPlannerNames) && ~isempty(normalizedOverrides.(legacyPlannerNames))
+    plannerOptions.(legacyPlannerNames) = normalizedOverrides.(legacyPlannerNames);
 end
 plotOptions = rmfield(displayOptions, ["PlotOutputs", "Verbose"]);
 displayOptions.JerkConstraintEnabled          = true;

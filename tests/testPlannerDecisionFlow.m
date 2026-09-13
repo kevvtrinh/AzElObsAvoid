@@ -55,7 +55,7 @@ function testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning(testCase)
 
     goal=state(10,[-1,0]); goal.velocity_units_s=[1,0];
     result=planner([],state(0,[0,0]),goal,limits, ...
-        struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded'));
+        struct('GoalTimeMode','fixedArrival'));
     verifyFailure(testCase,result,"dynamicEndpointInfeasible");
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"notSearched");
 
@@ -214,13 +214,16 @@ function testPeriodicMovingTargetIsRejected(testCase)
         struct('WrapY',true)),'planner:UnsupportedPeriodicRequest');
 end
 
-function testTimedMovingTargetIsExplicitlyUnsupported(testCase)
+function testLegacyTimedChoiceDoesNotSplitMovingTargetFlow(testCase)
     targetMotion=struct('time_s',[0;10], ...
         'position_units',[4,0;5,0],'InterpolationMethod','linear');
     goal=struct('time_s',10,'targetMotion',targetMotion);
     result=planner([],state(0,[0,0]),goal,standardLimits(), ...
         struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded'));
-    verifyFailure(testCase,result,"unsupportedTimedRequest");
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.ArrivalTime_s,10,'AbsTol',1e-8);
+    verifyEqual(testCase,result.SeedSource,"initialSpatialSnapshot");
 end
 
 function testInitiallyOccupiedFutureGoalUsesTemporalSeed(testCase)
@@ -300,7 +303,7 @@ function testArrivalSearchExhausted(testCase)
     verifyGreaterThan(testCase,numel(result.TemporalSearch.TrialTime_s),0);
 end
 
-function testSpatialAndTimedMotionInfeasibilityRemainDistinct(testCase)
+function testLegacySearchChoiceDoesNotSplitInfeasibleFlow(testCase)
     obstacle=struct('Vertices_units',[-1,-1;1,-1;1,1;-1,1]);
     initial=state(0,[-4,0]); goal=state(5.5,[4,0]);
     options=struct('GoalTimeMode','fixedArrival');
@@ -308,8 +311,9 @@ function testSpatialAndTimedMotionInfeasibilityRemainDistinct(testCase)
     verifyFailure(testCase,spatial,"noOptimizedFeasibleIterate");
     options.FixedArrivalSearch='timeExpanded';
     options.TemporalResolution_s=0.5;
-    timed=planner(obstacle,initial,goal,standardLimits(),options);
-    verifyFailure(testCase,timed,"timedMotionInfeasible");
+    legacy=planner(obstacle,initial,goal,standardLimits(),options);
+    verifyFailure(testCase,legacy,"noOptimizedFeasibleIterate");
+    verifyEqual(testCase,legacy.TerminationReason,spatial.TerminationReason);
 end
 
 function testStateValidationDecisions(testCase)

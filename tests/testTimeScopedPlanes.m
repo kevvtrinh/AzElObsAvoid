@@ -332,7 +332,7 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     initial = struct('time_s',0,'position_units',[-4,0],'velocity_units_s',[0.15,0]);
     goal = struct('time_s',20,'position_units',[4,0],'velocity_units_s',[0.1,0]);
     result = planner(source,initial,goal,[],struct( ...
-        'GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded'));
+        'GoalTimeMode','fixedArrival'));
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,20,'AbsTol',1e-8);

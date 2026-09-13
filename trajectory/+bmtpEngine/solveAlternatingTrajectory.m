@@ -38,10 +38,12 @@ diagnostics.LoadedPlanePairCountHistory = NaN(35,1);
 diagnostics.ConstraintGenerationRoundCountHistory = NaN(35,1);
 diagnostics.ConstraintGenerationCompleteHistory = false(35,1);
 diagnostics.MaximumPlaneConstraintResidualHistory = NaN(35,1);
+diagnostics.AlternatingIterationLimit= ...
+    request.MaximumAlternatingIterations;
 
 %% Section 2: Alternate The Complete Formulation
 if allPlanesActive
-    for iterationIndex = 1:35
+    for iterationIndex = 1:request.MaximumAlternatingIterations
         diagnostics.IterationCount = iterationIndex;
         [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, true);
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;

@@ -165,7 +165,7 @@ function testCachedUnsupportedFutureDoesNotRejectEarlierHorizon(testCase)
     limits=struct('xInterval_units',[-5,15],'yInterval_units',[-5,15], ...
         'maxVelocity_units_s',[10,10],'maxAcceleration_units_s2',[100,100], ...
         'maxJerk_units_s3',[1000,1000]);
-    options=struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','spatial');
+    options=struct('GoalTimeMode','fixedArrival');
     early=planner(prepared,initial,goal,limits,options);
     verifyNotEqual(testCase,early.TerminationReason,"unsupportedObstacleInterpolation");
     goal.time_s=1.5;
