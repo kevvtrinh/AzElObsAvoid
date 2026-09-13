@@ -113,6 +113,37 @@ guides. They are not suitable for restoration:
 Only the sound lower bound and alignment to exact obstacle events should carry
 forward.
 
+The `bmtp-cleanup-codex` branch is also not a compatible replacement. Its
+timed path loops over sampled fixed-arrival layers, constructs each moving cell
+as a convex hull of endpoint and midpoint geometry, and surrounds the solver
+with multiple path-guess and Ruckig fallbacks. That branch therefore removes
+the exact affine-cell contract and adds the policy tree this core is intended
+to eliminate. None of those pieces should be ported as the dynamic-clock fix.
+
+## Source coverage audit
+
+The 106-test suite was run under MATLAB statement coverage against the public
+planner and twelve orchestration/solver files. MATLAB Test decision coverage is
+not licensed on this installation, so uncovered branch bodies were mapped back
+to their guards manually.
+
+- `planner.m` has 100% statement coverage: every top-level success, rejection,
+  timed-attempt, delayed-chord, chronological-search, spatial-guide, and
+  temporal-direct-seed body is executed by the retained fixtures.
+- The selected thirteen-file orchestration set has 2149 of 2215 executable
+  statements covered (97.02%).
+- The remaining uncovered statements are numerical failure exits, corrupt
+  parent-chain defenses, and certificate-refinement failure handling. They are
+  safety postconditions rather than alternate successful planning policies and
+  must not be deleted merely to increase coverage.
+- The one uncovered new success body was complete-polynomial reconstruction
+  with active time intervals. A focused timed-cell regression now exercises it
+  and verifies exact polynomial preservation and continuous certification.
+
+This proves top-level flow coverage, not consolidation. The three active
+earliest-dynamic policies listed above remain real and are still the completion
+blocker.
+
 ## Retained consolidations
 
 - One `finalizeCandidate` copies a candidate, evaluates the actual target at
