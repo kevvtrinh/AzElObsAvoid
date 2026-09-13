@@ -60,35 +60,22 @@ warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = originalSegmentCount;
 warmStart.SuppliedSeedSegmentCount = suppliedSegmentCount;
 warmStart.WarmRouteResampled = false;
-if isfield(request.Coverage,'BreakTime_s') && request.Options.GoalTimeMode~="fixedArrival"
+if request.UsesVariableClock && isfield(request.Coverage,'BreakTime_s')
     sourceBreaks_s = request.Coverage.BreakTime_s;
-    if request.UsesVariableClock
-        % The timed guide's knots are physical events. Preserve every knot
-        % and subdivide its normalized intervals so changing the arrival
-        % clock scales the complete guide instead of deleting its waits.
-        routeTau=double(request.Seed.tau(:));
-        minimumSegmentCount=max([8,numel(sourceBreaks_s)-1, ...
-            originalSegmentCount*request.SplitCount]);
-        segmentCountByEdge=allocateSegmentsByMeasure(diff(routeTau), ...
-            minimumSegmentCount);
-        meshTau=splitScalarByCount(routeTau,segmentCountByEdge);
-        segmentRatio=diff(meshTau)/mean(diff(meshTau));
-        segmentTime_s=request.MotionHorizon_s*diff(meshTau);
-        segmentCount=numel(segmentTime_s);
-        tau=meshTau(1:end-1)+diff(meshTau).*((0:degree)/degree);
-        breakTime_s=request.InitialState.time_s+[0;cumsum(segmentTime_s)];
-    else
-        % Natural obstacle events already supply phases on a detailed clock.
-        % Keep at least eight spans (up to four per interval) on sparse clocks
-        % so the endpoint constraints do not consume the steering freedom.
-        subdivisions = min(4,max(1,ceil(8/(numel(sourceBreaks_s)-1))));
-        breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:subdivisions)/subdivisions,[],1));
-        segmentTime_s = diff(breakTime_s);
-        segmentCount = numel(segmentTime_s);
-        tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
-            segmentTime_s.*((0:degree)/degree))/request.MotionHorizon_s;
-        segmentRatio=segmentTime_s/mean(segmentTime_s);
-    end
+    % The timed guide's knots are physical events. Preserve every knot and
+    % subdivide its normalized intervals so changing the arrival clock scales
+    % the complete guide instead of deleting its waits.
+    routeTau=double(request.Seed.tau(:));
+    minimumSegmentCount=max([8,numel(sourceBreaks_s)-1, ...
+        originalSegmentCount*request.SplitCount]);
+    segmentCountByEdge=allocateSegmentsByMeasure(diff(routeTau), ...
+        minimumSegmentCount);
+    meshTau=splitScalarByCount(routeTau,segmentCountByEdge);
+    segmentRatio=diff(meshTau)/mean(diff(meshTau));
+    segmentTime_s=request.MotionHorizon_s*diff(meshTau);
+    segmentCount=numel(segmentTime_s);
+    tau=meshTau(1:end-1)+diff(meshTau).*((0:degree)/degree);
+    breakTime_s=request.InitialState.time_s+[0;cumsum(segmentTime_s)];
     controls = interp1(request.Seed.tau,route_units,tau(:),'linear');
     controlPoint_units = reshape(controls,segmentCount,degree+1,2);
     controlPoint_units(1,1:3,:) = reshape(repmat(request.InitialState.position_units,3,1),1,3,2);

@@ -39,6 +39,7 @@ if isempty(previous)
         'IntervalEndRegions_units',{cell(intervalCount,1)}, ...
         'DeltaX_units',{cell(intervalCount,1)},'DeltaY_units',{cell(intervalCount,1)}, ...
         'MatchingTopology',false(intervalCount,1),'IntervalGeometryModel',strings(intervalCount,1), ...
+        'IntervalPartitionReused',false(intervalCount,1), ...
         'IntervalSpeedBound_units_s',Inf(intervalCount,1), ...
         'SampleSpeedBound_units_s',Inf(sampleCount,1),'IsTimeInvariant',false);
     % Exact numeric equality can establish a globally static shape without
@@ -61,10 +62,18 @@ end
 for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),1,[])
     lowerX_units=obstacle.x_units{intervalIndex}; lowerY_units=obstacle.y_units{intervalIndex};
     upperX_units=obstacle.x_units{intervalIndex+1}; upperY_units=obstacle.y_units{intervalIndex+1};
-    [matched,alignedUpper_units,startRegions_units,endRegions_units,geometryModel]= ...
+    reusableStartRegions_units=cell(0,1);
+    if intervalIndex>1 && preparation.IntervalPrepared(intervalIndex-1) && ...
+            ~isempty(preparation.IntervalEndRegions_units{intervalIndex-1})
+        reusableStartRegions_units= ...
+            preparation.IntervalEndRegions_units{intervalIndex-1};
+    end
+    [matched,alignedUpper_units,startRegions_units,endRegions_units,geometryModel,partitionReused]= ...
         alignVerifiedSingleRing(lowerX_units,lowerY_units,upperX_units,upperY_units, ...
-        preparation.SampleShapes{intervalIndex},preparation.SampleShapes{intervalIndex+1});
+        preparation.SampleShapes{intervalIndex},preparation.SampleShapes{intervalIndex+1}, ...
+        reusableStartRegions_units);
     preparation.MatchingTopology(intervalIndex)=matched;
+    preparation.IntervalPartitionReused(intervalIndex)=partitionReused;
     if matched
         preparation.DeltaX_units{intervalIndex}=alignedUpper_units(:,1)-lowerX_units;
         preparation.DeltaY_units{intervalIndex}=alignedUpper_units(:,2)-lowerY_units;
@@ -102,8 +111,10 @@ obstacle.InternalPreparation=preparation;
 end
 
 %% Section 5: Local Functions
-function [verified, alignedUpper_units, startRegions_units, endRegions_units, geometryModel] = ...
-        alignVerifiedSingleRing(lowerX_units, lowerY_units, upperX_units, upperY_units, lowerShape, upperShape)
+function [verified, alignedUpper_units, startRegions_units, endRegions_units, ...
+        geometryModel,partitionReused] = alignVerifiedSingleRing( ...
+        lowerX_units,lowerY_units,upperX_units,upperY_units,lowerShape, ...
+        upperShape,reusableStartRegions_units)
     % Align rings, then certify either one moving convex region or an exact
     % moving convex partition of the complete interpolated polygon.
     lower_units        = [lowerX_units(:), lowerY_units(:)];
@@ -113,6 +124,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ge
     startRegions_units = cell(0,1);
     endRegions_units = cell(0,1);
     geometryModel = "";
+    partitionReused = false;
     lowerFinite = all(isfinite(lower_units),2);
     upperFinite = all(isfinite(upper_units),2);
     if isequal(lowerFinite,upperFinite) && nnz(lowerFinite)>=3
@@ -123,7 +135,12 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ge
         translationTolerance_units = 512*eps(coordinateScale_units);
         if max(abs(finiteDelta_units-finiteDelta_units(1,:)),[],'all')<=translationTolerance_units
             alignedUpper_units = upper_units;
-            startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+            startRegions_units = reusableStartRegions_units;
+            if isempty(startRegions_units)
+                startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+            else
+                partitionReused = true;
+            end
             endRegions_units = cellfun(@(region)region+finiteDelta_units(1,:), ...
                 startRegions_units,'UniformOutput',false);
             verified = true;
@@ -189,7 +206,12 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ge
         % A translation preserves every face of one exact partition. Build
         % the terminal faces by translating those same faces; this avoids
         % relying on polyshape's vertex ordering after cyclic/reversed input.
-        startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+        startRegions_units = reusableStartRegions_units;
+        if isempty(startRegions_units)
+            startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+        else
+            partitionReused = true;
+        end
         endRegions_units = cellfun(@(region)region+delta_units(1,:), ...
             startRegions_units,'UniformOutput',false);
         verified = ~isempty(startRegions_units);

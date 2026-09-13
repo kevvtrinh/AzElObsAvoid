@@ -31,6 +31,29 @@ function testTranslationAcrossStartsOrientationsAndScales(testCase)
     end
 end
 
+function testConsecutiveTranslationsReuseExactPartition(testCase)
+    base=[0,0;2,0;2,2;1,0.5;0,2];
+    frames={base,base+[1,0],base+[2,0.5],base+[3,1]};
+    deformed=base+[4,1.5];
+    deformed(4,:)=deformed(4,:)+[-0.25,0.2];
+    frames{5}=deformed;
+    obstacle=obstacleAvoidance.obstacles.createObstacle('translation chain',(0:4).', ...
+        cellfun(@(v)v(:,1),frames,'UniformOutput',false), ...
+        cellfun(@(v)v(:,2),frames,'UniformOutput',false),0);
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,4]);
+    preparation=prepared.InternalPreparation;
+    verifyEqual(testCase,preparation.IntervalPartitionReused, ...
+        [false;true;true;false]);
+    for intervalIndex=1:4
+        startShape=unionRegions(preparation.IntervalStartRegions_units{intervalIndex});
+        endShape=unionRegions(preparation.IntervalEndRegions_units{intervalIndex});
+        verifyLessThan(testCase,area(xor(startShape,polyshape(frames{intervalIndex}, ...
+            'Simplify',false))),1e-12);
+        verifyLessThan(testCase,area(xor(endShape,polyshape(frames{intervalIndex+1}, ...
+            'Simplify',false))),1e-12);
+    end
+end
+
 function testDeformingConvexAgainstExhaustiveReference(testCase)
     for count=[9,32,140,220]
         theta=(0:count-1)'*2*pi/count;
@@ -154,6 +177,13 @@ function prepared=preparePair(lower,upper)
     source=obstacleAvoidance.obstacles.createObstacle('generic',[0;1], ...
         {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
+end
+
+function shape=unionRegions(regions_units)
+    shape=polyshape();
+    for regionIndex=1:numel(regions_units)
+        shape=union(shape,polyshape(regions_units{regionIndex},'Simplify',false));
+    end
 end
 
 function best=exhaustiveAlignment(lower,upper)

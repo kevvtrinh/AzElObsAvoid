@@ -1,7 +1,8 @@
 function [result, diagnosis] = exampleVietnamBoundarySlew(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX: [result, diagnosis] = exampleVietnamBoundarySlew(exampleOverrides)
-% PURPOSE: Solve the supplied Vietnam boundary fixture with one continuous BMTP motion.
+% PURPOSE: Exercise the supplied Vietnam boundary fixture without replacing its
+%   unsupported continuous deformation by a convex hull.
 % INPUTS: Optional uniform example display/planner overrides; default fixed arrival.
 % OUTPUTS: Unmodified public planner result and compatibility diagnosis.
 % UNITS: Degrees, seconds, and angular derivatives in degrees/s^order.
@@ -14,10 +15,12 @@ if nargin < 1 || isempty(exampleOverrides), exampleOverrides = struct(); end
 [obstacles, initialState, goalState, limits] = createVietnamBoundaryScenario();
 limits.maxJerk_units_s3 = displayOptions.MaxJerk_units_s3;
 
-%% Section 2: Optimize And Independently Validate The Complete Motion
+%% Section 2: Plan Or Return The Exact Unsupported-Geometry Outcome
 [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 validation = obstacleAvoidance.validateTrajectory(result);
-if ~result.Success || ~validation.Passed
+expectedUnsupported=~result.Success && ...
+    result.TerminationReason=="unsupportedObstacleInterpolation";
+if ~(expectedUnsupported || (result.Success && validation.Passed))
     warning('exampleVietnamBoundarySlew:ValidationFailed','%s; %s', ...
         result.Message,validation.Message);
 end

@@ -37,12 +37,13 @@ travelBoundCount       = (goalTimeMode ~= "earliestArrival") * segmentCount * de
 travelBoundIndex       = controlCount + 4 + (1:travelBoundCount);
 variableCount          = controlCount + 4 + travelBoundCount;
 activePlaneCount = nnz([planes.Active]);
-boundaryControls = zeros(segmentCount,degree+1,2);
-boundaryControls(1,1:3,:) = repmat(reshape(start_units,1,1,2),1,3,1);
-boundaryControls(end,end-2:end,:) = repmat(reshape(goal_units,1,1,2),1,3,1);
+planeActiveBySegment=reshape([planes.Active],size(planes));
 maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
+boundaryControls=zeros(segmentCount,degree+1,2);
+boundaryControls(1,1:3,:)=repmat(reshape(start_units,1,1,2),1,3,1);
+boundaryControls(end,end-2:end,:)=repmat(reshape(goal_units,1,1,2),1,3,1);
 [A,Aeq,beq,lb,ub] = bmtpEngine.createTrajectoryConstraints( ...
-    segmentCount,degree,boundaryControls,limits,variableCount,activePlaneCount,segmentRatio,[]);
+    segmentCount,degree,boundaryControls,limits,variableCount,0,segmentRatio,[]);
 % The clock cones need only relative powers. Scaling the three physical-time
 % columns to a unit upper bound avoids conditioning the SOCP with seconds,
 % seconds squared, and seconds cubed that differ by several orders.
@@ -53,21 +54,14 @@ end
 lb(travelBoundIndex) = 0;
 
 %% Section 2: Add Separating-Line Bounds
-baseInequalityCount = 4*segmentCount*(3*degree-3);
-inequalityCount = size(A,1);
-b               = zeros(inequalityCount, 1);
-inequalityIndex = baseInequalityCount;
-% Transpose before finding active pairs to preserve segment-major constraint order.
-[regionIndices,segmentIndices] = find(reshape([planes.Active],size(planes)).');
-for planeIndex = 1:numel(segmentIndices)
-    segmentIndex = segmentIndices(planeIndex);
-    plane = planes(segmentIndex,regionIndices(planeIndex));
-    [rows,offset_units] = bmtpEngine.createPlaneRows(plane,degree,variableCount,segmentIndex);
-    targets = inequalityIndex+(1:size(rows,1));
-    A(targets,:) = rows;
-    b(targets) = -reserve_units-offset_units;
-    inequalityIndex = targets(end);
-end
+baseInequalityCount=4*segmentCount*(3*degree-3);
+initialPlanePairs=planeActiveBySegment;
+if goalTimeMode=="fixedArrival", initialPlanePairs(:)=false; end
+slackColumnByPair=zeros(size(planeActiveBySegment));
+[planeRows,planeBounds]=bmtpEngine.createSelectedPlaneRows(planes, ...
+    initialPlanePairs,degree,variableCount,slackColumnByPair,reserve_units);
+A=[A;planeRows];
+b=[zeros(baseInequalityCount,1);planeBounds];
 
 %% Section 3: Create The Objective And Solve
 cones = [bmtpEngine.createTimePowerCones(variableCount, powerIndex); ...
@@ -88,13 +82,49 @@ else
         minimumTimeRatio^2;minimumTimeRatio^3];
 end
 solverTimer = tic;
-[x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
-output.TotalTime_s = toc(solverTimer);
-output.OptimizationConverged = exitFlag>0;
-% An optimality stall does not establish physical infeasibility. The fixed
-% clock is prescribed, and the outer engine independently certifies motion.
-isStalledFixedClock = goalTimeMode=="fixedArrival" && exitFlag==-7;
-if (exitFlag <= 0 && ~isStalledFixedClock) || isempty(x) || any(~isfinite(x))
+retainedPlanePairs=initialPlanePairs;
+solveCount=0;
+constraintGenerationComplete=goalTimeMode~="fixedArrival";
+maximumPlaneConstraintResidual=NaN;
+while true
+    [x, ~, exitFlag, output] = coneprog(f,cones,A,b,Aeq,beq,lb,ub,options);
+    solveCount=solveCount+1;
+    if goalTimeMode~="fixedArrival" || ...
+            ~bmtpEngine.hasUsableConicIterate(x,exitFlag)
+        break
+    end
+    [violatedPairs,maximumOmittedResidual]= ...
+        bmtpEngine.findViolatedPlanePairs(x,planes,planeActiveBySegment, ...
+        retainedPlanePairs,degree,slackColumnByPair,reserve_units, ...
+        options.ConstraintTolerance);
+    if ~any(violatedPairs,'all')
+        loadedResidual=-Inf;
+        if size(A,1)>baseInequalityCount
+            loadedResidual=max(A(baseInequalityCount+1:end,:)*x- ...
+                b(baseInequalityCount+1:end));
+        end
+        maximumPlaneConstraintResidual=max(loadedResidual,maximumOmittedResidual);
+        constraintGenerationComplete= ...
+            maximumPlaneConstraintResidual<=options.ConstraintTolerance;
+        break
+    end
+    retainedPlanePairs=retainedPlanePairs|violatedPairs;
+    [newRows,newBounds]=bmtpEngine.createSelectedPlaneRows(planes, ...
+        violatedPairs,degree,variableCount,slackColumnByPair,reserve_units);
+    A=[A;newRows]; b=[b;newBounds]; %#ok<AGROW>
+end
+output.TotalTime_s=toc(solverTimer);
+output.OptimizationConverged=exitFlag>0;
+output.SolveCount=solveCount;
+output.ConstraintGenerationApplied=goalTimeMode=="fixedArrival";
+output.ConstraintGenerationRoundCount=max(0,solveCount-1);
+output.ConstraintGenerationComplete=constraintGenerationComplete;
+output.MaximumPlaneConstraintResidual=maximumPlaneConstraintResidual;
+output.OriginalPlaneCount=activePlaneCount;
+output.LoadedPlanePairCount=nnz(retainedPlanePairs);
+% An optimality stall does not establish physical infeasibility. Every finite
+% retained iterate remains only a proposal for independent certification.
+if ~bmtpEngine.hasUsableConicIterate(x,exitFlag)
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s    = NaN;
     return;

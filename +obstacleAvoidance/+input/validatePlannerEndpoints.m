@@ -43,6 +43,23 @@ for k = 1:numel(states)
         message = "An endpoint lies outside the workspace.";
         reason = "endpointOutsideWorkspace"; return;
     end
+    localVelocity_units_s=states(k).velocity_units_s;
+    if k>1
+        % At a terminal state, inspect the trajectory backward from arrival.
+        localVelocity_units_s=-localVelocity_units_s;
+    end
+    onLower=p==intervals(:,1).';
+    onUpper=p==intervals(:,2).';
+    velocityLeaves=(onLower & localVelocity_units_s<0) | ...
+        (onUpper & localVelocity_units_s>0);
+    zeroBoundaryVelocity=localVelocity_units_s==0;
+    accelerationLeaves=zeroBoundaryVelocity & ...
+        ((onLower & states(k).acceleration_units_s2<0) | ...
+        (onUpper & states(k).acceleration_units_s2>0));
+    if any(velocityLeaves | accelerationLeaves)
+        message = "An endpoint derivative points outside the workspace.";
+        reason = "dynamicEndpointInfeasible"; return;
+    end
 end
 if checkGoal && obstacleAvoidance.input.minimumTravelTime(initialState,goalState,limits)> ...
         goalState.time_s-initialState.time_s+options.ArrivalTimeTolerance_s

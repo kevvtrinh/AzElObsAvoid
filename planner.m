@@ -43,13 +43,10 @@ if ~startsWith(path,[productionPath pathsep])
     addpath(productionPath,'-begin');
 end
 
-useIndependentDefaults = nargin == 0;
 diagnosis = struct();
 [defaultObstacles, defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();
-if useIndependentDefaults
+if nargin == 0
     obstacles = defaultObstacles;
-elseif nargin < 1
-    obstacles = [];
 end
 if nargin < 2 || isempty(initialState), initialState = defaultInitialState; end
 if nargin < 3 || isempty(goalState), goalState = defaultGoalState; end
@@ -104,7 +101,6 @@ end
 
 totalTimer = tic;
 earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
-interceptTime_s = goalState.time_s;
 preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
 isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(obstacle) ...
     ~obstacle.InternalPreparation.IsTimeInvariant || ...
@@ -166,12 +162,15 @@ if isDynamic
 else
     coverage.StaticScene = scene;
 end
+isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
+    goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
 if options.GoalTimeMode=="fixedArrival" && options.FixedArrivalSearch=="timeExpanded"
     result.ElapsedTime_s = toc(totalTimer);
     [result,~] = obstacleAvoidance.input.tryTimedArrival(result);
     return;
 end
-if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
+if options.GoalTimeMode=="earliestArrival" && ...
+        (isDynamic || earliestTarget || ~isRest)
     result.ElapsedTime_s = toc(totalTimer);
     [timedResult,timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
     if timedAccepted
@@ -180,8 +179,6 @@ if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
     end
     % Preserve the delayed chord as an incumbent when the dense-history
     % fast path is inapplicable or does not certify a motion.
-    isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
-        goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
     if isDynamic && ~earliestTarget && isRest
         route_units = [initialState.position_units;goalState.position_units];
         seed = struct('position_units',route_units,'tau',[0;1],'Source',"departureSchedule");
@@ -215,7 +212,6 @@ if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
     return;
 end
 motionGoalState = goalState;
-motionGoalState.time_s = interceptTime_s;
 
 %% Section 3: Construct A Spatial Guide And Solve C3 Quintic Motion
 

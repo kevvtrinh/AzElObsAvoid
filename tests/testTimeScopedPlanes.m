@@ -15,6 +15,14 @@ function setupOnce(~)
     addpath(root,fullfile(root,'trajectory'));
 end
 
+function testUsableConicIteratePolicy(testCase)
+    verifyTrue(testCase,bmtpEngine.hasUsableConicIterate(0,1));
+    verifyTrue(testCase,bmtpEngine.hasUsableConicIterate(0,-7));
+    verifyFalse(testCase,bmtpEngine.hasUsableConicIterate([],1));
+    verifyFalse(testCase,bmtpEngine.hasUsableConicIterate(NaN,1));
+    verifyFalse(testCase,bmtpEngine.hasUsableConicIterate(0,0));
+end
+
 function testDifferentTimeWindowsDoNotConflict(testCase)
     initial = struct('time_s',0,'position_units',[-1,0],'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
     goal = initial; goal.time_s = 6; goal.position_units = [1,0];
@@ -49,16 +57,20 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
     end
     plane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
         'Normal',zeros(2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
-    initial = struct('time_s',0,'position_units',waypoints(1,:));
-    goal = struct('time_s',12,'position_units',waypoints(end,:));
+    initial = struct('time_s',0,'position_units',waypoints(1,:), ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    goal = struct('time_s',12,'position_units',waypoints(end,:), ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
     limits = struct('xInterval_units',[-10,10],'yInterval_units',[-10,10], ...
         'maxVelocity_units_s',[5,5],'maxAcceleration_units_s2',[10,10],'maxJerk_units_s3',[20,20]);
     request = struct('Degree',8,'InitialState',initial,'GoalState',goal,'Limits',limits, ...
         'Regions_units',{{box}},'RegionMinimum_units',min(box),'RegionMaximum_units',max(box), ...
-        'MotionHorizon_s',12,'Options',struct('GoalTimeMode',"fixedArrival", ...
+        'MotionHorizon_s',12,'UsesVariableClock',true, ...
+        'Options',struct('GoalTimeMode',"earliestArrival", ...
         'ConstraintTolerance',1e-8),'Coverage',struct('Passed',true));
     warmStart = struct('SegmentCount',3,'RegionActiveBySegment',true(3,1));
-    alternating = struct('ControlPoint_units',controls,'SegmentTime_s',4, ...
+    alternating = struct('ControlPoint_units',controls, ...
+        'SegmentTime_s',[4;4;4], ...
         'Planes',repmat(plane,3,1),'TaggedPairs',false(3,1));
     diagnostics = struct('ConicSolver',bmtpEngine.accumulateConicDiagnostics());
     [refined,diagnostics] = bmtpEngine.refineTimedTravel(request,warmStart,alternating,diagnostics,1e-5,1e-8);
@@ -66,7 +78,7 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
     verifyGreaterThan(testCase,diagnostics.TaggedPairCount,0);
     verifyLessThan(testCase,diagnostics.TravelRefinementFinalLength_units,diagnostics.TravelRefinementInitialLength_units);
     prepared = struct('CertifiedControlPoint_units',refined.ControlPoint_units, ...
-        'SegmentTime_s',repmat(refined.SegmentTime_s,3,1));
+        'SegmentTime_s',refined.SegmentTime_s(:));
     verifyTrue(testCase,bmtpEngine.checkFinalMotion(request,warmStart,prepared,1e-8,1e-5).Passed);
 end
 
@@ -190,6 +202,66 @@ function testUnequalSpanClockWithFullEndpointStates(testCase)
     verifyEqual(testCase,leftJerk,rightJerk,'AbsTol',1e-8);
 end
 
+function testConstraintGenerationWithTransformedFixedClock(testCase)
+    initial=struct('position_units',[-1,0],'velocity_units_s',[0,0], ...
+        'acceleration_units_s2',[0,0]);
+    goal=struct('position_units',[1,0],'velocity_units_s',[0,0], ...
+        'acceleration_units_s2',[0,0]);
+    limits=struct('xInterval_units',[-2,2],'yInterval_units',[-2,2], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[5,5], ...
+        'maxJerk_units_s3',[10,10]);
+    options=optimoptions('coneprog','Display','none', ...
+        'ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
+    emptyPlane=struct('Active',false,'Normal',zeros(2), ...
+        'Offset_units',zeros(1,2),'TimeFraction',[0,1]);
+    planes=repmat(emptyPlane,9,1);
+    planes(4)=struct('Active',true,'Normal',[0,1;0,1], ...
+        'Offset_units',[0.1,0.1],'TimeFraction',[0.2,0.8]);
+    planes(6)=struct('Active',true,'Normal',[0,-1;0,-1], ...
+        'Offset_units',[0.1,0.1],'TimeFraction',[0,1]);
+    [controls,durations_s,flag,output]=bmtpEngine.solveTrajectoryStep( ...
+        9,5,initial,goal,limits,planes,1e-8,18,options,ones(9,1),true);
+    assertTrue(testCase,flag>0 || flag==-7);
+    verifyTrue(testCase,output.IntrinsicJerkVariation);
+    verifyTrue(testCase,output.ConstraintGenerationComplete);
+    verifyGreaterThanOrEqual(testCase,output.ConstraintGenerationRoundCount,1);
+    verifyTrue(testCase,output.ConstraintGenerationApplied);
+    verifyEqual(testCase,output.LoadedPlanePairCount,2);
+    verifyEqual(testCase,durations_s,2*ones(9,1),'AbsTol',1e-12);
+    fourth=bmtpEngine.restrictBezier(squeeze(controls(4,:,:)),[0.2,0.8]);
+    verifyLessThanOrEqual(testCase,max(fourth(:,2)),-0.1+1e-6);
+    verifyGreaterThanOrEqual(testCase,min(controls(6,:,2)),0.1-1e-6);
+end
+
+function testConstraintGenerationClosesSeveralPairsInOneSpan(testCase)
+    initial=struct('position_units',[-2,0],'velocity_units_s',[0,0], ...
+        'acceleration_units_s2',[0,0]);
+    goal=struct('position_units',[2,0],'velocity_units_s',[0,0], ...
+        'acceleration_units_s2',[0,0]);
+    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-5,5], ...
+        'maxVelocity_units_s',[10,10],'maxAcceleration_units_s2',[10,10], ...
+        'maxJerk_units_s3',[10,10]);
+    plane=struct('Active',true,'Verified',true,'ExitFlag',1, ...
+        'Normal',repmat([0,1],2,1),'Offset_units',[0.5,0.5], ...
+        'SignedGap_units',1,'TimeFraction',[0.2,0.3]);
+    planes=repmat(plane,1,3);
+    planes(2).Normal=repmat([0,-1],2,1);
+    planes(2).TimeFraction=[0.45,0.55];
+    planes(3).TimeFraction=[0.7,0.8];
+    options=optimoptions('coneprog','Display','none', ...
+        'ConstraintTolerance',1e-10,'OptimalityTolerance',1e-9);
+    [controlPoint_units,~,exitFlag,output]= ...
+        bmtpEngine.solveTrajectoryStep(1,8,initial,goal,limits,planes, ...
+        0,20,options,1,true);
+    verifyNotEmpty(testCase,controlPoint_units);
+    verifyTrue(testCase,exitFlag>0 || exitFlag==-7);
+    verifyTrue(testCase,output.ConstraintGenerationComplete);
+    verifyEqual(testCase,output.LoadedPlanePairCount,3);
+    verifyGreaterThanOrEqual(testCase,output.ConstraintGenerationRoundCount,3);
+    verifyLessThanOrEqual(testCase, ...
+        output.MaximumPlaneConstraintResidual,options.ConstraintTolerance);
+end
+
 function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     times_s = (0:0.25:20)';
     box = [-0.5,-0.7;0.5,-0.7;0.5,0.7;-0.5,0.7];
@@ -302,6 +374,8 @@ function testSavedMovingDetourEarliestArrival(testCase)
     verifyLessThanOrEqual(testCase,result.ArrivalTime_s, ...
         result.GoalArrivalWindow_s(2)+1e-8);
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");
+    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpTimeCellsDegree5");
+    verifyEqual(testCase,result.TemporalSearch.TrialStage,"timeExpandedWaitGuide");
     verifyEqual(testCase,result.SolverDiagnostics.TaggedPairCount, ...
         result.SolverDiagnostics.ApplicablePairCount);
     verifyEqual(testCase,result.SolverDiagnostics.FinalCollisionPairCount,0);

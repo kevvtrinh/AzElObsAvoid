@@ -1,8 +1,8 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, minimizeLength)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock)
 %% Section 0: Header & Readme
 % SYNTAX: [controlPoint_units, segmentTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(
 %   segmentCount, degree, initialState, goalState, limits, planes, reserve_units,
-%   maximumMotionDuration_s, options, segmentRatio, fixedClock, minimizeLength)
+%   maximumMotionDuration_s, options, segmentRatio, fixedClock)
 % PURPOSE: Solve one convex trajectory step for fixed separating lines, timing policy, and
 %   derivative limits.
 % INPUTS: segmentCount, degree (positive integer scalars) Composite Bezier representation size.
@@ -26,7 +26,6 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
-if nargin < 12, minimizeLength = true; end
 originalPlaneCount=nnz([planes.Active]);
 partialPlanes=false;
 if isfield(planes,'TimeFraction') && ~isempty(planes)
@@ -64,6 +63,22 @@ sharedSlack = fixedClock && originalPlaneCount>lengthCount;
 slackCount = fixedClock*activePlaneCount;
 if sharedSlack, slackCount=nnz(planeCountBySegment); end
 variableCount          = controlCount + 4 + lengthCount + slackCount + intrinsicVariation*segmentCount;
+slackColumnByPair = zeros(size(planeActiveBySegment));
+if fixedClock && sharedSlack
+    segmentSlackColumn = controlCount+4+lengthCount+cumsum(planeCountBySegment>0);
+    for segmentIndex=reshape(find(planeCountBySegment>0),1,[])
+        slackColumnByPair(segmentIndex,planeActiveBySegment(segmentIndex,:)) = ...
+            segmentSlackColumn(segmentIndex);
+    end
+elseif fixedClock
+    nextSlackColumn=controlCount+4+lengthCount;
+    for segmentIndex=1:segmentCount
+        for regionIndex=reshape(find(planeActiveBySegment(segmentIndex,:)),1,[])
+            nextSlackColumn=nextSlackColumn+1;
+            slackColumnByPair(segmentIndex,regionIndex)=nextSlackColumn;
+        end
+    end
+end
 physicalTimes_s = maximumMotionDuration_s*segmentRatio/sum(segmentRatio);
 jerkTimes_s = []; if intrinsicVariation, jerkTimes_s = physicalTimes_s; end
 constraintLimits = limits;
@@ -74,8 +89,11 @@ if ~intrinsicVariation
     constraintLimits.maxJerk_units_s3 = ...
         limits.maxJerk_units_s3 .* (1 - sqrt(eps));
 end
+initialPlanePairs=planeActiveBySegment;
+if fixedClock, initialPlanePairs(:)=false; end
 [A,Aeq,beq,lb,ub,jerkMap] = bmtpEngine.createTrajectoryConstraints( ...
-    segmentCount,degree,boundaryControls,constraintLimits,variableCount,activePlaneCount,segmentRatio,jerkTimes_s);
+    segmentCount,degree,boundaryControls,constraintLimits,variableCount, ...
+    0,segmentRatio,jerkTimes_s);
 % Fix endpoint position, velocity, and acceleration controls in the solver's
 % own variable space. Leaving them as approximate equality rows allows a
 % stalled finite iterate to satisfy derivative bounds before exact endpoint
@@ -92,27 +110,11 @@ end
 
 %% Section 2: Add Separating-Line Bounds
 baseInequalityCount = 4*segmentCount*(3*degree-3);
-inequalityCount = size(A,1);
-b               = zeros(inequalityCount, 1);
-inequalityIndex = baseInequalityCount;
-slackIndex = controlCount+4+lengthCount;
-for segmentIndex = 1:segmentCount
-    if sharedSlack && planeCountBySegment(segmentIndex)>0
-        slackIndex = slackIndex+1;
-    end
-    for regionIndex = reshape(find(planeActiveBySegment(segmentIndex, :)), 1, [])
-        plane = planes(segmentIndex, regionIndex);
-        [rows, offset_units] = bmtpEngine.createPlaneRows(plane, degree, variableCount, segmentIndex);
-        targets = inequalityIndex + (1:size(rows, 1));
-        A(targets, :) = rows;
-        if fixedClock
-            if ~sharedSlack, slackIndex=slackIndex+1; end
-            A(targets,slackIndex) = -1;
-        end
-        b(targets) = -(1+fixedClock)*reserve_units - offset_units;
-        inequalityIndex = targets(end);
-    end
-end
+b=zeros(baseInequalityCount,1);
+[planeRows,planeBounds]=bmtpEngine.createSelectedPlaneRows(planes, ...
+    initialPlanePairs,degree,variableCount,slackColumnByPair, ...
+    (1+fixedClock)*reserve_units);
+A=[A;planeRows]; b=[b;planeBounds];
 
 %% Section 3: Create The Objective And Solve
 cones = bmtpEngine.createTimePowerCones(variableCount, powerIndex);
@@ -159,35 +161,52 @@ if fixedClock
 end
 solverTimer = tic;
 solverTimes_s=[]; if intrinsicVariation, solverTimes_s=physicalTimes_s; end
-[x, ~, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, options, ~intrinsicVariation,solverTimes_s,limits);
-output.TotalTime_s = toc(solverTimer);
-output.SolveCount = 1;
-output.OptimizationConverged = exitFlag>0;
-output.IntrinsicJerkVariation = intrinsicVariation;
-if ~fixedClock && minimizeLength && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7)
-    % Lexicographic optimization: preserve the first time-power value while
-    % minimizing path length. Unconstrained lateral motion must not be chosen
-    % arbitrarily merely because another axis determines the arrival time.
-    ub(powerIndex(4)) = x(powerIndex(4));
-    f(:) = 0; f(lengthIndex) = 1;
-    timer = tic;
-    [shortX,~,shortFlag,shortOutput] = solveConic(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options,true,[],limits);
-    bothConverged = output.OptimizationConverged && shortFlag>0;
-    shortElapsed_s = toc(timer);
-    elapsed_s = output.TotalTime_s+shortElapsed_s;
-    if ~isempty(shortX) && all(isfinite(shortX)) && (shortFlag>0 || shortFlag==-7)
-        x = shortX; exitFlag = shortFlag; output = shortOutput;
+retainedPlanePairs=initialPlanePairs;
+solveCount=0;
+constraintGenerationComplete=~fixedClock;
+maximumPlaneConstraintResidual=NaN;
+while true
+    [x, ~, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, ...
+        options,~intrinsicVariation,solverTimes_s,limits);
+    solveCount=solveCount+1;
+    if ~fixedClock || ~bmtpEngine.hasUsableConicIterate(x,exitFlag)
+        break;
     end
-    output.TotalTime_s = elapsed_s;
-    output.SolveCount = 2;
-    output.OptimizationConverged = bothConverged;
+    [violatedPairs,maximumOmittedResidual]=bmtpEngine.findViolatedPlanePairs( ...
+        x,planes,planeActiveBySegment, ...
+        retainedPlanePairs,degree,slackColumnByPair,2*reserve_units, ...
+        options.ConstraintTolerance);
+    if ~any(violatedPairs,'all')
+        loadedResidual=-Inf;
+        if size(A,1)>baseInequalityCount
+            loadedResidual=max(A(baseInequalityCount+1:end,:)*x- ...
+                b(baseInequalityCount+1:end));
+        end
+        maximumPlaneConstraintResidual=max(loadedResidual,maximumOmittedResidual);
+        constraintGenerationComplete= ...
+            maximumPlaneConstraintResidual<=options.ConstraintTolerance;
+        break
+    end
+    retainedPlanePairs=retainedPlanePairs | violatedPairs;
+    [newRows,newBounds]=bmtpEngine.createSelectedPlaneRows(planes, ...
+        violatedPairs,degree,variableCount,slackColumnByPair,2*reserve_units);
+    A=[A;newRows]; b=[b;newBounds];
 end
+output.TotalTime_s = toc(solverTimer);
+output.SolveCount = solveCount;
+output.OptimizationConverged = exitFlag>0;
 output.OriginalPlaneCount=originalPlaneCount;
 output.RetainedPlaneCount=activePlaneCount;
+output.LoadedPlanePairCount=nnz(retainedPlanePairs);
+output.ConstraintGenerationApplied = fixedClock;
+output.ConstraintGenerationRoundCount = max(0,solveCount-1);
+output.ConstraintGenerationComplete = constraintGenerationComplete;
+output.MaximumPlaneConstraintResidual = maximumPlaneConstraintResidual;
+output.IntrinsicJerkVariation = intrinsicVariation;
 if fixedClock && ~isempty(x), output.MaximumClearanceSlack_units = max(x(slackIndices)); end
 % A stalled finite iterate remains a proposal, never a feasibility certificate.
 % Independent physical checks decide whether it can become returned motion.
-if (exitFlag <= 0 && exitFlag ~= -7) || isempty(x) || any(~isfinite(x))
+if ~bmtpEngine.hasUsableConicIterate(x,exitFlag)
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s    = NaN;
     return;

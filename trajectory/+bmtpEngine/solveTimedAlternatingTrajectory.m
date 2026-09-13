@@ -27,9 +27,6 @@ trajectoryOptions=optimoptions("coneprog","Display","none", ...
     "MaxIterations",300);
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s=warmStart.Duration_s;
-diagnostics.RetainedHorizonRetryCount=0;
-diagnostics.PlaneReuseApplied=false;
-diagnostics.PlaneReuseCount=0;
 % Establish the exact moving corridor at the timed guide's physical clock.
 % An unconstrained first solve would collapse to a straight collision path
 % before the alternating method had any obstacle planes to retain.
@@ -67,7 +64,7 @@ for iterationIndex=1:35
     diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver,output);
     diagnostics.FinalTrajectoryExitFlag=exitFlag;
-    if exitFlag<=0 || isempty(trialControl_units)
+    if ~bmtpEngine.hasUsableConicIterate(trialControl_units,exitFlag)
         solverMessage="Trajectory SOCP failed: "+string(output.message);
         break
     end
@@ -88,8 +85,8 @@ for iterationIndex=1:35
     diagnostics.UnverifiedPairs=indicesOf(failedPairs);
     diagnostics.UnverifiedGaps_units=reshape( ...
         [trialCertificate.Planes(failedPairs).SignedGap_units],[],1);
-    if collisionFree && trialCertificate.DynamicsPassed && ...
-            trialCertificate.ContinuityPassed
+    if collisionFree && trialCertificate.WorkspacePassed && ...
+            trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed
         [selectedPlanes,selectedPairs,complete,planeStatistics]= ...
             bmtpEngine.createTimeScopedPlanes(trialControl_units, ...
             trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);

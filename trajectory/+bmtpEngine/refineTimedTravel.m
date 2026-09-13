@@ -16,10 +16,13 @@ result = struct("ControlPoint_units", alternatingResult.ControlPoint_units, ...
     "SegmentTime_s", alternatingResult.SegmentTime_s);
 
 %% Section 2: Refine Travel At The Selected Arrival Clock
-segmentCount             = warmStart.SegmentCount;
 baseControl_units          = result.ControlPoint_units;
-baseSegmentTime_s        = result.SegmentTime_s;
-baseDuration_s=physicalDuration(baseSegmentTime_s,segmentCount);
+baseSegmentTime_s          = result.SegmentTime_s(:);
+segmentCount             = size(baseControl_units,1);
+assert(numel(baseSegmentTime_s)==segmentCount, ...
+    'bmtpEngine:InvalidTimedSegmentClock', ...
+    'Timed refinement requires one physical duration per motion span.');
+baseDuration_s=sum(baseSegmentTime_s);
 baseLength_units           = controlPolygonLength(baseControl_units);
 selectedControl_units      = baseControl_units;
 selectedSegmentTime_s    = baseSegmentTime_s;
@@ -28,13 +31,14 @@ selectedLength_units       = baseLength_units;
 travelRefinementAccepted = false;
 travelPlanes             = alternatingResult.Planes;
 taggedPairs              = alternatingResult.TaggedPairs;
-refinementHorizon_s      = request.MotionHorizon_s;
-if request.Options.GoalTimeMode == "earliestArrival"
-    % Preserve the proven earliest clock exactly, then minimize travel at that
-    % clock. This realizes the documented path-length tie-break without paying
-    % extra arrival time when the former balanced policy cannot justify it.
-    refinementHorizon_s = baseDuration_s;
-end
+assert(request.UsesVariableClock && ...
+    request.Options.GoalTimeMode=="earliestArrival", ...
+    'bmtpEngine:InvalidTimedTravelRefinement', ...
+    'Timed travel refinement requires an earliest-arrival variable clock.');
+% Preserve the selected earliest clock exactly while minimizing its travel
+% surrogate. Fixed-arrival requests use the ordinary alternating solver and
+% never enter this refinement path.
+refinementHorizon_s=baseDuration_s;
 diagnostics.TravelRefinementAttempted         = true;
 diagnostics.TravelRefinementInitialLength_units = baseLength_units;
 diagnostics.TravelRefinementFinalLength_units   = baseLength_units;
@@ -42,28 +46,24 @@ diagnostics.TravelRefinementInitialDuration_s = baseDuration_s;
 diagnostics.TravelRefinementFinalDuration_s   = baseDuration_s;
 diagnostics.TravelRefinementAccepted          = false;
 trajectoryOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
+segmentRatio=baseSegmentTime_s/mean(baseSegmentTime_s);
 for refinementIndex = 1:8
-    if isfield(warmStart,'SegmentRatio')
-        [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = ...
-            bmtpEngine.solveTimedTrajectoryStep(segmentCount,request.Degree, ...
-            request.InitialState.position_units,request.GoalState.position_units, ...
-            request.Limits,travelPlanes,roundoffReserve_units, ...
-            refinementHorizon_s,"fixedArrival",trajectoryOptions,0, ...
-            warmStart.SegmentRatio);
-    else
-        [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = ...
-            bmtpEngine.solveTimedTrajectoryStep(segmentCount,request.Degree, ...
-            request.InitialState.position_units,request.GoalState.position_units, ...
-            request.Limits,travelPlanes,roundoffReserve_units, ...
-            refinementHorizon_s,"fixedArrival",trajectoryOptions);
-    end
+    [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = ...
+        bmtpEngine.solveTimedTrajectoryStep(segmentCount,request.Degree, ...
+        request.InitialState.position_units,request.GoalState.position_units, ...
+        request.Limits,travelPlanes, ...
+        roundoffReserve_units,refinementHorizon_s,"fixedArrival", ...
+        trajectoryOptions,0,segmentRatio);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     diagnostics.TravelRefinementExitFlag = travelExitFlag;
     diagnostics.TravelRefinementOptimizationConverged = output.OptimizationConverged;
-    if (travelExitFlag <= 0 && travelExitFlag ~= -7) || isempty(refinedControl_units)
+    if ~bmtpEngine.hasUsableConicIterate(refinedControl_units,travelExitFlag)
         break;
     end
-    physicalSegmentTime_s=expandSegmentTime(refinedSegmentTime_s,segmentCount);
+    if ~output.ConstraintGenerationComplete
+        break;
+    end
+    physicalSegmentTime_s=refinedSegmentTime_s(:);
     refinedMotion=struct('CertifiedControlPoint_units',refinedControl_units, ...
         'ControlPoint_units',refinedControl_units, ...
         'SegmentTime_s',physicalSegmentTime_s,'PrescribedPower_units',[]);
@@ -74,7 +74,7 @@ for refinementIndex = 1:8
     if any(refinedCollisionPairs, "all")
         [travelPlanes,activeTravelPairs,complete,planeStatistics]= ...
             bmtpEngine.createTimeScopedPlanes(baseControl_units, ...
-            expandSegmentTime(baseSegmentTime_s,segmentCount),request, ...
+            baseSegmentTime_s,request, ...
             obstacleTarget_units,roundoffReserve_units);
         diagnostics.TaggedPairCount=planeStatistics.ActivePairCount;
         if ~complete
@@ -82,6 +82,9 @@ for refinementIndex = 1:8
         end
         taggedPairs=taggedPairs|activeTravelPairs;
         continue;
+    end
+    if ~refinedCertificate.Passed
+        break;
     end
     refinedLength_units  = controlPolygonLength(refinedControl_units);
     refinementIsBetter = refinedLength_units < selectedLength_units;
@@ -104,25 +107,8 @@ if travelRefinementAccepted
 end
 diagnostics.TaggedPairCount = nnz(taggedPairs);
 diagnostics.TravelRefinementFinalLength_units = selectedLength_units;
-diagnostics.TravelRefinementFinalDuration_s = ...
-    physicalDuration(selectedSegmentTime_s,segmentCount);
+diagnostics.TravelRefinementFinalDuration_s=sum(selectedSegmentTime_s);
 diagnostics.TravelRefinementAccepted        = travelRefinementAccepted;
-end
-
-function duration_s=physicalDuration(segmentTime_s,segmentCount)
-    if isscalar(segmentTime_s)
-        duration_s=segmentCount*segmentTime_s;
-    else
-        duration_s=sum(segmentTime_s);
-    end
-end
-
-function segmentTime_s=expandSegmentTime(segmentTime_s,segmentCount)
-    if isscalar(segmentTime_s)
-        segmentTime_s=repmat(segmentTime_s,segmentCount,1);
-    else
-        segmentTime_s=segmentTime_s(:);
-    end
 end
 
 %% Section 4: Local Functions

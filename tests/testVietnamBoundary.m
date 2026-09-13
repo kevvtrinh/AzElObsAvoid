@@ -37,24 +37,16 @@ function testSourceAndInterpolation(testCase)
     verifyEqual(testCase,limits.maxVelocity_units_s,[2,2]);
 end
 
-function testCompleteMotionCarriesVelocityAcrossJoins(testCase)
-    result=exampleVietnamBoundarySlew(struct('PlotOutputs',false,'Verbose',false));
-    verifyTrue(testCase,result.Success);
-    validation=obstacleAvoidance.validateTrajectory(result);
-    verifyTrue(testCase,validation.Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,3000,'AbsTol',1e-8);
-    verifyLessThan(testCase,result.MotionLength_units,113.147);
-    verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    polynomial=result.Polynomial;
-    verifyGreaterThan(testCase,polynomial.SegmentCount,1);
-    speed_deg_s=vecnorm(polynomial.velocityPower_units_s(2:end,:,1),2,2);
-    verifyGreaterThan(testCase,min(speed_deg_s),1e-6);
-    for field=["positionPower_units","velocityPower_units_s", ...
-            "accelerationPower_units_s2","jerkPower_units_s3"]
-        values=polynomial.(field);
-        verifyEqual(testCase,sum(values(1:end-1,:,:),3), ...
-            values(2:end,:,1),'AbsTol',result.Options.ConstraintTolerance);
-    end
-    models=result.PreparedObstacles.InternalPreparation.IntervalGeometryModel;
-    verifyEqual(testCase,models,repmat("conservativeEndpointConvexHull",920,1));
+function testUnsupportedDeformationIsNeverReplacedByAConvexHull(testCase)
+    [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
+    prepared=obstacleAvoidance.obstacles.prepareObstacles( ...
+        obstacle,[initial.time_s,goal.time_s]);
+    models=prepared.InternalPreparation.IntervalGeometryModel;
+    verifyEqual(testCase,models,repmat("unsupportedContinuousDeformation",920,1));
+    verifyFalse(testCase,any(contains(models,"ConvexHull",'IgnoreCase',true)));
+    result=planner(prepared,initial,goal,limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapX',false));
+    verifyFalse(testCase,result.Success);
+    verifyEqual(testCase,result.TerminationReason,"unsupportedObstacleInterpolation");
+    verifyEmpty(testCase,result.time_s);
 end

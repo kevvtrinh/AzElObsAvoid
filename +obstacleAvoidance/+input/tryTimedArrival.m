@@ -70,18 +70,18 @@ seedSource="timeExpandedVisibilityGraph";
 if useFreeGoalWindow
     motionGoalState.time_s=timedSearch.SelectedGoalWindowEndTime_s;
     motionOptions.GoalTimeMode="earliestArrival";
-    [regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
-        initialState.time_s,motionGoalState.time_s);
     minimumArrivalTime_s=max(timedSearch.SelectedGoalWindowStartTime_s, ...
         timedSearch.MinimumGoalArrivalTime_s);
-    coverage.MinimumMotionDuration_s=minimumArrivalTime_s-initialState.time_s;
-    coverage.SeedMotionDuration_s=routeTime_s(end)-initialState.time_s;
     seedSource="timeExpandedWaitGuide";
 else
     motionGoalState.time_s=routeTime_s(end);
     motionOptions.GoalTimeMode="fixedArrival";
-    [regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
-        initialState.time_s,motionGoalState.time_s);
+end
+[regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
+    initialState.time_s,motionGoalState.time_s);
+if useFreeGoalWindow
+    coverage.MinimumMotionDuration_s=minimumArrivalTime_s-initialState.time_s;
+    coverage.SeedMotionDuration_s=routeTime_s(end)-initialState.time_s;
 end
 seedDuration_s=seedRouteTime_s(end)-initialState.time_s;
 seed = struct('position_units',seedRoute_units, ...
@@ -96,40 +96,10 @@ else
 end
 [candidate,diagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
     initialState,motionGoalState,previous.RequestedLimits,motionOptions);
-usedWaitGuide=useFreeGoalWindow;
-if ~candidate.Success && ~isFixedArrival && ~useFreeGoalWindow && ...
-        isfield(searchRecord.TimedSearch,'WaitRouteTime_s')
-    waitRouteTime_s=searchRecord.TimedSearch.WaitRouteTime_s;
-    if ~isempty(waitRouteTime_s) && ...
-            waitRouteTime_s(end)>routeTime_s(end)+motionOptions.ArrivalTimeTolerance_s
-        initialFailure=struct('Message',candidate.Message, ...
-            'SolverDiagnostics',diagnostics);
-        route_units=searchRecord.TimedSearch.WaitRoute_units;
-        routeTime_s=waitRouteTime_s;
-        result.VisibilityGraph.RouteTime_s=routeTime_s;
-        result.VisibilityGraph.Route_units=route_units;
-        result.VisibilityGraph.RouteLength_units=sum(vecnorm(diff(route_units),2,2));
-        result.Route_units=route_units;
-        motionGoalState.time_s=routeTime_s(end);
-        [regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
-            initialState.time_s,motionGoalState.time_s);
-        seed=struct('position_units',route_units, ...
-            'tau',(routeTime_s-initialState.time_s)/ ...
-            (motionGoalState.time_s-initialState.time_s), ...
-            'Index',1,'Source',"timeExpandedWaitGuide", ...
-            'TimingMode',"timeScopedClock", ...
-            'ObstacleEnvelope_units',zeros(0,2));
-        [candidate,diagnostics]=bmtpEngine.solve(seed,regions_units,coverage, ...
-            initialState,motionGoalState,previous.RequestedLimits,motionOptions);
-        diagnostics.InitialTimedRouteFailure=initialFailure;
-        usedWaitGuide=true;
-    end
-end
 if ~candidate.Success
     result.Message="The timed route did not produce a feasible BMTP motion: "+ ...
         candidate.Message;
     result.TerminationReason="timedMotionInfeasible";
-    result.VisibilityGraph.TimedSearch=searchRecord;
     result.SolverDiagnostics=diagnostics;
     result.ElapsedTime_s=previous.ElapsedTime_s+toc(timer);
     return;
@@ -149,12 +119,12 @@ accepted = result.Success;
 if ~accepted
     return;
 end
-result.Message = "The earliest reachable timed-route layer produced an independently validated BMTP motion.";
-if usedWaitGuide
-    result.Message="The first reachable goal window produced an independently validated BMTP motion from a near-goal wait guide.";
-end
 if isFixedArrival
     result.Message = "The prescribed goal layer produced an independently validated timed BMTP motion.";
+elseif useFreeGoalWindow
+    result.Message="The first reachable goal window produced an independently validated BMTP motion from a near-goal wait guide.";
+else
+    result.Message = "The earliest reachable timed-route layer produced an independently validated BMTP motion.";
 end
 result.TerminationReason = "goalReached";
 necessaryArrival_s = initialState.time_s + ...

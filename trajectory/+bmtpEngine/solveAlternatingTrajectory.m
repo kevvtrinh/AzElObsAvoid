@@ -12,12 +12,16 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 % UNITS: Position and clearance are coordinate units; time is seconds.
 
 %% Section 1: Initialize Every Segment-Obstacle Pair
+assert(request.Options.GoalTimeMode=="fixedArrival", ...
+    'bmtpEngine:InvalidFixedClockSolve', ...
+    'The all-pair alternating solver requires a fixed arrival clock.');
 segmentCount = warmStart.SegmentCount;
 regionCount = numel(request.Regions_units);
 request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 diagnostics.ExistingPlanePairVerificationCount = 0;
+diagnostics.ConstraintRowPairVerificationCount = 0;
 diagnostics.FullPlaneUpdateSkippedCount = 0;
 emptyPlane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
     'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
@@ -30,28 +34,67 @@ solverMessage = "The all-pair alternating iteration limit was reached.";
 meshRefinementCount = 0;
 diagnostics.MeshRefinementCount = 0;
 diagnostics.MeshRefinementSpanIndex = cell(3,1);
+diagnostics.LoadedPlanePairCountHistory = NaN(35,1);
+diagnostics.ConstraintGenerationRoundCountHistory = NaN(35,1);
+diagnostics.ConstraintGenerationCompleteHistory = false(35,1);
+diagnostics.MaximumPlaneConstraintResidualHistory = NaN(35,1);
 
 %% Section 2: Alternate The Complete Formulation
 if allPlanesActive
     for iterationIndex = 1:35
         diagnostics.IterationCount = iterationIndex;
-        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, request.Options.GoalTimeMode=="fixedArrival");
+        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, true);
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.FinalTrajectoryExitFlag = exitFlag;
         diagnostics.PlaneReduction=[output.OriginalPlaneCount,output.RetainedPlaneCount];
+        if isfield(output,'ConstraintGenerationApplied') && ...
+                output.ConstraintGenerationApplied
+            diagnostics.LoadedPlanePairCountHistory(iterationIndex)= ...
+                output.LoadedPlanePairCount;
+            diagnostics.ConstraintGenerationRoundCountHistory(iterationIndex)= ...
+                output.ConstraintGenerationRoundCount;
+            diagnostics.ConstraintGenerationCompleteHistory(iterationIndex)= ...
+                output.ConstraintGenerationComplete;
+            diagnostics.MaximumPlaneConstraintResidualHistory(iterationIndex)= ...
+                output.MaximumPlaneConstraintResidual;
+            diagnostics.LoadedPlanePairCount=output.LoadedPlanePairCount;
+            diagnostics.ConstraintGenerationRoundCount=output.ConstraintGenerationRoundCount;
+            diagnostics.ConstraintGenerationComplete=output.ConstraintGenerationComplete;
+            diagnostics.MaximumPlaneConstraintResidual= ...
+                output.MaximumPlaneConstraintResidual;
+        end
         if isfield(output,'MaximumClearanceSlack_units')
             diagnostics.MaximumClearanceSlack_units = output.MaximumClearanceSlack_units;
         end
-        if (exitFlag <= 0 && exitFlag ~= -7) || isempty(trialControl_units)
+        if ~bmtpEngine.hasUsableConicIterate(trialControl_units,exitFlag)
             solverMessage = "Trajectory SOCP failed: " + string(output.message);
             break;
         end
 
-        [updatedPlanes,~,verifiedPairs,diagnostics,verifiedPairCount] = updatePlanes(trialControl_units, ...
-            trialTime_s,planes,request,diagnostics,obstacleTarget_units,roundoffReserve_units,true);
-        diagnostics.ExistingPlanePairVerificationCount = ...
-            diagnostics.ExistingPlanePairVerificationCount+verifiedPairCount;
+        rowProofComplete=isfield(output,'ConstraintGenerationApplied') && ...
+            output.ConstraintGenerationApplied && output.ConstraintGenerationComplete && ...
+            output.RetainedPlaneCount==output.OriginalPlaneCount && ...
+            isfield(output,'MaximumClearanceSlack_units') && ...
+            ~isempty(output.MaximumClearanceSlack_units) && ...
+            output.MaximumClearanceSlack_units+ ...
+            max(0,output.MaximumPlaneConstraintResidual)<=roundoffReserve_units;
+        if rowProofComplete
+            % Every plane's obstacle side was fixed and certified when it was
+            % constructed. Zero-reserve elastic slack plus complete exact row
+            % separation proves the trajectory side for every pair directly.
+            updatedPlanes=planes;
+            verifiedPairs=true(size(request.RegionActiveBySegment));
+            verifiedPairCount=nnz(request.RegionActiveBySegment);
+            diagnostics.ConstraintRowPairVerificationCount= ...
+                diagnostics.ConstraintRowPairVerificationCount+verifiedPairCount;
+        else
+            [updatedPlanes,~,verifiedPairs,diagnostics,verifiedPairCount] = ...
+                updatePlanes(trialControl_units,trialTime_s,planes,request, ...
+                diagnostics,obstacleTarget_units,roundoffReserve_units,true);
+            diagnostics.ExistingPlanePairVerificationCount = ...
+                diagnostics.ExistingPlanePairVerificationCount+verifiedPairCount;
+        end
         allPlanesActive = all(verifiedPairs,'all');
         if ~allPlanesActive
             [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = ...
@@ -75,7 +118,7 @@ if allPlanesActive
             break;
         end
         if unverifiedPairCount > 0
-            if meshRefinementCount < 3 && request.Options.GoalTimeMode=="fixedArrival"
+            if meshRefinementCount < 3
                 splitMask = any(~verifiedPairs,2);
                 [refinedControl_units,refinedTime_s] = bisectSelectedSpans( ...
                     trialControl_units,trialTime_s,splitMask);
@@ -123,6 +166,7 @@ result.SolverMessage = solverMessage;
 result.ControlPoint_units = selectedControl_units;
 result.SegmentTime_s = selectedSegmentTime_s;
 result.Planes = planes;
+result.TaggedPairs = reshape([planes.Active],size(planes));
 end
 
 %% Section 4: Local Functions
@@ -155,29 +199,26 @@ function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = up
     for segmentIndex = 1:size(planes, 1)
         for regionIndex = 1:size(planes, 2)
             if ~request.RegionActiveBySegment(segmentIndex,regionIndex), continue; end
-            interval_s = [];
             controls_units=squeeze(controlPoint_units(segmentIndex,:,:));
             timeFraction=[0,1];
-            if request.Options.GoalTimeMode=="fixedArrival"
-                interval_s = breaks_s(segmentIndex:segmentIndex+1).';
-                if isfield(request.Coverage,'ActiveTimeInterval_s')
-                    active_s=request.Coverage.ActiveTimeInterval_s(regionIndex,:);
-                    interval_s=[max(interval_s(1),active_s(1)),min(interval_s(2),active_s(2))];
-                    if interval_s(2)<=interval_s(1)
-                        % Adjacent closed cells can meet a span at one instant.
-                        % That zero-measure contact creates no trajectory
-                        % constraint and must not become a degenerate scope.
-                        plane=planes(segmentIndex,regionIndex);
-                        plane.Active=false;
-                        plane.Verified=false;
-                        plane.TimeFraction=[0,1];
-                        planes(segmentIndex,regionIndex)=plane;
-                        verifiedPairs(segmentIndex,regionIndex)=true;
-                        continue
-                    end
-                    timeFraction=max(0,min(1,(interval_s-breaks_s(segmentIndex))/segmentTime_s(segmentIndex)));
-                    controls_units=bmtpEngine.restrictBezier(controls_units,timeFraction);
+            interval_s = breaks_s(segmentIndex:segmentIndex+1).';
+            if isfield(request.Coverage,'ActiveTimeInterval_s')
+                active_s=request.Coverage.ActiveTimeInterval_s(regionIndex,:);
+                interval_s=[max(interval_s(1),active_s(1)),min(interval_s(2),active_s(2))];
+                if interval_s(2)<=interval_s(1)
+                    % Adjacent closed cells can meet a span at one instant.
+                    % That zero-measure contact creates no trajectory
+                    % constraint and must not become a degenerate scope.
+                    plane=planes(segmentIndex,regionIndex);
+                    plane.Active=false;
+                    plane.Verified=false;
+                    plane.TimeFraction=[0,1];
+                    planes(segmentIndex,regionIndex)=plane;
+                    verifiedPairs(segmentIndex,regionIndex)=true;
+                    continue
                 end
+                timeFraction=max(0,min(1,(interval_s-breaks_s(segmentIndex))/segmentTime_s(segmentIndex)));
+                controls_units=bmtpEngine.restrictBezier(controls_units,timeFraction);
             end
             vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex},request.Coverage,regionIndex,interval_s);
             if verifyOnly

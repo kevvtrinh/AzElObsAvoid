@@ -54,7 +54,6 @@ obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_uni
 % Earliest arrival tries the C3 jerk-limited chord. Fixed arrival retains
 % the minimum-jerk quintic at the requested physical horizon.
 preparedMotion = struct('Success',false);
-certificateEventTime_s=[];
 certificate = struct('Passed',false); certificateCache=[];
 analyticIdentifier = "minimumJerkQuintic";
 analyticRepresentation = "analyticQuinticClock";
@@ -62,7 +61,9 @@ if size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.
     [controls_units,times_s,powers_units] = bmtpEngine.createC3Chord(initialState.position_units,goalState.position_units,limits);
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,times_s,powers_units);
     if preparedMotion.Success
-        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
+        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, ...
+            warmStart,preparedMotion,roundoffReserve_units, ...
+            obstacleTarget_units,certificateCache,true);
     end
     analyticIdentifier = "c3JerkLimitedChord";
     analyticRepresentation = "analyticC3Clock";
@@ -94,7 +95,9 @@ elseif options.GoalTimeMode=="fixedArrival"
     end
     preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),directDuration_s);
     if preparedMotion.Success
-        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
+        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, ...
+            warmStart,preparedMotion,roundoffReserve_units, ...
+            obstacleTarget_units,certificateCache,true);
     end
 end
 % A certified zero-delay chord already supplies this schedule's first departure.
@@ -136,15 +139,10 @@ else
                 request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
             if alternatingResult.Success
                 [timedMotion, diagnostics] = bmtpEngine.refineTimedTravel( ...
-                    request, warmStart, alternatingResult, diagnostics, ...
-                    obstacleTarget_units, roundoffReserve_units);
-                alternatingResult.ControlPoint_units = timedMotion.ControlPoint_units;
-                alternatingResult.SegmentTime_s = timedMotion.SegmentTime_s;
-            end
-            if alternatingResult.Success && isscalar(alternatingResult.SegmentTime_s)
-                alternatingResult.SegmentTime_s = repmat( ...
-                    alternatingResult.SegmentTime_s, ...
-                    size(alternatingResult.ControlPoint_units, 1), 1);
+                    request,warmStart,alternatingResult,diagnostics, ...
+                    obstacleTarget_units,roundoffReserve_units);
+                alternatingResult.ControlPoint_units=timedMotion.ControlPoint_units;
+                alternatingResult.SegmentTime_s=timedMotion.SegmentTime_s;
             end
         else
             [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
@@ -154,9 +152,6 @@ else
     if ~alternatingResult.Success
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
         return;
-    end
-    if isfield(alternatingResult,'CertificateEventTime_s')
-        certificateEventTime_s=alternatingResult.CertificateEventTime_s;
     end
     if isfield(alternatingResult,'PreparedMotion') && alternatingResult.PreparedMotion.Success && ...
             isfield(alternatingResult,'Certificate') && alternatingResult.Certificate.Passed
@@ -187,18 +182,13 @@ end
 % A safe curved span need not admit one affine separator. Exact subdivision
 % can expose its clearance without moving the curve or changing tolerances.
 for refinement=1:10
-    if certificate.Passed || ~certificate.DynamicsPassed || ~certificate.ContinuityPassed, break; end
+    if certificate.Passed || ~certificate.WorkspacePassed || ...
+            ~certificate.DynamicsPassed || ~certificate.ContinuityPassed
+        break
+    end
     failed=~reshape([certificate.Planes.Verified],size(certificate.Planes)) & certificate.RegionActiveBySegment;
     splitMask=any(failed,2); splitFraction=repmat(0.5,numel(splitMask),1);
-    breaks_s=[0;cumsum(preparedMotion.SegmentTime_s)];
-    for span=find(splitMask).'
-        events_s=certificateEventTime_s(certificateEventTime_s>breaks_s(span)+64*eps(breaks_s(end)) & ...
-            certificateEventTime_s<breaks_s(span+1)-64*eps(breaks_s(end)));
-        if ~isempty(events_s)
-            [~,event]=min(abs(events_s-mean(breaks_s(span:span+1))));
-            splitFraction(span)=(events_s(event)-breaks_s(span))/preparedMotion.SegmentTime_s(span);
-        end
-    end
+    if ~any(splitMask), break; end
     preparedMotion=bmtpEngine.prepareFinalMotion(request,preparedMotion.ControlPoint_units, ...
         preparedMotion.SegmentTime_s,preparedMotion.PrescribedPower_units,splitMask,splitFraction);
     [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
