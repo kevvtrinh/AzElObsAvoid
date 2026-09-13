@@ -1,8 +1,8 @@
 function [result, accepted] = tryTimedArrival(previous)
 %% Section 0: Header & Readme
 % SYNTAX: [result,accepted] = obstacleAvoidance.input.tryTimedArrival(previous)
-% PURPOSE: Use a time-expanded visibility proposal and timed BMTP for a moving obstacle,
-%   fixed-position, rest-to-rest fixed- or earliest-arrival request.
+% PURPOSE: Use a time-expanded visibility proposal and timed BMTP for a moving obstacle
+%   with a fixed-position goal. Earliest-arrival requests remain rest-to-rest.
 % INPUTS: A normalized planner result carrying the original request and geometry.
 % OUTPUTS: Independently validated motion when accepted is true; otherwise a
 %   diagnostic failure. Earliest-arrival callers may continue chronological search.
@@ -19,12 +19,11 @@ sourceIntervalCount = sum(arrayfun(@(obstacle) ...
     max(0,numel(obstacle.time_s)-1),previous.PreparedObstacles));
 isRest = all([initialState.velocity_units_s(:);initialState.acceleration_units_s2(:); ...
     goalState.velocity_units_s(:);goalState.acceleration_units_s2(:)] == 0);
-% The timed mesh compresses dense histories. Sparse histories remain faster
-% through the exact chronological planner and its validated wait incumbent.
+% The timed mesh compresses dense histories. Sparse earliest-arrival histories
+% remain faster through the exact chronological planner and its validated wait incumbent.
 isFixedArrival = previous.Options.GoalTimeMode=="fixedArrival";
-if ~isempty(goalState.targetMotion) || ~isRest || ...
-    (~isFixedArrival && sourceIntervalCount < 16)
-    result.Message = "Timed visibility requires a fixed-position goal and zero endpoint velocity and acceleration.";
+if ~isempty(goalState.targetMotion) || (~isFixedArrival && (~isRest || sourceIntervalCount < 16))
+    result.Message = "Timed visibility requires a fixed-position goal; earliest-arrival mode also requires zero endpoint velocity and acceleration.";
     result.TerminationReason = "unsupportedTimedRequest";
     result.ElapsedTime_s = previous.ElapsedTime_s+toc(timer);
     return;
@@ -83,6 +82,7 @@ if useFreeGoalWindow
         'EndRegions_units',{cells.EndRegions_units}, ...
         'BreakTime_s',cells.BreakTime_s, ...
         'MinimumMotionDuration_s',minimumArrivalTime_s-initialState.time_s, ...
+        'SeedMotionDuration_s',routeTime_s(end)-initialState.time_s, ...
         'ConvexMergeOrder',"longestSharedEdgeFirst");
     seedSource="timeExpandedWaitGuide";
 else

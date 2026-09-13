@@ -17,6 +17,11 @@ if any(obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles,positi
     message = "A protected obstacle occupies the initial or fixed terminal state.";
     reason = "endpointBlocked"; return;
 end
+if options.GoalTimeMode=="fixedArrival" && ~options.WrapX && ~options.WrapY && ...
+        terminalReachabilityIsBlocked(obstacles,initialState,goalState,limits)
+    message = "Every jerk-limited approach to the fixed terminal state intersects a protected obstacle.";
+    reason = "terminalReachabilityBlocked"; return;
+end
 
 %% Section 2: Check Physical States And Necessary Travel Time
 checkGoal = options.GoalTimeMode=="fixedArrival" || isempty(goalState.targetMotion);
@@ -45,4 +50,57 @@ if checkGoal && obstacleAvoidance.input.minimumTravelTime(initialState,goalState
     reason = "timeWindowInfeasible"; return;
 end
 feasible = true;
+end
+
+%% Section 3: Local Functions
+function blocked = terminalReachabilityIsBlocked(obstacles,initialState,goalState,limits)
+    % A convex obstacle containing the complete backward-reachable box proves infeasibility.
+    blocked = false;
+    finalTime_s = goalState.time_s;
+    previousEventTime_s = initialState.time_s;
+    for obstacleIndex = 1:numel(obstacles)
+        priorTimes_s = obstacles(obstacleIndex).time_s( ...
+            obstacles(obstacleIndex).time_s<finalTime_s);
+        if ~isempty(priorTimes_s)
+            previousEventTime_s = max(previousEventTime_s,max(priorTimes_s));
+        end
+    end
+    localDuration_s = finalTime_s-previousEventTime_s;
+    if localDuration_s<=0
+        return
+    end
+    candidateDuration_s = unique([localDuration_s*2.^-(0:16), ...
+        linspace(localDuration_s/256,localDuration_s,256)]);
+    for duration_s = reshape(candidateDuration_s,1,[])
+        center_units = goalState.position_units-goalState.velocity_units_s*duration_s+ ...
+            0.5*goalState.acceleration_units_s2*duration_s^2;
+        radius_units = backwardPositionRadius(duration_s,goalState.acceleration_units_s2, ...
+            limits.maxAcceleration_units_s2,limits.maxJerk_units_s3);
+        corners_units = center_units+[-radius_units(1),-radius_units(2); ...
+            -radius_units(1),radius_units(2);radius_units(1),-radius_units(2); ...
+            radius_units(1),radius_units(2)];
+        scene = obstacleAvoidance.obstacles.snapshot(obstacles,finalTime_s-duration_s);
+        for sceneIndex = 1:numel(scene)
+            for regionIndex = 1:numel(scene(sceneIndex).Regions_units)
+                region_units = scene(sceneIndex).Regions_units{regionIndex};
+                [inside,onBoundary] = inpolygon(corners_units(:,1),corners_units(:,2), ...
+                    region_units(:,1),region_units(:,2));
+                if all(inside | onBoundary)
+                    blocked = true;
+                    return
+                end
+            end
+        end
+    end
+end
+
+function radius_units = backwardPositionRadius(duration_s,finalAcceleration_units_s2,accelerationLimit_units_s2,jerkLimit_units_s3)
+    % Ignore velocity limits to retain a sound outer bound; acceleration tightens long intervals.
+    rampDuration_s = accelerationLimit_units_s2./jerkLimit_units_s3;
+    radius_units = jerkLimit_units_s3*duration_s^3/6;
+    accelerationLimited = finalAcceleration_units_s2==0 & duration_s>rampDuration_s;
+    acceleration = accelerationLimit_units_s2(accelerationLimited);
+    jerk = jerkLimit_units_s3(accelerationLimited);
+    radius_units(accelerationLimited) = 0.5*acceleration*duration_s^2- ...
+        acceleration.^2*duration_s./(2*jerk)+acceleration.^3./(6*jerk.^2);
 end

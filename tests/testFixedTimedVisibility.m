@@ -38,13 +38,14 @@ function testNoSilentSpatialFallback(testCase)
     verifyEmpty(testCase,result.time_s);
 end
 
-function testUnsupportedBoundaryStateIsExplicit(testCase)
+function testFixedTimedSearchRetainsBoundaryVelocity(testCase)
     data=testCase.TestData;
     data.Initial.velocity_units_s=[0.1,0];
     result=planner([],data.Initial,data.Goal,data.Limits,data.Options);
-    verifyFalse(testCase,result.Success);
-    verifyEqual(testCase,result.TerminationReason,"unsupportedTimedRequest");
-    verifyEmpty(testCase,result.time_s);
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,result.Validation.Passed);
+    verifyEqual(testCase,result.velocity_units_s([1,end],:),[0.1,0;0,0], ...
+        'AbsTol',1e-8);
 end
 
 function testInvalidSearchChoice(testCase)

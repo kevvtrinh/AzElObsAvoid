@@ -65,14 +65,25 @@ function testSymmetricTiesAreStartingIndexInvariant(testCase)
     end
 end
 
-function testUnsupportedConcaveDeformationRemainsExplicit(testCase)
+function testConcaveDeformationUsesExactMovingPartition(testCase)
     lower=[0,0;2,0;2,2;1,0.5;0,2]; upper=lower; upper(4,:)=[0.5,1];
     prepared=preparePair(lower,circshift(upper,2));
-    verifyFalse(testCase,prepared.InternalPreparation.MatchingTopology);
-    verifyTrue(testCase,startsWith(prepared.InternalPreparation.IntervalGeometryModel,"conservative"));
-    shape=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,0.5);
-    verifyLessThan(testCase,area(subtract(polyshape(lower),shape)),1e-12);
-    verifyLessThan(testCase,area(subtract(polyshape(upper),shape)),1e-12);
+    verifyTrue(testCase,prepared.InternalPreparation.MatchingTopology);
+    verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
+        "linearCorrespondingConvexPartition");
+    cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
+    verifyGreaterThan(testCase,numel(cells.Regions_units),1);
+    for tau=[0,0.25,0.5,0.75,1]
+        partitionShape=polyshape();
+        for regionIndex=1:numel(cells.Regions_units)
+            region=cells.Regions_units{regionIndex}+tau* ...
+                (cells.EndRegions_units{regionIndex}-cells.Regions_units{regionIndex});
+            partitionShape=union(partitionShape,polyshape(region,'Simplify',false));
+        end
+        exactBoundary=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,tau);
+        verifyLessThan(testCase,area(xor(partitionShape,exactBoundary)),1e-12);
+        verifyFalse(testCase,isinterior(partitionShape,1,1.75));
+    end
 end
 
 function testContainmentClassificationMatchesBooleanReference(testCase)
@@ -93,14 +104,50 @@ function testContainmentClassificationMatchesBooleanReference(testCase)
             firstShape=polyshape(first,'Simplify',false);
             lastShape=polyshape(last,'Simplify',false);
             tolerance=512*eps(max([1,area(firstShape),area(lastShape)]));
-            contained=[area(subtract(firstShape,lastShape)), ...
-                area(subtract(lastShape,firstShape))]<=tolerance;
-            if all(contained), expected="staticEquivalentSamples";
-            elseif any(contained), expected="conservativeNestedEndpointUnion";
-            else, expected="conservativeEndpointConvexHull"; end
+            equivalent=area(xor(firstShape,lastShape))<=tolerance;
+            if equivalent, expected="staticEquivalentSamples";
+            else, expected="unsupportedContinuousDeformation"; end
             verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel,expected);
         end
     end
+end
+
+function testUnsupportedGeometryReturnsStablePlannerOutcome(testCase)
+    lower=[0,0;2,0;2,2;0,2];
+    upper=[0,0;2,0;2,2;1,3;0,2];
+    obstacle=obstacleAvoidance.obstacles.createObstacle('changing count',[0;1], ...
+        {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0);
+    initial=struct('time_s',0,'position_units',[-2,0], ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    goal=struct('time_s',1,'position_units',[4,0], ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-5,5], ...
+        'maxVelocity_units_s',[10,10],'maxAcceleration_units_s2',[10,10], ...
+        'maxJerk_units_s3',[20,20]);
+    result=planner(obstacle,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    verifyFalse(testCase,result.Success);
+    verifyEqual(testCase,result.TerminationReason,"unsupportedObstacleInterpolation");
+end
+
+function testCachedUnsupportedFutureDoesNotRejectEarlierHorizon(testCase)
+    first=[10,10;12,10;12,12;10,12];
+    second=first+[0.2,0];
+    third=[10.4,10;12.4,10;12.4,12;11.4,13;10.4,12];
+    source=obstacleAvoidance.obstacles.createObstacle('later unsupported',[0;1;2], ...
+        {first(:,1);second(:,1);third(:,1)}, ...
+        {first(:,2);second(:,2);third(:,2)},0);
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(source,[0,2]);
+    initial=struct('time_s',0,'position_units',[-2,0]);
+    goal=struct('time_s',0.5,'position_units',[-1,0]);
+    limits=struct('xInterval_units',[-5,15],'yInterval_units',[-5,15], ...
+        'maxVelocity_units_s',[10,10],'maxAcceleration_units_s2',[100,100], ...
+        'maxJerk_units_s3',[1000,1000]);
+    options=struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','spatial');
+    early=planner(prepared,initial,goal,limits,options);
+    verifyNotEqual(testCase,early.TerminationReason,"unsupportedObstacleInterpolation");
+    goal.time_s=1.5;
+    overlapping=planner(prepared,initial,goal,limits,options);
+    verifyEqual(testCase,overlapping.TerminationReason,"unsupportedObstacleInterpolation");
 end
 
 function prepared=preparePair(lower,upper)

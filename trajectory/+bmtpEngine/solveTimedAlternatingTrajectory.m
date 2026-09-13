@@ -22,7 +22,6 @@ selectedSegmentTime_s=NaN;
 selectedPlanes=planes;
 selectedPairs=false(size(planes));
 previousFailedPairs=false(size(planes));
-previousDuration_s=Inf;
 solverMessage="The time-scoped alternating iteration limit was reached.";
 trajectoryOptions=optimoptions("coneprog","Display","none", ...
     "MaxIterations",300);
@@ -31,6 +30,28 @@ diagnostics.WarmStartDuration_s=warmStart.Duration_s;
 diagnostics.RetainedHorizonRetryCount=0;
 diagnostics.PlaneReuseApplied=false;
 diagnostics.PlaneReuseCount=0;
+% Establish the exact moving corridor at the timed guide's physical clock.
+% An unconstrained first solve would collapse to a straight collision path
+% before the alternating method had any obstacle planes to retain.
+[planes,activePairs,complete,planeStatistics]= ...
+    bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
+    warmStart.SegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
+diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
+diagnostics.UnverifiedPlaneInitializationCount= ...
+    planeStatistics.ActivePairCount-planeStatistics.VerifiedPairCount;
+diagnostics.FailedPlaneSegmentIndex=planeStatistics.FailedSegmentIndex;
+diagnostics.FailedPlaneRegionIndex=planeStatistics.FailedRegionIndex;
+if ~complete
+    diagnostics.TaggedPairCount=0;
+    diagnostics.SolverMessage="The timed visibility guide could not initialize its exact corridor.";
+    result=struct('Success',false,'SolverMessage',diagnostics.SolverMessage, ...
+        'ControlPoint_units',selectedControl_units, ...
+        'SegmentTime_s',selectedSegmentTime_s,'Planes',selectedPlanes, ...
+        'TaggedPairs',selectedPairs);
+    return
+end
+selectedPairs=activePairs;
+previousDuration_s=warmStart.Duration_s;
 
 %% Section 2: Solve And Rebuild Constraints On Every Returned Clock
 for iterationIndex=1:35
@@ -79,13 +100,28 @@ for iterationIndex=1:35
             solverMessage="The feasible timed motion did not produce a complete exact plane set.";
             break
         end
-        selectedControl_units=trialControl_units;
-        selectedSegmentTime_s=trialSegmentTime_s;
-        diagnostics.BestDuration_s=duration_s;
-        diagnostics.RetainedBestTrialDuration_s=duration_s;
+        previousFeasibleDuration_s=Inf;
+        if ~isempty(selectedControl_units)
+            previousFeasibleDuration_s=sum(selectedSegmentTime_s);
+        end
+        if duration_s<previousFeasibleDuration_s
+            selectedControl_units=trialControl_units;
+            selectedSegmentTime_s=trialSegmentTime_s;
+            diagnostics.BestDuration_s=duration_s;
+            diagnostics.RetainedBestTrialDuration_s=duration_s;
+        end
         diagnostics.Converged=output.OptimizationConverged;
-        solverMessage="A complete time-scoped feasible iterate was found.";
-        break
+        if previousFeasibleDuration_s-duration_s<= ...
+                request.Options.ArrivalTimeTolerance_s
+            solverMessage="The feasible arrival improvement reached tolerance.";
+            break
+        end
+        planes=selectedPlanes;
+        selectedPairs=activePairs;
+        previousDuration_s=duration_s;
+        previousFailedPairs=false(size(failedPairs));
+        solverMessage="A complete time-scoped feasible iterate was retained.";
+        continue
     end
     [planes,activePairs,complete,planeStatistics]= ...
         bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...

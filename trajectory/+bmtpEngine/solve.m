@@ -67,8 +67,8 @@ if size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.
     analyticIdentifier = "c3JerkLimitedChord";
     analyticRepresentation = "analyticC3Clock";
 elseif options.GoalTimeMode=="fixedArrival"
-    % A timed direct motion may pass through a spatial guide's swept hull.
-    % Check it before committing to that guide's detour.
+    % A timed direct motion can pass even when the selected guide detours.
+    % Check it before committing to the guide route.
     directDuration_s = request.MotionHorizon_s;
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];

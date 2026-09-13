@@ -8,8 +8,8 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
 %     then construct independently certified C3 quintic BMTP motion.
-%   - Moving-obstacle guides use requested-window envelopes for initialization;
-%     motion constraints retain the original time-dependent geometry.
+%   - Moving-obstacle requests may use the initial exact snapshot or an
+%     explicitly selected time-expanded visibility guide.
 %
 % INPUTS
 %   - obstacles: static polygon structs or canonical polygon histories.
@@ -106,7 +106,10 @@ totalTimer = tic;
 earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
 interceptTime_s = goalState.time_s;
 preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
-scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
+isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(obstacle) ...
+    ~obstacle.InternalPreparation.IsTimeInvariant || ...
+    (numel(obstacle.time_s)>1 && (initialState.time_s<obstacle.time_s(1) || ...
+    goalState.time_s>obstacle.time_s(end))),preparedObstacles));
 visibilityGraph = struct('NodePosition_units',zeros(0,2),'AcceptedNodeIndex',zeros(0,2), ...
     'AcceptedWeight_units',zeros(0,1),'RejectedNodeIndex',zeros(0,2), ...
     'RouteNodeIndex',zeros(1,0),'Route_units',zeros(0,2),'RouteLength_units',Inf, ...
@@ -117,14 +120,35 @@ result.SuppliedLimits = suppliedLimits;
 result.RequestedLimits = requestedLimits;
 result.RequestedGoalState = requestedGoalState;
 result.SuppliedGoalState = suppliedGoalState;
+requestedInterval_s=[initialState.time_s,goalState.time_s];
+unsupportedObstacleIndex = find(arrayfun(@(obstacle) any( ...
+    obstacle.InternalPreparation.IntervalPrepared & ...
+    obstacle.InternalPreparation.IntervalGeometryModel=="unsupportedContinuousDeformation" & ...
+    obstacle.time_s(1:end-1)<requestedInterval_s(2) & ...
+    obstacle.time_s(2:end)>requestedInterval_s(1)),preparedObstacles),1);
+if ~isempty(unsupportedObstacleIndex)
+    preparation = preparedObstacles(unsupportedObstacleIndex).InternalPreparation;
+    obstacleTime_s=preparedObstacles(unsupportedObstacleIndex).time_s;
+    unsupportedIntervalIndex = find(preparation.IntervalPrepared & ...
+        preparation.IntervalGeometryModel=="unsupportedContinuousDeformation" & ...
+        obstacleTime_s(1:end-1)<requestedInterval_s(2) & ...
+        obstacleTime_s(2:end)>requestedInterval_s(1),1);
+    intervalTime_s = preparedObstacles(unsupportedObstacleIndex).time_s( ...
+        unsupportedIntervalIndex:unsupportedIntervalIndex+1);
+    result.Message = sprintf(['Obstacle %d ("%s"), interval [%g, %g] s, has no ' ...
+        'certified exact continuous interpolation.'],unsupportedObstacleIndex, ...
+        string(preparedObstacles(unsupportedObstacleIndex).targetName),intervalTime_s(1),intervalTime_s(2));
+    result.TerminationReason = "unsupportedObstacleInterpolation";
+    result.ElapsedTime_s = toc(totalTimer);
+    return;
+end
+scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
 [endpointFeasible,result.Message,result.TerminationReason] = obstacleAvoidance.input.validatePlannerEndpoints( ...
     preparedObstacles,initialState,goalState,limits,options);
 if ~endpointFeasible
     result.ElapsedTime_s = toc(totalTimer);
     return;
 end
-isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant || ...
-    (numel(o.time_s)>1 && (initialState.time_s<o.time_s(1) || goalState.time_s>o.time_s(end))),preparedObstacles));
 regions_units = cell(0,1);
 for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
 if isDynamic
@@ -207,25 +231,6 @@ if futureGoalBlocked
 else
     guideScene = scene;
     guideKind = "initialSpatialSnapshot";
-    if isDynamic
-        % The sweep selects a spatial guide only. BMTP below retains the
-        % original moving cells and can tighten the motion inside this hull.
-        guideScene = struct('ProtectedShape',{});
-        for k = 1:numel(preparedObstacles)
-            indices = find(cells.SourceObstacleIndex==k);
-            if isempty(indices), continue; end
-            if preparedObstacles(k).InternalPreparation.IsTimeInvariant
-                sampleIndex=find(preparedObstacles(k).InternalPreparation.SamplePrepared,1);
-                guideScene(end+1).ProtectedShape=preparedObstacles(k).InternalPreparation.SampleShapes{sampleIndex}; %#ok<AGROW>
-                continue;
-            end
-            vertices_units = [vertcat(cells.Regions_units{indices});vertcat(cells.EndRegions_units{indices})];
-            hull = convhull(vertices_units(:,1),vertices_units(:,2));
-            guideScene(end+1).ProtectedShape = polyshape(vertices_units(hull(1:end-1),:), ...
-                'Simplify',false,'KeepCollinearPoints',true);
-        end
-        guideKind = "requestedWindowEnvelopeGuide";
-    end
     % Chronological trials often share exactly the same spatial problem.
     % Compare all graph inputs directly so changed source geometry cannot
     % reuse stale visibility edges. Retain only the most recent graph.

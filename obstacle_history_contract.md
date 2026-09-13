@@ -28,12 +28,15 @@ diagnostics are informational and never determine obstacle occupancy.
 
 At a sample time, its normalized protected geometry is authoritative. An empty
 sample does not clear either neighboring interval. Between samples, the current
-preparer interpolates verified corresponding vertices for supported motion.
-Other intervals use explicitly labeled static-equivalent, nested endpoint-union,
-or endpoint-hull models. These models describe the declared sampled history;
-they are not a continuous physical coverage guarantee for arbitrary unsampled
-projected motion. Preparation, time cells, queries, and independent validation
-must retain the same interval interpretation.
+preparer interpolates verified corresponding vertices. A moving concave ring is
+represented by one conforming convex partition whose vertices use that same
+linear correspondence. Every face must remain strictly convex and the outer
+boundary must remain simple over the complete interval. The partition union is
+therefore the interpolated polygon, not its convex hull. Geometrically equivalent
+endpoint samples may use an exact static model. Any other interval is explicitly
+unsupported; planning returns `unsupportedObstacleInterpolation` rather than
+substituting occupied space. Preparation, time cells, queries, and independent
+validation retain the same interval interpretation.
 
 Preparation accepts an optional closed time window. It retains the complete
 normalized source history and prepares only in-window samples and the two
@@ -53,6 +56,6 @@ Generic single-ring correspondence uses centered, scaled circular correlation
 in both orientations, with O(N log N) alignment work. Numerically tied shifts
 are selected at a fixed physical anchor so cyclic starting indices do not
 choose a different interpolation. There is no exhaustive-shift fallback.
-Correspondence still needs the existing translation or convex-interpolation
-verification; unsupported deformations retain an explicitly named conservative
-interval model. Correlation alone is not a motion or occupancy certificate.
+Correspondence still needs a continuous convex or conforming-partition
+certificate. Unsupported deformation is reported explicitly. Correlation alone
+is not a motion or occupancy certificate.

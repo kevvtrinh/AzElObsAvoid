@@ -4,8 +4,7 @@ function [shape, geometry] = shapeAtTime(obstacle, queryTime_s, geometryOnly)
 %   [shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime( obstacle, queryTime_s,
 %   geometryOnly)
 % PURPOSE: Return protected obstacle geometry active at one physical time. Interpolate verified
-%   corresponding vertices and otherwise return a conservative swept enclosure for the complete
-%   source interval.
+%   corresponding vertices exactly; reject an interval with no certified continuous model.
 % INPUTS: obstacle (scalar canonical or prepared struct) queryTime_s (finite numeric scalar)
 %   geometryOnly (logical scalar, optional; default false)
 % OUTPUTS: shape (scalar polyshape or []) geometry (scalar struct) Boundary, speed bound, topology,

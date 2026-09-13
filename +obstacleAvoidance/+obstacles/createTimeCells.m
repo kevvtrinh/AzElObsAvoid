@@ -35,15 +35,31 @@ for k = 1:numel(obstacles)
             regions = obstacleAvoidance.geometry.convexRegions( ...
                 preparation.SampleShapes{j},longestSharedEdgeFirst);
             endRegions = regions;
+        elseif preparation.MatchingTopology(j) && ...
+                preparation.IntervalGeometryModel(j)=="linearCorrespondingConvexPartition"
+            % Each stored face is convex for the complete linear morph, and
+            % the moving union equals the authoritative concave polygon.
+            fraction = (active_s-sourceIntervals_s(j,1))/diff(sourceIntervals_s(j,:));
+            startRegions = preparation.IntervalStartRegions_units{j};
+            finishRegions = preparation.IntervalEndRegions_units{j};
+            regions = cell(size(startRegions));
+            endRegions = cell(size(startRegions));
+            for regionIndex = 1:numel(startRegions)
+                delta_units = finishRegions{regionIndex}-startRegions{regionIndex};
+                regions{regionIndex} = startRegions{regionIndex}+fraction(1)*delta_units;
+                endRegions{regionIndex} = startRegions{regionIndex}+fraction(2)*delta_units;
+            end
         elseif preparation.MatchingTopology(j)
-            % The convex hull of corresponding vertices at each instant
-            % encloses the authoritative interpolated polygon. Keep its time
-            % dependence instead of projecting the entire sweep into space.
+            % A verified convex boundary stays convex throughout the linear
+            % vertex interpolation.
             lower_units = [obstacle.x_units{j},obstacle.y_units{j}];
             delta_units = [preparation.DeltaX_units{j},preparation.DeltaY_units{j}];
             fraction = (active_s-sourceIntervals_s(j,1))/diff(sourceIntervals_s(j,:));
             regions = {lower_units+fraction(1)*delta_units};
             endRegions = {lower_units+fraction(2)*delta_units};
+        elseif preparation.IntervalGeometryModel(j)=="unsupportedContinuousDeformation"
+            error('createTimeCells:UnsupportedContinuousDeformation', ...
+                'The obstacle interval has no verified exact continuous geometry model.');
         else
             shape = preparation.IntervalUnionShapes{j};
             regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);

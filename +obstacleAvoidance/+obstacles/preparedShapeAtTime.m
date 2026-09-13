@@ -60,6 +60,9 @@ elseif preparation.MatchingTopology(lowerIndex)
     end
     edgeStart_units = [x_units, y_units];
     edgeEnd_units   = circshift(edgeStart_units, -1, 1);
+elseif preparation.IntervalGeometryModel(lowerIndex)=="unsupportedContinuousDeformation"
+    error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
+        'The obstacle interval has no verified exact continuous geometry model.');
 else
     shape = preparation.IntervalUnionShapes{lowerIndex};
     [x_units, y_units] = boundary(shape);

@@ -33,25 +33,31 @@ end
 
 %% Section 2: Create Obstacles
 
-% Early samples contain one closed U boundary. Later samples contain two rings
-% with a gap between them. The narrow time transition gives a clear opening
-% event without a scenario-specific planner rule.
+% Keep the two U arms stationary and slide the center gate into the left arm.
+% Every obstacle retains one corresponding ring, so the opening is an exact
+% continuous motion rather than a topology change hidden in one polygon.
 
 missionEndTime_s      = 120;
 openingTime_s         = 7;
 transitionHalfWidth_s = 1e-3;
 safetyMargin_units      = 0.20;
 gapHalfWidth_units      = 1.5;
-closedBoundary_units    = [ -8, 7; -5, 7; -5, -4; 5, -4; 5, 7; 8, 7; 8, -7; -8, -7];
 leftOpenBoundary_units  = [ -8, 7; -5, 7; -5, -4; -gapHalfWidth_units, -4; -gapHalfWidth_units, -7; -8, -7];
 rightOpenBoundary_units = [ 5, 7; 8, 7; 8, -7; gapHalfWidth_units, -7; gapHalfWidth_units, -4; 5, -4];
-openBoundary_units      = [ leftOpenBoundary_units; NaN NaN; rightOpenBoundary_units];
+closedGate_units        = [ -gapHalfWidth_units, -7; gapHalfWidth_units, -7; gapHalfWidth_units, -4; -gapHalfWidth_units, -4];
+openGate_units          = closedGate_units + [-2*gapHalfWidth_units,0];
 obstacleTime_s        = [ 0; openingTime_s - transitionHalfWidth_s; openingTime_s + transitionHalfWidth_s; missionEndTime_s];
-xByTime_units     = { ...
-    closedBoundary_units(:, 1); closedBoundary_units(:, 1); openBoundary_units(:, 1); openBoundary_units(:, 1)};
-yByTime_units = { ...
-    closedBoundary_units(:, 2); closedBoundary_units(:, 2); openBoundary_units(:, 2); openBoundary_units(:, 2)};
-obstacles = obstacleAvoidance.obstacles.createObstacle("U-shaped obstacle with timed gap", obstacleTime_s, xByTime_units, yByTime_units, safetyMargin_units);
+leftArm = obstacleAvoidance.obstacles.createObstacle("left U arm",0, ...
+    {leftOpenBoundary_units(:,1)},{leftOpenBoundary_units(:,2)},safetyMargin_units);
+rightArm = obstacleAvoidance.obstacles.createObstacle("right U arm",0, ...
+    {rightOpenBoundary_units(:,1)},{rightOpenBoundary_units(:,2)},safetyMargin_units);
+gateXByTime_units = {closedGate_units(:,1);closedGate_units(:,1); ...
+    openGate_units(:,1);openGate_units(:,1)};
+gateYByTime_units = {closedGate_units(:,2);closedGate_units(:,2); ...
+    openGate_units(:,2);openGate_units(:,2)};
+gate = obstacleAvoidance.obstacles.createObstacle("sliding center gate", ...
+    obstacleTime_s,gateXByTime_units,gateYByTime_units,safetyMargin_units);
+obstacles = obstacleAvoidance.obstacles.combineObstacles({leftArm;rightArm;gate});
 
 %% Section 3: Create Planner Inputs
 

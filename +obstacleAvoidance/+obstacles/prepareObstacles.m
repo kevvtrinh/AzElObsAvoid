@@ -40,7 +40,7 @@ end
 if isempty(obstacles)
     return;
 end
-preparationVersion = 6;
+preparationVersion = 7;
 %% Section 2: Extend Only The Requested Entries
 % Prepare each obstacle separately.
 

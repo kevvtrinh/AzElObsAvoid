@@ -120,13 +120,17 @@ function testSolveRequestCarriesMinimumArrivalBound(testCase)
     seed=struct('position_units',[-1,0;1,0.5],'tau',[0;1], ...
         'Source',"timeExpandedWaitGuide",'TimingMode',"variableClock");
     coverage=struct('Passed',true,'MinimumMotionDuration_s',4, ...
+        'SeedMotionDuration_s',6, ...
         'ActiveTimeInterval_s',zeros(0,2));
     request=bmtpEngine.createSolveRequest(seed,cell(0,1),coverage, ...
         normalized.Inputs.initialState,normalized.Inputs.goalState, ...
         normalized.Limits,normalized.Options);
     verifyEqual(testCase,request.MinimumMotionDuration_s,4);
+    verifyEqual(testCase,request.SeedMotionDuration_s,6);
     verifyTrue(testCase,request.UsesVariableClock);
     verifyEqual(testCase,request.Degree,5);
+    warmStart=bmtpEngine.createWarmStart(request);
+    verifyGreaterThanOrEqual(testCase,warmStart.Duration_s,6-1e-12);
 end
 
 function testVariableClockUsesActualMovingCellOverlap(testCase)
@@ -194,7 +198,8 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
         arrayfun(@(t)box(:,2)-2+0.2*t,times_s,'UniformOutput',false),0.1);
     initial = struct('time_s',0,'position_units',[-4,0],'velocity_units_s',[0.15,0]);
     goal = struct('time_s',20,'position_units',[4,0],'velocity_units_s',[0.1,0]);
-    result = planner(source,initial,goal,[],struct('GoalTimeMode','fixedArrival'));
+    result = planner(source,initial,goal,[],struct( ...
+        'GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded'));
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,20,'AbsTol',1e-8);

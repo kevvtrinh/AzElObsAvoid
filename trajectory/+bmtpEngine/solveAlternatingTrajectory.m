@@ -29,6 +29,9 @@ diagnostics.UnverifiedPlaneInitializationCount = nnz(~verifiedPairs);
 selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 solverMessage = "The all-pair alternating iteration limit was reached.";
+meshRefinementCount = 0;
+diagnostics.MeshRefinementCount = 0;
+diagnostics.MeshRefinementSpanIndex = cell(3,1);
 
 %% Section 2: Alternate The Complete Formulation
 if allPlanesActive
@@ -74,6 +77,33 @@ if allPlanesActive
             break;
         end
         if unverifiedPairCount > 0
+            if meshRefinementCount < 3 && request.Options.GoalTimeMode=="fixedArrival" && ...
+                    isempty(fixedControl_units)
+                splitMask = any(~verifiedPairs,2);
+                [refinedControl_units,refinedTime_s] = bisectSelectedSpans( ...
+                    trialControl_units,trialTime_s,splitMask);
+                meshRefinementCount = meshRefinementCount+1;
+                diagnostics.MeshRefinementCount = meshRefinementCount;
+                diagnostics.MeshRefinementSpanIndex{meshRefinementCount} = find(splitMask).';
+                segmentCount = numel(refinedTime_s);
+                diagnostics.OptimizerSpanCount = segmentCount;
+                warmStart.SegmentRatio = refinedTime_s/mean(refinedTime_s);
+                request.RegionActiveBySegment = true(segmentCount,regionCount);
+                if isfield(request.Coverage,'ActiveTimeInterval_s')
+                    breaks_s = request.InitialState.time_s+[0;cumsum(refinedTime_s)];
+                    intervals_s = request.Coverage.ActiveTimeInterval_s;
+                    request.RegionActiveBySegment = breaks_s(1:end-1)<intervals_s(:,2).' & ...
+                        breaks_s(2:end)>intervals_s(:,1).';
+                end
+                diagnostics.ApplicablePairCount = nnz(request.RegionActiveBySegment);
+                planes = repmat(emptyPlane,segmentCount,regionCount);
+                [planes,allPlanesActive,~,diagnostics] = updatePlanes(refinedControl_units, ...
+                    refinedTime_s,planes,request,diagnostics,obstacleTarget_units,roundoffReserve_units,false);
+                if ~allPlanesActive
+                    solverMessage = "A refined separating-line initialization failed.";
+                    break
+                end
+            end
             continue;
         end
 
@@ -99,6 +129,26 @@ result.Planes = planes;
 end
 
 %% Section 4: Local Functions
+function [refinedControl_units,refinedTime_s] = bisectSelectedSpans(controlPoint_units,segmentTime_s,splitMask)
+    refinedControl_units = zeros(numel(segmentTime_s)+nnz(splitMask),size(controlPoint_units,2),2);
+    refinedTime_s = zeros(numel(segmentTime_s)+nnz(splitMask),1);
+    targetIndex = 0;
+    for spanIndex = 1:numel(segmentTime_s)
+        if splitMask(spanIndex)
+            for halfIndex = 1:2
+                targetIndex = targetIndex+1;
+                refinedControl_units(targetIndex,:,:) = bmtpEngine.restrictBezier( ...
+                    squeeze(controlPoint_units(spanIndex,:,:)),[(halfIndex-1)/2,halfIndex/2]);
+                refinedTime_s(targetIndex) = segmentTime_s(spanIndex)/2;
+            end
+        else
+            targetIndex = targetIndex+1;
+            refinedControl_units(targetIndex,:,:) = controlPoint_units(spanIndex,:,:);
+            refinedTime_s(targetIndex) = segmentTime_s(spanIndex);
+        end
+    end
+end
+
 function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = updatePlanes(controlPoint_units, segmentTime_s, planes, request, diagnostics, target_units, reserve_units, verifyOnly)
     % Update every active curve-region pair without sampled discovery or pruning.
     verifiedPairs = ~request.RegionActiveBySegment;

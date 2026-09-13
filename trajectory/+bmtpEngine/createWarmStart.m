@@ -152,7 +152,10 @@ warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.Contr
 if request.UsesVariableClock
     requiredSegmentTime_s=bmtpEngine.findRequiredSegmentTime( ...
         warmStart.ControlPoint_units,request.Limits);
-    commonSegmentTime_s=max(requiredSegmentTime_s./warmStart.SegmentRatio);
+    % Preserve the collision-free timed guide's physical clock for plane
+    % initialization without turning that proposal time into an arrival bound.
+    commonSegmentTime_s=max([requiredSegmentTime_s./warmStart.SegmentRatio; ...
+        request.SeedMotionDuration_s/sum(warmStart.SegmentRatio)]);
     warmStart.SegmentTime_s=commonSegmentTime_s*warmStart.SegmentRatio;
     warmStart.Duration_s=sum(warmStart.SegmentTime_s);
     if isfield(request.Coverage,'ActiveTimeInterval_s')
