@@ -63,7 +63,7 @@ elseif preparation.MatchingTopology(lowerIndex)
 elseif preparation.IntervalGeometryModel(lowerIndex)=="unsupportedContinuousDeformation"
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
-else
+elseif preparation.IntervalGeometryModel(lowerIndex)=="staticEquivalentSamples"
     shape = preparation.IntervalUnionShapes{lowerIndex};
     [x_units, y_units] = boundary(shape);
     speed_units_s            = 0;
@@ -71,6 +71,9 @@ else
     geometryModel          = preparation.IntervalGeometryModel(lowerIndex);
     edgeStart_units          = preparation.IntervalUnionEdgeStart_units{lowerIndex};
     edgeEnd_units            = preparation.IntervalUnionEdgeEnd_units{lowerIndex};
+else
+    error('preparedShapeAtTime:UnknownGeometryModel', ...
+        'The prepared obstacle interval has an unknown geometry model.');
 end
 x_units(~isfinite(x_units)) = NaN;
 y_units(~isfinite(y_units)) = NaN;

@@ -60,10 +60,13 @@ for k = 1:numel(obstacles)
         elseif preparation.IntervalGeometryModel(j)=="unsupportedContinuousDeformation"
             error('createTimeCells:UnsupportedContinuousDeformation', ...
                 'The obstacle interval has no verified exact continuous geometry model.');
-        else
+        elseif preparation.IntervalGeometryModel(j)=="staticEquivalentSamples"
             shape = preparation.IntervalUnionShapes{j};
             regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);
             endRegions = regions;
+        else
+            error('createTimeCells:UnknownGeometryModel', ...
+                'The prepared obstacle interval has an unknown geometry model.');
         end
         regions_units = [regions_units;regions]; %#ok<AGROW>
         endRegions_units = [endRegions_units;endRegions]; %#ok<AGROW>

@@ -73,6 +73,9 @@ function testSavedDetourUsesPrescribedDeadline(testCase)
     verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-8);
     verifyEqual(testCase,result.VisibilityGraph.RouteTime_s([1,end]),[0;180]);
     verifyLessThan(testCase,result.MotionLength_units,230);
+    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpTimeCellsDegree8");
+    verifyGreaterThan(testCase,result.SolverDiagnostics.MeshRefinementCount,0);
+    verifyGreaterThan(testCase,result.SolverDiagnostics.OptimizerSpanCount,16);
 end
 
 function testMovingCrossingRetainsCertifiedEndpointJerk(testCase)

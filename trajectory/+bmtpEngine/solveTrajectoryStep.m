@@ -1,8 +1,8 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units, minimizeLength)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, minimizeLength)
 %% Section 0: Header & Readme
 % SYNTAX: [controlPoint_units, segmentTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(
 %   segmentCount, degree, initialState, goalState, limits, planes, reserve_units,
-%   maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units, minimizeLength)
+%   maximumMotionDuration_s, options, segmentRatio, fixedClock, minimizeLength)
 % PURPOSE: Solve one convex trajectory step for fixed separating lines, timing policy, and
 %   derivative limits.
 % INPUTS: segmentCount, degree (positive integer scalars) Composite Bezier representation size.
@@ -14,7 +14,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   reserve_units (nonnegative scalar) Numerical separation reserve.
 %   maximumMotionDuration_s (positive scalar) Upper bound on the internal minimum-time solve.
 %   options (coneprog options) Numerical solver controls. Optional mesh ratio, fixed-clock,
-%   prescribed-control, and length-objective inputs follow.
+%   and length-objective inputs follow.
 % OUTPUTS: controlPoint_units (S-by-(D+1)-by-2 numeric array) Solved control points, or an empty
 %   array on expected solve failure.
 %   segmentTime_s (scalar numeric) Per-segment durations, or NaN on expected solve failure.
@@ -26,7 +26,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
-if nargin < 13, minimizeLength = true; end
+if nargin < 12, minimizeLength = true; end
 originalPlaneCount=nnz([planes.Active]);
 partialPlanes=false;
 if isfield(planes,'TimeFraction') && ~isempty(planes)
@@ -44,10 +44,9 @@ end
 if fixedClock && ~partialPlanes && originalPlaneCount>segmentCount*degree
     planes=bmtpEngine.removeRedundantPlanes(planes,limits,2*reserve_units);
 end
-prescribedAxis = nargin>=12 && ~isempty(fixedControl_units) && any(isfinite(fixedControl_units(:)));
 % Larger clocks have surplus phases that can oscillate under length alone.
 % Preserve the compact eight-span steering solve used on sparse clocks.
-intrinsicVariation=fixedClock && degree==5 && ~prescribedAxis && segmentCount>8;
+intrinsicVariation=fixedClock && degree==5 && segmentCount>8;
 start_units = initialState.position_units; goal_units = goalState.position_units;
 isRest = all([initialState.velocity_units_s initialState.acceleration_units_s2 goalState.velocity_units_s goalState.acceleration_units_s2]==0);
 assert(fixedClock || isRest,'bmtpEngine:NonrestRelaxedClock','Nonzero boundary states require physical fixed durations.');
@@ -83,10 +82,6 @@ end
 % reconstruction changes its terminal jerk.
 if ~intrinsicVariation
     exactControl_units = NaN(segmentCount,degree+1,2);
-    if nargin>=12 && ~isempty(fixedControl_units)
-        supplied = isfinite(fixedControl_units);
-        exactControl_units(supplied) = fixedControl_units(supplied);
-    end
     exactControl_units(1,1:3,:) = boundaryControls(1,1:3,:);
     exactControl_units(end,end-2:end,:) = boundaryControls(end,end-2:end,:);
     fixedValues = reshape(permute(exactControl_units,[3,2,1]),[],1);

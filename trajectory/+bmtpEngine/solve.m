@@ -7,8 +7,8 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %   planner independently validates the result.
 % INPUTS: seed (scalar struct) position_units is N-by-2; tau strictly increases from zero to one.
 %   regions_units (R-by-1 cell array) Each cell contains one finite convex N-by-2 exclusion polygon.
-%   coverage (scalar struct) Requires Passed. Optional RegionActiveTauInterval is R-by-2 and limits
-%   each region to an absolute normalized motion-time interval. initialState, goalState (normalized
+%   coverage (scalar struct) Requires Passed. Optional ActiveTimeInterval_s limits each region to
+%   an absolute physical motion-time interval. initialState, goalState (normalized
 %   scalar state structs) Position, velocity, and acceleration are prescribed at both endpoints.
 %   limits (normalized scalar struct) Workspace, velocity, acceleration, and jerk bounds. options
 %   (resolved scalar planner-options struct) Goal-time policy, sampling interval, work limits, and

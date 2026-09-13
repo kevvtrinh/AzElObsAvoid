@@ -187,11 +187,9 @@ if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
         seed = struct('position_units',route_units,'tau',[0;1],'Source',"departureSchedule");
         [candidate,diagnostics] = bmtpEngine.solve(seed,regions_units,coverage,initialState,goalState,limits,options);
         if candidate.Success
-            for name=reshape(string(fieldnames(candidate)),1,[]), result.(name)=candidate.(name); end
-            result.Route_units=route_units; result.SolverDiagnostics=diagnostics;
+            result=obstacleAvoidance.input.finalizeCandidate( ...
+                result,candidate,route_units,diagnostics);
             result.VisibilityGraph.SearchKind="c3DepartureSchedule";
-            result.Validation=obstacleAvoidance.validateTrajectory(result);
-            result.Success=result.Validation.Passed;
             result.ElapsedTime_s=toc(totalTimer);
             hasWait = isfield(diagnostics,'DepartureSchedule') && ...
                 diagnostics.DepartureSchedule.DepartureDelay_s>options.ArrivalTimeTolerance_s;
@@ -269,31 +267,9 @@ seed = struct('position_units',route_units,'tau',[0;cumsum(edgeLength_units)]/su
 
 %% Section 4: Independently Validate The Complete Returned Motion
 
-candidateFields = string(fieldnames(candidate));
-for fieldName = reshape(candidateFields, 1, [])
-    result.(fieldName) = candidate.(fieldName);
-end
-result.Route_units = route_units;
-result.SolverDiagnostics = solverDiagnostics;
-if ~isempty(goalState.targetMotion)
-    result.Intercept = struct('Time_s',candidate.ArrivalTime_s, ...
-        'TargetPosition_units',goalState.position_units,'TerminalVelocityPolicy',"explicit", ...
-        'TerminalAccelerationPolicy',"explicit");
-    if all(goalState.velocity_units_s==0), result.Intercept.TerminalVelocityPolicy = "zero"; end
-    if all(goalState.acceleration_units_s2==0), result.Intercept.TerminalAccelerationPolicy = "zero"; end
-    if options.MatchTargetVelocity, result.Intercept.TerminalVelocityPolicy = "matched"; end
-    if options.MatchTargetAcceleration, result.Intercept.TerminalAccelerationPolicy = "matched"; end
-end
-result.Validation = obstacleAvoidance.validateTrajectory(result);
-if candidate.Success && ~result.Validation.Passed
-    result.Success = false;
-    result.Message = "BMTP returned motion that failed independent validation: " + result.Validation.Message;
-    result.TerminationReason = "invalidMotion";
-end
+result=obstacleAvoidance.input.finalizeCandidate( ...
+    result,candidate,route_units,solverDiagnostics);
 result.ElapsedTime_s = toc(totalTimer);
-if ~result.Success && options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
-    result = obstacleAvoidance.input.searchArrivalTimes(result);
-end
 end
 
 %% Section 5: Local Functions

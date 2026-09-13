@@ -90,7 +90,7 @@ for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),
     preparation.IntervalPrepared(intervalIndex)=true;
 end
 
-%% Section 4: Retain Conservative Bounds At Unprepared Neighbor Intervals
+%% Section 4: Update Cached Motion Bounds And Static Status
 preparation.SampleSpeedBound_units_s=max([0;preparation.IntervalSpeedBound_units_s], ...
     [preparation.IntervalSpeedBound_units_s;0]);
 staticIntervals=preparation.IntervalGeometryModel=="staticEquivalentSamples" | ...

@@ -15,8 +15,6 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 segmentCount = warmStart.SegmentCount;
 regionCount = numel(request.Regions_units);
 request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
-fixedControl_units = [];
-if isfield(warmStart,'FixedControl_units'), fixedControl_units = warmStart.FixedControl_units; end
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 diagnostics.ExistingPlanePairVerificationCount = 0;
@@ -37,7 +35,7 @@ diagnostics.MeshRefinementSpanIndex = cell(3,1);
 if allPlanesActive
     for iterationIndex = 1:35
         diagnostics.IterationCount = iterationIndex;
-        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, request.Options.GoalTimeMode=="fixedArrival",fixedControl_units);
+        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, request.Options.GoalTimeMode=="fixedArrival");
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.FinalTrajectoryExitFlag = exitFlag;
@@ -77,8 +75,7 @@ if allPlanesActive
             break;
         end
         if unverifiedPairCount > 0
-            if meshRefinementCount < 3 && request.Options.GoalTimeMode=="fixedArrival" && ...
-                    isempty(fixedControl_units)
+            if meshRefinementCount < 3 && request.Options.GoalTimeMode=="fixedArrival"
                 splitMask = any(~verifiedPairs,2);
                 [refinedControl_units,refinedTime_s] = bisectSelectedSpans( ...
                     trialControl_units,trialTime_s,splitMask);

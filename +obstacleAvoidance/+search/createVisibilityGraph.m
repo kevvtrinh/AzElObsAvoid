@@ -1,10 +1,9 @@
-function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units, limits, options, monotoneDirection)
+function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX: visibilityGraph =
 %   obstacleAvoidance.search.createVisibilityGraph(scene,start,goal,limits,options)
 % PURPOSE: Build the exhaustive exact visibility graph and find its shortest polygonal route.
-% INPUTS: Protected polygon scene, endpoints, workspace, numerical tolerance. Optional
-%   monotoneDirection requires strictly positive edge progress.
+% INPUTS: Protected polygon scene, endpoints, workspace, and numerical tolerance.
 % OUTPUTS: Exact boundary nodes, every accepted/rejected edge, route, and connectivity.
 % UNITS: Coordinate units.
 
@@ -12,8 +11,6 @@ function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units,
 validateattributes(start_units, {'numeric'}, {'real','finite','size',[1 2]});
 validateattributes(goal_units, {'numeric'}, {'real','finite','size',[1 2]});
 tolerance_units = options.ConstraintTolerance;
-if nargin<6, monotoneDirection = [0,0]; end
-validateattributes(monotoneDirection,{'numeric'},{'real','finite','size',[1,2]});
 shape = polyshape();
 for k = 1:numel(scene), shape = union(shape,scene(k).ProtectedShape); end
 [edgeStart_units,edgeEnd_units] = obstacleAvoidance.geometry.boundaryToEdges(shape,0);
@@ -45,11 +42,8 @@ if sourceFree && goalFree
     cones = endpointCones(shape,nodes_units,edgeStart_units,edgeEnd_units,tolerance_units);
     for firstNode = 1:nodeCount-1
         secondNode = (firstNode+1:nodeCount).';
-        progress_units = (nodes_units(secondNode,:)-nodes_units(firstNode,:))*monotoneDirection.';
-        eligible = true(size(secondNode));
-        if any(monotoneDirection), eligible = abs(progress_units)>tolerance_units; end
         locallyBlocked = entersObstacle(firstNode,secondNode,nodes_units,cones,tolerance_units);
-        checkIndex = find(eligible & ~locallyBlocked);
+        checkIndex = find(~locallyBlocked);
         clear = false(size(secondNode));
         [checked,queryPoints_units,queryOwner] = segmentIntervals(nodes_units(firstNode,:), ...
             nodes_units(secondNode(checkIndex),:),edgeStart_units,edgeEnd_units,edgeVector_units, ...
@@ -61,14 +55,9 @@ if sourceFree && goalFree
         end
         clear(checkIndex) = checked;
         acceptedNode = secondNode(clear);
-        acceptedProgress_units = progress_units(clear);
         newAccepted = numel(acceptedNode);
         acceptedRows = acceptedCount+(1:newAccepted);
         accepted(acceptedRows,:) = [repmat(firstNode,newAccepted,1),acceptedNode];
-        if any(monotoneDirection)
-            reverse = acceptedProgress_units<0;
-            accepted(acceptedRows(reverse),:) = accepted(acceptedRows(reverse),[2,1]);
-        end
         weights_units(acceptedRows) = vecnorm(nodes_units(acceptedNode,:)-nodes_units(firstNode,:),2,2);
         acceptedCount = acceptedCount+newAccepted;
         rejectedNode = secondNode(~clear);
@@ -88,11 +77,7 @@ routeIndex = zeros(1,0);
 route_units = zeros(0,2);
 routeLength_units = Inf;
 if sourceFree && goalFree
-    if any(monotoneDirection)
-        visibilityNetwork = digraph(accepted(:,1),accepted(:,2),weights_units,nodeCount);
-    else
-        visibilityNetwork = graph(accepted(:,1),accepted(:,2),weights_units,nodeCount);
-    end
+    visibilityNetwork = graph(accepted(:,1),accepted(:,2),weights_units,nodeCount);
     [routeIndex,routeLength_units] = shortestpath(visibilityNetwork,1,2,'Method','positive');
     route_units = nodes_units(routeIndex,:);
 end
