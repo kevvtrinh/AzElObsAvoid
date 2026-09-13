@@ -32,6 +32,13 @@ motion window. It complements the mixed static/rotating-obstacle example in the
 maintained suite. The example and
 [timing benchmark](benchmarks/220_vertex_timing.md) share identical default inputs.
 
+Run `exampleSpinningUAtStartAndGoal()` for a fixed-arrival motion that starts
+inside one rotating U-shaped cavity and finishes inside a second, oppositely
+rotating U-shaped cavity. Their openings initially point upward in parallel
+rather than toward one another. Each U is assembled from three convex moving
+bars so the complete revolution retains verified between-sample vertex
+correspondence.
+
 Run `exampleVietnamBoundarySlew()` for the supplied Vietnam az/el boundary:
 three source snapshots interpolate to 921 input slices of 280 vertices. The
 default request arrives at 3000 s from a 2770 s start. Use

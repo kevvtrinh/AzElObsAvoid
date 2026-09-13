@@ -173,6 +173,9 @@ function testUnequalSpanClockWithFullEndpointStates(testCase)
         3,5,initial,goal,limits,planes,1e-8,8,options,[1,2,1],true);
     assertTrue(testCase,flag>0 || flag==-7);
     verifyEqual(testCase,durations_s,[2,4,2]);
+    endpointControls=bmtpEngine.imposeEndpointControls(controls,durations_s,initial,goal);
+    verifyEqual(testCase,controls(1,1:3,:),endpointControls(1,1:3,:));
+    verifyEqual(testCase,controls(end,end-2:end,:),endpointControls(end,end-2:end,:));
     polynomial = bmtpEngine.createPowerPolynomial(controls,durations_s,0);
     [~,position,velocity,acceleration] = bmtpEngine.evaluatePolynomial(polynomial,[0;8]);
     verifyEqual(testCase,position,[initial.position_units;goal.position_units],'AbsTol',1e-8);

@@ -67,10 +67,29 @@ if sharedSlack, slackCount=nnz(planeCountBySegment); end
 variableCount          = controlCount + 4 + lengthCount + slackCount + intrinsicVariation*segmentCount;
 physicalTimes_s = maximumMotionDuration_s*segmentRatio/sum(segmentRatio);
 jerkTimes_s = []; if intrinsicVariation, jerkTimes_s = physicalTimes_s; end
+constraintLimits = limits;
+% A finite stalled cone iterate can carry a constraint residual larger than
+% floating-point roundoff. Keep jerk controls strictly inside their physical
+% bounds so exact endpoint reconstruction remains certifiable.
+if ~intrinsicVariation
+    constraintLimits.maxJerk_units_s3 = ...
+        limits.maxJerk_units_s3 .* (1 - sqrt(eps));
+end
 [A,Aeq,beq,lb,ub,jerkMap] = bmtpEngine.createTrajectoryConstraints( ...
-    segmentCount,degree,boundaryControls,limits,variableCount,activePlaneCount,segmentRatio,jerkTimes_s);
-if nargin>=12 && ~isempty(fixedControl_units)
-    fixedValues = reshape(permute(fixedControl_units,[3,2,1]),[],1);
+    segmentCount,degree,boundaryControls,constraintLimits,variableCount,activePlaneCount,segmentRatio,jerkTimes_s);
+% Fix endpoint position, velocity, and acceleration controls in the solver's
+% own variable space. Leaving them as approximate equality rows allows a
+% stalled finite iterate to satisfy derivative bounds before exact endpoint
+% reconstruction changes its terminal jerk.
+if ~intrinsicVariation
+    exactControl_units = NaN(segmentCount,degree+1,2);
+    if nargin>=12 && ~isempty(fixedControl_units)
+        supplied = isfinite(fixedControl_units);
+        exactControl_units(supplied) = fixedControl_units(supplied);
+    end
+    exactControl_units(1,1:3,:) = boundaryControls(1,1:3,:);
+    exactControl_units(end,end-2:end,:) = boundaryControls(end,end-2:end,:);
+    fixedValues = reshape(permute(exactControl_units,[3,2,1]),[],1);
     indices = find(isfinite(fixedValues));
     lb(indices) = fixedValues(indices);
     ub(indices) = fixedValues(indices);
@@ -145,7 +164,7 @@ if fixedClock
 end
 solverTimer = tic;
 solverTimes_s=[]; if intrinsicVariation, solverTimes_s=physicalTimes_s; end
-[x, ~, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, options, prescribedAxis,solverTimes_s,limits);
+[x, ~, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, options, ~intrinsicVariation,solverTimes_s,limits);
 output.TotalTime_s = toc(solverTimer);
 output.SolveCount = 1;
 output.OptimizationConverged = exitFlag>0;
@@ -157,7 +176,7 @@ if ~fixedClock && minimizeLength && ~isempty(x) && all(isfinite(x)) && (exitFlag
     ub(powerIndex(4)) = x(powerIndex(4));
     f(:) = 0; f(lengthIndex) = 1;
     timer = tic;
-    [shortX,~,shortFlag,shortOutput] = solveConic(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options,prescribedAxis,[],limits);
+    [shortX,~,shortFlag,shortOutput] = solveConic(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options,true,[],limits);
     bothConverged = output.OptimizationConverged && shortFlag>0;
     shortElapsed_s = toc(timer);
     elapsed_s = output.TotalTime_s+shortElapsed_s;

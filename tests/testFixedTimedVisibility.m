@@ -73,3 +73,41 @@ function testSavedDetourUsesPrescribedDeadline(testCase)
     verifyEqual(testCase,result.VisibilityGraph.RouteTime_s([1,end]),[0;180]);
     verifyLessThan(testCase,result.MotionLength_units,230);
 end
+
+function testMovingCrossingRetainsCertifiedEndpointJerk(testCase)
+    missionEndTime_s=12;
+    time_s=linspace(0,missionEndTime_s,5).';
+    halfSize_units=[0.73318128921311621,0.95945964014883089];
+    initialAngle_rad=-0.46430464622215828;
+    safetyMargin_units=0.14507508417445217;
+    centerX_units=1.7787935948757139;
+    center_units=[repmat(centerX_units,5,1),linspace(-3.8,3.8,5).'];
+    angle_rad=initialAngle_rad+linspace(0,pi/3,5).';
+    local_units=[-1,-1;1,-1;1,1;-1,1].*halfSize_units;
+    xByTime_units=cell(5,1); yByTime_units=cell(5,1);
+    for sampleIndex=1:5
+        rotation=[cos(angle_rad(sampleIndex)),-sin(angle_rad(sampleIndex)); ...
+            sin(angle_rad(sampleIndex)),cos(angle_rad(sampleIndex))];
+        boundary_units=local_units*rotation.'+center_units(sampleIndex,:);
+        xByTime_units{sampleIndex}=boundary_units(:,1);
+        yByTime_units{sampleIndex}=boundary_units(:,2);
+    end
+    obstacle=obstacleAvoidance.obstacles.createObstacle('moving crossing regression', ...
+        time_s,xByTime_units,yByTime_units,safetyMargin_units);
+    initial=struct('time_s',0,'position_units',[-6,0], ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    goal=struct('time_s',missionEndTime_s,'position_units',[6,0], ...
+        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
+    limits=struct('xInterval_units',[-9,9],'yInterval_units',[-6,6], ...
+        'maxVelocity_units_s',[3,3],'maxAcceleration_units_s2',[2,2], ...
+        'maxJerk_units_s3',[4,4]);
+    options=struct('GoalTimeMode','fixedArrival', ...
+        'FixedArrivalSearch','timeExpanded','SampleTime_s',0.05, ...
+        'TemporalResolution_s',0.75);
+    result=planner(obstacle,initial,goal,limits,options);
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.VisibilityGraph.RouteTime_s,[0;7.5;12]);
+    verifyLessThanOrEqual(testCase,max(abs(result.jerk_units_s3),[],1), ...
+        limits.maxJerk_units_s3+result.Options.ConstraintTolerance);
+end
