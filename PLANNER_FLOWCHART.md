@@ -144,11 +144,14 @@ forward.
   selected that guide before the first solve.
 - A lossless complete-polynomial edge adapter now carries absolute segment
   times, Bernstein controls, normalized power coefficients, and authoritative
-  physical position/velocity/acceleration/jerk endpoint states into
-  `createWarmStart`. Existing route callers are unchanged. Split/rejoin trials
+  physical position/velocity/acceleration/jerk endpoint states through
+  `createWarmStart`, final-motion preparation, continuous certification, and
+  public motion assembly. Existing route callers are unchanged. Split/rejoin trials
   on barrier, opening-U, and moving-circle preserve the complete motion within
   `7.39e-14`, retain shared jets within `4.07e-12`, change arrival and length
   only at roundoff, and pass fresh exact certificates and public validation.
+  An end-to-end engine regression also returns the supplied polynomial and clock
+  exactly with solver identifier `completePolynomialSeed`.
   This establishes the required graph-to-BMTP data contract; it does not yet
   make route search discover those reachable jet labels.
 

@@ -33,13 +33,19 @@ validateKernelInputs(seed, regions_units, coverage, initialState, goalState, lim
 if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
     degree=8;
 end
+hasCompleteMotion=isfield(seed,'PolynomialEdges') && ...
+    ~isempty(seed.PolynomialEdges);
+if hasCompleteMotion
+    degree=size(seed.PolynomialEdges(1).ControlPoint_units,1)-1;
+    splitCount=1;
+end
 usesVisibilityGraphProfile=isfield(seed,'Source') && ...
     string(seed.Source)=="timeExpandedVisibilityGraph";
 usesVariableClock=isfield(seed,'TimingMode') && ...
     string(seed.TimingMode)=="variableClock";
 usesTimeScopedSolver=usesVariableClock || (isfield(seed,'TimingMode') && ...
     string(seed.TimingMode)=="timeScopedClock");
-if usesVisibilityGraphProfile
+if usesVisibilityGraphProfile && ~hasCompleteMotion
     [degree,splitCount] = deal(8,2);
 end
 motionHorizon_s = goalState.time_s - initialState.time_s;

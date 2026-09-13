@@ -57,7 +57,21 @@ preparedMotion = struct('Success',false);
 certificate = struct('Passed',false); certificateCache=[];
 analyticIdentifier = "minimumJerkQuintic";
 analyticRepresentation = "analyticQuinticClock";
-if size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.IsRest
+hasCompleteMotion=isfield(warmStart,'PrescribedPower_units') && ...
+    ~isempty(warmStart.PrescribedPower_units);
+if hasCompleteMotion
+    preparedMotion=bmtpEngine.prepareFinalMotion(request, ...
+        warmStart.ControlPoint_units,warmStart.SegmentTime_s, ...
+        warmStart.PrescribedPower_units, ...
+        false(warmStart.SegmentCount,1));
+    if preparedMotion.Success
+        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, ...
+            warmStart,preparedMotion,roundoffReserve_units, ...
+            obstacleTarget_units,certificateCache,true);
+    end
+    analyticIdentifier="completePolynomialSeed";
+    analyticRepresentation="completePolynomialEdges";
+elseif size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.IsRest
     [controls_units,times_s,powers_units] = bmtpEngine.createC3Chord(initialState.position_units,goalState.position_units,limits);
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,times_s,powers_units);
     if preparedMotion.Success
