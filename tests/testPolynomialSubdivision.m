@@ -61,3 +61,66 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         verifyEqual(testCase,[splitP,splitV,splitA,splitJ],[p,v,a,j],'AbsTol',1e-9);
     end
 end
+
+function testCompletePolynomialEdgeAdapterIsLossless(testCase)
+    root=fileparts(fileparts(mfilename('fullpath')));
+    addpath(root,fullfile(root,'trajectory'));
+    for degree=[5,8]
+        parameter=(0:degree)/degree;
+        duration_s=[1.25;2.75];
+        splitFraction=duration_s(1)/sum(duration_s);
+        wholeControl_units=[parameter.',(parameter.^2).'];
+        controlPoint_units=zeros(2,degree+1,2);
+        controlPoint_units(1,:,:)=bmtpEngine.restrictBezier( ...
+            wholeControl_units,[0,splitFraction]);
+        controlPoint_units(2,:,:)=bmtpEngine.restrictBezier( ...
+            wholeControl_units,[splitFraction,1]);
+        polynomial=bmtpEngine.createPowerPolynomial( ...
+            controlPoint_units,duration_s,7);
+        edges=bmtpEngine.createPolynomialEdges(polynomial);
+        verifyEqual(testCase,numel(edges),2);
+        verifyEqual(testCase,[edges.StartTime_s].', ...
+            polynomial.SegmentStartTime_s);
+        verifyEqual(testCase,[edges.SegmentDuration_s].',duration_s);
+        restoredPower=zeros(size(polynomial.positionPower_units));
+        restoredControls=zeros(size(controlPoint_units));
+        for edgeIndex=1:numel(edges)
+            restoredPower(edgeIndex,:,:)=edges(edgeIndex).PositionPower_units;
+            restoredControls(edgeIndex,:,:)=edges(edgeIndex).ControlPoint_units;
+        end
+        restored=bmtpEngine.createPowerPolynomial(restoredControls, ...
+            duration_s,7,restoredPower);
+        for name=["positionPower_units","velocityPower_units_s", ...
+                "accelerationPower_units_s2","jerkPower_units_s3"]
+            verifyEqual(testCase,restored.(name),polynomial.(name));
+        end
+        verifyEqual(testCase,restored.SegmentStartTime_s, ...
+            polynomial.SegmentStartTime_s);
+        verifyEqual(testCase,restored.FinalTime_s,polynomial.FinalTime_s);
+        verifyEqual(testCase,edges(1).EndJet,edges(2).StartJet, ...
+            'AbsTol',1e-12);
+    end
+    initial=struct('time_s',3,'position_units',[-2,0]);
+    goal=struct('time_s',8,'position_units',[2,1]);
+    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-5,5], ...
+        'maxVelocity_units_s',[10,10], ...
+        'maxAcceleration_units_s2',[20,20], ...
+        'maxJerk_units_s3',[100,100]);
+    base=planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    edges=bmtpEngine.createPolynomialEdges(base.Polynomial);
+    seed=struct('position_units',[base.Inputs.initialState.position_units; ...
+        base.Inputs.goalState.position_units],'tau',[0;1], ...
+        'Source',"completeMotion",'PolynomialEdges',edges);
+    request=bmtpEngine.createSolveRequest(seed,cell(0,1),struct('Passed',true), ...
+        base.Inputs.initialState,base.Inputs.goalState,base.Limits,base.Options);
+    warmStart=bmtpEngine.createWarmStart(request);
+    verifyEqual(testCase,warmStart.SegmentTime_s, ...
+        base.Polynomial.SegmentDuration_s);
+    verifyEqual(testCase,warmStart.PrescribedPower_units, ...
+        base.Polynomial.positionPower_units);
+    alteredEdges=edges;
+    alteredEdges(2).StartJet(2,1)=alteredEdges(2).StartJet(2,1)+1;
+    request.Seed.PolynomialEdges=alteredEdges;
+    verifyError(testCase,@()bmtpEngine.createWarmStart(request), ...
+        'bmtpEngine:InvalidPolynomialEdges');
+end

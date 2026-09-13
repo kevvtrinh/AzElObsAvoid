@@ -45,9 +45,9 @@ distinctions, not alternative planner policies.
 | Static fixed detour | exhaustive spatial graph and `bmtpStaticDegree5`; `testPlanningCore/testDetourAndTampering` | Necessary fixed-clock specialization. |
 | Static earliest detour | exhaustive spatial graph and `bmtpStaticDegree8`; `testStaticActivePairBmtp/testSeparatedSlalomBarriers` | The clock is semantically necessary. The separate active-pair implementation remains a numerical split to consolidate only after an equivalent common formulation is measured. |
 | Fixed time-expanded detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree8`; `testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline` | Necessary absolute-time geometry; fixed-clock and variable-clock implementations can share more machinery. |
-| Dense dynamic earliest detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree5`; `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival` and `exampleMovingCircleNoWrap` | Necessary absolute-time geometry. Current sampled graph and uniformly scaled clock are not a final general formulation. |
+| Dense dynamic earliest detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree5`; `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival` | Necessary absolute-time geometry. Current sampled graph and uniformly scaled clock are not a final general formulation. |
 | Analytic delayed direct chord | `c3DepartureSchedule`; `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, and arrival-search regressions | Exact for this single route, but currently reached as a fallback and selected with an invalid initial-snapshot bound. It belongs as an exact timed edge, not a competing planner. |
-| Moving-target chronological fixed clocks | `TemporalSearch`, `FixedArrivalTrialTime_s`; `testPlannerDecisionFlow/testEarliestMovingTargetUsesChronologicalClock` | Target position changes with time, so clock search is necessary. The recursive full planner invocation is implementation duplication. |
+| Chronological fixed clocks | `TemporalSearch`, `FixedArrivalTrialTime_s`; `testPlannerDecisionFlow/testEarliestMovingTargetUsesChronologicalClock` and `exampleMovingCircleNoWrap` | Target position changes with time and the sparse fixed-goal timed clock can miss a faster detour. The recursive full planner invocation is implementation duplication, not the desired common solve. |
 
 ## Remaining policy splits that block completion
 
@@ -142,6 +142,15 @@ forward.
 - Timed proposal acceptance uses one BMTP call. The former second wait-guide
   retry was unreachable because the same selected-window condition had already
   selected that guide before the first solve.
+- A lossless complete-polynomial edge adapter now carries absolute segment
+  times, Bernstein controls, normalized power coefficients, and authoritative
+  physical position/velocity/acceleration/jerk endpoint states into
+  `createWarmStart`. Existing route callers are unchanged. Split/rejoin trials
+  on barrier, opening-U, and moving-circle preserve the complete motion within
+  `7.39e-14`, retain shared jets within `4.07e-12`, change arrival and length
+  only at roundoff, and pass fresh exact certificates and public validation.
+  This establishes the required graph-to-BMTP data contract; it does not yet
+  make route search discover those reachable jet labels.
 
 ## Acceptance evidence and next gate
 
@@ -171,3 +180,136 @@ graph barrier seed remains valid but stays near 10.5 seconds versus the
 10.1400889188-second reference, outside the one-percent arrival gate; the
 opening-U timing step retains only its unchanged 15-second feasible seed versus
 the 11.6133888606-second reference. It is therefore also not productionized.
+
+The continuous-edge follow-up moves the exact delayed-chord calculation into an
+all-pairs graph and joins edges at zero position derivatives through jerk. It
+recovers independently valid barrier and opening-U motions at 10.1400889 and
+11.6133887 seconds, respectively. That does not generalize: on the moving-circle
+fixture the graph checks 4,753 edges in 97.984 seconds and returns a valid
+11.1193767-second motion versus the existing 9-second BMTP result. Requiring a
+complete stop at each visibility vertex loses 23.55% arrival quality, so this
+formulation is rejected rather than added as another route policy.
+
+The invalid initial-snapshot skip also cannot simply be deleted. Directly
+challenging the moving-barrier incumbent with the existing chronological search
+tries six fixed clocks from 7.5 through 10 seconds, finds no certified motion,
+retains 10.1400889 seconds, and adds 156.079 seconds. The opening-U replay was
+stopped after several minutes. A replacement must jointly preserve through-knot
+velocity, acceleration, and jerk and optimize independent absolute segment
+times; repeated full planner calls fail the runtime gate.
+
+Removing only the sparse-history gate is also insufficient. A production-exact
+copy without that one predicate returns a valid moving-circle timed motion at
+9.4416530 seconds, while the chronological production path reaches 9 seconds.
+The degree-eight shared-knot, independent-duration sandbox improves the same
+timed seed to a valid 9.4015543 seconds but stalls there even with a larger local
+SQP budget. These are 4.91% and 4.46% arrival regressions, respectively. The gate
+cannot be removed until the common joint timing/control solve reaches the same
+physical solution rather than merely exposing the current shared-clock basin.
+
+A dense-grid sandbox adds every declared temporal-resolution sample to the timed
+graph. It finds a fully validated 8.6915415-second moving-circle motion, proving
+the production 9-second chronological result is grid-limited rather than globally
+earliest. The same change fails the two direct-wait regressions: the barrier
+warm start turns unequal waits and motion into fixed ratios, inflates to
+56.6853 seconds, and cannot initialize two exact pairs; opening-U expands to
+245 layers, spends 17.094 seconds, and also returns `timedMotionInfeasible`.
+Denser sampling therefore moves one answer while preserving the shared-clock
+defect and violating the runtime gate. It is not productionized.
+
+The remembered `987e594` kinematic-clock implementation passes its own six
+clock-guide tests and the complete historical 50-test suite, but it does not
+solve the current problem. The current Rogue request returns
+`timeWindowInfeasible` after 20.74 seconds, and the historical opening-U example
+returns `noOptimizedFeasibleIterate`. The historical moving-barrier example also
+warns that it did not select its direct waiting seed. Restoring that branch
+would therefore replace current exact successes with known failures.
+
+The complete-motion handoff sandbox isolates the solver interface from route
+generation. It passes the exact delayed-chord control net, every physical
+segment duration, and its normalized power polynomial into the current
+time-scoped solver instead of letting `createWarmStart` reconstruct a linearly
+interpolated route. On the moving barrier the complete seed validates at
+10.1400888979 seconds and length 10, while the current timed optimizer loses an
+exact clock pair and returns no motion. On opening-U the complete seed validates
+at 11.6133886803 seconds and length 10; the optimizer returns valid but slower
+20.4441770- and 14.9580-second motions before colliding at 9.8678 seconds.
+Selecting the already certified full-motion incumbent preserves both references
+within numerical roundoff and passes the public independent validator, with
+0.513 and 3.905 seconds spent in the existing optimizer. A common solver must
+therefore accept and retain a complete physical motion. This does not prove that
+the direct route dominates every detour, so it is not a production early exit.
+
+The dense timed graph's early wait routes were then checked continuously by
+solving the exact quadratic half-space inequalities for a linear trajectory
+against every affine convex obstacle cell. The sampled 9-second barrier route
+actually intersects the protected barrier over `[6.084999991, 6.193750013]` s;
+the sampled 10-second opening-U route intersects the closing gate over
+`[6.899999984, 6.999]` s. The 8.5-second moving-circle guide is continuously
+clear. Thus the graph has two independent defects: sampled collision checks
+admit false edges in the wait cases, and its velocity-only transition bound
+admits motions that cannot satisfy acceleration and jerk.
+
+Replacing sampling with the exact edge check and applying the exact endpoint
+state lower bound to the start-to-goal transition moves the first graph clocks
+to 10.5 seconds for the barrier and 12 seconds for opening-U. The exact-edge
+incumbents at 10.1400889 and 11.6133887 seconds then win without the invalid
+initial-snapshot length bound. A naive all-edge implementation is not retainable:
+opening-U takes 25.561 seconds on the dense 245-layer graph (192.177 seconds
+without the sampled rejection prefilter), versus 0.2147 seconds for production.
+The input-derived sparse graph takes 0.411 and 0.645 seconds on the wait cases,
+but its 104 fixed swept-envelope nodes make moving-circle search take 16.093
+seconds. The next graph needs lazy exact edge certification and moving vertex
+tracks; neither denser layers nor a fixed swept-envelope node union meets the
+runtime gate.
+
+The selected guide is not uniformly a collision-free object in current
+production. The fixed-arrival spinning-U guide's second edge intersects the
+protected rotating obstacle from 15.9221 to 15.9690 seconds; the fixed-clock
+BMTP bends it into a different, independently valid motion. The current Rogue
+guide is continuously clear and its final 61.3966865-second motion also passes
+public validation. Therefore a lazy exact check cannot simply reject the whole
+planning attempt when a guide edge fails. It must add the failed space-time pair
+to route constraint generation and allow BMTP/graph reconstruction to find a
+certified corridor. Final-motion validation remains authoritative.
+
+A lazy exact graph prototype now uses the 13-point test only as a rejection
+prefilter, continuously certifies the selected route, and adds the midpoint of
+each proven collision interval as a constraint-generation witness. Barrier and
+opening-U each require one witness; their final guides are continuously clear at
+10.5 and 12 seconds. Moving-circle needs no witness and remains clear at 8.5
+seconds. This removes false accepted edges without checking the full graph, but
+dense opening-U still costs 21.371 seconds because the fixed swept-envelope node
+set is rebuilt over 245 layers. Truncating search at the certified incumbent is
+sound and reduces opening-U to 0.359 seconds, but barrier still needs two
+witnesses and 2.512 seconds before proving no graph route beats 10.1400889.
+
+Exact per-layer spatial graphs establish the next structural reduction. On the
+moving circle, all 37 moving snapshots build in 0.687 seconds, each with 50
+nodes and a median of 90 visible edges; the frozen union graph takes 6.114
+seconds with 82 nodes. Across topology-changing workspace intersections the
+visible node count is ragged: barrier varies from 2 to 6 nodes and opening-U
+from 16 to 24. A general timed DAG therefore must carry prepared vertex
+identities and mark unavailable states, not infer identity from snapshot graph
+row numbers. It must also create stationary wait anchors lazily; merely moving
+every visibility vertex would lose valid waits.
+
+The follow-up ragged moving-boundary DAG confirms that moving nodes alone are
+not the missing state. Barrier obtains a continuously clear 9-second linear
+guide only by requesting an impossible rest-to-rest suffix; opening-U matches
+the incumbent arrival with position knots that have no compatible C3 handoff;
+moving-circle obtains a clear 8.5-second linear guide whose optimized candidate
+fails the public validator. Sound forward/backward jerk/acceleration endpoint
+bounds remove these false labels, but also remove the known valid routes because
+the graph edge still means constant-speed interpolation.
+
+The representation gate is now positive on three structurally distinct
+motions. Splitting the highest-motion polynomial span and storing each edge's
+Bernstein controls, physical duration, and shared position/velocity/
+acceleration/jerk endpoint states reconstructs barrier, opening-U, and
+moving-circle with maximum trajectory residuals `7.39e-14`, `7.39e-14`, and
+`1.33e-15`, respectively. All rebuilt plane certificates and public validators
+pass; arrival and length changes are numerical zero. The graph must therefore
+search polynomial edges with reachable-jet labels. Protected-boundary vertices
+are guide features, not pinned physical waypoints. Adding further scalar bounds
+to `(position,time)` labels cannot solve the remaining consolidation.
