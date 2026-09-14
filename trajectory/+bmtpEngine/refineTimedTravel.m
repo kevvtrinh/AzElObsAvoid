@@ -1,11 +1,11 @@
-function [result, diagnostics] = refineTimedTravel(request, warmStart, alternatingResult, diagnostics, obstacleTarget_units, roundoffReserve_units)
+function [result, diagnostics] = refineTimedTravel(request, alternatingResult, diagnostics, obstacleTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
-% SYNTAX: [result, diagnostics] = bmtpEngine.refineTimedTravel( request, warmStart,
+% SYNTAX: [result, diagnostics] = bmtpEngine.refineTimedTravel( request,
 %   alternatingResult, diagnostics, obstacleTarget_units, roundoffReserve_units)
 % PURPOSE: Reduce the convex travel surrogate after the alternating solve has established a feasible
 %   obstacle homotopy.
-% INPUTS: request, warmStart, alternatingResult, diagnostics (scalar structs) Checked request,
-%   prepared curve, retained attempt, and diagnostics. obstacleTarget_units, roundoffReserve_units
+% INPUTS: request, alternatingResult, diagnostics (scalar structs) Checked request,
+%   retained attempt, and diagnostics. obstacleTarget_units, roundoffReserve_units
 %   (finite scalars) Required obstacle-side target and numerical reserve in coordinate units.
 % OUTPUTS: result (scalar struct) Selected controls and segment time. diagnostics (scalar struct)
 %   Updated active-pair count after optional refinement.
@@ -67,7 +67,7 @@ for refinementIndex = 1:8
     refinedMotion=struct('CertifiedControlPoint_units',refinedControl_units, ...
         'ControlPoint_units',refinedControl_units, ...
         'SegmentTime_s',physicalSegmentTime_s,'PrescribedPower_units',[]);
-    refinedCertificate=bmtpEngine.checkFinalMotion(request,warmStart, ...
+    refinedCertificate=bmtpEngine.checkFinalMotion(request, ...
         refinedMotion,roundoffReserve_units,obstacleTarget_units);
     refinedCollisionPairs=~reshape([refinedCertificate.Planes.Verified], ...
         size(refinedCertificate.Planes)) & refinedCertificate.RegionActiveBySegment;

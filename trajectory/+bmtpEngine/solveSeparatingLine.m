@@ -64,8 +64,8 @@ productGaps_units = -max((1-beta).*[supportDifference_units;zeros(1,size(normals
 certifiable = productGaps_units>=target_units+reserve_units;
 if any(certifiable), gaps_units(~certifiable) = -Inf; end
 [gap_units,index] = max(gaps_units);
-plane = struct('Active',false,'Verified',false,'ExitFlag',-2, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN);
+plane = bmtpEngine.createEmptyPlane();
+plane.ExitFlag = -2;
 exitFlag = -2;
 output = struct('TotalTime_s',0,'IsAnalytic',true,'message','Convex supporting-axis subproblem.');
 if isempty(gap_units), return; end

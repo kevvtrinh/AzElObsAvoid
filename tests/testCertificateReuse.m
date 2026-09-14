@@ -15,19 +15,19 @@ function setupOnce(testCase)
 end
 function testUnchangedCurveReusesCompleteCertificate(testCase)
     request=testCase.TestData.Request; motion=testCase.TestData.Motion;
-    [first,cache]=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7);
-    second=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7,cache);
+    [first,cache]=bmtpEngine.checkFinalMotion(request,motion,1e-8,1e-7);
+    second=bmtpEngine.checkFinalMotion(request,motion,1e-8,1e-7,cache);
     verifyTrue(testCase,first.Passed); verifyTrue(testCase,second.Passed);
     verifyEqual(testCase,second.CachedPairCount,second.AllPairCount);
     verifyEqual(testCase,second.Planes,first.Planes);
 end
 function testSourceAndCurveChangesInvalidateReuse(testCase)
     request=testCase.TestData.Request; motion=testCase.TestData.Motion;
-    [~,cache]=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7);
+    [~,cache]=bmtpEngine.checkFinalMotion(request,motion,1e-8,1e-7);
     changed=request; changed.Regions_units={[-1,-1;1,-1;1,1;-1,1]};
-    certificate=bmtpEngine.checkFinalMotion(changed,[],motion,1e-8,1e-7,cache);
+    certificate=bmtpEngine.checkFinalMotion(changed,motion,1e-8,1e-7,cache);
     verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
     motion.CertifiedControlPoint_units(:,:,1)=2.5;
-    certificate=bmtpEngine.checkFinalMotion(request,[],motion,1e-8,1e-7,cache);
+    certificate=bmtpEngine.checkFinalMotion(request,motion,1e-8,1e-7,cache);
     verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
 end

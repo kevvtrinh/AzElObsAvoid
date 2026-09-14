@@ -37,7 +37,6 @@ weights_units = zeros(maximumEdgeCount,1);
 rejected = zeros(maximumEdgeCount,2);
 acceptedCount = 0;
 rejectedCount = 0;
-queryCount = 0;
 if sourceFree && goalFree
     cones = endpointCones(shape,nodes_units,edgeStart_units,edgeEnd_units,tolerance_units);
     for firstNode = 1:nodeCount-1
@@ -65,7 +64,6 @@ if sourceFree && goalFree
         rejectedRows = rejectedCount+(1:newRejected);
         rejected(rejectedRows,:) = [repmat(firstNode,newRejected,1),rejectedNode];
         rejectedCount = rejectedCount+newRejected;
-        queryCount = queryCount+numel(checkIndex);
     end
 end
 accepted = accepted(1:acceptedCount,:);
@@ -82,11 +80,10 @@ if sourceFree && goalFree
     route_units = nodes_units(routeIndex,:);
 end
 visibilityGraph = struct('NodePosition_units',nodes_units,'AcceptedNodeIndex',accepted, ...
-    'AcceptedWeight_units',weights_units,'RejectedNodeIndex',rejected, ...
-    'RouteNodeIndex',routeIndex,'Route_units',route_units,'RouteLength_units',routeLength_units, ...
-    'SourceFree',sourceFree,'GoalFree',goalFree,'IsConnected',~isempty(routeIndex), ...
-    'ExpandedCount',nodeCount,'GraphIsFullyEnumerated',sourceFree && goalFree, ...
-    'CollisionQueryCount',queryCount);
+    'RejectedNodeIndex',rejected, ...
+    'Route_units',route_units,'RouteLength_units',routeLength_units, ...
+    'IsConnected',~isempty(routeIndex), ...
+    'ExpandedCount',nodeCount,'GraphIsFullyEnumerated',sourceFree && goalFree);
 end
 
 function free = pointIsFree(point_units,boundary_units,first_units,last_units,tolerance_units)

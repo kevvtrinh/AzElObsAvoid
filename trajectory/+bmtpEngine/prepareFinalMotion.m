@@ -55,7 +55,7 @@ segmentTime_s=refinedTime_s;
 
 %% Section 2: Record Sufficient Control Bounds And Preserve The Clock
 exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, segmentTime_s, 0,prescribedPower_units);
-certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
+certifiedControlPoint_units = bmtpEngine.powerToBernstein(exportPolynomial.positionPower_units);
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
 % Control hull bounds are sufficient, not necessary. The exported polynomial
 % is checked continuously against the actual physical limits before success.
@@ -101,7 +101,7 @@ end
 
 %% Section 4: Local Functions
 function subdivided_units = subdivideControls(controlPoint_units,splitMask,splitFraction)
-    % Restrict selected spans exactly using de Casteljau subdivision.
+    % Restrict selected spans exactly, reusing the one de Casteljau restriction.
     segmentCount   = size(controlPoint_units, 1);
     degree         = size(controlPoint_units, 2) - 1;
     subdivided_units = zeros(segmentCount+nnz(splitMask), degree + 1, 2);
@@ -112,39 +112,16 @@ function subdivided_units = subdivideControls(controlPoint_units,splitMask,split
             target=target+1;
             continue;
         end
-        work_units  = squeeze(controlPoint_units(segmentIndex, :, :));
-        left_units  = zeros(degree + 1, 2);
-        right_units = zeros(degree + 1, 2);
-        left_units(1, :) = work_units(1, :);
-        right_units(end, :) = work_units(end, :);
-        for levelIndex = 1:degree
-            work_units = (1-splitFraction(segmentIndex))*work_units(1:end - 1, :)+splitFraction(segmentIndex)*work_units(2:end, :);
-            left_units(levelIndex + 1, :) = work_units(1, :);
-            right_units(end - levelIndex, :) = work_units(end, :);
-        end
-        subdivided_units(target, :, :) = left_units;
-        subdivided_units(target+1, :, :) = right_units;
+        span_units = squeeze(controlPoint_units(segmentIndex, :, :));
+        subdivided_units(target, :, :) = bmtpEngine.restrictBezier(span_units,[0,splitFraction(segmentIndex)]);
+        subdivided_units(target+1, :, :) = bmtpEngine.restrictBezier(span_units,[splitFraction(segmentIndex),1]);
         target=target+2;
     end
 end
 
-function controlPoint_units = powerToBernsteinControls(positionPower_units)
-    % Reconstruct Bezier controls from the exported power coefficients.
-    degree    = size(positionPower_units, 3) - 1;
-    transform = zeros(degree + 1);
-    for bernsteinIndex = 0:degree
-        for powerIndex = 0:bernsteinIndex
-            transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
-        end
-    end
-    powerPages       = permute(positionPower_units, [3 1 2]);
-    controlPoint_units = permute(pagemtimes(transform, powerPages), [2 1 3]);
-end
-
 function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
     % This is a sufficient control-hull diagnostic, not the final physical test.
-    motion = struct("Passed", all(segmentTime_s >= requiredTime_s), "Kind", "sufficientControlHull", ...
+    motion = struct("Passed", all(segmentTime_s >= requiredTime_s), ...
         "SegmentTime_s", segmentTime_s, ...
-        "RequiredSegmentTime_s", requiredTime_s, ...
         "MaximumViolation", max([0; requiredTime_s - segmentTime_s]));
 end

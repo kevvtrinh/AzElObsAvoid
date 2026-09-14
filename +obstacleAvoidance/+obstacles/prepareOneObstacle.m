@@ -128,7 +128,7 @@ for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),
         preparation.IntervalGeometryModel(intervalIndex)=geometryModel;
     else
         firstShape=preparation.SampleShapes{intervalIndex}; lastShape=preparation.SampleShapes{finalSampleIndex};
-        [equivalent,~]=compareShapes(firstShape,lastShape);
+        equivalent=compareShapes(firstShape,lastShape);
         if equivalent
             shape=firstShape; method="staticEquivalentSamples";
         else
@@ -215,10 +215,10 @@ staticIntervals=preparation.IntervalGeometryModel=="staticEquivalentSamples" | .
 preparation.IsTimeInvariant=preparation.IsTimeInvariant || ...
     (all(preparation.IntervalPrepared) && all(staticIntervals));
 if preparation.IsTimeInvariant, preparation.SampleSpeedBound_units_s(:)=0; end
-preparation.MergedSpanSampleIndex = unique([preparation.SpanStartSampleIndex, ...
+mergedSpanSampleIndex = unique([preparation.SpanStartSampleIndex, ...
     preparation.SpanEndSampleIndex],'rows','stable');
-preparation.MergedSpanTime_s = reshape(time_s(preparation.MergedSpanSampleIndex), ...
-    size(preparation.MergedSpanSampleIndex));
+preparation.MergedSpanTime_s = reshape(time_s(mergedSpanSampleIndex), ...
+    size(mergedSpanSampleIndex));
 obstacle.InternalPreparation=preparation;
 end
 
@@ -241,7 +241,6 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
     % Align rings, then certify either one moving convex region or an exact
     % moving convex partition of the complete interpolated polygon.
     % translationOnly stops after the index-preserving translation check.
-    if nargin<9, translationOnly=false; end
     lower_units        = [lowerX_units(:), lowerY_units(:)];
     upper_units        = [upperX_units(:), upperY_units(:)];
     verified         = false;
@@ -573,7 +572,7 @@ function value = cross2d(first_units, second_units)
     value = first_units(:, 1) .* second_units(:, 2) - first_units(:, 2) .* second_units(:, 1);
 end
 
-function [equivalent, nested] = compareShapes(firstShape, secondShape)
+function equivalent = compareShapes(firstShape, secondShape)
     % Check equality and containment using shape differences.
     firstArea_units2 = area(firstShape);
     secondArea_units2 = area(secondShape);
@@ -587,7 +586,6 @@ function [equivalent, nested] = compareShapes(firstShape, secondShape)
     secondIsContained = secondArea_units2 <= firstArea_units2+2*areaTolerance_units2 && ...
         area(subtract(secondShape, firstShape)) <= areaTolerance_units2;
     equivalent         = firstIsContained && secondIsContained;
-    nested             = firstIsContained || secondIsContained;
 end
 
 function finalSampleIndices = affineSpanEnds(obstacle,usesSourceIndex)

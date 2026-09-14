@@ -26,10 +26,6 @@ breaks_s = breaks_s([true;diff(breaks_s)>knotTolerance_s]);
 durations_s = diff(breaks_s);
 powers_units = zeros(numel(durations_s),2,6);
 controls_units = zeros(numel(durations_s),6,2);
-conversion = zeros(6);
-for k=0:5
-    for j=0:k, conversion(k+1,j+1)=nchoosek(k,j)/nchoosek(5,j); end
-end
 position=0; velocity_s1=0; acceleration_s2=0;
 direction_units=goal_units-start_units;
 
@@ -41,7 +37,7 @@ for span=1:numel(durations_s)
     power=[position,velocity_s1*h,acceleration_s2*h^2/2,jerkPower.*h^3./[6,24,60]];
     physical=direction_units.'*power; physical(:,1)=physical(:,1)+start_units.';
     powers_units(span,:,:)=physical;
-    controls_units(span,:,:)=conversion*physical.';
+    controls_units(span,:,:)=bmtpEngine.powerToBernstein(physical.');
     position=sum(power);
     velocity_s1=sum((1:5).*power(2:6))/h;
     acceleration_s2=sum((1:4).*(2:5).*power(3:6))/h^2;

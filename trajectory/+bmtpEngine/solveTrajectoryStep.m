@@ -9,8 +9,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   initialState, goalState (full normalized state structs) Prescribed physical endpoint positions,
 %   velocities, and accelerations.
 %   limits (scalar struct) Workspace, velocity, acceleration, and jerk limits.
-%   planes (S-by-R struct array) Fixed active separating-line constraints. Optional TimeFraction
-%   restricts a plane to a closed part of a fixed-duration motion span.
+%   planes (S-by-R struct array) Fixed active separating-line constraints. Each plane's
+%   TimeFraction restricts it to a closed part of a fixed-duration motion span.
 %   reserve_units (nonnegative scalar) Numerical separation reserve.
 %   maximumMotionDuration_s (positive scalar) Upper bound on the internal minimum-time solve.
 %   options (coneprog options) Numerical solver controls. Optional mesh ratio, fixed-clock,
@@ -28,7 +28,7 @@ if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
 originalPlaneCount=nnz([planes.Active]);
 partialPlanes=false;
-if isfield(planes,'TimeFraction') && ~isempty(planes)
+if ~isempty(planes)
     fractions=reshape([planes.TimeFraction],2,[]).';
     validateattributes(fractions,{'numeric'},{'real','finite','ncols',2,'>=',0,'<=',1});
     assert(all(fractions(:,1)<fractions(:,2)), ...
@@ -93,7 +93,7 @@ initialPlanePairs=planeActiveBySegment;
 if fixedClock, initialPlanePairs(:)=false; end
 [A,Aeq,beq,lb,ub,jerkMap] = bmtpEngine.createTrajectoryConstraints( ...
     segmentCount,degree,boundaryControls,constraintLimits,variableCount, ...
-    0,segmentRatio,jerkTimes_s);
+    segmentRatio,jerkTimes_s);
 % Fix endpoint position, velocity, and acceleration controls in the solver's
 % own variable space. Leaving them as approximate equality rows allows a
 % stalled finite iterate to satisfy derivative bounds before exact endpoint
@@ -166,7 +166,7 @@ solveCount=0;
 constraintGenerationComplete=~fixedClock;
 maximumPlaneConstraintResidual=NaN;
 while true
-    [x, ~, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, ...
+    [x, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, ...
         options,~intrinsicVariation,solverTimes_s,limits);
     solveCount=solveCount+1;
     if ~fixedClock || ~bmtpEngine.hasUsableConicIterate(x,exitFlag)
@@ -217,8 +217,8 @@ controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCo
 end
 
 %% Section 4: Local Functions
-function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,options,prescribedAxis,phaseTimes_s,limits)
-    transform=[]; center=[]; objectiveOffset=0;
+function [x,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,options,prescribedAxis,phaseTimes_s,limits)
+    transform=[]; center=[];
     if ~isempty(phaseTimes_s)
         % Use local position, velocity, acceleration and quadratic jerk as
         % unknowns, avoiding high-order differences of absolute positions.
@@ -247,7 +247,7 @@ function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,option
                 transform.'*cone.d,cone.gamma-cone.d.'*center);
         end
         cones(end-count+1:end)=bmtpEngine.createVariationCone(jerkMap,phaseTimes_s,limits,variableCount-count+(1:count));
-        objectiveOffset=f.'*center; f=transform.'*f;
+        f=transform.'*f;
         fixed=find(lb==ub); upperRows=find(isfinite(ub) & lb~=ub); lowerRows=find(isfinite(lb) & lb~=ub);
         A=[A;transform(upperRows,:);-transform(lowerRows,:)];
         b=[b;ub(upperRows)-center(upperRows);center(lowerRows)-lb(lowerRows)];
@@ -259,7 +259,7 @@ function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,option
     % axis as equal bounds produces redundant, poorly scaled solver rows.
     fixed = find(lb==ub & isfinite(lb));
     if (isempty(phaseTimes_s) && ~prescribedAxis) || isempty(fixed)
-        [x,value,exitFlag,output] = coneprog(f,cones,A,b,Aeq,beq,lb,ub,options);
+        [x,~,exitFlag,output] = coneprog(f,cones,A,b,Aeq,beq,lb,ub,options);
         return;
     end
     free = find(lb~=ub);
@@ -282,12 +282,11 @@ function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,option
         cones(k) = secondordercone(cone.A(:,free),cone.b-cone.A(:,fixed)*fixedValues, ...
             cone.d(free),cone.gamma-cone.d(fixed).'*fixedValues);
     end
-    [reduced,value,exitFlag,output] = coneprog(f(free),cones,A,b,Aeq,beq,lb(free),ub(free),options);
+    [reduced,~,exitFlag,output] = coneprog(f(free),cones,A,b,Aeq,beq,lb(free),ub(free),options);
     x = [];
     if ~isempty(reduced)
         x = zeros(size(f)); x(fixed) = fixedValues; x(free) = reduced;
-        value = value+f(fixed).'*fixedValues;
-        if ~isempty(transform), x=center+transform*x; value=value+objectiveOffset; end
+        if ~isempty(transform), x=center+transform*x; end
     end
 end
 

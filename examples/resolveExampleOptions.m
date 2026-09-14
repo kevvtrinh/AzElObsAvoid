@@ -144,10 +144,8 @@ for name = intersect(overrideNames, plannerNames, "stable").'
 end
 
 plotOptions = rmfield(displayOptions, ["PlotOutputs", "Verbose"]);
-displayOptions.JerkConstraintEnabled          = true;
-displayOptions.MaxJerk_units_s3                 = maxJerk_units_s3;
-displayOptions.ConfiguredFiniteMaxJerk_units_s3 = maxJerk_units_s3;
-displayOptions.PlotOptions                    = plotOptions;
+displayOptions.MaxJerk_units_s3 = maxJerk_units_s3;
+displayOptions.PlotOptions      = plotOptions;
 end
 
 

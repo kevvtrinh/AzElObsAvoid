@@ -1,10 +1,11 @@
 function planes = verifyStaticSeparatingLines(planes,controlPoint_units,regions_units,reserve_units,target_units)
 %% Section 0: Header & Readme
 % SYNTAX: planes = bmtpEngine.verifyStaticSeparatingLines(planes,controls,regions,reserve,target)
-% PURPOSE: Batch the complete scalar Bernstein plane checks for static cells.
+% PURPOSE: Batch the scalar Bernstein plane bounds for static cells, then accept them through the
+%   one shared bmtpEngine.certifySeparation decision verifySeparatingLine uses.
 % INPUTS: One plane per convex region, a common N-by-2 Bezier curve, and the
 %   same physical target and numerical reserve used by verifySeparatingLine.
-% OUTPUTS: Corrected offsets, signed gaps, and independently computed flags.
+% OUTPUTS: Corrected offsets, signed gaps, and independently bounded flags.
 % UNITS: Coordinate units; normals are dimensionless.
 
 %% Section 1: Evaluate All Obstacle And Curve Product Coefficients
@@ -33,29 +34,15 @@ product_units = alpha.*[firstProjection_units;zeros(1,regionCount)]+ ...
 maximumTrajectory_units = max(product_units,[],1).';
 maximumNormalNorm = max([vecnorm(firstNormal,2,2),vecnorm(lastNormal,2,2)],[],2);
 
-%% Section 2: Apply The Same Roundoff Correction And Clearance Checks
-minimumCorrection_units = target_units-minimumObstacle_units;
-maximumCorrection_units = -reserve_units-maximumTrajectory_units;
+%% Section 2: Apply The Shared Correction And Acceptance Decision
+% The scale is the same maximum absolute coordinate bmtpEngine.createCoordinateTolerances
+% accumulates for one pair, gathered here for every region in one pass.
 scale_units = accumarray(owners,max(abs(vertices_units),[],2),[regionCount,1],@max);
 scale_units = max([scale_units,max(abs(offsets_units),[],2), ...
     repmat(max(1,max(abs(controlPoint_units),[],'all')),regionCount,1)],[],2);
-roundoff_units = 16*eps(scale_units);
-robustMinimum_units = minimumCorrection_units+roundoff_units;
-robustMaximum_units = maximumCorrection_units-roundoff_units;
-correction_units = zeros(regionCount,1);
-possible = minimumCorrection_units<=maximumCorrection_units;
-robust = possible & robustMinimum_units<=robustMaximum_units;
-correction_units(robust) = min(max(0,robustMinimum_units(robust)),robustMaximum_units(robust));
-correction_units(possible & ~robust) = (minimumCorrection_units(possible & ~robust)+maximumCorrection_units(possible & ~robust))/2;
-offsets_units = offsets_units+correction_units;
-minimumObstacle_units = minimumObstacle_units+correction_units;
-maximumTrajectory_units = maximumTrajectory_units+correction_units;
-signedGap_units = minimumObstacle_units-maximumTrajectory_units;
-normalNormLimit = 1+2^20*eps;
-clearanceTarget_units = (target_units-reserve_units)/normalNormLimit;
-certifiedClearance_units = (signedGap_units-2*reserve_units)./max(maximumNormalNorm,realmin);
-verified = minimumObstacle_units>=target_units & maximumTrajectory_units<=-reserve_units & ...
-    signedGap_units>=target_units+reserve_units & certifiedClearance_units>=clearanceTarget_units & maximumNormalNorm<=normalNormLimit;
+[offsets_units,signedGap_units,verified] = bmtpEngine.certifySeparation( ...
+    minimumObstacle_units,maximumTrajectory_units,maximumNormalNorm, ...
+    offsets_units,16*eps(scale_units),reserve_units,target_units);
 offsetCells = num2cell(offsets_units,2); gapCells = num2cell(signedGap_units); flags = num2cell(verified);
 [planes.Offset_units] = offsetCells{:};
 [planes.SignedGap_units] = gapCells{:};

@@ -82,13 +82,9 @@ end
 visibilityGraph = struct();
 visibilityGraph.NodePosition_units    = nodePosition_units;
 visibilityGraph.AcceptedNodeIndex     = acceptedNodeIndex;
-visibilityGraph.AcceptedWeight_units  = acceptedWeight_units;
 visibilityGraph.RejectedNodeIndex     = rejectedNodeIndex;
-visibilityGraph.RouteNodeIndex        = routeNodeIndex;
 visibilityGraph.Route_units           = route_units;
 visibilityGraph.RouteLength_units     = routeLength_units;
-visibilityGraph.SourceFree            = sourceFree;
-visibilityGraph.GoalFree              = goalFree;
 visibilityGraph.IsConnected           = ~isempty(routeNodeIndex);
 end
 

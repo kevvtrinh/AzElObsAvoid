@@ -134,8 +134,8 @@ complete span; its restrictions certify every constituent interval with the
 same partition. A span without that certificate is not merged. The supplied
 sample geometry remains authoritative at each retained sample time.
 
-`MergedSpanSampleIndex`, `MergedSpanTime_s`, and `MergedIntervalCount` expose
-the preparation-only reduction. `RejectedMergeSpanSampleIndex` records spans
+`MergedSpanTime_s` and `MergedIntervalCount` expose the preparation-only
+reduction. `RejectedMergeSpanSampleIndex` records spans
 without a shared exact partition. Cells use certified span boundaries and
 interior queries use the merged affine motion; search time layers keep every
 supplied keyframe, exactly as for unmerged histories. Source

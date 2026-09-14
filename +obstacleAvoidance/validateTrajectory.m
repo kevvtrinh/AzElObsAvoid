@@ -33,7 +33,6 @@ validation.VelocityWithinLimits      = false;
 validation.AccelerationWithinLimits  = false;
 validation.JerkWithinLimits          = false;
 validation.PlaneCertificateValid     = false;
-validation.CollisionFree             = false;
 validation.MaximumDynamicsResidual   = Inf;
 validation.MaximumContinuityResidual = Inf;
 validation.MaximumHistoryResidual    = Inf;
@@ -203,11 +202,10 @@ if historyMatches
     validation.SampledHistoriesMatched = validation.MaximumHistoryResidual <= tolerance;
 end
 validation.PlaneCertificateValid = verifyPlaneCertificate(result, powerArrays{1});
-validation.CollisionFree = validation.PlaneCertificateValid;
 
 %% Section 5: Finalize The Independent Decision
 
-validation.Passed = validation.OutputMetadataConsistent && validation.PolynomialValid && validation.SegmentTimingConsistent && validation.InterSegmentContinuous && validation.EndpointStatesMatched && validation.SampledHistoriesMatched && validation.DynamicsConsistent && all(within) && validation.CollisionFree;
+validation.Passed = validation.OutputMetadataConsistent && validation.PolynomialValid && validation.SegmentTimingConsistent && validation.InterSegmentContinuous && validation.EndpointStatesMatched && validation.SampledHistoriesMatched && validation.DynamicsConsistent && all(within) && validation.PlaneCertificateValid;
 if validation.Passed
     validation.Message = "Independent polynomial, limit, endpoint, history, and collision checks passed.";
 else
@@ -286,7 +284,7 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     controlPoint_units = powerToBernstein(positionPower_units);
     endRegions_units = cell(0,1);
     if exist('cells','var'), endRegions_units = cells.EndRegions_units; end
-    [~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(result.Route_units, ...
+    [~,reserve_units] = bmtpEngine.createCoordinateTolerances(result.Route_units, ...
         result.Limits.xInterval_units,result.Limits.yInterval_units,regions_units,endRegions_units);
     target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
     if ~isequal(certificate.RoundoffReserve_units,reserve_units) || ~isequal(certificate.RequiredGap_units,target_units+reserve_units)
@@ -306,15 +304,14 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
             if ~activePairs(segmentIndex, regionIndex)
                 continue;
             end
+            % Only the moving branch reaches this loop; the static branch
+            % rechecked its whole span in one batch and continued above.
             restricted_units = squeeze(controlPoint_units(segmentIndex,:,:));
-            vertices_units = regions_units{regionIndex};
-            if exist('cells','var')
-                interval = (cells.ActiveTimeInterval_s(regionIndex,:)-starts_s(segmentIndex))/(ends_s(segmentIndex)-starts_s(segmentIndex));
-                restricted_units = bmtpEngine.restrictBezier(restricted_units,max(0,min(1,interval)));
-                interval_s = [max(starts_s(segmentIndex),cells.ActiveTimeInterval_s(regionIndex,1)), ...
-                    min(ends_s(segmentIndex),cells.ActiveTimeInterval_s(regionIndex,2))];
-                vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex},cells,regionIndex,interval_s);
-            end
+            interval = (cells.ActiveTimeInterval_s(regionIndex,:)-starts_s(segmentIndex))/(ends_s(segmentIndex)-starts_s(segmentIndex));
+            restricted_units = bmtpEngine.restrictBezier(restricted_units,max(0,min(1,interval)));
+            interval_s = [max(starts_s(segmentIndex),cells.ActiveTimeInterval_s(regionIndex,1)), ...
+                min(ends_s(segmentIndex),cells.ActiveTimeInterval_s(regionIndex,2))];
+            vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex},cells,regionIndex,interval_s);
             plane = bmtpEngine.verifySeparatingLine(certificate.Planes(segmentIndex, regionIndex), restricted_units, vertices_units, reserve_units, target_units);
             if ~plane.Verified
                 passed = false;

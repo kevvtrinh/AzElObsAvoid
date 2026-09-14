@@ -50,7 +50,10 @@ if ~isstruct(optionOverrides)
     optionOverrides = struct('ShowKinematics', false, 'ShowAnimation', false);
 end
 useSuppliedAxes = ~isempty(workspaceAxes);
-[options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, normalizePlotAliases(optionOverrides));
+if ~isscalar(optionOverrides)
+    error("plotTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
+end
+[options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("plotTrajectory:UnknownOptions", "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
@@ -140,7 +143,6 @@ if options.ShowVisibilityGraphs
         drawEndpoints(handles.VisibilityAxes, result);
         finishAxes(handles.VisibilityAxes, result, options.Title);
     end
-    handles.VisibilityGraphs = struct("Figure", handles.VisibilityFigure, "Axes", handles.VisibilityAxes);
 end
 
 %% Section 4: Plot Returned Kinematics
@@ -149,10 +151,8 @@ if options.ShowKinematics && result.Success
     kinematicLayout = tiledlayout(kinematicFigure, 4, 1, "TileSpacing", "compact", "Padding", "compact");
     kinematicAxes   = createKinematicPanels(kinematicLayout, result, false);
     title(kinematicLayout, options.Title);
-    handles.KinematicFigure  = kinematicFigure;
-    handles.KinematicAxes    = kinematicAxes;
-    handles.KinematicsFigure = kinematicFigure;
-    handles.KinematicsAxes   = kinematicAxes;
+    handles.KinematicFigure = kinematicFigure;
+    handles.KinematicAxes   = kinematicAxes;
 end
 
 %% Section 5: Animate Returned Motion
@@ -207,46 +207,14 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     if options.SaveAnimationGif
         handles.AnimationGifFile = options.AnimationGifFile;
     end
-    handles.Animation = struct("Figure", animationFigure, "Axes", animationAxes, ...
-        "KinematicAxes", kinematicAxes, "CurrentKinematicMarkers", gobjects(0), ...
-        "ElapsedKinematicLines", gobjects(0), "TimeCursors", gobjects(0), ...
-        "Legend", animationLegend, "GifFile", handles.AnimationGifFile);
 end
 
 % Preserve the core's existing handles for callers that use one spatial view.
 handles.Axes = handles.WorkspaceAxes;
 if isempty(handles.Axes), handles.Axes = handles.VisibilityAxes; end
-if ~isempty(handles.Axes)
-    handles.OriginalObstacle = findobj(handles.Axes, 'DisplayName', 'Original obstacle');
-    handles.ProtectedObstacle = findobj(handles.Axes, 'DisplayName', 'Protected obstacle');
-    handles.VisibilityEdge = findobj(handles.Axes, 'DisplayName', 'Accepted visibility edge');
-    handles.VisibilityNode = findobj(handles.Axes, 'DisplayName', 'Visibility node');
-    handles.Route = findobj(handles.Axes, 'DisplayName', 'Selected geometric route');
-    handles.Trajectory = findobj(handles.Axes, 'DisplayName', 'Timed motion');
-    handles.Endpoint = [findobj(handles.Axes, 'DisplayName', 'Start'); findobj(handles.Axes, 'DisplayName', 'Goal')];
-end
 end
 
 %% Section 6: Local Functions
-function options = normalizePlotAliases(options)
-    % Normalize the display aliases used by existing examples.
-    if ~isstruct(options) || ~isscalar(options)
-        error("plotTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
-    end
-    aliases = ["AnimationFrameStride", "FrameStride"; ...
-        "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
-    for aliasIndex = 1:size(aliases, 1)
-        oldName = aliases(aliasIndex, 1);
-        newName = aliases(aliasIndex, 2);
-        if isfield(options, oldName)
-            if ~isfield(options, newName)
-                options.(newName) = options.(oldName);
-            end
-            options = rmfield(options, oldName);
-        end
-    end
-end
-
 function configureSpatialAxes(axesHandle, result)
     % Fit ordinary scenes; keep periodic views in the requested workspace.
     hold(axesHandle, "on");
@@ -435,12 +403,9 @@ function handles = createEmptyHandles(options)
     none    = gobjects(0);
     handles = struct("WorkspaceFigure", none, "WorkspaceAxes", none, ...
         "ContinuousWorkspaceFigure", none, "ContinuousWorkspaceAxes", none, ...
-        "VisibilityFigure", none, "VisibilityAxes", none, "VisibilityGraphs", struct(), ...
-        "KinematicFigure", none, "KinematicAxes", none, "KinematicsFigure", none, ...
-        "KinematicsAxes", none, "AnimationFigure", none, "AnimationAxes", none, ...
+        "VisibilityFigure", none, "VisibilityAxes", none, ...
+        "KinematicFigure", none, "KinematicAxes", none, ...
+        "AnimationFigure", none, "AnimationAxes", none, ...
         "AnimationKinematicAxes", none, "AnimationLegend", none, "AnimationGifFile", "", ...
-        "Animation", struct(), "Options", options, "Axes", none, ...
-        "OriginalObstacle", none, "ProtectedObstacle", none, ...
-        "VisibilityEdge", none, "VisibilityNode", none, "Route", none, ...
-        "Trajectory", none, "Endpoint", none);
+        "Options", options, "Axes", none);
 end

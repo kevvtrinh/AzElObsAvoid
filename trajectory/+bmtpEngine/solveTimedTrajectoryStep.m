@@ -36,14 +36,13 @@ powerIndex             = controlCount + (1:4);
 travelBoundCount       = (goalTimeMode ~= "earliestArrival") * segmentCount * degree;
 travelBoundIndex       = controlCount + 4 + (1:travelBoundCount);
 variableCount          = controlCount + 4 + travelBoundCount;
-activePlaneCount = nnz([planes.Active]);
 planeActiveBySegment=reshape([planes.Active],size(planes));
 maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
 boundaryControls=zeros(segmentCount,degree+1,2);
 boundaryControls(1,1:3,:)=repmat(reshape(start_units,1,1,2),1,3,1);
 boundaryControls(end,end-2:end,:)=repmat(reshape(goal_units,1,1,2),1,3,1);
 [A,Aeq,beq,lb,ub] = bmtpEngine.createTrajectoryConstraints( ...
-    segmentCount,degree,boundaryControls,limits,variableCount,0,segmentRatio,[]);
+    segmentCount,degree,boundaryControls,limits,variableCount,segmentRatio,[]);
 % The clock cones need only relative powers. Scaling the three physical-time
 % columns to a unit upper bound avoids conditioning the SOCP with seconds,
 % seconds squared, and seconds cubed that differ by several orders.
@@ -120,7 +119,6 @@ output.ConstraintGenerationApplied=goalTimeMode=="fixedArrival";
 output.ConstraintGenerationRoundCount=max(0,solveCount-1);
 output.ConstraintGenerationComplete=constraintGenerationComplete;
 output.MaximumPlaneConstraintResidual=maximumPlaneConstraintResidual;
-output.OriginalPlaneCount=activePlaneCount;
 output.LoadedPlanePairCount=nnz(retainedPlanePairs);
 % An optimality stall does not establish physical infeasibility. Every finite
 % retained iterate remains only a proposal for independent certification.

@@ -28,15 +28,13 @@ initialState = request.InitialState; goalState = request.GoalState;
 % Create a kinematically feasible starting curve from the seed.
 warmStart             = bmtpEngine.createWarmStart(request);
 degree                = request.Degree;
-splitCount            = request.SplitCount;
 route_units             = warmStart.Route_units;
 segmentCount          = warmStart.SegmentCount;
 regionActiveBySegment = warmStart.RegionActiveBySegment;
 candidate             = createEmptyCandidate(seed, initialState);
-diagnostics           = createEmptyDiagnostics(degree, splitCount, segmentCount, numel(regions_units));
+diagnostics           = createEmptyDiagnostics(degree, segmentCount, numel(regions_units));
 diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
 diagnostics.WarmRouteResampled       = warmStart.WarmRouteResampled;
-diagnostics.Coverage                 = coverage;
 diagnostics.ApplicablePairCount      = nnz(regionActiveBySegment);
 if isfield(coverage,'BreakTime_s')
     diagnostics.Identifier = "bmtpTimeCellsDegree"+string(degree);
@@ -46,7 +44,7 @@ if options.GoalTimeMode=="fixedArrival"
 end
 endRegions_units = cell(0,1);
 if isfield(coverage,'EndRegions_units'), endRegions_units = coverage.EndRegions_units; end
-[~, ~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances(route_units, limits.xInterval_units, limits.yInterval_units, regions_units,endRegions_units);
+[~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances(route_units, limits.xInterval_units, limits.yInterval_units, regions_units,endRegions_units);
 normalNormLimit    = 1 + 2 ^ 20 * eps;
 obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_units + roundoffReserve_units;
 
@@ -62,43 +60,18 @@ if size(route_units,1)==2 && options.GoalTimeMode=="earliestArrival" && request.
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,times_s,powers_units);
     if preparedMotion.Success
         [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, ...
-            warmStart,preparedMotion,roundoffReserve_units, ...
+            preparedMotion,roundoffReserve_units, ...
             obstacleTarget_units,certificateCache,true);
     end
     analyticIdentifier = "c3JerkLimitedChord";
     analyticRepresentation = "analyticC3Clock";
 elseif options.GoalTimeMode=="fixedArrival"
     % A timed direct motion can pass even when the selected guide detours.
-    % Check it before committing to the guide route.
-    directDuration_s = request.MotionHorizon_s;
-    fraction = zeros(degree+1,1);
-    coefficients = [10 -15 6];
-    for k = 0:degree
-        for power = 3:min(k,5)
-            fraction(k+1) = fraction(k+1)+coefficients(power-2)*nchoosek(k,power)/nchoosek(degree,power);
-        end
-    end
-    controls_units = initialState.position_units + fraction.*(goalState.position_units-initialState.position_units);
-    if ~request.IsRest
-        h = request.MotionHorizon_s;
-        power = [initialState.position_units;h*initialState.velocity_units_s;h^2*initialState.acceleration_units_s2/2;zeros(3,2)];
-        residual = [goalState.position_units-sum(power,1); ...
-            h*goalState.velocity_units_s-power(2,:)-2*power(3,:); ...
-            h^2*goalState.acceleration_units_s2-2*power(3,:)];
-        power(4:6,:) = [1 1 1;3 4 5;6 12 20]\residual;
-        controls_units = zeros(degree+1,2);
-        for k = 0:degree
-            for j = 0:min(k,5)
-                controls_units(k+1,:) = controls_units(k+1,:)+nchoosek(k,j)/nchoosek(degree,j)*power(j+1,:);
-            end
-        end
-    end
-    preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),directDuration_s);
-    if preparedMotion.Success
-        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, ...
-            warmStart,preparedMotion,roundoffReserve_units, ...
-            obstacleTarget_units,certificateCache,true);
-    end
+    % Check it before committing to the guide route. The chord and its
+    % certificate read no part of the seed, so one physical request that tries
+    % several spatial guides constructs and certifies them exactly once.
+    [preparedMotion,certificate,certificateCache] = directFixedArrivalMotion( ...
+        request,roundoffReserve_units,obstacleTarget_units);
 end
 % A direct rest-to-rest earliest request with moving cells and no timed guide
 % is the departure family: a certified zero-delay chord already supplies its
@@ -115,7 +88,7 @@ if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
         return;
     end
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,times_s,powers_units);
-    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
+    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
     if ~preparedMotion.Success || ~certificate.Passed
         [candidate,diagnostics] = finishFailure(candidate,diagnostics,totalTimer,"The C3 departure proposal did not pass certification.","departureUncertified",false);
         return;
@@ -129,7 +102,6 @@ if preparedMotion.Success && certificate.Passed
     diagnostics.OptimizerSpanCount = 0;
     diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
 else
-    prescribedPower_units = [];
     if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
         [alternatingResult,diagnostics] = bmtpEngine.solveActivePairTrajectory( ...
             request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
@@ -144,7 +116,7 @@ else
                 request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
             if alternatingResult.Success
                 [timedMotion, diagnostics] = bmtpEngine.refineTimedTravel( ...
-                    request,warmStart,alternatingResult,diagnostics, ...
+                    request,alternatingResult,diagnostics, ...
                     obstacleTarget_units,roundoffReserve_units);
                 alternatingResult.ControlPoint_units=timedMotion.ControlPoint_units;
                 alternatingResult.SegmentTime_s=timedMotion.SegmentTime_s;
@@ -165,14 +137,13 @@ else
         certificate=alternatingResult.Certificate;
     else
         % Endpoint correction and export can increase the derivative bounds.
-        preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s,prescribedPower_units);
+        preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s);
         certificate = struct('Passed',false);
         certificateCache=[];
     end
 end
 
 %% Section 3: Prepare And Check The Final Motion
-diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale             = preparedMotion.DilationScale;
 % Return reconstruction failure without certification because no complete motion exists to certify.
 if ~preparedMotion.Success
@@ -182,7 +153,7 @@ end
 
 % Certify every final curve-region pair; sampled clearance alone is insufficient.
 if ~certificate.Passed
-    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units,certificateCache);
+    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, preparedMotion, roundoffReserve_units, obstacleTarget_units,certificateCache);
 end
 % A safe curved span need not admit one affine separator. Exact subdivision
 % can expose its clearance without moving the curve or changing tolerances.
@@ -196,7 +167,7 @@ for refinement=1:10
     if ~any(splitMask), break; end
     preparedMotion=bmtpEngine.prepareFinalMotion(request,preparedMotion.ControlPoint_units, ...
         preparedMotion.SegmentTime_s,preparedMotion.PrescribedPower_units,splitMask,splitFraction);
-    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
+    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
 end
 diagnostics.SegmentCount=numel(preparedMotion.SegmentTime_s);
 diagnostics.FinalCollisionPairCount = ...
@@ -218,34 +189,60 @@ end
 %% Section 4: Finalize The Directly Certified Candidate
 [candidate.Message, candidate.TerminationReason]        = deal("A directly certified BMTP trajectory was found.", "goalReached");
 [candidate.Success, diagnostics.Accepted]               = deal(true);
-[diagnostics.BestDuration_s, diagnostics.ElapsedTime_s] = deal(candidate.TrajectoryDuration_s, toc(totalTimer));
+diagnostics.ElapsedTime_s                              = toc(totalTimer);
 candidate.SolverDiagnostics = diagnostics;
 end
 
 %% Section 5: Local Functions
-function plane = emptyPlane()
-    % Initialize an inactive separating-plane record.
-    plane = struct();
-    plane.Active        = false;
-    plane.Verified      = false;
-    plane.ExitFlag      = NaN;
-    plane.Normal        = zeros(2, 2);
-    plane.Offset_units    = zeros(1, 2);
-    plane.SignedGap_units = NaN;
+function [preparedMotion,certificate,cache] = directFixedArrivalMotion(request,reserve_units,target_units)
+    % Construct and certify the direct chord at the prescribed horizon. Every
+    % input below comes from the physical request, never from the seed, so the
+    % previous evaluation is reused whenever the request repeats exactly.
+    persistent previousRequest previousMotion previousCertificate previousCache
+    degree = request.Degree;
+    initialState = request.InitialState;
+    goalState = request.GoalState;
+    key = struct('Regions_units',{request.Regions_units},'Coverage',request.Coverage, ...
+        'InitialState',initialState,'GoalState',goalState,'Limits',request.Limits, ...
+        'Options',request.Options,'Degree',degree,'Reserve_units',reserve_units, ...
+        'Target_units',target_units);
+    if isequaln(key,previousRequest)
+        [preparedMotion,certificate,cache] = deal(previousMotion,previousCertificate,previousCache);
+        return;
+    end
+    certificate = struct('Passed',false);
+    cache = [];
+    % The rest-to-rest chord is the quintic smoothstep 10t^3-15t^4+6t^5.
+    fraction = bmtpEngine.powerToBernstein([0;0;0;10;-15;6],degree);
+    controls_units = initialState.position_units + fraction.*(goalState.position_units-initialState.position_units);
+    if ~request.IsRest
+        h = request.MotionHorizon_s;
+        power = [initialState.position_units;h*initialState.velocity_units_s;h^2*initialState.acceleration_units_s2/2;zeros(3,2)];
+        residual = [goalState.position_units-sum(power,1); ...
+            h*goalState.velocity_units_s-power(2,:)-2*power(3,:); ...
+            h^2*goalState.acceleration_units_s2-2*power(3,:)];
+        power(4:6,:) = [1 1 1;3 4 5;6 12 20]\residual;
+        controls_units = bmtpEngine.powerToBernstein(power,degree);
+    end
+    preparedMotion = bmtpEngine.prepareFinalMotion(request, ...
+        reshape(controls_units,1,degree+1,2),request.MotionHorizon_s);
+    if preparedMotion.Success
+        [certificate,cache] = bmtpEngine.checkFinalMotion(request, ...
+            preparedMotion,reserve_units,target_units,cache,true);
+    end
+    [previousRequest,previousMotion,previousCertificate,previousCache] = ...
+        deal(key,preparedMotion,certificate,cache);
 end
 
 function candidate = createEmptyCandidate(seed, initialState)
     % Use the same candidate fields on success and failure.
-    seedIndex            = optionalField(seed, "Index", 0);
-    seedSource           = string(optionalField(seed, "Source", ""));
-    obstacleEnvelope_units = optionalField(seed, "ObstacleEnvelope_units", zeros(0, 2));
+    seedSource     = string(optionalField(seed, "Source", ""));
     dimensionCount = numel(initialState.position_units);
     candidate = struct();
     candidate.Success = false;
     candidate.OptimizerFeasible = false;
     candidate.Message = "The BMTP kernel was not run.";
     candidate.TerminationReason = "notRun";
-    candidate.SeedIndex = seedIndex;
     candidate.SeedSource = seedSource;
     candidate.ArrivalTime_s = NaN;
     candidate.TrajectoryDuration_s = NaN;
@@ -260,7 +257,6 @@ function candidate = createEmptyCandidate(seed, initialState)
     candidate.jerk_units_s3 = zeros(0, dimensionCount);
     candidate.Polynomial = struct();
     candidate.PlaneCertificate = struct();
-    candidate.SeedCorridorBoundary_units = obstacleEnvelope_units;
     candidate.SolverDiagnostics = struct();
 end
 
@@ -272,27 +268,20 @@ function value = optionalField(record, name, defaultValue)
     end
 end
 
-function diagnostics = createEmptyDiagnostics(degree, splitCount, segmentCount, regionCount)
+function diagnostics = createEmptyDiagnostics(degree, segmentCount, regionCount)
     % Initialize solver, timing, and certificate diagnostics.
     diagnostics = struct("Identifier", "bmtpStaticDegree" + string(degree), ...
         "ConstraintRepresentation", "thirdOrderTimePowerSocp", ...
-        "Representation", "C3CompositeBezier", "Attempted", true, ...
         "Accepted", false, "Degree", degree, ...
-        "SubspansPerSeedEdge", splitCount, "OriginalSeedSegmentCount", segmentCount, ...
+        "OriginalSeedSegmentCount", segmentCount, ...
         "WarmRouteResampled", false, "OptimizerSpanCount", segmentCount, ...
         "SegmentCount", 2 * segmentCount, "ExactRegionCount", regionCount, ...
         "IterationCount", 0, "Converged", false, ...
         "ApplicablePairCount", segmentCount * regionCount, ...
         "TrajectorySocpCount", 0, "FinalCollisionPairCount", 0, ...
-        "PlaneSocpCount", 0, "UnverifiedPlaneInitializationCount", 0, ...
-        "FinalTrajectoryExitFlag", NaN, ...
-        "FailedPlaneSegmentIndex", 0, "FailedPlaneRegionIndex", 0, ...
-        "FailedPlane", emptyPlane(), "WarmStartDuration_s", NaN, ...
+        "PlaneSocpCount", 0, ...
         "BestDuration_s", NaN, ...
-        "EndpointProjectionApplied", false, ...
-        "TrialDuration_s", NaN(35, 1), "TrialWasCollisionFree", false(35, 1), ...
-        "CollisionPairCountHistory", NaN(35, 1), ...
-        "DilationScale", NaN, "MotionCertificate", struct(), "Coverage", struct(), ...
+        "DilationScale", NaN, "MotionCertificate", struct(), ...
         "PlaneCertificate", struct(), "SolverMessage", "", "ElapsedTime_s", 0, ...
         "ConicSolver",bmtpEngine.accumulateConicDiagnostics());
 end

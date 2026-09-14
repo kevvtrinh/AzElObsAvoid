@@ -9,7 +9,6 @@ function warmStart = createWarmStart(request)
 %% Section 1: Use The Exact Visibility Route
 route_units = double(request.Seed.position_units);
 route_units([1 end], :) = [request.InitialState.position_units; request.GoalState.position_units];
-suppliedSegmentCount = size(route_units, 1) - 1;
 usesLengthBalancedMesh=request.Options.GoalTimeMode=="earliestArrival" && ...
     ~isfield(request.Coverage,'ActiveTimeInterval_s') && request.SplitCount>1;
 if usesLengthBalancedMesh
@@ -58,7 +57,6 @@ warmStart.SegmentRatio = segmentTime_s(:) / mean(segmentTime_s);
 warmStart.SegmentCount = segmentCount;
 warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = originalSegmentCount;
-warmStart.SuppliedSeedSegmentCount = suppliedSegmentCount;
 warmStart.WarmRouteResampled = false;
 if request.UsesVariableClock && isfield(request.Coverage,'BreakTime_s')
     sourceBreaks_s = request.Coverage.BreakTime_s;

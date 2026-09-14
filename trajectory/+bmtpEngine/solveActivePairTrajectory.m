@@ -14,8 +14,6 @@ segmentCount=warmStart.SegmentCount;
 regionCount=numel(request.Regions_units);
 regionActiveBySegment=warmStart.RegionActiveBySegment;
 feasibleControl_units=warmStart.ControlPoint_units;
-commonTime_s=max(warmStart.SegmentTime_s);
-diagnostics.WarmStartDuration_s=segmentCount*commonTime_s;
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
 diagnostics.TrajectorySocpCount=0;
 diagnostics.PlaneSocpCount=0;
@@ -25,10 +23,8 @@ bestTimes_s=NaN;
 bestDuration_s=Inf;
 bestPreparedMotion=struct('Success',false);
 bestCertificate=struct('Passed',false);
-diagnostics.RetainedBestTrialDuration_s=bestDuration_s;
 taggedPairs=false(segmentCount,regionCount);
-emptyPlane=struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN);
+emptyPlane=bmtpEngine.createEmptyPlane();
 planes=repmat(emptyPlane,segmentCount,regionCount);
 solverMessage="The active-pair BMTP iteration limit was reached.";
 
@@ -47,11 +43,8 @@ for iterationIndex=1:maximumIterationCount
         segmentCount,request.Degree,request.InitialState,request.GoalState,request.Limits, ...
         trajectoryPlanes,reserve_units,request.MotionHorizon_s,request.TrajectoryOptions, ...
         ones(segmentCount,1),false);
-    output.OriginalPlaneCount=nnz([planes.Active]);
-    output.RetainedPlaneCount=nnz([trajectoryPlanes.Active]);
     diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+output.SolveCount;
     diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,output);
-    diagnostics.FinalTrajectoryExitFlag=exitFlag;
     if ~bmtpEngine.hasUsableConicIterate(trialControl_units,exitFlag)
         solverMessage="Trajectory SOCP failed: "+string(output.message);
         break;
@@ -60,9 +53,6 @@ for iterationIndex=1:maximumIterationCount
         request.Regions_units,request.RegionMinimum_units,request.RegionMaximum_units, ...
         regionActiveBySegment,1201);
     duration_s=sum(trialTimes_s);
-    diagnostics.TrialDuration_s(iterationIndex)=duration_s;
-    diagnostics.CollisionPairCountHistory(iterationIndex)=nnz(collisionPairs);
-    diagnostics.TrialWasCollisionFree(iterationIndex)=~any(collisionPairs,'all');
     diagnostics.FinalCollisionPairCount=nnz(collisionPairs);
     newPairs=collisionPairs & ~taggedPairs;
     taggedPairs=taggedPairs | newPairs;
@@ -74,7 +64,6 @@ for iterationIndex=1:maximumIterationCount
             bestTimes_s=trialTimes_s;
             bestDuration_s=duration_s;
             diagnostics.BestDuration_s=duration_s;
-            diagnostics.RetainedBestTrialDuration_s=duration_s;
         end
         if isfinite(retainedImprovement_s) && ...
                 retainedImprovement_s<=request.Options.ArrivalTimeTolerance_s
@@ -100,16 +89,9 @@ for iterationIndex=1:maximumIterationCount
             ~(isfield(planeOutput,'IsAnalytic') && planeOutput.IsAnalytic);
         diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,planeOutput);
         if (planeExitFlag<=0 && planeExitFlag~=-7) || ~plane.Active
-            diagnostics.FailedPlaneSegmentIndex=segmentIndex;
-            diagnostics.FailedPlaneRegionIndex=regionIndex;
-            diagnostics.FailedPlane=plane;
             solverMessage="A separating-plane update failed.";
             updateFailed=true;
             break;
-        end
-        if ~plane.Verified
-            diagnostics.UnverifiedPlaneInitializationCount= ...
-                diagnostics.UnverifiedPlaneInitializationCount+1;
         end
         planes(segmentIndex,regionIndex)=plane;
     end
@@ -126,16 +108,6 @@ if ~isempty(bestControl_units)
         ones(segmentCount,1),true);
     diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+shortOutput.SolveCount;
     diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,shortOutput);
-    diagnostics.TravelRefinementConstraintGenerationApplied= ...
-        shortOutput.ConstraintGenerationApplied;
-    diagnostics.TravelRefinementLoadedPlanePairCount= ...
-        shortOutput.LoadedPlanePairCount;
-    diagnostics.TravelRefinementConstraintGenerationRoundCount= ...
-        shortOutput.ConstraintGenerationRoundCount;
-    diagnostics.TravelRefinementConstraintGenerationComplete= ...
-        shortOutput.ConstraintGenerationComplete;
-    diagnostics.TravelRefinementMaximumPlaneConstraintResidual= ...
-        shortOutput.MaximumPlaneConstraintResidual;
     if bmtpEngine.hasUsableConicIterate(shortControl_units,shortFlag)
         overlaps=bmtpEngine.findSampledObstacleOverlaps(shortControl_units, ...
             request.Regions_units,request.RegionMinimum_units,request.RegionMaximum_units, ...
@@ -143,7 +115,7 @@ if ~isempty(bestControl_units)
         if ~any(overlaps,'all')
             originalLength_units=sum(vecnorm(diff(bestControl_units,1,2),2,3),'all');
             shortLength_units=sum(vecnorm(diff(shortControl_units,1,2),2,3),'all');
-            [shortCertificate,shortPreparedMotion]=certifyTravelCandidate(request,warmStart, ...
+            [shortCertificate,shortPreparedMotion]=certifyTravelCandidate(request, ...
                 shortControl_units,shortTimes_s,reserve_units,target_units);
             if shortLength_units<=originalLength_units && shortCertificate.Passed
                 bestControl_units=shortControl_units;
@@ -166,10 +138,10 @@ result=struct('Success',~isempty(bestControl_units),'SolverMessage',solverMessag
 end
 
 %% Section 5: Local Functions
-function [certificate,prepared]=certifyTravelCandidate(request,warmStart,controls_units,times_s,reserve_units,target_units)
+function [certificate,prepared]=certifyTravelCandidate(request,controls_units,times_s,reserve_units,target_units)
     prepared=bmtpEngine.prepareFinalMotion(request,controls_units,times_s);
     [certificate,cache]=bmtpEngine.checkFinalMotion( ...
-        request,warmStart,prepared,reserve_units,target_units);
+        request,prepared,reserve_units,target_units);
     for refinementIndex=1:10
         if certificate.Passed || ~certificate.WorkspacePassed || ...
                 ~certificate.DynamicsPassed || ~certificate.ContinuityPassed
@@ -182,6 +154,6 @@ function [certificate,prepared]=certifyTravelCandidate(request,warmStart,control
         prepared=bmtpEngine.prepareFinalMotion(request,prepared.ControlPoint_units, ...
             prepared.SegmentTime_s,prepared.PrescribedPower_units,splitMask);
         [certificate,cache]=bmtpEngine.checkFinalMotion( ...
-            request,warmStart,prepared,reserve_units,target_units,cache);
+            request,prepared,reserve_units,target_units,cache);
     end
 end

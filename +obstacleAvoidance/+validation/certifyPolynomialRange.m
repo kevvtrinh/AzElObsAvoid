@@ -101,7 +101,9 @@ function decision = classifyBernsteinRange(control, lowerBound, upperBound, rema
         return;
     end
 
-    [leftControl, rightControl] = subdivideAtMidpoint(control);
+    % One de Casteljau restriction serves both halves of the midpoint split.
+    leftControl  = bmtpEngine.restrictBezier(control, [0, 0.5]);
+    rightControl = bmtpEngine.restrictBezier(control, [0.5, 1]);
     leftDecision = classifyBernsteinRange(leftControl, lowerBound, upperBound, remainingDepth - 1);
     if leftDecision < 0
         decision = -1;
@@ -114,22 +116,6 @@ function decision = classifyBernsteinRange(control, lowerBound, upperBound, rema
         decision = 1;
     else
         decision = 0;
-    end
-end
-
-function [leftControl, rightControl] = subdivideAtMidpoint(control)
-    % Apply de Casteljau subdivision without evaluating the power polynomial.
-    controlCount = numel(control);
-    leftControl  = zeros(controlCount, 1);
-    rightControl = zeros(controlCount, 1);
-    work         = control;
-    leftControl(1) = work(1);
-    rightControl(end) = work(end);
-    % Repeat the level alternatives needed to refine the current solution.
-    for levelIndex = 2:controlCount
-        work = 0.5 * (work(1:end - 1) + work(2:end));
-        leftControl(levelIndex) = work(1);
-        rightControl(end - levelIndex + 1) = work(end);
     end
 end
 

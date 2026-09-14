@@ -1,12 +1,12 @@
-function nodes = createTimedVisibilityNodes(shape, start_units, goal_units, limits, candidateOffset_units, workBudget)
+function nodes_units = createTimedVisibilityNodes(shape, start_units, goal_units, limits, candidateOffset_units, workBudget)
 %% Section 0: Header & Readme
-% SYNTAX: nodes = obstacleAvoidance.search.createTimedVisibilityNodes(
+% SYNTAX: nodes_units = obstacleAvoidance.search.createTimedVisibilityNodes(
 %   shape,start_units,goal_units,limits,candidateOffset_units,workBudget)
 % PURPOSE: Create one deterministic staging-node set for the timed route
 %   proposal. This helper does not search, retry, or certify a motion.
 % INPUTS: Sampled swept proposal shape, endpoints, workspace, one physical
 %   steering offset, and a finite pair-work budget.
-% OUTPUTS: Raw and retained proposal nodes with explicit discard evidence.
+% OUTPUTS: nodes_units (N-by-2) Retained proposal nodes, endpoints first.
 % UNITS: Positions and offsets are coordinate units.
 
 %% Section 1: Offset And Bound The Proposal Boundary
@@ -19,8 +19,6 @@ isInsideWorkspace = rawNodes_units(:,1) >= limits.xInterval_units(1) & ...
     rawNodes_units(:,1) <= limits.xInterval_units(2) & ...
     rawNodes_units(:,2) >= limits.yInterval_units(1) & ...
     rawNodes_units(:,2) <= limits.yInterval_units(2);
-discardReasons = repmat("",size(rawNodes_units,1),1);
-discardReasons(~isInsideWorkspace) = "outsideWorkspace";
 candidateNodes_units = unique(rawNodes_units(isInsideWorkspace,:),"rows","stable");
 
 %% Section 2: Retain A Deterministic Global Boundary Cover
@@ -33,14 +31,7 @@ if size(candidateNodes_units,1)>candidateLimit
     candidateNodes_units = selectBoundaryCover(candidateNodes_units, ...
         start_units,goal_units,candidateLimit);
 end
-positions_units = unique([start_units;goal_units;candidateNodes_units],"rows","stable");
-nodes = struct("CandidateShape",candidateShape, ...
-    "RawNodes_units",rawNodes_units, ...
-    "RawNodeDiscardReasons",discardReasons, ...
-    "RetainedCandidateNodes_units",candidateNodes_units, ...
-    "Positions_units",positions_units, ...
-    "CandidateLimit",candidateLimit, ...
-    "CandidateOffset_units",candidateOffset_units);
+nodes_units = unique([start_units;goal_units;candidateNodes_units],"rows","stable");
 end
 
 function selected_units = selectBoundaryCover(candidates_units,start_units,goal_units,count)

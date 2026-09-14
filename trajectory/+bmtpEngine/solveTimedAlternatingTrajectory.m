@@ -13,9 +13,7 @@ function [result, diagnostics] = solveTimedAlternatingTrajectory( ...
 %% Section 1: Initialize The Variable-Clock Formulation
 segmentCount=warmStart.SegmentCount;
 segmentRatio=warmStart.SegmentRatio(:);
-emptyPlane=struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2), ...
-    'SignedGap_units',NaN,'TimeFraction',[0,1]);
+emptyPlane=bmtpEngine.createEmptyPlane();
 planes=repmat(emptyPlane,segmentCount,numel(request.Regions_units));
 selectedControl_units=zeros(0,request.Degree+1,2);
 selectedSegmentTime_s=NaN;
@@ -26,7 +24,6 @@ solverMessage="The time-scoped alternating iteration limit was reached.";
 trajectoryOptions=optimoptions("coneprog","Display","none", ...
     "MaxIterations",300);
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
-diagnostics.WarmStartDuration_s=warmStart.Duration_s;
 % Establish the exact moving corridor at the timed guide's physical clock.
 % An unconstrained first solve would collapse to a straight collision path
 % before the alternating method had any obstacle planes to retain.
@@ -34,10 +31,6 @@ diagnostics.WarmStartDuration_s=warmStart.Duration_s;
     bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
 diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
-diagnostics.UnverifiedPlaneInitializationCount= ...
-    planeStatistics.ActivePairCount-planeStatistics.VerifiedPairCount;
-diagnostics.FailedPlaneSegmentIndex=planeStatistics.FailedSegmentIndex;
-diagnostics.FailedPlaneRegionIndex=planeStatistics.FailedRegionIndex;
 if ~complete
     diagnostics.TaggedPairCount=0;
     diagnostics.SolverMessage="The timed visibility guide could not initialize its exact corridor.";
@@ -63,7 +56,6 @@ for iterationIndex=1:35
     diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+1;
     diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver,output);
-    diagnostics.FinalTrajectoryExitFlag=exitFlag;
     if ~bmtpEngine.hasUsableConicIterate(trialControl_units,exitFlag)
         solverMessage="Trajectory SOCP failed: "+string(output.message);
         break
@@ -73,26 +65,18 @@ for iterationIndex=1:35
         'ControlPoint_units',trialControl_units, ...
         'SegmentTime_s',trialSegmentTime_s(:), ...
         'PrescribedPower_units',[]);
-    trialCertificate=bmtpEngine.checkFinalMotion(request,warmStart,trialMotion, ...
+    trialCertificate=bmtpEngine.checkFinalMotion(request,trialMotion, ...
         roundoffReserve_units,obstacleTarget_units);
     failedPairs=~reshape([trialCertificate.Planes.Verified], ...
         size(trialCertificate.Planes)) & trialCertificate.RegionActiveBySegment;
     collisionFree=~any(failedPairs,'all');
-    diagnostics.TrialDuration_s(iterationIndex)=duration_s;
-    diagnostics.CollisionPairCountHistory(iterationIndex)=nnz(failedPairs);
-    diagnostics.TrialWasCollisionFree(iterationIndex)=collisionFree;
     diagnostics.FinalCollisionPairCount=nnz(failedPairs);
-    diagnostics.UnverifiedPairs=indicesOf(failedPairs);
-    diagnostics.UnverifiedGaps_units=reshape( ...
-        [trialCertificate.Planes(failedPairs).SignedGap_units],[],1);
     if collisionFree && trialCertificate.WorkspacePassed && ...
             trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed
         [selectedPlanes,selectedPairs,complete,planeStatistics]= ...
             bmtpEngine.createTimeScopedPlanes(trialControl_units, ...
             trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
         diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
-        diagnostics.UnverifiedPlaneInitializationCount= ...
-            planeStatistics.ActivePairCount-planeStatistics.VerifiedPairCount;
         if ~complete
             solverMessage="The feasible timed motion did not produce a complete exact plane set.";
             break
@@ -105,7 +89,6 @@ for iterationIndex=1:35
             selectedControl_units=trialControl_units;
             selectedSegmentTime_s=trialSegmentTime_s;
             diagnostics.BestDuration_s=duration_s;
-            diagnostics.RetainedBestTrialDuration_s=duration_s;
         end
         diagnostics.Converged=output.OptimizationConverged;
         if previousFeasibleDuration_s-duration_s<= ...
@@ -124,10 +107,6 @@ for iterationIndex=1:35
         bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
         trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
     diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
-    diagnostics.UnverifiedPlaneInitializationCount= ...
-        planeStatistics.ActivePairCount-planeStatistics.VerifiedPairCount;
-    diagnostics.FailedPlaneSegmentIndex=planeStatistics.FailedSegmentIndex;
-    diagnostics.FailedPlaneRegionIndex=planeStatistics.FailedRegionIndex;
     if ~complete
         solverMessage="The timed visibility guide could not initialize every exact clock pair.";
         break
@@ -151,9 +130,4 @@ result=struct('Success',~isempty(selectedControl_units), ...
     'ControlPoint_units',selectedControl_units, ...
     'SegmentTime_s',selectedSegmentTime_s, ...
     'Planes',selectedPlanes,'TaggedPairs',selectedPairs);
-end
-
-function indices=indicesOf(mask)
-    [segmentIndex,regionIndex]=find(mask);
-    indices=[segmentIndex,regionIndex];
 end

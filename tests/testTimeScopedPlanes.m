@@ -129,18 +129,17 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
         'MotionHorizon_s',12,'UsesVariableClock',true, ...
         'Options',struct('GoalTimeMode',"earliestArrival", ...
         'ConstraintTolerance',1e-8),'Coverage',struct('Passed',true));
-    warmStart = struct('SegmentCount',3,'RegionActiveBySegment',true(3,1));
     alternating = struct('ControlPoint_units',controls, ...
         'SegmentTime_s',[4;4;4], ...
         'Planes',repmat(plane,3,1),'TaggedPairs',false(3,1));
     diagnostics = struct('ConicSolver',bmtpEngine.accumulateConicDiagnostics());
-    [refined,diagnostics] = bmtpEngine.refineTimedTravel(request,warmStart,alternating,diagnostics,1e-5,1e-8);
+    [refined,diagnostics] = bmtpEngine.refineTimedTravel(request,alternating,diagnostics,1e-5,1e-8);
     verifyTrue(testCase,diagnostics.TravelRefinementAccepted);
     verifyGreaterThan(testCase,diagnostics.TaggedPairCount,0);
     verifyLessThan(testCase,diagnostics.TravelRefinementFinalLength_units,diagnostics.TravelRefinementInitialLength_units);
     prepared = struct('CertifiedControlPoint_units',refined.ControlPoint_units, ...
         'SegmentTime_s',refined.SegmentTime_s(:));
-    verifyTrue(testCase,bmtpEngine.checkFinalMotion(request,warmStart,prepared,1e-8,1e-5).Passed);
+    verifyTrue(testCase,bmtpEngine.checkFinalMotion(request,prepared,1e-8,1e-5).Passed);
 end
 
 function testSingleSpanTimedInfeasibilityReturnsNoMotion(testCase)
@@ -176,10 +175,10 @@ function testSingleSpanTimedMotionIsIndependentlyValid(testCase)
             request = bmtpEngine.createSolveRequest(seed,cell(0,1),struct('Passed',true), ...
                 result.Inputs.initialState,result.Inputs.goalState,result.Limits,result.Options);
             prepared = bmtpEngine.prepareFinalMotion(request,controls,duration_s);
-            [~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(controls,limits.xInterval_units,limits.yInterval_units);
+            [~,reserve_units] = bmtpEngine.createCoordinateTolerances(controls,limits.xInterval_units,limits.yInterval_units);
             target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
             result = bmtpEngine.createMotionOutput(result,request,prepared);
-            result.PlaneCertificate = bmtpEngine.checkFinalMotion(request,[],prepared,reserve_units,target_units);
+            result.PlaneCertificate = bmtpEngine.checkFinalMotion(request,prepared,reserve_units,target_units);
             assertTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         end
     end

@@ -23,7 +23,7 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
     request=bmtpEngine.createSolveRequest(seed,cell(0,1),struct('Passed',true), ...
         base.Inputs.initialState,base.Inputs.goalState,base.Limits,base.Options);
     durations_s=[1.3;0.7;2]; breaks=[0;cumsum(durations_s)]/4;
-    [~,~,reserve_units]=bmtpEngine.createCoordinateTolerances(base.Route_units, ...
+    [~,reserve_units]=bmtpEngine.createCoordinateTolerances(base.Route_units, ...
         limits.xInterval_units,limits.yInterval_units);
     target_units=(1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+reserve_units;
     for degree=[5,8]
@@ -45,7 +45,7 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         sourcePolynomial=bmtpEngine.createPowerPolynomial(source.ControlPoint_units, ...
             source.SegmentTime_s,0,source.PrescribedPower_units);
         original=bmtpEngine.createMotionOutput(base,request,source);
-        original.PlaneCertificate=bmtpEngine.checkFinalMotion(request,[],source,reserve_units,target_units);
+        original.PlaneCertificate=bmtpEngine.checkFinalMotion(request,source,reserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
         changed=bmtpEngine.prepareFinalMotion(request,source.CertifiedControlPoint_units, ...
             source.SegmentTime_s,sourcePolynomial.positionPower_units, ...
@@ -53,7 +53,7 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         changedPolynomial=bmtpEngine.createPowerPolynomial(changed.ControlPoint_units, ...
             changed.SegmentTime_s,0,changed.PrescribedPower_units);
         output=bmtpEngine.createMotionOutput(base,request,changed);
-        output.PlaneCertificate=bmtpEngine.checkFinalMotion(request,[],changed,reserve_units,target_units);
+        output.PlaneCertificate=bmtpEngine.checkFinalMotion(request,changed,reserve_units,target_units);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(output).Passed);
         sampleTime_s=linspace(initial.time_s,goal.time_s,401).';
         [~,p,v,a,j]=bmtpEngine.evaluatePolynomial(sourcePolynomial,sampleTime_s);

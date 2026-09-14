@@ -1,11 +1,11 @@
-function [A,Aeq,beq,lb,ub,jerkMap] = createTrajectoryConstraints(segmentCount,degree,boundaryControls,limits,variableCount,activePlaneCount,segmentRatio,physicalTimes_s)
+function [A,Aeq,beq,lb,ub,jerkMap] = createTrajectoryConstraints(segmentCount,degree,boundaryControls,limits,variableCount,segmentRatio,physicalTimes_s)
 %% Section 0: Header & Readme
 % SYNTAX: [A,Aeq,beq,lb,ub,jerkMap] =
-%   bmtpEngine.createTrajectoryConstraints(S,D,endpoints,limits,N,R,ratios,times)
+%   bmtpEngine.createTrajectoryConstraints(S,D,endpoints,limits,N,ratios,times)
 % PURPOSE: Assemble shared workspace, endpoint, C3 and derivative constraints.
-% INPUTS: Span count/degree, imposed endpoint controls, limits, decision size, active-plane count
-%   and positive span ratios; optional physical times request the quadratic-jerk map used by the
-%   fixed-clock objective.
+% INPUTS: Span count/degree, imposed endpoint controls, limits, decision size and positive span
+%   ratios; optional physical times request the quadratic-jerk map used by the fixed-clock
+%   objective.
 % OUTPUTS: Sparse inequality/equality rows and bounds, leaving plane rows empty.
 % UNITS: Coordinate units, seconds and physical derivatives.
 
@@ -14,9 +14,8 @@ segmentRatio = segmentRatio(:);
 controlCount = segmentCount*(degree+1)*2;
 powerIndex = controlCount+(1:4);
 baseInequalityCount = 4*segmentCount*(3*degree-3);
-inequalityCount = baseInequalityCount+activePlaneCount*(degree+2);
 equalityCount = 13+8*(segmentCount-1);
-A = spalloc(inequalityCount,variableCount,6*inequalityCount);
+A = spalloc(baseInequalityCount,variableCount,6*baseInequalityCount);
 Aeq = spalloc(equalityCount,variableCount,8*equalityCount);
 beq = zeros(equalityCount,1);
 lb = -Inf(variableCount,1); ub = Inf(variableCount,1);

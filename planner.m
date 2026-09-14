@@ -105,9 +105,9 @@ isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(obstacle) ...
     (numel(obstacle.time_s)>1 && (initialState.time_s<obstacle.time_s(1) || ...
     goalState.time_s>obstacle.time_s(end))),preparedObstacles));
 visibilityGraph = struct('NodePosition_units',zeros(0,2),'AcceptedNodeIndex',zeros(0,2), ...
-    'AcceptedWeight_units',zeros(0,1),'RejectedNodeIndex',zeros(0,2), ...
-    'RouteNodeIndex',zeros(1,0),'Route_units',zeros(0,2),'RouteLength_units',Inf, ...
-    'SourceFree',false,'GoalFree',false,'IsConnected',false,'ExpandedCount',0, ...
+    'RejectedNodeIndex',zeros(0,2), ...
+    'Route_units',zeros(0,2),'RouteLength_units',Inf, ...
+    'IsConnected',false,'ExpandedCount',0, ...
     'GraphIsFullyEnumerated',false,'SearchKind',"notSearched");
 result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph);
 result.SuppliedLimits = suppliedLimits;
@@ -142,36 +142,33 @@ if ~isempty(unsupportedObstacleIndex)
     result.ElapsedTime_s = toc(totalTimer);
     return;
 end
-scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
+scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s, ~isDynamic);
 [endpointFeasible,result.Message,result.TerminationReason] = obstacleAvoidance.input.validatePlannerEndpoints( ...
     preparedObstacles,initialState,goalState,limits,options);
 if ~endpointFeasible
     result.ElapsedTime_s = toc(totalTimer);
     return;
 end
-regionCount = sum(arrayfun(@(obstacle) numel(obstacle.Regions_units),scene));
-regions_units = cell(regionCount,1);
-nextRegionIndex = 1;
-for obstacleIndex = 1:numel(scene)
-    obstacleRegionCount = numel(scene(obstacleIndex).Regions_units);
-    targetIndices = nextRegionIndex:nextRegionIndex+obstacleRegionCount-1;
-    regions_units(targetIndices) = scene(obstacleIndex).Regions_units;
-    nextRegionIndex = nextRegionIndex+obstacleRegionCount;
-end
 if isDynamic
     cells = obstacleAvoidance.obstacles.createTimeCells(preparedObstacles,initialState.time_s,goalState.time_s);
     regions_units = cells.Regions_units;
+else
+    regionCount = sum(arrayfun(@(obstacle) numel(obstacle.Regions_units),scene));
+    regions_units = cell(regionCount,1);
+    nextRegionIndex = 1;
+    for obstacleIndex = 1:numel(scene)
+        obstacleRegionCount = numel(scene(obstacleIndex).Regions_units);
+        targetIndices = nextRegionIndex:nextRegionIndex+obstacleRegionCount-1;
+        regions_units(targetIndices) = scene(obstacleIndex).Regions_units;
+        nextRegionIndex = nextRegionIndex+obstacleRegionCount;
+    end
 end
 coverage = struct("Passed", true, ...
-    "ExactRegionCount", numel(regions_units), ...
-    "SolverRegionCount", numel(regions_units), ...
-    "AuthoritativeCoverageCheck", "independentPlaneVerification");
+    "ExactRegionCount", numel(regions_units));
 if isDynamic
     coverage.ActiveTimeInterval_s = cells.ActiveTimeInterval_s;
     coverage.EndRegions_units = cells.EndRegions_units;
     if options.GoalTimeMode == "fixedArrival", coverage.BreakTime_s = cells.BreakTime_s; end
-else
-    coverage.StaticScene = scene;
 end
 isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
     goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
@@ -254,8 +251,7 @@ if fixedPositionDynamic
         initialEdgeLength_units = vecnorm(diff(initialSpatialRoute_units,1,1),2,2);
         initialSeed = struct('position_units',initialSpatialRoute_units, ...
             'tau',[0;cumsum(initialEdgeLength_units)]/sum(initialEdgeLength_units), ...
-            'Index',1,'Source',"initialSpatialSnapshot", ...
-            'ObstacleEnvelope_units',zeros(0,2), ...
+            'Source',"initialSpatialSnapshot", ...
             'MaximumAlternatingIterations',2);
         [initialSpatialCandidate,initialSpatialDiagnostics] = bmtpEngine.solve( ...
             initialSeed,regions_units,coverage,initialState,motionGoalState, ...
@@ -277,7 +273,7 @@ futureGoalBlocked = isDynamic && ~fixedPositionDynamic && ...
     preparedObstacles,goalState.position_units(1),goalState.position_units(2),initialState.time_s);
 if fixedPositionDynamic
     guideScene = obstacleAvoidance.obstacles.snapshot( ...
-        preparedObstacles,motionGoalState.time_s);
+        preparedObstacles,motionGoalState.time_s,false);
     visibilityGraph = getVisibilityGraph(guideScene,initialState.position_units, ...
         goalState.position_units,limits,options,"arrivalSpatialSnapshot");
 elseif futureGoalBlocked
@@ -311,7 +307,7 @@ end
 route_units = visibilityGraph.Route_units;
 edgeLength_units = vecnorm(diff(route_units,1,1),2,2);
 seed = struct('position_units',route_units,'tau',[0;cumsum(edgeLength_units)]/sum(edgeLength_units), ...
-    'Index',1,'Source',visibilityGraph.SearchKind,'ObstacleEnvelope_units',zeros(0,2));
+    'Source',visibilityGraph.SearchKind);
 if isDynamic && options.GoalTimeMode=="fixedArrival"
     % Give the exact spatial route its initial BMTP pass and one pass on the
     % resulting refined mesh. If neither pass certifies complete motion,
@@ -341,13 +337,10 @@ if fixedPositionDynamic && spatialFailureCanUseTimedGuide
     [result,~]=obstacleAvoidance.input.tryTimedArrival(result);
     return
 end
-
-%% Section 4: Independently Validate The Complete Returned Motion
-
 result.ElapsedTime_s = toc(totalTimer);
 end
 
-%% Section 5: Local Functions
+%% Section 4: Local Functions
 
 function graph = getVisibilityGraph(scene,start_units,goal_units,limits,options,kind)
     % Reuse only a graph with exactly identical geometry and public inputs.
@@ -456,17 +449,9 @@ function options = resolveOptions(options, defaults)
     if ~isstruct(options) || ~isscalar(options)
         error("planTrajectory:InvalidOptions", "options must be a scalar struct.");
     end
-    knownFields = string(fieldnames(defaults));
-    unknownFields = setdiff(string(fieldnames(options)), knownFields);
+    [options, unknownFields] = obstacleAvoidance.input.resolveOptions(defaults, options);
     if ~isempty(unknownFields)
         warning("planTrajectory:UnknownOptions", "Ignoring unknown option fields: %s.", strjoin(unknownFields, ", "));
-    end
-    supplied = options;
-    options = defaults;
-    for fieldName = reshape(intersect(string(fieldnames(supplied)), knownFields, "stable"), 1, [])
-        if ~isempty(supplied.(fieldName))
-            options.(fieldName) = supplied.(fieldName);
-        end
     end
     options.GoalTimeMode = string(options.GoalTimeMode);
     if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["fixedArrival", "earliestArrival"])
@@ -489,7 +474,7 @@ function result = createEmptyResult(obstacles, preparedObstacles, initialState, 
     result.Message = "Planning has not completed.";
     result.TerminationReason = "notStarted";
     result.Inputs = struct("obstacles", {obstacles}, "initialState", initialState, ...
-        "goalState", goalState, "limits", limits, "options", options);
+        "goalState", goalState);
     result.PreparedObstacles = preparedObstacles;
     result.Limits = limits;
     result.Options = options;

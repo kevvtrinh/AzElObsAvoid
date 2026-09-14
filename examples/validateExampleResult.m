@@ -105,29 +105,16 @@ function value = fieldOrDefault(record, fieldName, defaultValue)
 end
 
 function valid = diagnosticCountsAreValid(searchDiagnostics)
-    % Check stored trace arrays and complete search counts. A trace can be shortened
-    % for display, but its total count must still describe the complete search.
+    % Check the complete search count the visibility graph reports.
     valid = isstruct(searchDiagnostics) && isscalar(searchDiagnostics);
     if ~valid
         return;
     end
-    gridRecord = searchDiagnostics;
-    countNames = ["NodeCount", "VisibilityEdgeCount", "ExpandedCount", "RejectedTransitionCount", "GeneratedSeedCount"];
-
-    % Require a finite nonnegative scalar for each available search count.
-    for name = countNames
-        if isfield(gridRecord, name)
-            value = gridRecord.(name);
-            valid = valid && isnumeric(value) && isscalar(value) && isfinite(value) && value >= 0;
-        end
-    end
-    if isfield(gridRecord, "ExploredNodes_units")
-        explored_units = gridRecord.ExploredNodes_units;
-        valid        = valid && size(explored_units, 2) == 2 && all(isfinite(explored_units), "all");
-    end
-    if isfield(gridRecord, "FrontierNodes_units")
-        frontier_units = gridRecord.FrontierNodes_units;
-        valid        = valid && size(frontier_units, 2) == 2 && all(isfinite(frontier_units), "all");
+    % Require a finite nonnegative scalar for the expansion count the
+    % visibility graph reports. No other count reaches this record.
+    if isfield(searchDiagnostics, "ExpandedCount")
+        value = searchDiagnostics.ExpandedCount;
+        valid = valid && isnumeric(value) && isscalar(value) && isfinite(value) && value >= 0;
     end
 end
 

@@ -21,7 +21,7 @@ relativePower(:,:,1) = relativePower(:,:,1)-initial_units;
 progressPower = reshape(sum(relativePower.*reshape(direction_units,1,2,1),2),[],6)/directionNorm2_units2;
 endRegions_units = {};
 if isfield(request.Coverage,'EndRegions_units'), endRegions_units = request.Coverage.EndRegions_units; end
-[~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(initial_units,request.GoalState.position_units, ...
+[~,reserve_units] = bmtpEngine.createCoordinateTolerances(initial_units,request.GoalState.position_units, ...
     request.Limits.xInterval_units,request.Limits.yInterval_units,request.Regions_units,endRegions_units);
 clearance_units = (1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+3*reserve_units;
 forbidden_s = zeros(0,2);
@@ -98,8 +98,8 @@ for k = 1:size(forbidden_s,1)
         wait_s = forbidden_s(k,2)+64*eps(max(1,abs(forbidden_s(k,2))));
     end
 end
-diagnostics = struct('DepartureDelay_s',wait_s,'ForbiddenDepartureInterval_s',forbidden_s, ...
-    'Available',wait_s<=maximumWait_s,'MotionDuration_s',duration_s);
+diagnostics = struct('DepartureDelay_s',wait_s, ...
+    'Available',wait_s<=maximumWait_s);
 if ~diagnostics.Available
     controls_units = zeros(0,request.Degree+1,2); durations_s = zeros(0,1); prescribedPower_units = [];
     return;

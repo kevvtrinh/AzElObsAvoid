@@ -43,8 +43,8 @@ end
 timer=tic;
 [x,~,exitFlag,output]=coneprog(f,cones,A,b,[],[],[],[],options);
 output.TotalTime_s=toc(timer);
-plane=struct('Active',false,'Verified',false,'ExitFlag',exitFlag, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN);
+plane=bmtpEngine.createEmptyPlane();
+plane.ExitFlag=exitFlag;
 if isempty(x) || any(~isfinite(x)), return; end
 plane.Active=true;
 plane.Normal=reshape(x(1:4),2,[]).';

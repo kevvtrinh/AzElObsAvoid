@@ -19,27 +19,16 @@ segmentCount = warmStart.SegmentCount;
 regionCount = numel(request.Regions_units);
 request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
-diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 diagnostics.ExistingPlanePairVerificationCount = 0;
 diagnostics.ConstraintRowPairVerificationCount = 0;
 diagnostics.FullPlaneUpdateSkippedCount = 0;
-emptyPlane = struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN,'TimeFraction',[0,1]);
+emptyPlane = bmtpEngine.createEmptyPlane();
 planes = repmat(emptyPlane, segmentCount, regionCount);
-[planes, allPlanesActive, verifiedPairs, diagnostics] = updatePlanes(warmStart.ControlPoint_units, warmStart.SegmentTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units, false);
-diagnostics.UnverifiedPlaneInitializationCount = nnz(~verifiedPairs);
+[planes, allPlanesActive, ~, diagnostics] = updatePlanes(warmStart.ControlPoint_units, warmStart.SegmentTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units, false);
 selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 solverMessage = "The all-pair alternating iteration limit was reached.";
 meshRefinementCount = 0;
-diagnostics.MeshRefinementCount = 0;
-diagnostics.MeshRefinementSpanIndex = cell(3,1);
-diagnostics.LoadedPlanePairCountHistory = NaN(35,1);
-diagnostics.ConstraintGenerationRoundCountHistory = NaN(35,1);
-diagnostics.ConstraintGenerationCompleteHistory = false(35,1);
-diagnostics.MaximumPlaneConstraintResidualHistory = NaN(35,1);
-diagnostics.AlternatingIterationLimit= ...
-    request.MaximumAlternatingIterations;
 
 %% Section 2: Alternate The Complete Formulation
 if allPlanesActive
@@ -48,18 +37,8 @@ if allPlanesActive
         [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, true);
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
-        diagnostics.FinalTrajectoryExitFlag = exitFlag;
-        diagnostics.PlaneReduction=[output.OriginalPlaneCount,output.RetainedPlaneCount];
         if isfield(output,'ConstraintGenerationApplied') && ...
                 output.ConstraintGenerationApplied
-            diagnostics.LoadedPlanePairCountHistory(iterationIndex)= ...
-                output.LoadedPlanePairCount;
-            diagnostics.ConstraintGenerationRoundCountHistory(iterationIndex)= ...
-                output.ConstraintGenerationRoundCount;
-            diagnostics.ConstraintGenerationCompleteHistory(iterationIndex)= ...
-                output.ConstraintGenerationComplete;
-            diagnostics.MaximumPlaneConstraintResidualHistory(iterationIndex)= ...
-                output.MaximumPlaneConstraintResidual;
             diagnostics.LoadedPlanePairCount=output.LoadedPlanePairCount;
             diagnostics.ConstraintGenerationRoundCount=output.ConstraintGenerationRoundCount;
             diagnostics.ConstraintGenerationComplete=output.ConstraintGenerationComplete;
@@ -108,13 +87,7 @@ if allPlanesActive
         planes = updatedPlanes;
         unverifiedPairCount = nnz(~verifiedPairs);
         duration_s = sum(trialTime_s);
-        diagnostics.TrialDuration_s(iterationIndex) = duration_s;
-        diagnostics.CollisionPairCountHistory(iterationIndex) = unverifiedPairCount;
-        diagnostics.TrialWasCollisionFree(iterationIndex) = unverifiedPairCount == 0;
         diagnostics.FinalCollisionPairCount = unverifiedPairCount;
-        [unverifiedSegment,unverifiedRegion] = find(~verifiedPairs);
-        diagnostics.UnverifiedPairs = [unverifiedSegment,unverifiedRegion];
-        diagnostics.UnverifiedGaps_units = reshape([planes(~verifiedPairs).SignedGap_units],[],1);
         if ~allPlanesActive
             solverMessage = "A complete separating-line update failed.";
             break;
@@ -125,8 +98,6 @@ if allPlanesActive
                 [refinedControl_units,refinedTime_s] = bisectSelectedSpans( ...
                     trialControl_units,trialTime_s,splitMask);
                 meshRefinementCount = meshRefinementCount+1;
-                diagnostics.MeshRefinementCount = meshRefinementCount;
-                diagnostics.MeshRefinementSpanIndex{meshRefinementCount} = find(splitMask).';
                 segmentCount = numel(refinedTime_s);
                 diagnostics.OptimizerSpanCount = segmentCount;
                 warmStart.SegmentRatio = refinedTime_s/mean(refinedTime_s);
@@ -243,9 +214,6 @@ function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = up
             if verifyOnly
                 if ~plane.Verified, allActive = false; return; end
             elseif exitFlag <= 0 || ~plane.Active
-                diagnostics.FailedPlaneSegmentIndex = segmentIndex;
-                diagnostics.FailedPlaneRegionIndex = regionIndex;
-                diagnostics.FailedPlane = plane;
                 allActive = false;
                 return;
             end

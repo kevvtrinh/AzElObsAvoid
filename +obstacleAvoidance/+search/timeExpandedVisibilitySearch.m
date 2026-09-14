@@ -11,8 +11,8 @@ function [route_units, routeTime_s, record] = timeExpandedVisibilitySearch(nodeP
 %   protected obstacle struct array) initialState, goalState, limits, options (scalar structs)
 %   sampleTimes_s (numeric vector) Candidate times retained exactly as temporal search layers.
 % OUTPUTS: route_units (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector) Selected timed
-%   route, or documented empty arrays on exhaustion. record (scalar struct) Search counts, frontier,
-%   and best partial ancestry.
+%   route, or documented empty arrays on exhaustion. record (scalar struct) Search counts, the
+%   selected goal window, and the arrive-then-wait seed route.
 % UNITS: Position and edge cost are coordinate units; time is seconds.
 
 %% Section 1: Propagate The Reachability Frontier
@@ -141,9 +141,8 @@ parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
 parentNodeIndex  = zeros(layerCount, nodeCount, "uint16");
 reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_units(1, 1) = 0;
-[waitCount, motionCount, rejectedCount, expandedCount, goalBoundRejectionCount, candidateBatchSplitCount] = deal(0);
+[rejectedCount, expandedCount] = deal(0);
 goalCostBound_units=Inf;
-exploredNodes_units = zeros(0, 2);
 for layerIndex = 1:layerCount - 1
     % Once the goal is reached, retain its complete clear wait component.
     % That gives BMTP a kinematically useful arrive-then-wait seed without
@@ -160,10 +159,8 @@ for layerIndex = 1:layerCount - 1
     currentNodeIndices          = find(reachable(layerIndex, :));
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
-        exploredNodes_units(end + 1, :) = nodePosition_units(currentNodeIndex, :); %#ok<AGROW>
         % Add the same-node transition only when the obstacle sweep permits waiting through the full layer interval.
         if waitIsClear(layerIndex, currentNodeIndex)
-            waitCount = waitCount + 1;
             [reachable,spatialCost_units,parentLayerIndex,parentNodeIndex] = ...
                 updateTemporalState(reachable,spatialCost_units, ...
                 parentLayerIndex,parentNodeIndex,layerIndex,currentNodeIndex, ...
@@ -173,9 +170,8 @@ for layerIndex = 1:layerCount - 1
         end
     end
     goalCostBound_units=min([goalCostBound_units;spatialCost_units(goalCanWaitToFinal,2)]);
-    [motionCandidates, candidateRejections, batchSplitCount] = buildLayerCandidates(currentNodeIndices, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
+    [motionCandidates, candidateRejections] = buildLayerCandidates(currentNodeIndices, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
     rejectedCount = rejectedCount + candidateRejections;
-    candidateBatchSplitCount = candidateBatchSplitCount + batchSplitCount;
     motionCandidateCount = size(motionCandidates, 1);
     pendingMotion    = true(motionCandidateCount, 1);
 
@@ -198,7 +194,6 @@ for layerIndex = 1:layerCount - 1
                     goalCostBound_units+1e-12;
                 pendingMotion(queryIndices(cannotImproveGoal))=false;
                 rejectedCount=rejectedCount+nnz(cannotImproveGoal);
-                goalBoundRejectionCount=goalBoundRejectionCount+nnz(cannotImproveGoal);
                 queryIndices=queryIndices(~cannotImproveGoal);
             end
             if isempty(queryIndices)
@@ -206,7 +201,6 @@ for layerIndex = 1:layerCount - 1
             end
             queryIsClear = edgeIsClear(motionCandidates(queryIndices, 1), motionCandidates(queryIndices, 2), layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
             clearIndices = queryIndices(queryIsClear);
-            motionCount  = motionCount + numel(clearIndices);
             for motionIndex = reshape(clearIndices, 1, [])
                 sourceNodeIndex=motionCandidates(motionIndex,1);
                 targetNodeIndex=motionCandidates(motionIndex,2);
@@ -231,18 +225,8 @@ for layerIndex = 1:layerCount - 1
         end
     end
 end
-%% Section 2: Reconstruct Goal And Best-Partial Routes
-deepestLayerIndex = find(any(reachable, 2), 1, "last");
-[frontier_units, bestPartial_units] = deal(zeros(0, 2));
-% Report no partial timed route when even the start layer has no reachable state.
-if ~isempty(deepestLayerIndex)
-    frontierNodeIndices = find(reachable(deepestLayerIndex, :));
-    frontier_units        = nodePosition_units(frontierNodeIndices, :);
-    [~, bestIndex]       = min(vecnorm(frontier_units - nodePosition_units(2, :), 2, 2));
-    [bestPartial_units, ~] = reconstructTimedRoute(nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, deepestLayerIndex, frontierNodeIndices(bestIndex));
-end
+%% Section 2: Reconstruct The Goal And Arrive-Then-Wait Routes
 % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
-firstReachableGoalLayerIndex = find(reachable(:,2),1,"first");
 if options.GoalTimeMode == "earliestArrival"
     firstGoalLayerIndex = find(reachable(:, 2) & goalLayerIsEligible, 1, "first");
     goalLayerIndex=firstGoalLayerIndex;
@@ -260,7 +244,6 @@ end
 [route_units, routeTime_s] = reconstructTimedRoute(nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
 [waitRoute_units,waitRouteTime_s]=reconstructTimedRoute(nodePosition_units, ...
     layerTimes_s,parentLayerIndex,parentNodeIndex,waitSeedGoalLayerIndex,2);
-selectedGoalWindowIndex=0;
 selectedGoalWindowStartTime_s=NaN;
 selectedGoalWindowEndTime_s=NaN;
 if ~isempty(goalLayerIndex)
@@ -274,27 +257,13 @@ if ~isempty(goalLayerIndex)
         layerTimes_s(selectedGoalWindowStartLayerIndex);
     selectedGoalWindowEndTime_s=layerTimes_s(selectedGoalWindowEndLayerIndex);
 end
-record = struct("LayerTimes_s", layerTimes_s, ...
-    "CandidateLayerCount", layerCount, "NodeCount", nodeCount, ...
-    "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
+record = struct("NodeCount", nodeCount, ...
     "RejectedTransitionCount", rejectedCount, ...
-    "GoalCostBoundRejectionCount", goalBoundRejectionCount, ...
-    "CandidateBatchSplitCount", candidateBatchSplitCount, ...
     "ExpandedCount", expandedCount, ...
-    "ExploredNodes_units", exploredNodes_units, "FrontierNodes_units", frontier_units, ...
-    "BestPartialRoute_units", bestPartial_units, ...
-    "SelectedGoalLayerIndex", goalLayerIndex, ...
-    "FirstReachableGoalLayerIndex",firstReachableGoalLayerIndex, ...
-    "DynamicBoundChangedGoalLayer", ...
-    ~isempty(goalLayerIndex) && goalLayerIndex~=firstReachableGoalLayerIndex, ...
-    "SelectedGoalWindowIndex",selectedGoalWindowIndex, ...
     "SelectedGoalWindowStartTime_s",selectedGoalWindowStartTime_s, ...
     "SelectedGoalWindowEndTime_s",selectedGoalWindowEndTime_s, ...
     "MinimumGoalArrivalTime_s",minimumGoalArrivalTime_s, ...
-    "EligibleGoalLayerCount",nnz(goalLayerIsEligible), ...
-    "WaitSeedGoalLayerIndex",waitSeedGoalLayerIndex, ...
     "WaitRoute_units",waitRoute_units,"WaitRouteTime_s",waitRouteTime_s, ...
-    "ReachableGoalLayerCount", nnz(reachable(:, 2)), ...
     "DynamicEdgeCheckKind","exactAffineConvexCells");
 function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
     % Check the complete segment clock against exact static geometry and every
@@ -347,13 +316,12 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
 end
 end
 %% Section 3: Local Functions
-function [candidates, rejectedCount, batchSplitCount] = buildLayerCandidates(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
+function [candidates, rejectedCount] = buildLayerCandidates(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
     % Enumerate [entry layer, target node, source node] in the original order.
     % Bound the temporary logical tensor while retaining the vectorized path
     % for ordinary inputs and the velocity-only duration lower bound.
     candidates = zeros(0, 5);
     rejectedCount = 0;
-    batchSplitCount = 0;
     if isempty(sourceNodes), return; end
     layerCount = numel(layerTimes_s);
     nodeCount = size(nodeIsFree, 2);
@@ -361,7 +329,6 @@ function [candidates, rejectedCount, batchSplitCount] = buildLayerCandidates(sou
     maximumCandidateTensorElements = 1024 ^ 2;
     sourceBatchSize = max(1, floor(maximumCandidateTensorElements / max(1, layerCount * nodeCount)));
     batchCount = ceil(sourceCount / sourceBatchSize);
-    batchSplitCount = batchCount - 1;
     candidateBlocks = cell(batchCount, 1);
     for batchIndex = 1:batchCount
         firstSourceOffset = 1 + (batchIndex - 1) * sourceBatchSize;

@@ -95,16 +95,7 @@ timing_s(2) = toc(stageTimer);
 
 %% Section 4: Union The Sweeps
 stageTimer = tic;
-% A balanced Boolean reduction keeps intermediate boundaries local instead
-% of repeatedly unioning the complete accumulated boundary with one sweep.
-while numel(sweeps) > 1
-    pairCount = floor(numel(sweeps)/2);
-    merged = union(sweeps(1:2:2*pairCount),sweeps(2:2:2*pairCount), ...
-        'KeepCollinearPoints',true);
-    if mod(numel(sweeps),2), merged(end+1) = sweeps(end); end %#ok<AGROW>
-    sweeps = merged;
-end
-sweptUnion = sweeps;
+sweptUnion = balancedUnion(sweeps);
 timing_s(3) = toc(stageTimer);
 if isempty(sweptUnion.Vertices)
     return;
@@ -154,16 +145,24 @@ else
     for regionIndex = 1:numel(regions_units)
         cover(regionIndex) = polyshape(regions_units{regionIndex},'Simplify',false,'KeepCollinearPoints',true);
     end
-    while numel(cover) > 1
-        pairCount = floor(numel(cover)/2);
-        merged = union(cover(1:2:2*pairCount),cover(2:2:2*pairCount),'KeepCollinearPoints',true);
-        if mod(numel(cover),2), merged(end+1) = cover(end); end %#ok<AGROW>
-        cover = merged;
-    end
-    shape = cover;
+    shape = balancedUnion(cover);
     regions_units = obstacleAvoidance.geometry.convexRegions(shape,true);
 end
 timing_s(4) = toc(stageTimer);
 counts(2) = numel(regions_units);
 supported = ~isempty(regions_units);
+end
+
+%% Section 6: Local Functions
+function shape = balancedUnion(pieces)
+    % Keep intermediate boundaries local instead of repeatedly unioning the
+    % complete accumulated boundary with one more piece.
+    while numel(pieces) > 1
+        pairCount = floor(numel(pieces)/2);
+        merged = union(pieces(1:2:2*pairCount),pieces(2:2:2*pairCount), ...
+            'KeepCollinearPoints',true);
+        if mod(numel(pieces),2), merged(end+1) = pieces(end); end %#ok<AGROW>
+        pieces = merged;
+    end
+    shape = pieces;
 end

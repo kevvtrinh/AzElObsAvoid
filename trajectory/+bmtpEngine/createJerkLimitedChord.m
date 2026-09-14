@@ -52,12 +52,6 @@ segmentTime_s = segmentTime_s(active);
 segmentJerk_s3 = segmentJerk_s3(active);
 
 %% Section 2: Integrate And Elevate Each Cubic Without Changing Its Curve
-conversion = zeros(degree+1,4);
-for k = 0:degree
-    for power = 0:min(k,3)
-        conversion(k+1,power+1) = nchoosek(k,power)/nchoosek(degree,power);
-    end
-end
 controlPoint_units = zeros(numel(segmentTime_s),degree+1,2);
 phases = struct('StartTime_s',[0;cumsum(segmentTime_s(1:end-1))], ...
     'SegmentTime_s',segmentTime_s,'Position_units',zeros(numel(segmentTime_s),2), ...
@@ -71,7 +65,7 @@ for k = 1:numel(segmentTime_s)
     phases.Velocity_units_s(k,:) = velocity_s1*displacement_units;
     phases.Acceleration_units_s2(k,:) = acceleration_s2*displacement_units;
     powers = [position;velocity_s1*duration_s;acceleration_s2*duration_s^2/2;jerk_s3*duration_s^3/6];
-    controlPoint_units(k,:,:) = start_units+(conversion*powers).*displacement_units;
+    controlPoint_units(k,:,:) = start_units+bmtpEngine.powerToBernstein(powers,degree).*displacement_units;
     position = sum(powers);
     velocity_s1 = velocity_s1+acceleration_s2*duration_s+jerk_s3*duration_s^2/2;
     acceleration_s2 = acceleration_s2+jerk_s3*duration_s;

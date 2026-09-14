@@ -15,9 +15,7 @@ preparation = obstacle.InternalPreparation;
 time_s      = double(obstacle.time_s(:));
 shape       = [];
 if isempty(time_s) || (numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end)))
-    geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, 0, "inactive", classifyBoundary);
-    geometry.EdgeStart_units = zeros(0, 2);
-    geometry.EdgeEnd_units   = zeros(0, 2);
+    geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, "inactive", classifyBoundary);
     if ~geometryOnly
         shape = polyshape();
     end
@@ -48,8 +46,6 @@ if lowerIndex == upperIndex
     if ~geometryOnly
         shape = preparation.SampleShapes{lowerIndex};
     end
-    edgeStart_units = preparation.SampleEdgeStart_units{lowerIndex};
-    edgeEnd_units   = preparation.SampleEdgeEnd_units{lowerIndex};
 elseif preparation.MatchingTopology(lowerIndex)
     if preparation.SpanEndSampleIndex(lowerIndex)>preparation.SpanStartSampleIndex(lowerIndex)+1
         firstSample = preparation.SpanStartSampleIndex(lowerIndex);
@@ -66,8 +62,6 @@ elseif preparation.MatchingTopology(lowerIndex)
     if ~geometryOnly && speed_units_s == 0
         shape = preparation.SampleShapes{lowerIndex};
     end
-    edgeStart_units = [x_units, y_units];
-    edgeEnd_units   = circshift(edgeStart_units, -1, 1);
 elseif preparation.IntervalGeometryModel(lowerIndex)=="unsupportedContinuousDeformation"
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
@@ -78,8 +72,6 @@ elseif any(preparation.IntervalGeometryModel(lowerIndex)== ...
     speed_units_s            = 0;
     topologyIsInterpolated = false;
     geometryModel          = preparation.IntervalGeometryModel(lowerIndex);
-    edgeStart_units          = preparation.IntervalUnionEdgeStart_units{lowerIndex};
-    edgeEnd_units            = preparation.IntervalUnionEdgeEnd_units{lowerIndex};
 else
     error('preparedShapeAtTime:UnknownGeometryModel', ...
         'The prepared obstacle interval has an unknown geometry model.');
@@ -90,12 +82,10 @@ if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units);
 end
 if nargout<2, return; end
-geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel, classifyBoundary);
-geometry.EdgeStart_units = edgeStart_units;
-geometry.EdgeEnd_units   = edgeEnd_units;
+geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, geometryModel, classifyBoundary);
 end
 
-function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel, classifyBoundary)
+function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, geometryModel, classifyBoundary)
     % Classify one ordered boundary without changing its vertices or ring order.
     finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
@@ -123,5 +113,5 @@ function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIs
         "HasOrderedSingleRegion", hasOneRing, "IsConvex", isConvex, "OutwardSign", outwardSign, ...
         "TopologyIsInterpolated", topologyIsInterpolated, ...
         "GeometryModel", string(geometryModel), ...
-        "LowerSampleIndex", lowerIndex, "UpperSampleIndex", upperIndex);
+        "LowerSampleIndex", lowerIndex);
 end

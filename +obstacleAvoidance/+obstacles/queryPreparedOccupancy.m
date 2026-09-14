@@ -54,7 +54,7 @@ for j = 1:numel(obstacles)
         if ~geometry.Active, continue; end
         [inside, on] = inpolygon(x_units(indices),y_units(indices),geometry.x_units,geometry.y_units);
         hit = inside & (~on | boundaryOccupied);
-        fresh = indices(hit & ~occupied(indices));
+        fresh = indices(hit);
         occupied(fresh) = true; blockingIndex(fresh) = j;
     end
 end

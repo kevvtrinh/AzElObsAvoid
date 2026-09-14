@@ -38,8 +38,6 @@ if ~isempty(obstacles) && isstruct(obstacles) && isfield(obstacles, 'Vertices_un
     obstacles = vertcat(canonical{:});
 end
 
-% Reuse cached geometry only when its layout and source data match.
-
 if isempty(obstacles)
     return;
 end

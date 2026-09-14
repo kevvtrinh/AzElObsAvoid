@@ -8,7 +8,7 @@ function [planes, activePairs, complete, statistics] = createTimeScopedPlanes( .
 % INPUTS: Reference Bezier controls, physical span times, checked BMTP request,
 %   and obstacle/trajectory separation reserves.
 % OUTPUTS: Complete plane array, actual active-pair mask, construction status,
-%   and deterministic plane-count diagnostics.
+%   and deterministic plane counts.
 % UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Resolve The Actual Clock And Pair Activity
@@ -21,10 +21,7 @@ end
 validateattributes(segmentTime_s,{'numeric'}, ...
     {'real','finite','positive','numel',segmentCount});
 regionCount=numel(request.Regions_units);
-emptyPlane=struct('Active',false,'Verified',false,'ExitFlag',NaN, ...
-    'Normal',zeros(2,2),'Offset_units',zeros(1,2), ...
-    'SignedGap_units',NaN,'TimeFraction',[0,1]);
-planes=repmat(emptyPlane,segmentCount,regionCount);
+planes=repmat(bmtpEngine.createEmptyPlane(),segmentCount,regionCount);
 activePairs=true(segmentCount,regionCount);
 breaks_s=request.InitialState.time_s+[0;cumsum(segmentTime_s)];
 if isfield(request.Coverage,'ActiveTimeInterval_s')
@@ -39,8 +36,6 @@ end
 complete=true;
 verifiedCount=0;
 analyticCount=0;
-failedSegmentIndex=0;
-failedRegionIndex=0;
 for segmentIndex=1:segmentCount
     for regionIndex=reshape(find(activePairs(segmentIndex,:)),1,[])
         controls_units=squeeze(referenceControl_units(segmentIndex,:,:));
@@ -66,17 +61,11 @@ for segmentIndex=1:segmentCount
             output.IsAnalytic);
         if exitFlag<=0 || ~plane.Active || ~plane.Verified
             complete=false;
-            if failedSegmentIndex==0
-                failedSegmentIndex=segmentIndex;
-                failedRegionIndex=regionIndex;
-            end
         else
             verifiedCount=verifiedCount+1;
         end
     end
 end
 statistics=struct('ActivePairCount',nnz(activePairs), ...
-    'VerifiedPairCount',verifiedCount,'AnalyticPairCount',analyticCount, ...
-    'FailedSegmentIndex',failedSegmentIndex, ...
-    'FailedRegionIndex',failedRegionIndex);
+    'VerifiedPairCount',verifiedCount,'AnalyticPairCount',analyticCount);
 end

@@ -25,7 +25,7 @@ for pairIndex=reshape(find(activePairs & ~retainedPairs),1,[])
     [segmentIndex,regionIndex]=ind2sub(size(activePairs),pairIndex);
     plane=planes(segmentIndex,regionIndex);
     pairControls=squeeze(controls(segmentIndex,:,:));
-    if isfield(plane,'TimeFraction') && ~isequal(plane.TimeFraction,[0,1])
+    if ~isequal(plane.TimeFraction,[0,1])
         if isequal(lastTimeFraction(segmentIndex,:),plane.TimeFraction)
             pairControls=lastRestrictedControl{segmentIndex};
         else
