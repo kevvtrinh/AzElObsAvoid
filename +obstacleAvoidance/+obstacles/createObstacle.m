@@ -20,7 +20,8 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %   orientation and first vertex are representation details. The status field is metadata and does
 %   not deactivate physical geometry. Exact consecutive duplicates and closing copies are removed.
 %   Runs with fewer than three distinct vertices become empty area; distinct coordinates are
-%   retained without a distance or area threshold.
+%   retained without a distance or area threshold. Proper self-crossing zigzags are
+%   removed shortest interior run first, with removed vertices and area reported.
 % OUTPUTS: obstacleData (canonical scalar or column struct array) Original and protected histories,
 %   margin, status, and normalization counts with affected sample indices/times (at most one per
 %   sample).
@@ -76,7 +77,8 @@ rawObstacle = struct("targetName", string(obstacleInput), "time_s", time_s, ...
     "y_units", {reshape(yBySlice_units, [], 1)}, ...
     "originalX_units", {reshape(xBySlice_units, [], 1)}, ...
     "originalY_units", {reshape(yBySlice_units, [], 1)}, "safetyMargin_units", 0, ...
-    "status", repmat("visible", sampleCount, 1));
+    "status", repmat("visible", sampleCount, 1), ...
+    "vertexCorrespondence", "circularCorrelation");
 obstacleData = normalizeOne(rawObstacle);
 obstacleData = protectObstacles(obstacleData, safetyMargin_units, resolveVerbose(options));
 end
@@ -94,7 +96,7 @@ function obstacle = normalizeOne(inputData)
     boundariesAreValid = iscell(inputData.x_units) && iscell(inputData.y_units) && numel(inputData.x_units) == sampleCount && numel(inputData.y_units) == sampleCount;
     requireCondition(boundariesAreValid, "createObstacle:InvalidBoundary", "x_units and y_units must be cell arrays matching time_s.");
     [xBySlice_units, yBySlice_units, ...
-        protectedRemoved, protectedRemovalBySample] = normalizeHistory(inputData.x_units, inputData.y_units, sampleCount, "protected");
+        protectedRemoved, protectedRemovalBySample, protectedRepairBySample] = normalizeHistory(inputData.x_units, inputData.y_units, sampleCount, "protected");
     hasOriginalX   = isfield(inputData, "originalX_units");
     hasOriginalY = isfield(inputData, "originalY_units");
     requireCondition(~xor(hasOriginalX, hasOriginalY), "createObstacle:IncompleteOriginalBoundary", "originalX_units and originalY_units must both be present or absent.");
@@ -104,31 +106,43 @@ function obstacle = normalizeOne(inputData)
         if isequaln(inputData.originalX_units,inputData.x_units) && isequaln(inputData.originalY_units,inputData.y_units)
             originalXBySlice_units = xBySlice_units; originalYBySlice_units = yBySlice_units;
             originalRemoved = protectedRemoved; originalRemovalBySample = protectedRemovalBySample;
+            originalRepairBySample = protectedRepairBySample;
         else
             [originalXBySlice_units, originalYBySlice_units, ...
-                originalRemoved, originalRemovalBySample] = normalizeHistory(inputData.originalX_units, inputData.originalY_units, sampleCount, "original");
+                originalRemoved, originalRemovalBySample, originalRepairBySample] = normalizeHistory(inputData.originalX_units, inputData.originalY_units, sampleCount, "original");
         end
     else
         originalXBySlice_units   = xBySlice_units;
         originalYBySlice_units = yBySlice_units;
         originalRemoved              = [0,0];
         originalRemovalBySample      = false(sampleCount, 1);
+        originalRepairBySample = zeros(sampleCount,3);
     end
     affectedSamples = find(protectedRemovalBySample | originalRemovalBySample);
     normalization = struct('Version',1,'SourceTime_s',time_s,'Roles',["protected","original"], ...
         'RemovedRegionCount',[protectedRemoved(1),originalRemoved(1)], ...
         'RemovedDuplicateVertexCount',[protectedRemoved(2),originalRemoved(2)], ...
         'AffectedSampleIndex',affectedSamples,'AffectedSampleTime_s',time_s(affectedSamples), ...
-        'Reasons',["fewerThanThreeDistinctVertices","exactDuplicateOrClosure"]);
+        'RemovedZigzagVertexCountBySample',[protectedRepairBySample(:,1),originalRepairBySample(:,1)], ...
+        'RemovedZigzagAreaBySample_units2',[protectedRepairBySample(:,2),originalRepairBySample(:,2)], ...
+        'AddedZigzagAreaBySample_units2',[protectedRepairBySample(:,3),originalRepairBySample(:,3)], ...
+        'Reasons',["fewerThanThreeDistinctVertices","exactDuplicateOrClosure","selfCrossingZigzagRemoved"]);
     % Preserve cleanup provenance through canonical rebuilds and margin changes.
     % This metadata never controls occupancy or substitutes for source checks.
     if isfield(inputData,'NormalizationDiagnostics')
         previous = inputData.NormalizationDiagnostics;
-        if isstruct(previous) && isscalar(previous) && all(isfield(previous,fieldnames(normalization))) && ...
+        if isstruct(previous) && isscalar(previous) && all(isfield(previous,{'Version','SourceTime_s','RemovedRegionCount', ...
+                'RemovedDuplicateVertexCount','AffectedSampleIndex'})) && ...
                 isequal(previous.Version,1) && isequal(previous.SourceTime_s,time_s)
             for name = ["RemovedRegionCount","RemovedDuplicateVertexCount"]
                 validateattributes(previous.(name),{'numeric'},{'real','finite','size',[1,2],'integer','nonnegative'});
                 normalization.(name) = normalization.(name)+previous.(name);
+            end
+            for name = ["RemovedZigzagVertexCountBySample","RemovedZigzagAreaBySample_units2","AddedZigzagAreaBySample_units2"]
+                if isfield(previous,name)
+                    validateattributes(previous.(name),{'numeric'},{'real','finite','size',[sampleCount,2],'nonnegative'});
+                    normalization.(name) = normalization.(name)+previous.(name);
+                end
             end
             validateattributes(previous.AffectedSampleIndex,{'numeric'},{'real','finite','integer','positive','<=',sampleCount});
             affectedSamples = union(affectedSamples,previous.AffectedSampleIndex(:));
@@ -151,20 +165,34 @@ function obstacle = normalizeOne(inputData)
     else
         error("createObstacle:StatusSizeMismatch", "status must contain one value per time sample.");
     end
+    % The caller may declare that ring vertices correspond by source index
+    % (one source ring transformed per sample). Otherwise correspondence is
+    % recovered by circular correlation. The declaration never changes
+    % geometry; it selects which correspondence the continuous model uses.
+    vertexCorrespondence = "circularCorrelation";
+    if isfield(inputData, "vertexCorrespondence") && ~isempty(inputData.vertexCorrespondence)
+        vertexCorrespondence = string(inputData.vertexCorrespondence);
+        requireCondition(isscalar(vertexCorrespondence) && ...
+            any(vertexCorrespondence == ["circularCorrelation", "sourceIndex"]), ...
+            "createObstacle:InvalidVertexCorrespondence", ...
+            "vertexCorrespondence must be circularCorrelation or sourceIndex.");
+    end
     obstacle = struct("targetName", targetName, "time_s", time_s, ...
         "x_units", {xBySlice_units}, "y_units", {yBySlice_units}, ...
         "originalX_units", {originalXBySlice_units}, ...
         "originalY_units", {originalYBySlice_units}, ...
         "safetyMargin_units", safetyMargin_units, "status", status, ...
-        "NormalizationDiagnostics",normalization);
+        "NormalizationDiagnostics",normalization, ...
+        "vertexCorrespondence", vertexCorrespondence);
 end
 
-function [xHistory_units, yHistory_units, removedCount, removalBySample] = normalizeHistory(xInput_units, yInput_units, sampleCount, role)
+function [xHistory_units, yHistory_units, removedCount, removalBySample, repairBySample] = normalizeHistory(xInput_units, yInput_units, sampleCount, role)
     % Normalize original and protected slices with distinct error identifiers.
     xHistory_units   = reshape(xInput_units, [], 1);
     yHistory_units = reshape(yInput_units, [], 1);
     removedCount         = [0,0];
     removalBySample      = false(sampleCount, 1);
+    repairBySample = zeros(sampleCount,3);
     identifiers          = ["createObstacle:BoundarySizeMismatch", ...
         "createObstacle:OriginalBoundarySizeMismatch"];
     fieldNames = ["x_units", "y_units"; "originalX_units", "originalY_units"];
@@ -177,16 +205,17 @@ function [xHistory_units, yHistory_units, removedCount, removalBySample] = norma
         end
         x_units   = double(xHistory_units{sampleIndex}(:));
         y_units = double(yHistory_units{sampleIndex}(:));
-        [x_units, y_units, removed] = normalizeSlice(x_units, y_units, sampleIndex, role);
+        [x_units, y_units, removed, repair] = normalizeSlice(x_units, y_units, sampleIndex, role);
         xHistory_units{sampleIndex} = x_units;
         yHistory_units{sampleIndex} = y_units;
         removedCount = removedCount + removed;
-        removalBySample(sampleIndex) = any(removed > 0);
+        removalBySample(sampleIndex) = any(removed > 0) || repair(1)>0;
+        repairBySample(sampleIndex,:) = repair;
     end
 end
 
-function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sampleIndex, role)
-    % Remove only provably redundant coordinates and lower-dimensional runs.
+function [x_units, y_units, removedCount, repair] = normalizeSlice(x_units, y_units, sampleIndex, role)
+    % Normalize duplicates, then remove declared proper-crossing folds.
     xFinite   = isfinite(x_units);
     yFinite = isfinite(y_units);
     requireCondition(~any(xor(xFinite, yFinite)), "createObstacle:UnpairedNonfiniteBoundary", "The %s boundary at slice %d must use paired separators.", role, sampleIndex);
@@ -194,6 +223,7 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
     regionStarts      = find(changes == 1);
     regionStops       = find(changes == -1) - 1;
     rowsByRegion = cell(numel(regionStarts),1);
+    repair = [0,0,0];
     removedCount = [0,0];
     for regionIndex = 1:numel(regionStarts)
         rows = (regionStarts(regionIndex):regionStops(regionIndex)).';
@@ -203,6 +233,9 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
         if numel(rows)>1 && x_units(rows(1))==x_units(rows(end)) && y_units(rows(1))==y_units(rows(end))
             rows(end) = []; removedCount(2) = removedCount(2)+1;
         end
+        [retained,changedArea_units2] = removeCrossingZigzags([x_units(rows),y_units(rows)]);
+        repair = repair+[numel(rows)-numel(retained),changedArea_units2];
+        rows = rows(retained);
         hasAreaVertices = numel(rows)>=3;
         if hasAreaVertices
             % The first two retained vertices differ. Alternating copies of
@@ -213,7 +246,7 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
         if hasAreaVertices, rowsByRegion{regionIndex} = rows;
         else, removedCount(1) = removedCount(1)+1; end
     end
-    if ~any(removedCount) && any(xFinite)
+    if ~any(removedCount) && repair(1)==0 && any(xFinite)
         return;
     end
     regionVertexCount = cellfun(@numel,rowsByRegion);
@@ -237,6 +270,85 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
     end
     x_units   = newX_units;
     y_units = newY_units;
+end
+
+function [retained,changedArea_units2] = removeCrossingZigzags(points_units)
+    % Strict orientation signs identify proper crossings, without a tolerance.
+    % Sorting edge boxes only omits pairs whose boxes are strictly disjoint.
+    retained = (1:size(points_units,1)).';
+    changedArea_units2 = [0,0];
+    before = [];
+    % Fast exit for rings that need no repair. A proper crossing always
+    % introduces its intersection point into the simplified boundary, so a
+    % single-region simplified ring whose vertices are exactly the supplied
+    % ones (same count, all rows present) contains no proper crossing. This
+    % filter only skips the scan; the scan below remains the authority.
+    if size(points_units,1)>=3
+        warningState = warning('off','MATLAB:polyshape:repairedBySimplify');
+        restoreWarning = onCleanup(@()warning(warningState));
+        simplified = polyshape(points_units,'Simplify',true,'KeepCollinearPoints',true);
+        clear restoreWarning;
+        if simplified.NumRegions==1 && simplified.NumHoles==0 && ...
+                size(simplified.Vertices,1)==size(points_units,1) && ...
+                all(ismember(simplified.Vertices,points_units,'rows'))
+            return;
+        end
+        before = simplified;
+    end
+    while numel(retained)>=3
+        vertices_units = points_units(retained,:);
+        count = size(vertices_units,1);
+        next = [2:count,1];
+        ends_units = vertices_units(next,:);
+        minimum_units = min(vertices_units,ends_units);
+        maximum_units = max(vertices_units,ends_units);
+        if count^2<=2^20
+            % Bound the temporary dense broad phase to one million entries.
+            overlap = minimum_units(:,1)<=maximum_units(:,1).' & ...
+                maximum_units(:,1)>=minimum_units(:,1).' & ...
+                minimum_units(:,2)<=maximum_units(:,2).' & ...
+                maximum_units(:,2)>=minimum_units(:,2).';
+            [firstIndices,secondIndices] = find(triu(overlap,2));
+        else
+            [~,order] = sort(minimum_units(:,1));
+            active = zeros(0,1);
+            pairBlocks = cell(count,1);
+            for edgeIndex = reshape(order,1,[])
+                active = active(maximum_units(active,1)>=minimum_units(edgeIndex,1));
+                candidates = active(maximum_units(active,2)>=minimum_units(edgeIndex,2) & ...
+                    minimum_units(active,2)<=maximum_units(edgeIndex,2));
+                pairBlocks{edgeIndex} = sort([repmat(edgeIndex,numel(candidates),1),candidates],2);
+                active(end+1,1) = edgeIndex; %#ok<AGROW>
+            end
+            pairs = vertcat(pairBlocks{:});
+            firstIndices = pairs(:,1); secondIndices = pairs(:,2);
+        end
+        nonAdjacent = secondIndices~=firstIndices+1 & ~(firstIndices==1 & secondIndices==count);
+        firstIndices = firstIndices(nonAdjacent); secondIndices = secondIndices(nonAdjacent);
+        first_units = vertices_units(firstIndices,:); last_units = ends_units(firstIndices,:);
+        other_units = vertices_units(secondIndices,:); otherEnd_units = ends_units(secondIndices,:);
+        direction_units = last_units-first_units;
+        otherDirection_units = otherEnd_units-other_units;
+        a = direction_units(:,1).*(other_units(:,2)-first_units(:,2))-direction_units(:,2).*(other_units(:,1)-first_units(:,1));
+        b = direction_units(:,1).*(otherEnd_units(:,2)-first_units(:,2))-direction_units(:,2).*(otherEnd_units(:,1)-first_units(:,1));
+        c = otherDirection_units(:,1).*(first_units(:,2)-other_units(:,2))-otherDirection_units(:,2).*(first_units(:,1)-other_units(:,1));
+        d = otherDirection_units(:,1).*(last_units(:,2)-other_units(:,2))-otherDirection_units(:,2).*(last_units(:,1)-other_units(:,1));
+        crossing = sign(a).*sign(b)<0 & sign(c).*sign(d)<0;
+        pairs = [firstIndices(crossing),secondIndices(crossing)];
+        if isempty(pairs), break; end
+        [~,order] = sortrows([diff(pairs,1,2),pairs(:,1)],[1,2]);
+        best = pairs(order(1),:);
+        % A self-crossing ring has no unique fill. Report the area removed
+        % relative to MATLAB's explicit simplified fill, never hide it.
+        retained(best(1)+1:best(2)) = [];
+    end
+    if ~isempty(before) && numel(retained)<size(points_units,1)
+        after = polyshape();
+        if numel(retained)>=3
+            after = polyshape(points_units(retained,:),'Simplify',true,'KeepCollinearPoints',true);
+        end
+        changedArea_units2 = [area(subtract(before,after)),area(subtract(after,before))];
+    end
 end
 
 function verbose = resolveVerbose(options)
@@ -280,7 +392,12 @@ function obstacles = protectObstacles(obstacles, safetyMargin_units, verbose)
         obstacle.x_units           = protectedX_units;
         obstacle.y_units           = protectedY_units;
         obstacle.safetyMargin_units = double(safetyMargin_units);
-        obstacles(obstacleIndex) = normalizeOne(obstacle);
+        if safetyMargin_units==0
+            % Retained originals already passed the same normalization rule.
+            obstacles(obstacleIndex) = obstacle;
+        else
+            obstacles(obstacleIndex) = normalizeOne(obstacle);
+        end
     end
 end
 

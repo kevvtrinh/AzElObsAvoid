@@ -9,6 +9,8 @@ function time_s = createTimeLayers(obstacles, startTime_s, endTime_s)
 %% Section 1: Retain The Complete Input-Derived Grid
 time_s = [startTime_s; linspace(startTime_s, endTime_s, 9).'; endTime_s];
 % Keep each obstacle event and interval midpoint, including narrow openings.
+% Every supplied keyframe stays a search event: merged keyframe spans reduce
+% cells, not the search's time resolution.
 for obstacleIndex = 1:numel(obstacles)
     sourceTime_s = obstacles(obstacleIndex).time_s(:);
     midpoint_s = 0.5 * (sourceTime_s(1:end - 1) + sourceTime_s(2:end));

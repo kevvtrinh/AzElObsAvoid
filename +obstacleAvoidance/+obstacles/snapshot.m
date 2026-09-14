@@ -9,9 +9,14 @@ function scene = snapshot(obstacles, time_s)
 %% Section 1: Evaluate Each History
 scene = struct('ProtectedShape', {}, 'ProtectedVertices_units', {}, 'Regions_units', {});
 for k = 1:numel(obstacles)
-    shape = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(k), time_s);
+    [shape,geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(k), time_s);
     if isempty(shape.Vertices), continue; end
+    if geometry.GeometryModel=="sweptCorrespondingConvexCells"
+        regions_units=obstacles(k).InternalPreparation.IntervalStartRegions_units{geometry.LowerSampleIndex};
+    else
+        regions_units=obstacleAvoidance.geometry.convexRegions(shape);
+    end
     scene(end+1) = struct('ProtectedShape', shape, 'ProtectedVertices_units', shape.Vertices, ...
-        'Regions_units', {obstacleAvoidance.geometry.convexRegions(shape)}); %#ok<AGROW>
+        'Regions_units', {regions_units}); %#ok<AGROW>
 end
 end

@@ -9,8 +9,9 @@ function [obstacleData, history] = createMovingObstacle(obstacleName, time_s, so
 % INPUTS: obstacleName (scalar text) time_s (nonempty increasing numeric vector) sourceX_units,
 %   sourceY_units (matching vectors) Paired nonfinite rows may separate rings. sliceTransform
 %   (function handle) position_units = sliceTransform(sourcePosition_units,time_s,index). Output
-%   slices use the obstacle history contract: direct motion is linear between verified corresponding
-%   vertices, not rigid arc motion. safetyMargin_units (nonnegative scalar) options (scalar struct,
+%   slices use the obstacle history contract: direct motion is linear between corresponding
+%   vertices, not rigid arc motion. Because every slice is one source ring under the transform,
+%   the returned obstacle declares `vertexCorrespondence` as `sourceIndex`. safetyMargin_units (nonnegative scalar) options (scalar struct,
 %   optional; default struct()) Verbose prints bounded progress updates (default false).
 % OUTPUTS: obstacleData (canonical protected moving obstacle) history (scalar struct) Source slice
 %   boundaries, geometry metrics, and resolved options.
@@ -87,6 +88,10 @@ end
 
 %% Section 3: Construct The Protected History
 obstacleData = obstacleAvoidance.obstacles.createObstacle(obstacleName, time_s, xBySlice_units, yBySlice_units, safetyMargin_units, struct("Verbose", verbose));
+% Every slice is one source ring under the caller's transform, so vertex
+% correspondence between samples is by source index; declare it so the
+% continuous model does not recover a different cyclic alignment.
+obstacleData.vertexCorrespondence = "sourceIndex";
 history      = struct("time_s", time_s, "xBySlice_units", {xBySlice_units}, ...
     "yBySlice_units", {yBySlice_units}, ...
     "vertexCount", vertexCount, "area_units2", area_units2, ...

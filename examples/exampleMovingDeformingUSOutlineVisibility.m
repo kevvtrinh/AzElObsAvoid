@@ -5,8 +5,9 @@ function result = exampleMovingDeformingUSOutlineVisibility(options)
 %   result = exampleMovingDeformingUSOutlineVisibility(options)
 %
 % PURPOSE
-%   - Plan around a dense U.S. outline that starts at 8 percent scale,
-%     grows, deforms, completes a 180-degree rotation, and disappears.
+%   - Plan around a U.S. outline (reduced to at most 100 vertices) that
+%     starts at 8 percent scale, grows, deforms, completes a 180-degree
+%     rotation, and disappears.
 %   - Include a starburst sun that moves across the bottom of the scene.
 %
 % INPUTS
@@ -44,7 +45,10 @@ uSDisappearTime_s  = 4 * 60;
 uSTime_s           = (0:obstacleTimeStep_s:uSDisappearTime_s).';
 % The private helper loads and joins more than 14,000 outline vertices. Keeping
 % this work in the helper makes the scenario sequence easier to read.
-[uSObstacle, uSHistory] = createContiguousUSObstacle(uSTime_s, 0.10, struct("MotionMode", "movingDeforming", "Verbose", jerkConfiguration.Verbose));
+% The supplied outline is capped at 100 vertices by a deterministic
+% Douglas-Peucker reduction inside the helper; that reduced outline is the
+% obstacle, and the planner treats it exactly.
+[uSObstacle, uSHistory] = createContiguousUSObstacle(uSTime_s, 0.10, struct("MotionMode", "movingDeforming", "Verbose", jerkConfiguration.Verbose, "MaximumOutlineVertices", 100));
 
 sunTime_s          = (0:obstacleTimeStep_s:missionEndTime_s).';
 sunRayCount        = 16;

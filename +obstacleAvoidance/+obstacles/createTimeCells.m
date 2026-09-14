@@ -22,12 +22,24 @@ for k = 1:numel(obstacles)
     else
         sourceIntervals_s = [obstacle.time_s(1:end-1),obstacle.time_s(2:end)];
     end
-    for j = 1:size(sourceIntervals_s,1)
+    spanStarts = 1:size(sourceIntervals_s,1);
+    if ~isscalar(obstacle.time_s)
+        spanStarts = unique(preparation.SpanStartSampleIndex).';
+    end
+    for j = spanStarts
+        lastInterval = j;
+        if ~isscalar(obstacle.time_s)
+            lastInterval = preparation.SpanEndSampleIndex(j)-1;
+            sourceIntervals_s(j,2) = obstacle.time_s(lastInterval+1);
+        end
         active_s = [max(initialTime_s,sourceIntervals_s(j,1)),min(finalTime_s,sourceIntervals_s(j,2))];
         if active_s(1) >= active_s(2), continue; end
         if isscalar(obstacle.time_s) || preparation.IsTimeInvariant
             shape = preparation.SampleShapes{j};
             regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);
+            endRegions = regions;
+        elseif preparation.IntervalGeometryModel(j)=="sweptCorrespondingConvexCells"
+            regions = preparation.IntervalStartRegions_units{j};
             endRegions = regions;
         elseif preparation.MatchingTopology(j) && preparation.IntervalSpeedBound_units_s(j)==0
             % A history can change elsewhere while this interval remains
@@ -41,7 +53,7 @@ for k = 1:numel(obstacles)
             % the moving union equals the authoritative concave polygon.
             fraction = (active_s-sourceIntervals_s(j,1))/diff(sourceIntervals_s(j,:));
             startRegions = preparation.IntervalStartRegions_units{j};
-            finishRegions = preparation.IntervalEndRegions_units{j};
+            finishRegions = preparation.IntervalEndRegions_units{lastInterval};
             regions = cell(size(startRegions));
             endRegions = cell(size(startRegions));
             for regionIndex = 1:numel(startRegions)
@@ -53,7 +65,10 @@ for k = 1:numel(obstacles)
             % A verified convex boundary stays convex throughout the linear
             % vertex interpolation.
             lower_units = [obstacle.x_units{j},obstacle.y_units{j}];
-            delta_units = [preparation.DeltaX_units{j},preparation.DeltaY_units{j}];
+            delta_units = [obstacle.x_units{lastInterval+1},obstacle.y_units{lastInterval+1}]-lower_units;
+            if lastInterval==j
+                delta_units = [preparation.DeltaX_units{j},preparation.DeltaY_units{j}];
+            end
             fraction = (active_s-sourceIntervals_s(j,1))/diff(sourceIntervals_s(j,:));
             regions = {lower_units+fraction(1)*delta_units};
             endRegions = {lower_units+fraction(2)*delta_units};

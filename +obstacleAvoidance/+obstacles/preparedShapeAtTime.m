@@ -51,8 +51,16 @@ if lowerIndex == upperIndex
     edgeStart_units = preparation.SampleEdgeStart_units{lowerIndex};
     edgeEnd_units   = preparation.SampleEdgeEnd_units{lowerIndex};
 elseif preparation.MatchingTopology(lowerIndex)
+    if preparation.SpanEndSampleIndex(lowerIndex)>preparation.SpanStartSampleIndex(lowerIndex)+1
+        firstSample = preparation.SpanStartSampleIndex(lowerIndex);
+        lastSample = preparation.SpanEndSampleIndex(lowerIndex);
+        fraction = (queryTime_s-time_s(firstSample))/(time_s(lastSample)-time_s(firstSample));
+        x_units = (1-fraction)*obstacle.x_units{firstSample}+fraction*obstacle.x_units{lastSample};
+        y_units = (1-fraction)*obstacle.y_units{firstSample}+fraction*obstacle.y_units{lastSample};
+    else
     x_units   = x_units + fraction * preparation.DeltaX_units{lowerIndex};
     y_units = y_units + fraction * preparation.DeltaY_units{lowerIndex};
+    end
     speed_units_s   = preparation.IntervalSpeedBound_units_s(lowerIndex);
     geometryModel = preparation.IntervalGeometryModel(lowerIndex);
     if ~geometryOnly && speed_units_s == 0
@@ -63,7 +71,8 @@ elseif preparation.MatchingTopology(lowerIndex)
 elseif preparation.IntervalGeometryModel(lowerIndex)=="unsupportedContinuousDeformation"
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
-elseif preparation.IntervalGeometryModel(lowerIndex)=="staticEquivalentSamples"
+elseif any(preparation.IntervalGeometryModel(lowerIndex)== ...
+        ["staticEquivalentSamples","sweptCorrespondingConvexCells"])
     shape = preparation.IntervalUnionShapes{lowerIndex};
     [x_units, y_units] = boundary(shape);
     speed_units_s            = 0;

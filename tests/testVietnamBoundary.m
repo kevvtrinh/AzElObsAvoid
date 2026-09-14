@@ -16,8 +16,8 @@ end
 function testSourceAndInterpolation(testCase)
     [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
     verifyEqual(testCase,obstacle.time_s,(2770:0.25:3000).');
-    verifyEqual(testCase,cellfun(@numel,obstacle.x_units),280*ones(921,1));
-    verifyEqual(testCase,cellfun(@numel,obstacle.y_units),280*ones(921,1));
+    verifyEqual(testCase,cellfun(@numel,obstacle.x_units),275*ones(921,1));
+    verifyEqual(testCase,cellfun(@numel,obstacle.y_units),275*ones(921,1));
     verifyEqual(testCase,obstacle.x_units{1}([1,end]),[71.2030949368775;71.1630137217925]);
     verifyEqual(testCase,obstacle.y_units{end}([1,end]),[44.5387196138512;44.6152394585970]);
     verifyEqual(testCase,obstacle.x_units,obstacle.originalX_units);
@@ -37,30 +37,30 @@ function testSourceAndInterpolation(testCase)
     verifyEqual(testCase,limits.maxVelocity_units_s,[2,2]);
 end
 
-function testPlannerStopsAtFirstUnsupportedInterval(testCase)
-    [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
-    result=planner(obstacle,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
-    verifyEqual(testCase,result.TerminationReason,"unsupportedObstacleInterpolation");
-    preparation=result.PreparedObstacles.InternalPreparation;
-    verifyEqual(testCase,nnz(preparation.SamplePrepared),2);
-    verifyEqual(testCase,nnz(preparation.IntervalPrepared),1);
-    verifyEqual(testCase,result.PreparedObstacles.x_units,obstacle.x_units);
-    verifyEqual(testCase,result.PreparedObstacles.y_units,obstacle.y_units);
-    extended=obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles,[2770,2770.5]);
-    verifyEqual(testCase,nnz(extended.InternalPreparation.SamplePrepared),3);
-    verifyEqual(testCase,nnz(extended.InternalPreparation.IntervalPrepared),2);
+function testPreparationRetainsSourceAndCanonicalizesTwoSpans(testCase)
+    [obstacle,initial,goal,~]=createVietnamBoundaryScenario();
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[initial.time_s,goal.time_s]);
+    preparation=prepared.InternalPreparation;
+    verifyEqual(testCase,preparation.MergedSpanTime_s,[2770,2910;2910,3000]);
+    verifyEqual(testCase,preparation.MergedIntervalCount,918);
+    verifyTrue(testCase,all(preparation.IntervalPrepared));
+    verifyEqual(testCase,prepared.x_units,obstacle.x_units);
+    verifyEqual(testCase,prepared.y_units,obstacle.y_units);
+    verifyEqual(testCase,obstacle.NormalizationDiagnostics.RemovedZigzagVertexCountBySample,5*ones(921,2));
 end
 
-function testUnsupportedDeformationIsNeverReplacedByAConvexHull(testCase)
+function testExactDeformationIsNeverReplacedByAConvexHull(testCase)
     [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
-    prepared=obstacleAvoidance.obstacles.prepareObstacles( ...
-        obstacle,[initial.time_s,goal.time_s]);
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[initial.time_s,goal.time_s]);
     models=prepared.InternalPreparation.IntervalGeometryModel;
-    verifyEqual(testCase,models,repmat("unsupportedContinuousDeformation",920,1));
+    verifyEqual(testCase,models,repmat("linearCorrespondingConvexPartition",920,1));
     verifyFalse(testCase,any(contains(models,"ConvexHull",'IgnoreCase',true)));
-    result=planner(prepared,initial,goal,limits, ...
-        struct('GoalTimeMode','fixedArrival','WrapX',false));
-    verifyFalse(testCase,result.Success);
-    verifyEqual(testCase,result.TerminationReason,"unsupportedObstacleInterpolation");
-    verifyEmpty(testCase,result.time_s);
+    cells=obstacleAvoidance.obstacles.createTimeCells(prepared,2770,3000);
+    verifyEqual(testCase,unique(cells.ActiveTimeInterval_s,'rows'),[2770,2910;2910,3000]);
+    result=planner(prepared,initial,goal,limits,struct('GoalTimeMode','fixedArrival','WrapX',false));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.ArrivalTime_s,3000);
+    verifyLessThan(testCase,abs(result.MotionLength_units/113.153-1),0.01);
+    validation=obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase,validation.Passed,validation.Message);
 end

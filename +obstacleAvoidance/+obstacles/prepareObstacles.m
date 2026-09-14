@@ -43,7 +43,7 @@ end
 if isempty(obstacles)
     return;
 end
-preparationVersion = 9;
+preparationVersion = 10;
 %% Section 2: Extend Only The Requested Entries
 % Prepare each obstacle separately.
 
@@ -86,5 +86,6 @@ function snapshot = createSourceSnapshot(obstacle)
         "originalX_units", {obstacle.originalX_units}, ...
         "originalY_units", {obstacle.originalY_units}, ...
         "safetyMargin_units", obstacle.safetyMargin_units, ...
-        "status", obstacle.status);
+        "status", obstacle.status, ...
+        "vertexCorrespondence", string(obstacle.vertexCorrespondence));
 end

@@ -19,6 +19,10 @@ function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_u
 %   - options (scalar struct, optional)
 %       .MotionMode is static or movingDeforming (default static).
 %       .Verbose is logical (default false).
+%       .MaximumOutlineVertices caps the source outline vertex count by a
+%        deterministic Douglas-Peucker reduction (default Inf, no reduction).
+%        The reduced outline is the supplied obstacle; the planner treats it
+%        exactly and applies no further simplification.
 %**************************************************************************
 % OUTPUTS
 %   - obstacle (canonical protected moving obstacle)
@@ -44,6 +48,7 @@ end
 defaultOptions = struct();
 defaultOptions.MotionMode = "static";
 defaultOptions.Verbose    = false;
+defaultOptions.MaximumOutlineVertices = Inf;
 [resolvedOptions, unknownOptionFields] = obstacleAvoidance.input.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("createContiguousUSObstacle:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
@@ -54,6 +59,12 @@ if ~isscalar(motionMode) || ~any(motionMode == ["static" "movingdeforming"])
 end
 verbose = obstacleAvoidance.input.normalizeLogicalScalar(resolvedOptions.Verbose, "Verbose", "createContiguousUSObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
+maximumOutlineVertices = double(resolvedOptions.MaximumOutlineVertices);
+if ~isscalar(maximumOutlineVertices) || ~isreal(maximumOutlineVertices) || isnan(maximumOutlineVertices) || maximumOutlineVertices < 3 || ...
+        (isfinite(maximumOutlineVertices) && maximumOutlineVertices ~= floor(maximumOutlineVertices))
+    error("createContiguousUSObstacle:InvalidMaximumOutlineVertices", "MaximumOutlineVertices must be Inf or an integer of at least 3.");
+end
+resolvedOptions.MaximumOutlineVertices = maximumOutlineVertices;
 
 %% Section 2: Load One Dense Exterior Boundary
 
@@ -86,6 +97,15 @@ for stateIndex = 2:numel(stateBoundary)
 end
 [allLongitude_units, allLatitude_units]   = boundary(mainlandUS);
 [baseLongitude_units, baseLatitude_units] = largestFiniteRing(allLongitude_units, allLatitude_units);
+fullOutlineVertexCount = numel(baseLongitude_units);
+if isfinite(maximumOutlineVertices) && fullOutlineVertexCount > maximumOutlineVertices
+    reduced_units = reduceClosedRing([baseLongitude_units, baseLatitude_units], maximumOutlineVertices);
+    baseLongitude_units = reduced_units(:, 1);
+    baseLatitude_units  = reduced_units(:, 2);
+    if verbose
+        fprintf("[U.S. obstacle] outline reduced from %d to %d vertices.\n", fullOutlineVertexCount, numel(baseLongitude_units));
+    end
+end
 
 %% Section 3: Delegate All Slice Work To The Generic Constructor
 
@@ -105,6 +125,7 @@ history.motionMode               = motionMode;
 history.sourceFile               = string(boundaryFile);
 history.sourceOutlineLatLon_units  = [baseLatitude_units, baseLongitude_units];
 history.sourceOutlineVertexCount = numel(baseLongitude_units);
+history.fullOutlineVertexCount   = fullOutlineVertexCount;
 history.scaleFactor              = profile.ScaleFactor(:);
 history.rotation_deg             = profile.Rotation_deg(:);
 history.translation_units          = profile.Translation_units;
@@ -146,6 +167,138 @@ function profile = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDur
             2.5 * sin(2 * pi * missionProgress(:)), ...
             1.5 * sin(pi * missionProgress(:))], ...
         "DeformationWeight", sin(pi * missionProgress));
+end
+
+function reduced_units = reduceClosedRing(ring_units, maximumVertexCount)
+    % Reduce a simple closed ring to at most maximumVertexCount vertices with
+    % the Douglas-Peucker rule, choosing the smallest distance tolerance that
+    % meets the cap by bisection. The ring is split at its first vertex and
+    % the vertex farthest from it so both halves are open polylines whose
+    % endpoints are always retained. Douglas-Peucker alone can fold an
+    % outline (a chord across a bay can cross the far shore), so every
+    % candidate that fits the cap is uncrossed by splitting each crossing
+    % chord at the source vertex farthest from it; the uncrossed candidate
+    % must still fit the cap. The result must be one simple ring; anything
+    % else is an error, not a repair.
+    vertexCount = size(ring_units, 1);
+    [~, anchorIndex] = max(vecnorm(ring_units - ring_units(1, :), 2, 2));
+    lowerTolerance_units = 0;
+    upperTolerance_units = max(max(ring_units, [], 1) - min(ring_units, [], 1));
+    keptIndex = zeros(0, 1);
+    for iteration = 1:64
+        tolerance_units = (lowerTolerance_units + upperTolerance_units) / 2;
+        keep = false(vertexCount, 1);
+        keep(1:anchorIndex) = douglasPeuckerKeep(ring_units(1:anchorIndex, :), tolerance_units);
+        keepSecond = douglasPeuckerKeep(ring_units([anchorIndex:vertexCount, 1], :), tolerance_units);
+        keep(anchorIndex:vertexCount) = keep(anchorIndex:vertexCount) | keepSecond(1:end - 1);
+        candidateIndex = find(keep);
+        if numel(candidateIndex) <= maximumVertexCount
+            candidateIndex = uncrossReducedRing(ring_units, candidateIndex);
+        end
+        if numel(candidateIndex) > maximumVertexCount
+            lowerTolerance_units = tolerance_units;
+        else
+            upperTolerance_units = tolerance_units;
+            keptIndex = candidateIndex;
+        end
+    end
+    if numel(keptIndex) < 3
+        error("createContiguousUSObstacle:OutlineReductionFailed", "The outline could not be reduced to %d vertices.", maximumVertexCount);
+    end
+    reduced_units = ring_units(keptIndex, :);
+    checkShape = polyshape(reduced_units(:, 1), reduced_units(:, 2), "Simplify", true, "KeepCollinearPoints", true);
+    if checkShape.NumRegions ~= 1 || checkShape.NumHoles ~= 0 || size(checkShape.Vertices, 1) ~= size(reduced_units, 1) || ...
+            ~all(ismember(checkShape.Vertices, reduced_units, "rows"))
+        error("createContiguousUSObstacle:OutlineReductionFolded", "The reduced outline is not one simple ring.");
+    end
+end
+
+function keptIndex = uncrossReducedRing(ring_units, keptIndex)
+    % Split every reduced edge that properly crosses another reduced edge at
+    % the source vertex farthest from its chord, until no proper crossing
+    % remains. keptIndex is an ascending list of source indices starting at
+    % 1, so reduced edge k runs over source vertices keptIndex(k) to
+    % keptIndex(k+1), and the last edge wraps to vertex 1. The source ring is
+    % simple, so at least one edge of every crossing pair has interior source
+    % vertices, and the loop ends at the source ring at worst.
+    vertexCount = size(ring_units, 1);
+    while true
+        crossing = properEdgeCrossings(ring_units(keptIndex, :));
+        if isempty(crossing)
+            return;
+        end
+        added = zeros(0, 1);
+        for edge = unique(crossing(:)).'
+            firstSource = keptIndex(edge);
+            if edge < numel(keptIndex)
+                lastSource = keptIndex(edge + 1);
+            else
+                lastSource = vertexCount + 1;
+            end
+            interior = (firstSource + 1:lastSource - 1).';
+            if isempty(interior)
+                continue;
+            end
+            chordEnd_units = ring_units(mod(lastSource - 1, vertexCount) + 1, :);
+            chord_units    = chordEnd_units - ring_units(firstSource, :);
+            offset_units   = ring_units(interior, :) - ring_units(firstSource, :);
+            chordLength_units = norm(chord_units);
+            if chordLength_units > 0
+                distance_units = abs(offset_units(:, 1) * chord_units(2) - offset_units(:, 2) * chord_units(1)) / chordLength_units;
+            else
+                distance_units = vecnorm(offset_units, 2, 2);
+            end
+            [~, farthestOffset] = max(distance_units);
+            added(end + 1, 1) = interior(farthestOffset); %#ok<AGROW>
+        end
+        if isempty(added)
+            error("createContiguousUSObstacle:OutlineReductionFolded", "The reduced outline is not one simple ring.");
+        end
+        keptIndex = sort([keptIndex; added]);
+    end
+end
+
+function pairs = properEdgeCrossings(ring_units)
+    % Index pairs (i, j), i < j, of non-adjacent ring edges that cross at
+    % one interior point of both (strict orientation test on both sides).
+    edgeCount = size(ring_units, 1);
+    start_units  = ring_units;
+    finish_units = ring_units([2:edgeCount, 1], :);
+    [i, j] = find(triu(true(edgeCount), 2));
+    adjacent = i == 1 & j == edgeCount;
+    i(adjacent) = []; j(adjacent) = [];
+    orientation = @(p, q, r) (q(:, 1) - p(:, 1)) .* (r(:, 2) - p(:, 2)) - (q(:, 2) - p(:, 2)) .* (r(:, 1) - p(:, 1));
+    a = start_units(i, :); b = finish_units(i, :); c = start_units(j, :); d = finish_units(j, :);
+    crosses = orientation(a, b, c) .* orientation(a, b, d) < 0 & orientation(c, d, a) .* orientation(c, d, b) < 0;
+    pairs = [i(crosses), j(crosses)];
+end
+
+function keep = douglasPeuckerKeep(points_units, tolerance_units)
+    % Iterative Douglas-Peucker on an open polyline: retain endpoints and every
+    % vertex whose distance from the current chord exceeds the tolerance.
+    count = size(points_units, 1);
+    keep  = false(count, 1);
+    keep([1, count]) = true;
+    stack = [1, count];
+    while ~isempty(stack)
+        first = stack(end, 1); last = stack(end, 2); stack(end, :) = [];
+        if last - first < 2, continue; end
+        chord_units = points_units(last, :) - points_units(first, :);
+        interior = (first + 1:last - 1).';
+        offset_units = points_units(interior, :) - points_units(first, :);
+        chordLength_units = norm(chord_units);
+        if chordLength_units > 0
+            distance_units = abs(offset_units(:, 1) * chord_units(2) - offset_units(:, 2) * chord_units(1)) / chordLength_units;
+        else
+            distance_units = vecnorm(offset_units, 2, 2);
+        end
+        [farthest_units, farthestOffset] = max(distance_units);
+        if farthest_units > tolerance_units
+            split = interior(farthestOffset);
+            keep(split) = true;
+            stack = [stack; first, split; split, last]; %#ok<AGROW>
+        end
+    end
 end
 
 function [largestX, largestY] = largestFiniteRing(x, y)

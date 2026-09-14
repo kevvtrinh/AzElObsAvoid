@@ -41,7 +41,8 @@ for j = 1:numel(obstacles)
     for k = 1:numel(queryTimes_s)
         indices = find(time_s == queryTimes_s(k) & ~occupied);
         if isempty(indices), continue; end
-        % Occupancy needs the exact boundary, without convexity or orientation metadata.
+        % The shared evaluator returns the swept-cell union at interior times
+        % and authoritative normalized geometry at sample times.
         if ~isempty(cachedGeometry{k})
             geometry=cachedGeometry{k};
         else

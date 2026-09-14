@@ -115,6 +115,8 @@ result.RequestedLimits = requestedLimits;
 result.RequestedGoalState = requestedGoalState;
 result.SuppliedGoalState = suppliedGoalState;
 requestedInterval_s=[initialState.time_s,goalState.time_s];
+% Swept corresponding cells have a declared conservative continuous model.
+% Only intervals without correspondence or any certificate stop preparation.
 unsupportedObstacleIndex = find(arrayfun(@(obstacle) any( ...
     obstacle.InternalPreparation.IntervalPrepared & ...
     obstacle.InternalPreparation.IntervalGeometryModel=="unsupportedContinuousDeformation" & ...
@@ -132,6 +134,10 @@ if ~isempty(unsupportedObstacleIndex)
     result.Message = sprintf(['Obstacle %d ("%s"), interval [%g, %g] s, has no ' ...
         'certified exact continuous interpolation.'],unsupportedObstacleIndex, ...
         string(preparedObstacles(unsupportedObstacleIndex).targetName),intervalTime_s(1),intervalTime_s(2));
+    if isfield(preparation,'IntervalCertificationReason') && ...
+            preparation.IntervalCertificationReason(unsupportedIntervalIndex)=="sweptEnvelopeExcludesProtectedSample"
+        result.Message = result.Message+" The prescribed swept margin-square enclosure excludes authoritative protected sample area.";
+    end
     result.TerminationReason = "unsupportedObstacleInterpolation";
     result.ElapsedTime_s = toc(totalTimer);
     return;

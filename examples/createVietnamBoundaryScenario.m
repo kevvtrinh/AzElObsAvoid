@@ -3,7 +3,7 @@ function [obstacles, initialState, goalState, limits] = createVietnamBoundarySce
 % SYNTAX: [obstacles, initialState, goalState, limits] = createVietnamBoundaryScenario()
 % PURPOSE: Interpolate the three supplied Vietnam azimuth/elevation boundaries.
 % INPUTS: None; examples/data/vietnamBoundaryPoints.csv retains source decimals.
-% OUTPUTS: Canonical obstacle with 921 slices of 280 vertices and planner inputs.
+% OUTPUTS: Canonical obstacle with 921 normalized slices of 275 vertices and planner inputs.
 % UNITS: Degrees, seconds, and angular derivatives in degrees/s^order.
 
 %% Section 1: Read And Normalize Only Explicit Closing Copies
@@ -36,8 +36,8 @@ x_units = mat2cell(interpolated_deg(:,1:280).',280,ones(921,1)).';
 y_units = mat2cell(interpolated_deg(:,281:end).',280,ones(921,1)).';
 obstacles = obstacleAvoidance.obstacles.createObstacle( ...
     'Vietnam supplied boundary',time_s,x_units,y_units);
-assert(all(cellfun(@numel,obstacles.x_units)==280));
-assert(all(cellfun(@numel,obstacles.y_units)==280));
+assert(all(cellfun(@numel,obstacles.x_units)==275));
+assert(all(cellfun(@numel,obstacles.y_units)==275));
 
 %% Section 3: Retain The Supplied Physical Request
 initialState = struct('time_s',2770,'position_units',[80,0]);

@@ -4,6 +4,7 @@ function figures = plotTrajectoryGallery(results, labels, figureVisible)
 % PURPOSE: Compare returned planner motions in pages of sixteen spatial plots.
 %   Moving protected geometry is shown at the request start, midpoint, and end;
 %   these snapshots illustrate motion and are not a collision certificate.
+%   Interior swept-model snapshots draw the shared prepared cell union.
 % INPUTS: Nonempty cell array of public planner results, optional matching text
 %   labels, and figureVisible ('on' by default, or 'off' for export).
 % OUTPUTS: Figure handles. Failed results show their termination reason.

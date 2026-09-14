@@ -27,7 +27,7 @@ subdivision, solver formulation, or acceptance.
 
 | Decision | Representative fixture | Evidence checked | Disposition |
 | --- | --- | --- | --- |
-| Unsupported continuous obstacle interpolation | `testBoundedCorrespondence/testUnsupportedGeometryReturnsStablePlannerOutcome`, `exampleVietnamBoundarySlew`, `exampleMovingDeformingUSOutlineVisibility` | Returns `unsupportedObstacleInterpolation` before search; no convex hull or weakened geometry | Required safety boundary |
+| Unsupported continuous obstacle interpolation | `testBoundedCorrespondence/testUnsupportedGeometryReturnsStablePlannerOutcome` | Returns `unsupportedObstacleInterpolation` before search; no convex hull or weakened geometry. `exampleVietnamBoundarySlew` and `exampleMovingDeformingUSOutlineVisibility` left this branch when exact spans and swept corresponding cells were added (see `benchmarks/vietnam_boundary.md`) | Required safety boundary |
 | Endpoint occupied | `testPlannerDecisionFlow/testInitialEndpointBlocked` | Returns `endpointBlocked` with no motion | Required safety boundary |
 | Terminal reachable set contained by an obstacle | `testPlannerDecisionFlow/testTerminalReachabilityBlocked` | Returns `terminalReachabilityBlocked` | Required sufficient infeasibility proof |
 | Endpoint derivative or workspace violation | `testEndpointDerivativeLimit`, `testEndpointOutsideWorkspace`, `testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning` | Stable endpoint reason before search | Required physical-input boundary |
@@ -198,6 +198,16 @@ spinning U 24 s / 16.2757, 220-vertex moving obstacle 230 s / 121.6385.
 One cold run of the 21 cases completed with every row valid; the largest wall
 times were 44.73 s for the dense U.S. outline, 35.47 s for the 220-vertex
 moving obstacle, and 20.35 s for spinning U. No minute-scale blowup appeared.
+
+Since that audit, `exampleVietnamBoundarySlew` and
+`exampleMovingDeformingUSOutlineVisibility` are supported and succeed
+(arrival 3000 s / length 113.137085 and arrival 25.8355 s / length
+40.5138437, both independently valid). The branch that returns
+`unsupportedObstacleInterpolation` is unchanged and still covered by
+`testUnsupportedGeometryReturnsStablePlannerOutcome`; the support came from
+exact merged keyframe spans and conservative swept corresponding cells, as
+recorded in `benchmarks/vietnam_boundary.md` and
+`obstacle_history_contract.md`.
 
 ### Random fixed-arrival corpus (160 requests)
 

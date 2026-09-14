@@ -42,6 +42,13 @@ if isempty(previous)
         'DeltaX_units',{cell(intervalCount,1)},'DeltaY_units',{cell(intervalCount,1)}, ...
         'MatchingTopology',false(intervalCount,1),'IntervalGeometryModel',strings(intervalCount,1), ...
         'IntervalPartitionReused',false(intervalCount,1), ...
+        'IntervalSweptCellCount',zeros(intervalCount,2),'IntervalSweptTiming_s',zeros(intervalCount,4), ...
+        'IntervalSweptUncoveredProtectedArea_units2',zeros(intervalCount,2), ...
+        'IntervalCertificationReason',strings(intervalCount,1), ...
+        'SpanStartSampleIndex',(1:intervalCount).','SpanEndSampleIndex',(2:sampleCount).', ...
+        'MergedIntervalCount',0,'RejectedMergeSpanSampleIndex',zeros(0,2), ...
+        'CandidateSpanEndSampleIndex',affineSpanEnds(obstacle, ...
+            string(obstacle.vertexCorrespondence)=="sourceIndex" && obstacle.safetyMargin_units==0), ...
         'IntervalSpeedBound_units_s',Inf(intervalCount,1), ...
         'SampleSpeedBound_units_s',Inf(sampleCount,1),'IsTimeInvariant',false);
     % Exact numeric equality can establish a globally static shape without
@@ -58,21 +65,57 @@ if stopAtUnsupported && any(neededIntervals & preparation.IntervalPrepared & ...
     return;
 end
 
+% Canonical spans are source-derived and independent of the query window.
+% Prepare an entire touched span so independent rebuilds clip identical cells.
+spanEnds = preparation.CandidateSpanEndSampleIndex;
+spanStarts = [1;find(diff(spanEnds)~=0)+1];
+if isempty(spanEnds), spanStarts = zeros(0,1); end
+for firstInterval = reshape(spanStarts,1,[])
+    spanIndices = firstInterval:spanEnds(firstInterval)-1;
+    if any(neededIntervals(spanIndices))
+        neededIntervals(spanIndices) = true;
+        neededSamples(firstInterval:spanEnds(firstInterval)) = true;
+    end
+end
+
 %% Section 3: Prepare Each Newly Requested Source Interval Once
 for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),1,[])
-    preparation=prepareSamples(preparation,obstacle,[intervalIndex,intervalIndex+1]);
+    if preparation.IntervalPrepared(intervalIndex), continue; end
+    finalSampleIndex = preparation.CandidateSpanEndSampleIndex(intervalIndex);
+    preparation=prepareSamples(preparation,obstacle,intervalIndex:finalSampleIndex);
     lowerX_units=obstacle.x_units{intervalIndex}; lowerY_units=obstacle.y_units{intervalIndex};
-    upperX_units=obstacle.x_units{intervalIndex+1}; upperY_units=obstacle.y_units{intervalIndex+1};
+    upperX_units=obstacle.x_units{finalSampleIndex}; upperY_units=obstacle.y_units{finalSampleIndex};
     reusableStartRegions_units=cell(0,1);
     if intervalIndex>1 && preparation.IntervalPrepared(intervalIndex-1) && ...
+            preparation.IntervalGeometryModel(intervalIndex-1)=="linearCorrespondingConvexPartition" && ...
             ~isempty(preparation.IntervalEndRegions_units{intervalIndex-1})
         reusableStartRegions_units= ...
             preparation.IntervalEndRegions_units{intervalIndex-1};
     end
+    % A declared source-index correspondence describes the original rings.
+    % Protected rings are only those rings when no margin was applied;
+    % buffered rings carry no index correspondence, so they admit only the
+    % translation certificate, and every other motion uses the original rings.
+    usesSourceIndex = string(obstacle.vertexCorrespondence)=="sourceIndex";
+    protectedKeepsIndex = usesSourceIndex && obstacle.safetyMargin_units==0;
+    translationOnly = usesSourceIndex && obstacle.safetyMargin_units>0;
     [matched,alignedUpper_units,startRegions_units,endRegions_units,geometryModel,partitionReused]= ...
         alignVerifiedSingleRing(lowerX_units,lowerY_units,upperX_units,upperY_units, ...
-        preparation.SampleShapes{intervalIndex},preparation.SampleShapes{intervalIndex+1}, ...
-        reusableStartRegions_units);
+        preparation.SampleShapes{intervalIndex},preparation.SampleShapes{finalSampleIndex}, ...
+        reusableStartRegions_units,protectedKeepsIndex || finalSampleIndex>intervalIndex+1,translationOnly);
+    if ~matched && finalSampleIndex>intervalIndex+1
+        % Velocity equality proposes a reduction; without a shared full-span
+        % exact partition no merge is permitted. Prepare the source intervals.
+        preparation.RejectedMergeSpanSampleIndex(end+1,:) = [intervalIndex,finalSampleIndex];
+        preparation.CandidateSpanEndSampleIndex(intervalIndex:finalSampleIndex-1) = ...
+            (intervalIndex+1:finalSampleIndex).';
+        finalSampleIndex = intervalIndex+1;
+        upperX_units = obstacle.x_units{finalSampleIndex}; upperY_units = obstacle.y_units{finalSampleIndex};
+        [matched,alignedUpper_units,startRegions_units,endRegions_units,geometryModel,partitionReused] = ...
+            alignVerifiedSingleRing(lowerX_units,lowerY_units,upperX_units,upperY_units, ...
+            preparation.SampleShapes{intervalIndex},preparation.SampleShapes{finalSampleIndex}, ...
+            reusableStartRegions_units,protectedKeepsIndex,translationOnly);
+    end
     preparation.MatchingTopology(intervalIndex)=matched;
     preparation.IntervalPartitionReused(intervalIndex)=partitionReused;
     if matched
@@ -80,22 +123,77 @@ for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),
         preparation.DeltaY_units{intervalIndex}=alignedUpper_units(:,2)-lowerY_units;
         preparation.IntervalStartRegions_units{intervalIndex}=startRegions_units;
         preparation.IntervalEndRegions_units{intervalIndex}=endRegions_units;
-        speed_units_s=hypot(preparation.DeltaX_units{intervalIndex},preparation.DeltaY_units{intervalIndex})/diff(time_s(intervalIndex:intervalIndex+1));
+        speed_units_s=hypot(preparation.DeltaX_units{intervalIndex},preparation.DeltaY_units{intervalIndex})/(time_s(finalSampleIndex)-time_s(intervalIndex));
         preparation.IntervalSpeedBound_units_s(intervalIndex)=max([0;speed_units_s(isfinite(speed_units_s))]);
         preparation.IntervalGeometryModel(intervalIndex)=geometryModel;
     else
-        firstShape=preparation.SampleShapes{intervalIndex}; lastShape=preparation.SampleShapes{intervalIndex+1};
+        firstShape=preparation.SampleShapes{intervalIndex}; lastShape=preparation.SampleShapes{finalSampleIndex};
         [equivalent,~]=compareShapes(firstShape,lastShape);
         if equivalent
             shape=firstShape; method="staticEquivalentSamples";
         else
-            shape=polyshape(); method="unsupportedContinuousDeformation";
+            lowerOriginal_units = [obstacle.originalX_units{intervalIndex},obstacle.originalY_units{intervalIndex}];
+            upperOriginal_units = [obstacle.originalX_units{finalSampleIndex},obstacle.originalY_units{finalSampleIndex}];
+            [supported,shape,regions_units,counts,timing_s] = ...
+                obstacleAvoidance.obstacles.createSweptCorrespondingCells( ...
+                lowerOriginal_units,upperOriginal_units,obstacle.safetyMargin_units,usesSourceIndex);
+            method="unsupportedContinuousDeformation";
+            if supported
+                % The sqrt(2)-margin squares contain the constructor's
+                % square-join protection, but both authoritative protected
+                % samples are still certified explicitly against the
+                % enclosure before it is used; they are never replaced.
+                uncoveredArea_units2 = [area(subtract(firstShape,shape)),area(subtract(lastShape,shape))];
+                preparation.IntervalSweptUncoveredProtectedArea_units2(intervalIndex,:) = uncoveredArea_units2;
+                areaTolerance_units2 = 4096*eps(max([1,area(firstShape),area(lastShape)]));
+                supported = all(uncoveredArea_units2<=areaTolerance_units2);
+                if ~supported
+                    preparation.IntervalCertificationReason(intervalIndex) = "sweptEnvelopeExcludesProtectedSample";
+                    shape = polyshape();
+                end
+            end
+            if supported
+                method="sweptCorrespondingConvexCells";
+                preparation.IntervalStartRegions_units{intervalIndex} = regions_units;
+                preparation.IntervalEndRegions_units{intervalIndex} = regions_units;
+            end
+            preparation.IntervalSweptCellCount(intervalIndex,:) = counts;
+            preparation.IntervalSweptTiming_s(intervalIndex,:) = timing_s;
         end
         preparation.IntervalUnionShapes{intervalIndex}=shape;
         preparation.IntervalGeometryModel(intervalIndex)=method;
         preparation.IntervalSpeedBound_units_s(intervalIndex)=0;
         [preparation.IntervalUnionEdgeStart_units{intervalIndex},preparation.IntervalUnionEdgeEnd_units{intervalIndex}]= ...
             obstacleAvoidance.geometry.boundaryToEdges(shape,0);
+    end
+    if finalSampleIndex>intervalIndex+1
+        % One certified partition restricts to every source subinterval with
+        % identical face indices. Source samples themselves remain authoritative.
+        spanDelta_units = [preparation.DeltaX_units{intervalIndex},preparation.DeltaY_units{intervalIndex}];
+        spanStartRegions_units = startRegions_units;
+        spanEndRegions_units = endRegions_units;
+        for sourceIndex = intervalIndex:finalSampleIndex-1
+            fraction = (time_s(sourceIndex:sourceIndex+1)-time_s(intervalIndex))/ ...
+                (time_s(finalSampleIndex)-time_s(intervalIndex));
+            preparation.DeltaX_units{sourceIndex} = diff(fraction)*spanDelta_units(:,1);
+            preparation.DeltaY_units{sourceIndex} = diff(fraction)*spanDelta_units(:,2);
+            for faceIndex = 1:numel(spanStartRegions_units)
+                delta_units = spanEndRegions_units{faceIndex}-spanStartRegions_units{faceIndex};
+                startRegions_units{faceIndex} = spanStartRegions_units{faceIndex}+fraction(1)*delta_units;
+                endRegions_units{faceIndex} = spanStartRegions_units{faceIndex}+fraction(2)*delta_units;
+            end
+            preparation.IntervalStartRegions_units{sourceIndex} = startRegions_units;
+            preparation.IntervalEndRegions_units{sourceIndex} = endRegions_units;
+        end
+        spanIndices = intervalIndex:finalSampleIndex-1;
+        preparation.IntervalPrepared(spanIndices) = true;
+        preparation.MatchingTopology(spanIndices) = true;
+        preparation.IntervalGeometryModel(spanIndices) = geometryModel;
+        preparation.IntervalSpeedBound_units_s(spanIndices) = preparation.IntervalSpeedBound_units_s(intervalIndex);
+        preparation.IntervalPartitionReused(intervalIndex+1:finalSampleIndex-1) = true;
+        preparation.SpanStartSampleIndex(spanIndices) = intervalIndex;
+        preparation.SpanEndSampleIndex(spanIndices) = finalSampleIndex;
+        preparation.MergedIntervalCount = preparation.MergedIntervalCount+numel(spanIndices)-1;
     end
     preparation.IntervalPrepared(intervalIndex)=true;
     if stopAtUnsupported && preparation.IntervalGeometryModel(intervalIndex)=="unsupportedContinuousDeformation"
@@ -110,11 +208,17 @@ end
 %% Section 4: Update Cached Motion Bounds And Static Status
 preparation.SampleSpeedBound_units_s=max([0;preparation.IntervalSpeedBound_units_s], ...
     [preparation.IntervalSpeedBound_units_s;0]);
+sweptIndices = find(preparation.IntervalGeometryModel=="sweptCorrespondingConvexCells");
+preparation.SampleSpeedBound_units_s(unique([sweptIndices;sweptIndices+1])) = Inf;
 staticIntervals=preparation.IntervalGeometryModel=="staticEquivalentSamples" | ...
     (preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s==0);
 preparation.IsTimeInvariant=preparation.IsTimeInvariant || ...
     (all(preparation.IntervalPrepared) && all(staticIntervals));
 if preparation.IsTimeInvariant, preparation.SampleSpeedBound_units_s(:)=0; end
+preparation.MergedSpanSampleIndex = unique([preparation.SpanStartSampleIndex, ...
+    preparation.SpanEndSampleIndex],'rows','stable');
+preparation.MergedSpanTime_s = reshape(time_s(preparation.MergedSpanSampleIndex), ...
+    size(preparation.MergedSpanSampleIndex));
 obstacle.InternalPreparation=preparation;
 end
 
@@ -133,9 +237,11 @@ end
 function [verified, alignedUpper_units, startRegions_units, endRegions_units, ...
         geometryModel,partitionReused] = alignVerifiedSingleRing( ...
         lowerX_units,lowerY_units,upperX_units,upperY_units,lowerShape, ...
-        upperShape,reusableStartRegions_units)
+        upperShape,reusableStartRegions_units,preserveAlignment,translationOnly)
     % Align rings, then certify either one moving convex region or an exact
     % moving convex partition of the complete interpolated polygon.
+    % translationOnly stops after the index-preserving translation check.
+    if nargin<9, translationOnly=false; end
     lower_units        = [lowerX_units(:), lowerY_units(:)];
     upper_units        = [upperX_units(:), upperY_units(:)];
     verified         = false;
@@ -168,7 +274,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         end
     end
     isSingleRing     = size(lower_units, 1) >= 3 && isequal(size(lower_units), size(upper_units)) && all(isfinite(lower_units), "all") && all(isfinite(upper_units), "all");
-    if ~isSingleRing
+    if ~isSingleRing || translationOnly
         return;
     end
     % Identical rings already attain the first possible zero-distance match.
@@ -178,44 +284,10 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         geometryModel = "linearCorrespondingVertices";
         return;
     end
-    % Center and scale before FFT correlation: translation does not affect
-    % the least-squares correspondence, and normalization avoids cancellation
-    % when a small polygon is far from the coordinate origin.
-    centeredLower = lower_units-mean(lower_units,1);
-    centeredUpper = upper_units-mean(upper_units,1);
-    scale_units = max(abs([centeredLower;centeredUpper]),[],'all');
-    if scale_units==0, return; end
-    centeredLower = centeredLower/scale_units;
-    centeredUpper = centeredUpper/scale_units;
-    lowerSpectrum = fft(centeredLower);
-    anchorChoices = find(lower_units(:,1)==min(lower_units(:,1)));
-    [~,anchorChoice] = min(lower_units(anchorChoices,2));
-    anchorIndex = anchorChoices(anchorChoice);
-    bestSquaredCost = Inf;
-    % Circular correlation evaluates every cyclic alignment in O(N log N).
-    % Only the two selected shifts are materialized; there is no shift-loop fallback.
-    for orientationIndex = 1:2
-        orientedUpper_units = upper_units;
-        orientedUpper = centeredUpper;
-        if orientationIndex == 2
-            orientedUpper_units = flipud(orientedUpper_units);
-            orientedUpper = flipud(orientedUpper);
-        end
-        correlation = sum(real(ifft(lowerSpectrum.*conj(fft(orientedUpper)))),2);
-        % Resolve numerically tied alignments at a physical anchor vertex,
-        % independent of either incoming ring's starting index.
-        tieTolerance = 64*ceil(log2(size(lower_units,1)))*eps(max(abs(correlation)));
-        shifts = find(correlation>=max(correlation)-tieTolerance);
-        anchorVertices_units = orientedUpper_units(mod(anchorIndex-shifts,size(lower_units,1))+1,:);
-        choices = find(anchorVertices_units(:,1)==min(anchorVertices_units(:,1)));
-        [~,choice] = min(anchorVertices_units(choices,2));
-        shiftIndex = shifts(choices(choice));
-        shiftCount = shiftIndex-1;
-        squaredCost = sum((circshift(orientedUpper,shiftCount,1)-centeredLower).^2,'all');
-        if squaredCost < bestSquaredCost
-            bestSquaredCost = squaredCost;
-            alignedUpper_units = circshift(orientedUpper_units,shiftCount,1);
-        end
+    if preserveAlignment
+        alignedUpper_units = upper_units;
+    else
+        alignedUpper_units = obstacleAvoidance.obstacles.alignCorrespondingRing(lower_units,upper_units);
     end
     delta_units                = alignedUpper_units - lower_units;
     coordinateScale_units      = max([ 1; abs(lower_units(:)); abs(alignedUpper_units(:))]);
@@ -516,4 +588,41 @@ function [equivalent, nested] = compareShapes(firstShape, secondShape)
         area(subtract(secondShape, firstShape)) <= areaTolerance_units2;
     equivalent         = firstIsContained && secondIsContained;
     nested             = firstIsContained || secondIsContained;
+end
+
+function finalSampleIndices = affineSpanEnds(obstacle,usesSourceIndex)
+    % Equal velocities plus unchanged per-interval alignment propose spans.
+    % The main stage certifies the entire span with one shared face partition.
+    % A declared source-index correspondence needs no alignment check.
+    time_s = obstacle.time_s;
+    count = numel(time_s)-1;
+    finalSampleIndices = (2:count+1).';
+    intervalIndex = 1;
+    while intervalIndex<count
+        lower_units = [obstacle.x_units{intervalIndex},obstacle.y_units{intervalIndex}];
+        upper_units = [obstacle.x_units{intervalIndex+1},obstacle.y_units{intervalIndex+1}];
+        if size(lower_units,1)<3 || ~isequal(size(lower_units),size(upper_units)) || ...
+                ~all(isfinite([lower_units;upper_units]),'all')
+            intervalIndex = intervalIndex+1; continue;
+        end
+        velocity_units_s = (upper_units-lower_units)/diff(time_s(intervalIndex:intervalIndex+1));
+        lastInterval = intervalIndex;
+        while lastInterval<count
+            next_units = [obstacle.x_units{lastInterval+2},obstacle.y_units{lastInterval+2}];
+            if ~isequal(size(upper_units),size(next_units)) || ~all(isfinite(next_units),'all'), break; end
+            nextVelocity_units_s = (next_units-upper_units)/diff(time_s(lastInterval+1:lastInterval+2));
+            coordinateScale_units = max([1;abs(lower_units(:));abs(upper_units(:));abs(next_units(:))]);
+            if any(abs(nextVelocity_units_s-velocity_units_s)>64*eps(coordinateScale_units),'all'), break; end
+            if ~usesSourceIndex
+                if ~isequal(obstacleAvoidance.obstacles.alignCorrespondingRing(upper_units,next_units),next_units), break; end
+                if lastInterval==intervalIndex && ...
+                        ~isequal(obstacleAvoidance.obstacles.alignCorrespondingRing(lower_units,upper_units),upper_units), break; end
+            end
+            lastInterval = lastInterval+1;
+            velocity_units_s = nextVelocity_units_s;
+            upper_units = next_units;
+        end
+        finalSampleIndices(intervalIndex:lastInterval) = lastInterval+1;
+        intervalIndex = lastInterval+1;
+    end
 end

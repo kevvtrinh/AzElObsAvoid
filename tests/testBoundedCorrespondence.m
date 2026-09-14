@@ -197,6 +197,181 @@ function testCachedUnsupportedFutureDoesNotRejectEarlierHorizon(testCase)
     verifyEqual(testCase,overlapping.TerminationReason,"unsupportedObstacleInterpolation");
 end
 
+function testProperCrossingZigzagHasDeclaredRepair(testCase)
+    ring=[0,0;2,2;0,2;2,0;4,0;4,4;-1,4;-1,0];
+    obstacle=obstacleAvoidance.obstacles.createObstacle('fold',[0;1], ...
+        {ring(:,1);ring(:,1)+0.25},{ring(:,2);ring(:,2)},0);
+    verifyEqual(testCase,cellfun(@numel,obstacle.x_units),[6;6]);
+    diagnostics=obstacle.NormalizationDiagnostics;
+    verifyTrue(testCase,any(diagnostics.Reasons=="selfCrossingZigzagRemoved"));
+    verifyEqual(testCase,diagnostics.RemovedZigzagVertexCountBySample,2*ones(2,2));
+    verifyEqual(testCase,diagnostics.AffectedSampleIndex,[1;2]);
+    verifyEqual(testCase,diagnostics.AffectedSampleTime_s,[0;1]);
+    rebuilt=obstacleAvoidance.obstacles.createObstacle(obstacle);
+    verifyEqual(testCase,rebuilt.NormalizationDiagnostics,diagnostics);
+    % A four-vertex bow tie leaves fewer than three vertices: remove the run.
+    bow=obstacleAvoidance.obstacles.createObstacle('empty fold',0,[0;2;0;2],[0;2;2;0]);
+    verifyEmpty(testCase,bow.x_units{1});
+    verifyEqual(testCase,bow.NormalizationDiagnostics.RemovedRegionCount,[1,1]);
+end
+
+function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
+    lower=[0,0;4,0;4,4;2,4;2,4-1e-13;1,4;0,4];
+    upper=lower; upper(5,1)=2.2; upper([2,3],1)=4.2;
+    for margin_units=[0,0.1]
+        source=obstacleAvoidance.obstacles.createObstacle('thin notch',[0;1], ...
+            {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},margin_units);
+        prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
+        preparation=prepared.InternalPreparation;
+        if margin_units==0
+            verifyEqual(testCase,preparation.IntervalGeometryModel,"sweptCorrespondingConvexCells");
+            verifyFalse(testCase,preparation.MatchingTopology);
+            cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
+            verifyEqual(testCase,cells.Regions_units,cells.EndRegions_units);
+            enclosure=unionRegions(cells.Regions_units);
+        else
+            % Protection can itself remove a thin notch and admit an exact
+            % model. Exercise the prescribed cell-level margin independently.
+            [supported,enclosure]=obstacleAvoidance.obstacles.createSweptCorrespondingCells(lower,upper,margin_units);
+            verifyTrue(testCase,supported);
+        end
+        aligned=obstacleAvoidance.obstacles.alignCorrespondingRing(lower,upper);
+        for tau=[0,0.25,0.5,0.75,1]
+            polygon=polyshape((1-tau)*lower+tau*aligned,'Simplify',false);
+            if margin_units>0, polygon=polybuffer(polygon,margin_units,'JointType','square'); end
+            verifyLessThan(testCase,area(subtract(polygon,enclosure)),1e-11);
+            [queried,geometry]=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,tau);
+            if tau>0 && tau<1 && margin_units==0
+                verifyEqual(testCase,area(xor(queried,enclosure)),0);
+                verifyFalse(testCase,geometry.TopologyIsInterpolated);
+                verifyEqual(testCase,geometry.VertexSpeedBound_units_s,0);
+            elseif tau==0 || tau==1
+                verifyEqual(testCase,area(xor(queried,preparation.SampleShapes{1+tau})),0);
+            end
+        end
+    end
+end
+
+function testSweptCellsDoNotBecomeAnExactTranslationPartition(testCase)
+    first=[0,0;4,0;4,4;2,4;2,4-1e-13;1,4;0,4];
+    second=first; second(5,1)=2.2; second([2,3],1)=4.2;
+    third=second+[1,0];
+    source=obstacleAvoidance.obstacles.createObstacle('mixed models',[0;1;2], ...
+        {first(:,1);second(:,1);third(:,1)},{first(:,2);second(:,2);third(:,2)},0);
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
+    verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
+        ["sweptCorrespondingConvexCells";"linearCorrespondingConvexPartition"]);
+    verifyFalse(testCase,prepared.InternalPreparation.IntervalPartitionReused(2));
+    actual=unionRegions(prepared.InternalPreparation.IntervalStartRegions_units{2});
+    verifyLessThan(testCase,area(xor(actual,polyshape(second,'Simplify',false))),1e-12);
+end
+
+function testRootTwoMarginSquaresContainSquareJoinProtection(testCase)
+    % A square-join buffer of distance d reaches at most d*sqrt(2) from the
+    % source, so an axis-aligned square of half-width d is not enough (the
+    % rotated square below proves it) while half-width d*sqrt(2) is.
+    angle_rad=pi/8+(0:3)'*pi/2;
+    vertices_units=[cos(angle_rad),sin(angle_rad)];
+    protected=polybuffer(polyshape(vertices_units),0.1,'JointType','square');
+    for halfWidth_units=[0.1,0.1*sqrt(2)]
+        corners_units=halfWidth_units*[-1,-1;-1,1;1,-1;1,1];
+        expanded_units=reshape(permute(vertices_units+permute(corners_units,[3,2,1]),[1,3,2]),[],2);
+        hull=convhull(expanded_units);
+        enclosure=polyshape(expanded_units(hull,:));
+        uncovered_units2=area(subtract(protected,enclosure));
+        if halfWidth_units<0.1*sqrt(2)
+            verifyGreaterThan(testCase,uncovered_units2,0.0006);
+        else
+            verifyLessThanOrEqual(testCase,uncovered_units2,1e-12);
+        end
+    end
+    % The certified endpoint containment therefore passes for a protected
+    % corresponding ring that has no exact affine certificate.
+    lower=[0,0;4,0;4,4;2,4;2,4-1e-13;1,4;0,4];
+    upper=lower; upper(5,1)=2.2; upper(2,1)=4.2;
+    source=obstacleAvoidance.obstacles.createObstacle('square-join certificate',[0;1], ...
+        {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0.1);
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
+    preparation=prepared.InternalPreparation;
+    verifyNotEqual(testCase,preparation.IntervalGeometryModel,"unsupportedContinuousDeformation");
+    verifyNotEqual(testCase,preparation.IntervalCertificationReason,"sweptEnvelopeExcludesProtectedSample");
+    if preparation.IntervalGeometryModel=="sweptCorrespondingConvexCells"
+        verifyLessThanOrEqual(testCase,max(preparation.IntervalSweptUncoveredProtectedArea_units2), ...
+            4096*eps(max(1,area(preparation.SampleShapes{1}))));
+        enclosure=unionRegions(preparation.IntervalStartRegions_units{1});
+        for tau=[0,0.5,1]
+            polygon=polybuffer(polyshape((1-tau)*lower+tau*upper,'Simplify',false),0.1,'JointType','square');
+            verifyLessThan(testCase,area(subtract(polygon,enclosure)),1e-11);
+        end
+    end
+    verifyEqual(testCase,prepared.x_units,source.x_units);
+    verifyEqual(testCase,prepared.y_units,source.y_units);
+end
+
+function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
+    % A dense near-circular ring rotated by six degrees per sample is
+    % ambiguous to circular correlation (a cyclic index shift undoes the
+    % rotation), but the moving-obstacle constructor transformed one source
+    % ring, so it declares index correspondence and the swept cells must
+    % contain the index-interpolated polygon, not the correlated one.
+    angle_rad=(0:359).'*(pi/180);
+    radius_units=1+0.1*cos(3*angle_rad);
+    source_units=[radius_units.*cos(angle_rad),radius_units.*sin(angle_rad)];
+    rotate=@(position_units,time_s,~) position_units*[cosd(6*time_s),sind(6*time_s);-sind(6*time_s),cosd(6*time_s)];
+    obstacle=obstacleAvoidance.obstacles.createMovingObstacle('rotating lobe',[0;1;2], ...
+        source_units(:,1),source_units(:,2),rotate,0.05);
+    verifyEqual(testCase,string(obstacle.vertexCorrespondence),"sourceIndex");
+    generic=obstacleAvoidance.obstacles.createObstacle('generic copy',obstacle.time_s, ...
+        obstacle.originalX_units,obstacle.originalY_units,0.05);
+    verifyEqual(testCase,string(generic.vertexCorrespondence),"circularCorrelation");
+    lower=[obstacle.originalX_units{1},obstacle.originalY_units{1}];
+    upper=[obstacle.originalX_units{2},obstacle.originalY_units{2}];
+    verifyNotEqual(testCase,obstacleAvoidance.obstacles.alignCorrespondingRing(lower,upper),upper);
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,1]);
+    preparation=prepared.InternalPreparation;
+    verifyTrue(testCase,preparation.IntervalPrepared(1));
+    % Buffered protected rings carry no index order, so the only faithful
+    % model here is the swept enclosure built from the original rings.
+    verifyEqual(testCase,preparation.IntervalGeometryModel(1),"sweptCorrespondingConvexCells");
+    [enclosure,geometry]=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,0.5);
+    for tau=[0.25,0.5,0.75]
+        polygon=polybuffer(polyshape((1-tau)*lower+tau*upper,'Simplify',false),0.05,'JointType','square');
+        verifyLessThan(testCase,area(subtract(polygon,enclosure)),1e-10);
+    end
+    verifyFalse(testCase,geometry.TopologyIsInterpolated && ...
+        preparation.IntervalGeometryModel(1)=="sweptCorrespondingConvexCells");
+end
+
+function testRedundantAffineKeyframesUseIdenticalCellsAndMotion(testCase)
+    ring=[10,10;13,10;13,13;11,11;10,13];
+    times_s=linspace(0,16,17).';
+    frames=arrayfun(@(t)ring+[t/8,-t/16],times_s,'UniformOutput',false);
+    dense=obstacleAvoidance.obstacles.createObstacle('affine',times_s, ...
+        cellfun(@(v)v(:,1),frames,'UniformOutput',false),cellfun(@(v)v(:,2),frames,'UniformOutput',false));
+    sparse=obstacleAvoidance.obstacles.createObstacle('affine',times_s([1,end]), ...
+        dense.x_units([1,end]),dense.y_units([1,end]));
+    prepared=obstacleAvoidance.obstacles.prepareObstacles(dense);
+    verifyEqual(testCase,prepared.InternalPreparation.MergedSpanTime_s,[0,16]);
+    verifyEqual(testCase,prepared.InternalPreparation.MergedIntervalCount,15);
+    verifyEqual(testCase,prepared.time_s,times_s);
+    verifyEqual(testCase,obstacleAvoidance.obstacles.createTimeCells(prepared,0,16), ...
+        obstacleAvoidance.obstacles.createTimeCells(sparse,0,16));
+    % Query-window coverage must not manufacture different canonical spans.
+    partial=obstacleAvoidance.obstacles.prepareObstacles(dense,[3,5]);
+    verifyEqual(testCase,obstacleAvoidance.obstacles.createTimeCells(partial,3,5), ...
+        obstacleAvoidance.obstacles.createTimeCells(sparse,3,5));
+    initial=struct('time_s',0,'position_units',[0,0]);
+    goal=struct('time_s',16,'position_units',[4,2]);
+    limits=struct('xInterval_units',[-5,20],'yInterval_units',[-5,20], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
+    denseResult=planner(dense,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    sparseResult=planner(sparse,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    verifyTrue(testCase,denseResult.Success);
+    verifyTrue(testCase,sparseResult.Success);
+    verifyEqual(testCase,denseResult.ArrivalTime_s,sparseResult.ArrivalTime_s);
+    verifyEqual(testCase,denseResult.MotionLength_units,sparseResult.MotionLength_units);
+end
+
 function prepared=preparePair(lower,upper)
     source=obstacleAvoidance.obstacles.createObstacle('generic',[0;1], ...
         {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0);

@@ -62,7 +62,14 @@ function testCompletePreparationReuseAndSourceChanges(testCase)
     source = obstacleAvoidance.obstacles.createObstacle('translation',[0;5;10], ...
         {box(:,1);box(:,1)+1;box(:,1)+2},repmat({box(:,2)},3,1),0);
     partial = obstacleAvoidance.obstacles.prepareObstacles(source,[0,2]);
-    verifyFalse(testCase,partial.InternalPreparation.SamplePrepared(end));
+    % A touched redundant span is certified in full, independent of query window.
+    verifyTrue(testCase,partial.InternalPreparation.SamplePrepared(end));
+    verifyEqual(testCase,partial.InternalPreparation.MergedSpanTime_s,[0,10]);
+    changedVelocity=source;
+    changedVelocity.x_units{end}=changedVelocity.x_units{end}+1;
+    changedVelocity.originalX_units{end}=changedVelocity.originalX_units{end}+1;
+    scoped=obstacleAvoidance.obstacles.prepareObstacles(changedVelocity,[0,2]);
+    verifyFalse(testCase,scoped.InternalPreparation.SamplePrepared(end));
     complete = obstacleAvoidance.obstacles.prepareObstacles(partial,[0,10]);
     verifyTrue(testCase,all(complete.InternalPreparation.SamplePrepared));
     verifyTrue(testCase,all(complete.InternalPreparation.IntervalPrepared));

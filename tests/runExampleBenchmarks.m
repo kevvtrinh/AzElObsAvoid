@@ -11,11 +11,9 @@ root = fileparts(fileparts(mfilename('fullpath')));
 addpath(root, fullfile(root, 'trajectory'), fullfile(root, 'examples'));
 reference = readcell(fullfile(root, 'benchmarks', 'bmtp_emptycore_benchmark.xlsx'));
 reference = reference(6:end, :);
-% Unsupported continuous deformation is an expected, stable public outcome;
-% the exact core must not replace it with a hull or sampled approximation.
-unsupportedRow=strcmp(string(reference(:,1)), ...
-    "exampleMovingDeformingUSOutlineVisibility");
-reference(unsupportedRow,10)={false};
+% The deforming U.S. example is expected to succeed on its 100-vertex
+% outline with exact swept-cell intervals. Its historical quality columns
+% predate that support and the vertex cap; they are reported, not gated.
 % Keep the historical rotating-field row and add the structurally different
 % dense moving case without borrowing unrelated reference measurements.
 denseMovingRow = cell(1,size(reference,2));
@@ -24,7 +22,7 @@ denseMovingRow{10} = true;
 denseMovingRow([12,13,14,18]) = {NaN,NaN,NaN,NaN};
 reference(end+1,:) = denseMovingRow;
 denseMovingRow{1} = 'exampleVietnamBoundarySlew';
-denseMovingRow{10} = false;
+denseMovingRow{10} = true;
 reference(end+1,:) = denseMovingRow;
 denseMovingRow{1} = 'exampleSpinningUAtStartAndGoal';
 denseMovingRow{10} = true;

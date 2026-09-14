@@ -84,6 +84,16 @@ for k = 1:staticCount
         staticActive_s(k,:) = [obstacle.time_s(1),obstacle.time_s(end)];
     end
 end
+% Swept corresponding intervals are stationary geometry on their own
+% absolute lifetimes. Check their cached union boundary as one exact region.
+[stationaryShapes,stationaryStarts_units,stationaryEnds_units,stationaryActive_s,dynamicCells] = ...
+    stationaryGeometryCells(dynamicObstacles,dynamicCells);
+staticShapes = [staticShapes;stationaryShapes];
+staticEdgeStart_units = [staticEdgeStart_units;stationaryStarts_units];
+staticEdgeEnd_units = [staticEdgeEnd_units;stationaryEnds_units];
+staticActive_s = [staticActive_s;stationaryActive_s];
+staticExists = [staticExists;true(numel(stationaryShapes),1)];
+staticCount = numel(staticShapes);
 % Cache only clock-independent answers: edges whose whole clock lies inside
 % the obstacle's lifetime. Partially covered edges are checked directly.
 staticEdgeCache = zeros(0,0,'uint8');
@@ -419,69 +429,76 @@ function clear = affineEdgesAreClear(first_units,second_units,first_s,second_s,c
         regionDelta_units=cells.EndRegions_units{cellIndex}-regionStart_units;
         overlapRegionStart_units=regionStart_units+cellStartFraction.*regionDelta_units;
         overlapRegionEnd_units=regionStart_units+cellEndFraction.*regionDelta_units;
-        for candidateOffset=1:numel(candidates)
-            if affinePointTouchesConvex(pathStart_units(candidateOffset,:), ...
-                    pathEnd_units(candidateOffset,:),overlapRegionStart_units, ...
-                    overlapRegionEnd_units)
-                clear(candidates(candidateOffset))=false;
-            end
-        end
+        touching=affinePointsTouchConvex(pathStart_units,pathEnd_units, ...
+            overlapRegionStart_units,overlapRegionEnd_units);
+        clear(candidates(touching))=false;
     end
 end
 
-function touches = affinePointTouchesConvex(pointStart_units,pointEnd_units, ...
+function touches = affinePointsTouchConvex(pointStart_units,pointEnd_units, ...
         regionStart_units,regionEnd_units)
+    % Every path point against one moving convex cell, in one batch. For a
+    % path point and a cell edge the half-space residual is quadratic in the
+    % unit clock. Its real roots in [0,1], the clock ends, and the midpoints
+    % of consecutive cut values are the probes; the point touches the cell
+    % when some probe lies inside every half-space up to the residual
+    % tolerance. Rows are cell edges and columns are path points, so the
+    % arithmetic, probes, and tolerance of the point-by-point test are
+    % unchanged (a repeated cut value only repeats a probe).
+    pointCount=size(pointStart_units,1);
+    touches=false(pointCount,1);
+    if pointCount==0,return;end
     vertexCount=size(regionStart_units,1);
     following=[2:vertexCount,1];
     edgeStart_units=regionStart_units(following,:)-regionStart_units;
     edgeDelta_units=(regionEnd_units(following,:)-regionEnd_units)-edgeStart_units;
-    relativeStart_units=pointStart_units-regionStart_units;
-    relativeDelta_units=(pointEnd_units-pointStart_units)- ...
-        (regionEnd_units-regionStart_units);
-    coefficients_units2=[cross2(edgeDelta_units,relativeDelta_units), ...
-        cross2(edgeDelta_units,relativeStart_units)+ ...
-        cross2(edgeStart_units,relativeDelta_units), ...
-        cross2(edgeStart_units,relativeStart_units)];
-    cuts=unique([0;1;quadraticUnitRoots(coefficients_units2)]);
-    probes=unique([cuts;(cuts(1:end-1)+cuts(2:end))/2]);
+    regionDelta_units=regionEnd_units-regionStart_units;
+    pointDelta_units=pointEnd_units-pointStart_units;
+    relativeStartX_units=pointStart_units(:,1).'-regionStart_units(:,1);
+    relativeStartY_units=pointStart_units(:,2).'-regionStart_units(:,2);
+    relativeDeltaX_units=pointDelta_units(:,1).'-regionDelta_units(:,1);
+    relativeDeltaY_units=pointDelta_units(:,2).'-regionDelta_units(:,2);
+    quadratic_units2=edgeDelta_units(:,1).*relativeDeltaY_units- ...
+        edgeDelta_units(:,2).*relativeDeltaX_units;
+    linear_units2=(edgeDelta_units(:,1).*relativeStartY_units- ...
+        edgeDelta_units(:,2).*relativeStartX_units)+ ...
+        (edgeStart_units(:,1).*relativeDeltaY_units- ...
+        edgeStart_units(:,2).*relativeDeltaX_units);
+    constant_units2=edgeStart_units(:,1).*relativeStartY_units- ...
+        edgeStart_units(:,2).*relativeStartX_units;
+    % Real roots of each residual inside the unit clock; NaN marks none.
+    rootScale=max(1,max(max(abs(quadratic_units2),abs(linear_units2)),abs(constant_units2)));
+    rootTolerance=256*eps(rootScale);
+    isLinear=abs(quadratic_units2)<=rootTolerance;
+    discriminant=linear_units2.*linear_units2-4*quadratic_units2.*constant_units2;
+    hasQuadraticRoots=~isLinear & discriminant>=-rootTolerance;
+    rootRadius=sqrt(max(0,discriminant));
+    firstRoot=(-linear_units2-rootRadius)./(2*quadratic_units2);
+    secondRoot=(-linear_units2+rootRadius)./(2*quadratic_units2);
+    linearRoot=-constant_units2./linear_units2;
+    hasLinearRoot=isLinear & abs(linear_units2)>rootTolerance;
+    firstRoot(isLinear)=linearRoot(isLinear);
+    firstRoot(~hasQuadraticRoots & ~hasLinearRoot)=NaN;
+    secondRoot(~hasQuadraticRoots)=NaN;
+    firstRoot(~(firstRoot>=0 & firstRoot<=1))=NaN;
+    secondRoot(~(secondRoot>=0 & secondRoot<=1))=NaN;
+    cuts=sort([zeros(pointCount,1),ones(pointCount,1),firstRoot.',secondRoot.'],2);
+    probes=[cuts,(cuts(:,1:end-1)+cuts(:,2:end))/2];
+    probeClock=reshape(probes,1,pointCount,[]);
+    residual_units2=quadratic_units2.*probeClock.^2+linear_units2.*probeClock+constant_units2;
     middleRegion_units=(regionStart_units+regionEnd_units)/2;
-    signedArea_units2=sum(cross2(middleRegion_units, ...
-        middleRegion_units(following,:)))/2;
-    coordinateScale_units=max(1,max(abs([pointStart_units;pointEnd_units; ...
-        regionStart_units;regionEnd_units]),[],'all'));
-    residualTolerance_units2=4096*eps(coordinateScale_units^2);
-    residual_units2=coefficients_units2(:,1).*probes.'.^2+ ...
-        coefficients_units2(:,2).*probes.'+coefficients_units2(:,3);
+    signedArea_units2=sum(middleRegion_units(:,1).*middleRegion_units(following,2)- ...
+        middleRegion_units(:,2).*middleRegion_units(following,1))/2;
+    regionScale_units=max(abs([regionStart_units;regionEnd_units]),[],'all');
+    pointScale_units=max(max(abs(pointStart_units),[],2),max(abs(pointEnd_units),[],2));
+    coordinateScale_units=max(1,max(regionScale_units,pointScale_units));
+    residualTolerance_units2=reshape(4096*eps(coordinateScale_units.^2),1,pointCount);
     if signedArea_units2>=0
-        touches=any(all(residual_units2>=-residualTolerance_units2,1));
+        inside=residual_units2>=-residualTolerance_units2;
     else
-        touches=any(all(residual_units2<=residualTolerance_units2,1));
+        inside=residual_units2<=residualTolerance_units2;
     end
-end
-
-function values=quadraticUnitRoots(coefficients)
-    values=zeros(0,1);
-    for row=1:size(coefficients,1)
-        a=coefficients(row,1);b=coefficients(row,2);c=coefficients(row,3);
-        scale=max(1,max(abs(coefficients(row,:))));
-        tolerance=256*eps(scale);
-        if abs(a)<=tolerance
-            if abs(b)>tolerance
-                root=-c/b;
-                if root>=0 && root<=1,values(end+1,1)=root;end %#ok<AGROW>
-            end
-            continue
-        end
-        discriminant=b*b-4*a*c;
-        if discriminant<-tolerance,continue;end
-        discriminant=max(0,discriminant);
-        roots=[-b-sqrt(discriminant);-b+sqrt(discriminant)]/(2*a);
-        values=[values;roots(roots>=0 & roots<=1)]; %#ok<AGROW>
-    end
-end
-
-function value=cross2(first,second)
-    value=first(:,1).*second(:,2)-first(:,2).*second(:,1);
+    touches=reshape(any(all(inside,1),3),pointCount,1);
 end
 function [reachable,spatialCost_units,parentLayerIndex,parentNodeIndex] = ...
         updateTemporalState(reachable,spatialCost_units,parentLayerIndex, ...
@@ -522,4 +539,28 @@ function [route_units, routeTime_s] = reconstructTimedRoute(nodePosition_units, 
     end
     route_units   = nodePosition_units(nodePath, :);
     routeTime_s = layerTimes_s(layerPath);
+end
+
+function [shapes,starts_units,ends_units,active_s,cells] = stationaryGeometryCells(obstacles,cells)
+    shapes=cell(0,1); starts_units=cell(0,1); ends_units=cell(0,1); active_s=zeros(0,2);
+    retain=true(numel(cells.Regions_units),1);
+    for obstacleIndex=1:numel(obstacles)
+        obstacle=obstacles(obstacleIndex); preparation=obstacle.InternalPreparation;
+        for intervalIndex=reshape(find(preparation.IntervalGeometryModel=="sweptCorrespondingConvexCells"),1,[])
+            interval_s=obstacle.time_s(intervalIndex:intervalIndex+1).';
+            selected=cells.SourceObstacleIndex==obstacleIndex & ...
+                cells.ActiveTimeInterval_s(:,1)>=interval_s(1) & cells.ActiveTimeInterval_s(:,2)<=interval_s(2);
+            if ~any(selected),continue;end
+            first=find(selected,1);
+            shapes{end+1,1}=preparation.IntervalUnionShapes{intervalIndex}; %#ok<AGROW>
+            starts_units{end+1,1}=preparation.IntervalUnionEdgeStart_units{intervalIndex}; %#ok<AGROW>
+            ends_units{end+1,1}=preparation.IntervalUnionEdgeEnd_units{intervalIndex}; %#ok<AGROW>
+            active_s(end+1,:)=cells.ActiveTimeInterval_s(first,:); %#ok<AGROW>
+            retain(selected)=false;
+        end
+    end
+    cells.Regions_units=cells.Regions_units(retain);
+    cells.EndRegions_units=cells.EndRegions_units(retain);
+    cells.ActiveTimeInterval_s=cells.ActiveTimeInterval_s(retain,:);
+    cells.SourceObstacleIndex=cells.SourceObstacleIndex(retain);
 end

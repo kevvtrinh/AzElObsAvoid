@@ -219,6 +219,8 @@ end
 
 function passed = verifyPlaneCertificate(result, positionPower_units)
     % Rebuild Bezier controls and directly recheck every active separating plane.
+    % Shared source preparation reconstructs merged spans and conservative swept
+    % cells; certificate equality and all acceptance tolerances remain unchanged.
     certificate = result.PlaneCertificate;
     requiredFields = {'Passed', 'Regions_units', 'Planes', 'RegionActiveBySegment', ...
         'RequiredGap_units', 'RoundoffReserve_units', 'AllPairCount', ...

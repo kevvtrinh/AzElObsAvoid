@@ -53,14 +53,23 @@ function faces = mergeConvexFaces(mesh,longestSharedEdgeFirst)
     pairs = [first(:),adjacent(:)];
     pairs = pairs(isfinite(pairs(:,2)) & pairs(:,1)<pairs(:,2),:);
     if longestSharedEdgeFirst && ~isempty(pairs)
-        edgeKey_units = zeros(size(pairs,1),5);
-        for pairIndex = 1:size(pairs,1)
-            shared = intersect(faces{pairs(pairIndex,1)},faces{pairs(pairIndex,2)});
-            endpoints_units = mesh.Points(shared,:);
-            endpoints_units = sortrows(endpoints_units,[1 2]);
-            edgeKey_units(pairIndex,:) = [-sum(diff(endpoints_units,1,1).^2), ...
-                reshape(endpoints_units.',1,4)];
-        end
+        % Neighbour column k is across the edge opposite triangle vertex k.
+        % Assemble those same shared endpoints in one batch, without a set
+        % intersection and sort for every mesh edge.
+        edgeColumns = repmat(1:3,count,1);
+        validPair = isfinite(adjacent) & first<adjacent;
+        opposite = edgeColumns(validPair);
+        firstEndpoint = mod(opposite,3)+1;
+        secondEndpoint = mod(opposite+1,3)+1;
+        connectivity = mesh.ConnectivityList;
+        endpointA_units = mesh.Points(connectivity(sub2ind(size(connectivity),pairs(:,1),firstEndpoint)),:);
+        endpointB_units = mesh.Points(connectivity(sub2ind(size(connectivity),pairs(:,1),secondEndpoint)),:);
+        swap = endpointA_units(:,1)>endpointB_units(:,1) | ...
+            (endpointA_units(:,1)==endpointB_units(:,1) & endpointA_units(:,2)>endpointB_units(:,2));
+        temporary_units = endpointA_units(swap,:);
+        endpointA_units(swap,:) = endpointB_units(swap,:);
+        endpointB_units(swap,:) = temporary_units;
+        edgeKey_units = [-sum((endpointB_units-endpointA_units).^2,2),endpointA_units,endpointB_units];
         [~,order] = sortrows(edgeKey_units,1:size(edgeKey_units,2));
         pairs = pairs(order,:);
     end

@@ -369,7 +369,9 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     verifyEqual(testCase,result.ArrivalTime_s,20,'AbsTol',1e-8);
     verifyEqual(testCase,result.velocity_units_s([1,end],:),[0.15,0;0.1,0],'AbsTol',1e-8);
     verifyLessThan(testCase,result.Polynomial.SegmentCount,80);
-    verifyEqual(testCase,result.PlaneCertificate.SolverRegionCount,80);
+    % Eighty identical-velocity source intervals are one exact affine cell.
+    verifyEqual(testCase,result.PlaneCertificate.SolverRegionCount,1);
+    verifyEqual(testCase,result.PreparedObstacles.InternalPreparation.MergedIntervalCount,79);
     verifyGreaterThan(testCase,result.SolverDiagnostics.TrajectorySocpCount,0);
 end
 

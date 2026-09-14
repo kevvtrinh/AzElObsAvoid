@@ -68,7 +68,8 @@ Both benchmarks exercise only the unified public flow. They report the selected
 guide as output evidence rather than running duplicate caller-selected modes.
 The compact benchmark uses random case 1 and the saved moving detour for the
 spatial-proof path, plus random case 26 with a static obstacle for the timed-guide
-path. The Vietnam boundary fixture is intentionally excluded: its changing
-280-vertex source boundary has no certified continuous correspondence, so the
-planner correctly terminates before route selection with
-`unsupportedObstacleInterpolation`.
+path. The Vietnam boundary fixture is intentionally excluded from this
+compact benchmark because of its size; its changing source boundary now
+carries an exact certified correspondence and is covered by
+`testVietnamBoundary` and the maintained example harness
+(see `benchmarks/vietnam_boundary.md`).
