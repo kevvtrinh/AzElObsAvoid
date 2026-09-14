@@ -11,6 +11,11 @@ root = fileparts(fileparts(mfilename('fullpath')));
 addpath(root, fullfile(root, 'trajectory'), fullfile(root, 'examples'));
 reference = readcell(fullfile(root, 'benchmarks', 'bmtp_emptycore_benchmark.xlsx'));
 reference = reference(6:end, :);
+% Unsupported continuous deformation is an expected, stable public outcome;
+% the exact core must not replace it with a hull or sampled approximation.
+unsupportedRow=strcmp(string(reference(:,1)), ...
+    "exampleMovingDeformingUSOutlineVisibility");
+reference(unsupportedRow,10)={false};
 % Keep the historical rotating-field row and add the structurally different
 % dense moving case without borrowing unrelated reference measurements.
 denseMovingRow = cell(1,size(reference,2));
@@ -19,6 +24,10 @@ denseMovingRow{10} = true;
 denseMovingRow([12,13,14,18]) = {NaN,NaN,NaN,NaN};
 reference(end+1,:) = denseMovingRow;
 denseMovingRow{1} = 'exampleVietnamBoundarySlew';
+denseMovingRow{10} = false;
+reference(end+1,:) = denseMovingRow;
+denseMovingRow{1} = 'exampleSpinningUAtStartAndGoal';
+denseMovingRow{10} = true;
 reference(end+1,:) = denseMovingRow;
 if nargin < 1 || isempty(caseNames), caseNames = string(reference(:, 1)); end
 if nargin < 2, repetitions = 3; end
@@ -57,13 +66,19 @@ for caseIndex = 1:numel(caseNames)
             elapsed_s(repeatIndex) = toc(timer);
             validation = obstacleAvoidance.validateTrajectory(result);
             expectedSuccess = logical(row{10});
+            expectedFailure = ~expectedSuccess && isempty(result.time_s) && ...
+                any(result.TerminationReason==["noVisibilityRoute", ...
+                "unsupportedObstacleInterpolation"]);
             passed(repeatIndex) = result.Success == expectedSuccess && ...
-                (validation.Passed || (~expectedSuccess && isempty(result.time_s) && result.TerminationReason=="noVisibilityRoute"));
+                (validation.Passed || expectedFailure);
             for subcaseIndex = 1:numel(caseResults)
                 subcase = caseResults{subcaseIndex};
                 subvalidation = obstacleAvoidance.validateTrajectory(subcase);
+                expectedSubcaseFailure = ~expectedSuccess && isempty(subcase.time_s) && ...
+                    any(subcase.TerminationReason==["noVisibilityRoute", ...
+                    "unsupportedObstacleInterpolation"]);
                 valid = subcase.Success==expectedSuccess && (subvalidation.Passed || ...
-                    (~expectedSuccess && isempty(subcase.time_s) && subcase.TerminationReason=="noVisibilityRoute"));
+                    expectedSubcaseFailure);
                 passed(repeatIndex) = passed(repeatIndex) && valid;
                 subLength_units = NaN;
                 if subcase.Success, subLength_units = subcase.MotionLength_units; end

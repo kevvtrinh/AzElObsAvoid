@@ -25,28 +25,23 @@ end
 validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
 
 %% Section 2: Select The Polynomial Representation
-% Start static guide edges with three degree-eight subspans to retain
-% continuous-jerk steering freedom. Other modes keep their established mesh.
-% Fixed-arrival clocks use their natural events and a minimum steering mesh.
+% Choose the representation from the physical request, never from a
+% diagnostic seed label. Every non-static timed proposal uses the same
+% quintic C3 representation; its physical clock controls only the time mesh.
 
 [degree, splitCount] = deal(5, 3);
 if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
     degree=8;
 end
+usesVariableClock=isfield(seed,'TimingMode') && ...
+    string(seed.TimingMode)=="variableClock";
+usesTimeScopedSolver=usesVariableClock || (isfield(seed,'TimingMode') && ...
+    string(seed.TimingMode)=="timeScopedClock");
 hasCompleteMotion=isfield(seed,'PolynomialEdges') && ...
     ~isempty(seed.PolynomialEdges);
 if hasCompleteMotion
     degree=size(seed.PolynomialEdges(1).ControlPoint_units,1)-1;
     splitCount=1;
-end
-usesVisibilityGraphProfile=isfield(seed,'Source') && ...
-    string(seed.Source)=="timeExpandedVisibilityGraph";
-usesVariableClock=isfield(seed,'TimingMode') && ...
-    string(seed.TimingMode)=="variableClock";
-usesTimeScopedSolver=usesVariableClock || (isfield(seed,'TimingMode') && ...
-    string(seed.TimingMode)=="timeScopedClock");
-if usesVisibilityGraphProfile && ~hasCompleteMotion
-    [degree,splitCount] = deal(8,2);
 end
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0

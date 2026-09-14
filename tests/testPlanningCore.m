@@ -51,6 +51,39 @@ function testDirect(testCase)
     verifyEqual(testCase,r.SolverDiagnostics.Identifier,"minimumJerkQuintic");
 end
 
+function testC3ChordDropsRoundoffZeroPhases(testCase)
+    % A regime-boundary hold can evaluate to a positive 1e-16-second
+    % remnant. It must not become the smoothing kernel and erase the chord.
+    limits = struct('maxVelocity_units_s',[10,10], ...
+        'maxAcceleration_units_s2',[10,10], ...
+        'maxJerk_units_s3',[10,10]);
+    start_units = [-5,0];
+    goal_units = [0.201,2.999];
+    [controls_units,durations_s,powers_units] = ...
+        bmtpEngine.createC3Chord(start_units,goal_units,limits);
+    verifyGreaterThan(testCase,min(durations_s),1e-6);
+    verifyEqual(testCase,squeeze(controls_units(1,1,:)).', ...
+        start_units,'AbsTol',1e-12);
+    verifyEqual(testCase,squeeze(controls_units(end,end,:)).', ...
+        goal_units,'AbsTol',1e-10);
+    verifyEqual(testCase,sum(squeeze(powers_units(end,:,:)),2).', ...
+        goal_units,'AbsTol',1e-10);
+end
+
+function testJerkChordPreservesShortPhysicalRampsBesideLongCruise(testCase)
+    limits = struct('maxVelocity_units_s',[1e-9,1e-9], ...
+        'maxAcceleration_units_s2',[1e5,1e5], ...
+        'maxJerk_units_s3',[1e18,1e18]);
+    [controls_units,durations_s] = bmtpEngine.createJerkLimitedChord( ...
+        [0,0],[1,0],limits,3);
+    verifyGreaterThan(testCase,numel(durations_s),1);
+    verifyGreaterThan(testCase,min(durations_s),0);
+    verifyEqual(testCase,squeeze(controls_units(1,1,:)).',[0,0], ...
+        'AbsTol',1e-14);
+    verifyEqual(testCase,squeeze(controls_units(end,end,:)).',[1,0], ...
+        'AbsTol',1e-12);
+end
+
 function testDetourAndTampering(testCase)
     r = planner();
     verifyTrue(testCase,r.Success,r.Message);

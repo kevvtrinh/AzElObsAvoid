@@ -1,4 +1,4 @@
-function obstacles = prepareObstacles(obstacles, timeRange_s)
+function obstacles = prepareObstacles(obstacles, timeRange_s, stopAtUnsupported)
 %% Section 0: Header & Readme
 % SYNTAX: obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles)
 %   obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[t0,t1])
@@ -7,11 +7,14 @@ function obstacles = prepareObstacles(obstacles, timeRange_s)
 % INPUTS: obstacles (canonical obstacle struct array) Normalize expected boundary fragments before
 %   preparing authoritative protected geometry; retain original geometry and absolute margin.
 %   timeRange_s: finite nondecreasing 1-by-2 interval; omit for full history.
+%   stopAtUnsupported: optional logical; stop each obstacle at its first unsupported interval.
 % OUTPUTS: obstacles (prepared obstacle struct array) Each record contains source-checked reusable
 %   geometry data.
 % UNITS: Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 
 %% Section 1: Reuse Only Source-Checked Preparation
+if nargin<3, stopAtUnsupported=false; end
+validateattributes(stopAtUnsupported,{'logical'},{'scalar'});
 if nargin<2
     timeRange_s=[-Inf,Inf];
 else
@@ -40,7 +43,7 @@ end
 if isempty(obstacles)
     return;
 end
-preparationVersion = 8;
+preparationVersion = 9;
 %% Section 2: Extend Only The Requested Entries
 % Prepare each obstacle separately.
 
@@ -65,7 +68,7 @@ for obstacleIndex = 1:numel(obstacles)
     else
         normalized=obstacleAvoidance.obstacles.createObstacle(obstacles(obstacleIndex));
     end
-    preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle(normalized, preparationVersion, createSourceSnapshot(normalized),timeRange_s,previous);
+    preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle(normalized, preparationVersion, createSourceSnapshot(normalized),timeRange_s,previous,stopAtUnsupported);
     for name = reshape(string(fieldnames(normalized)),1,[])
         obstacles(obstacleIndex).(name) = normalized.(name);
     end

@@ -34,7 +34,7 @@ if previous.Success
     incumbentArrival_s = previous.ArrivalTime_s;
     horizon_s = min(horizon_s,incumbentArrival_s-options.ArrivalTimeTolerance_s);
 end
-% Keep the original grid origin, but apply the physical bound before the
+% Keep the declared grid origin, but apply the physical bound before the
 % trial budget. Impossible early times must not exclude later feasible ones.
 firstStep = max(1,ceil((earliest_s-start_s-options.ArrivalTimeTolerance_s)/resolution_s));
 lastStep = min(firstStep+options.MaxArrivalTrials-1,floor((horizon_s-start_s)/resolution_s));
@@ -73,6 +73,7 @@ searchedEnd_s = min(earliest_s,horizon_s);
 if tried>0, searchedEnd_s = times_s(end); end
 breaks_s = unique([min(earliest_s,horizon_s);times_s;horizon_s]);
 result.TemporalSearch = struct('Resolution_s',resolution_s,'Budget',options.MaxArrivalTrials, ...
+    'ScheduleKind',"chronologicalGrid", ...
     'TrialTime_s',times_s,'TrialTerminationReason',reasons(1:tried), ...
     'UnsearchedOpenIntervals_s',[breaks_s(1:end-1),breaks_s(2:end)], ...
     'UnsearchedTail_s',[searchedEnd_s,horizon_s],'GlobalEarliestProven',false, ...

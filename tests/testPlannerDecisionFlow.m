@@ -226,20 +226,24 @@ function testLegacyTimedChoiceDoesNotSplitMovingTargetFlow(testCase)
     verifyEqual(testCase,result.SeedSource,"initialSpatialSnapshot");
 end
 
-function testInitiallyOccupiedFutureGoalUsesTemporalSeed(testCase)
+function testInitiallyOccupiedFutureGoalUsesArrivalDetour(testCase)
     local=[-0.8,-0.8;0.8,-0.8;0.8,0.8;-0.8,0.8];
     first=local+[4,0];
     last=local+[4,6];
-    obstacle=obstacleAvoidance.obstacles.createObstacle('departing goal box',[0;10], ...
+    departing=obstacleAvoidance.obstacles.createObstacle('departing goal box',[0;10], ...
         {first(:,1);last(:,1)},{first(:,2);last(:,2)},0);
-    result=planner(obstacle,state(0,[-4,0]),state(10,[4,0]), ...
+    blocker=obstacleAvoidance.obstacles.createObstacle('central blocker',0, ...
+        {[-1;1;1;-1]},{[-1;-1;1;1]},0);
+    obstacles=obstacleAvoidance.obstacles.combineObstacles({departing;blocker});
+    result=planner(obstacles,state(0,[-4,0]),state(10,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"temporalDirectSeed");
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
+    verifyGreaterThan(testCase,size(result.Route_units,1),2);
 end
 
-function testDisconnectedDynamicSnapshotUsesTemporalSeed(testCase)
+function testDisconnectedInitialSnapshotUsesArrivalSnapshot(testCase)
     wall=[-0.2,-7;0.2,-7;0.2,7;-0.2,7];
     moved=wall+[0,14];
     obstacle=obstacleAvoidance.obstacles.createObstacle('departing wall',[0;5], ...
@@ -248,7 +252,7 @@ function testDisconnectedDynamicSnapshotUsesTemporalSeed(testCase)
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"temporalDirectSeed");
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
 end
 
 function testSparseDynamicZeroWaitDeparture(testCase)
@@ -267,29 +271,35 @@ function testSparseDynamicZeroWaitDeparture(testCase)
     verifyFalse(testCase,isfield(result,'TemporalSearch'));
 end
 
-function testDenseTimedRouteWithoutWaitWindow(testCase)
+function testEquivalentSparseAndDenseHistoriesUseCertifiedDeparture(testCase)
     initial=state(0,[0,0]);
     goal=state(3.6,[4,0]);
     limits=standardLimits();
     limits.xInterval_units=[-30,30];
     limits.yInterval_units=[-30,30];
     base=[-0.25,-0.25;0.25,-0.25;0.25,0.25;-0.25,0.25]+[20,20];
-    sourceTime_s=linspace(0,3.6,17).';
-    xByTime_units=arrayfun(@(time_s) ...
-        base(:,1)+0.1*time_s/3.6,sourceTime_s,'UniformOutput',false);
-    yByTime_units=repmat({base(:,2)},17,1);
-    obstacle=obstacleAvoidance.obstacles.createObstacle( ...
-        'remote dense mover',sourceTime_s,xByTime_units,yByTime_units,0);
-    result=planner(obstacle,initial,goal,limits, ...
-        struct('GoalTimeMode','earliestArrival', ...
-        'TemporalResolution_s',0.225));
-    verifyTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,3.6,'AbsTol',1e-10);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
-        "timeExpandedVisibilityGraph");
-    verifyEqual(testCase,result.TemporalSearch.TrialStage, ...
-        "timeExpandedVisibilityGraph");
+    sampleCounts=[2,17];
+    results=cell(size(sampleCounts));
+    for historyIndex=1:numel(sampleCounts)
+        sourceTime_s=linspace(0,3.6,sampleCounts(historyIndex)).';
+        xByTime_units=arrayfun(@(time_s) ...
+            base(:,1)+0.1*time_s/3.6,sourceTime_s,'UniformOutput',false);
+        yByTime_units=repmat({base(:,2)},sampleCounts(historyIndex),1);
+        obstacle=obstacleAvoidance.obstacles.createObstacle( ...
+            'remote affine mover',sourceTime_s,xByTime_units,yByTime_units,0);
+        results{historyIndex}=planner(obstacle,initial,goal,limits, ...
+            struct('GoalTimeMode','earliestArrival', ...
+            'TemporalResolution_s',0.225));
+        verifyTrue(testCase,results{historyIndex}.Success,results{historyIndex}.Message);
+        verifyTrue(testCase,obstacleAvoidance.validateTrajectory(results{historyIndex}).Passed);
+        verifyEqual(testCase,results{historyIndex}.VisibilityGraph.SearchKind, ...
+            "c3DepartureSchedule");
+        verifyFalse(testCase,isfield(results{historyIndex},'TemporalSearch'));
+    end
+    verifyEqual(testCase,results{1}.ArrivalTime_s,results{2}.ArrivalTime_s, ...
+        'AbsTol',1e-8);
+    verifyEqual(testCase,results{1}.MotionLength_units, ...
+        results{2}.MotionLength_units,'AbsTol',1e-8);
 end
 
 function testArrivalSearchExhausted(testCase)

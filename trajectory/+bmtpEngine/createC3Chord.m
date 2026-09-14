@@ -13,11 +13,16 @@ function [controls_units,durations_s,powers_units] = createC3Chord(start_units,g
     struct('maxVelocity_units_s',min(limits.maxVelocity_units_s./abs(goal_units-start_units))*[1,1], ...
     'maxAcceleration_units_s2',min(limits.maxAcceleration_units_s2./abs(goal_units-start_units))*[1,1], ...
     'maxJerk_units_s3',min(limits.maxJerk_units_s3./abs(goal_units-start_units))*[1,1]),5);
-width_s = min(originalTimes_s)/10;
+% Smooth on the shortest jerk-ramp scale. Zero-jerk holds and cruises may
+% be arbitrarily short or long without changing the physical ramp width.
+rampPhase = phases.Jerk_units_s3(:,1)~=0;
+width_s = min(originalTimes_s(rampPhase))/10;
 sourceBreaks_s = [0;cumsum(originalTimes_s)];
 breaks_s = unique([sourceBreaks_s;sourceBreaks_s+width_s;sourceBreaks_s+2*width_s]);
-% Coalescing roundoff-equivalent knots does not change the source clock.
-breaks_s = breaks_s([true;diff(breaks_s)>64*eps(max(breaks_s))]);
+% Merge only arithmetic duplicates that are also negligible relative to
+% the smoothing kernel; a long cruise must not erase short ramp knots.
+knotTolerance_s = min(64*eps(max(1,max(abs(breaks_s)))),width_s/64);
+breaks_s = breaks_s([true;diff(breaks_s)>knotTolerance_s]);
 durations_s = diff(breaks_s);
 powers_units = zeros(numel(durations_s),2,6);
 controls_units = zeros(numel(durations_s),6,2);

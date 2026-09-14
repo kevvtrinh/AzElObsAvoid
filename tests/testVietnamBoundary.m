@@ -37,6 +37,20 @@ function testSourceAndInterpolation(testCase)
     verifyEqual(testCase,limits.maxVelocity_units_s,[2,2]);
 end
 
+function testPlannerStopsAtFirstUnsupportedInterval(testCase)
+    [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
+    result=planner(obstacle,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    verifyEqual(testCase,result.TerminationReason,"unsupportedObstacleInterpolation");
+    preparation=result.PreparedObstacles.InternalPreparation;
+    verifyEqual(testCase,nnz(preparation.SamplePrepared),2);
+    verifyEqual(testCase,nnz(preparation.IntervalPrepared),1);
+    verifyEqual(testCase,result.PreparedObstacles.x_units,obstacle.x_units);
+    verifyEqual(testCase,result.PreparedObstacles.y_units,obstacle.y_units);
+    extended=obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles,[2770,2770.5]);
+    verifyEqual(testCase,nnz(extended.InternalPreparation.SamplePrepared),3);
+    verifyEqual(testCase,nnz(extended.InternalPreparation.IntervalPrepared),2);
+end
+
 function testUnsupportedDeformationIsNeverReplacedByAConvexHull(testCase)
     [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
     prepared=obstacleAvoidance.obstacles.prepareObstacles( ...

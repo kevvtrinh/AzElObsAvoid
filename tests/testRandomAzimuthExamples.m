@@ -73,9 +73,11 @@ function testSuiteReturnsValidatedCoreResults(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(single).Passed);
 end
 
-function testTimedFixedArrivalRepairsSpatialSeedFailures(testCase)
+function testFixedArrivalCascadeRepairsSpatialSeedFailures(testCase)
     caseIndices=[26,36,62,62];
     withStatic=[true,true,false,true];
+    expectedSources=["arrivalSpatialSnapshot","timeExpandedVisibilityGraph", ...
+        "timeExpandedVisibilityGraph","arrivalSpatialSnapshot"];
     overrides=struct('PlotOutputs',false,'Verbose',false);
     for caseNumber=1:numel(caseIndices)
         result=exampleRandomAzimuth(caseIndices(caseNumber), ...
@@ -83,7 +85,13 @@ function testTimedFixedArrivalRepairsSpatialSeedFailures(testCase)
         verifyTrue(testCase,result.Success,result.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
-            "timeExpandedVisibilityGraph");
+            expectedSources(caseNumber));
+        if expectedSources(caseNumber)=="arrivalSpatialSnapshot"
+            verifyTrue(testCase,isfield(result.VisibilityGraph,'InitialSpatialSeedDiagnostics'));
+            verifyFalse(testCase,result.VisibilityGraph.InitialSpatialSeedDiagnostics.Accepted);
+        else
+            verifyTrue(testCase,isfield(result.VisibilityGraph,'SpatialSeedDiagnostics'));
+        end
         verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-10);
         verifyLessThanOrEqual(testCase,result.SolverDiagnostics.IterationCount,2);
     end

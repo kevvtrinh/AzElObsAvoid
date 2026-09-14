@@ -1,4 +1,4 @@
-function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous)
+function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous, stopAtUnsupported)
 %% Section 0: Header & Readme
 % SYNTAX: obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( obstacle, preparationVersion,
 %   sourceSnapshot, timeRange_s, previous)
@@ -11,6 +11,7 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 %   sourceSnapshot (scalar struct) Source fields assembled by prepareObstacles for cache validation.
 %   timeRange_s: requested closed interval; omitted means the full history.
 %   previous: source-checked preparation to extend; omitted means empty.
+%   stopAtUnsupported: optional logical; return after a requested interval cannot be represented.
 % OUTPUTS: obstacle (scalar canonical obstacle struct) InternalPreparation contains reusable
 %   source-derived geometry data.
 % UNITS: Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
@@ -19,6 +20,7 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 validateattributes(preparationVersion, {'numeric'}, {'real','finite','scalar','integer','positive'});
 if nargin<4, timeRange_s=[-Inf,Inf]; end
 if nargin<5, previous=[]; end
+if nargin<6, stopAtUnsupported=false; end
 time_s=obstacle.time_s; sampleCount=numel(time_s); intervalCount=sampleCount-1;
 neededSamples=time_s>=timeRange_s(1) & time_s<=timeRange_s(2);
 neededIntervals=time_s(1:end-1)<timeRange_s(2) & time_s(2:end)>timeRange_s(1);
@@ -50,16 +52,15 @@ if isempty(previous)
 else
     preparation=previous;
 end
-for sampleIndex=reshape(find(neededSamples & ~preparation.SamplePrepared),1,[])
-    shape=obstacleAvoidance.geometry.boundaryToShape(obstacle.x_units{sampleIndex},obstacle.y_units{sampleIndex});
-    preparation.SampleShapes{sampleIndex}=shape;
-    [preparation.SampleEdgeStart_units{sampleIndex},preparation.SampleEdgeEnd_units{sampleIndex}]= ...
-        obstacleAvoidance.geometry.boundaryToEdges(shape,0);
-    preparation.SamplePrepared(sampleIndex)=true;
+if stopAtUnsupported && any(neededIntervals & preparation.IntervalPrepared & ...
+        preparation.IntervalGeometryModel=="unsupportedContinuousDeformation")
+    obstacle.InternalPreparation=preparation;
+    return;
 end
 
 %% Section 3: Prepare Each Newly Requested Source Interval Once
 for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),1,[])
+    preparation=prepareSamples(preparation,obstacle,[intervalIndex,intervalIndex+1]);
     lowerX_units=obstacle.x_units{intervalIndex}; lowerY_units=obstacle.y_units{intervalIndex};
     upperX_units=obstacle.x_units{intervalIndex+1}; upperY_units=obstacle.y_units{intervalIndex+1};
     reusableStartRegions_units=cell(0,1);
@@ -97,6 +98,13 @@ for intervalIndex=reshape(find(neededIntervals & ~preparation.IntervalPrepared),
             obstacleAvoidance.geometry.boundaryToEdges(shape,0);
     end
     preparation.IntervalPrepared(intervalIndex)=true;
+    if stopAtUnsupported && preparation.IntervalGeometryModel(intervalIndex)=="unsupportedContinuousDeformation"
+        break;
+    end
+end
+if ~stopAtUnsupported || ~any(neededIntervals & preparation.IntervalPrepared & ...
+        preparation.IntervalGeometryModel=="unsupportedContinuousDeformation")
+    preparation=prepareSamples(preparation,obstacle,find(neededSamples).');
 end
 
 %% Section 4: Update Cached Motion Bounds And Static Status
@@ -111,6 +119,17 @@ obstacle.InternalPreparation=preparation;
 end
 
 %% Section 5: Local Functions
+function preparation=prepareSamples(preparation,obstacle,sampleIndices)
+    for sampleIndex=sampleIndices(~preparation.SamplePrepared(sampleIndices))
+        shape=obstacleAvoidance.geometry.boundaryToShape( ...
+            obstacle.x_units{sampleIndex},obstacle.y_units{sampleIndex});
+        preparation.SampleShapes{sampleIndex}=shape;
+        [preparation.SampleEdgeStart_units{sampleIndex},preparation.SampleEdgeEnd_units{sampleIndex}]= ...
+            obstacleAvoidance.geometry.boundaryToEdges(shape,0);
+        preparation.SamplePrepared(sampleIndex)=true;
+    end
+end
+
 function [verified, alignedUpper_units, startRegions_units, endRegions_units, ...
         geometryModel,partitionReused] = alignVerifiedSingleRing( ...
         lowerX_units,lowerY_units,upperX_units,upperY_units,lowerShape, ...
@@ -352,9 +371,22 @@ function verified = movingBoundaryRemainsSimple(lower_units,upper_units,coordina
     delta_units = upper_units-lower_units;
     orientationTolerance_units2 = 4096*eps(coordinateScale_units^2);
     positionTolerance_units = 4096*eps(coordinateScale_units);
+    % Each endpoint is affine in time. These bounds contain every point on
+    % each moving edge throughout the interval, so disjoint ranges certify
+    % separation without solving any orientation polynomial.
+    nextIndex = [2:count,1];
+    edgeMinimum_units = min(min(lower_units,lower_units(nextIndex,:)), ...
+        min(upper_units,upper_units(nextIndex,:)));
+    edgeMaximum_units = max(max(lower_units,lower_units(nextIndex,:)), ...
+        max(upper_units,upper_units(nextIndex,:)));
     for firstIndex = 1:count
         firstNext = mod(firstIndex,count)+1;
-        for secondIndex = firstIndex+1:count
+        secondIndices = (firstIndex+1:count).';
+        overlapping = all(edgeMaximum_units(firstIndex,:) >= ...
+            edgeMinimum_units(secondIndices,:)-positionTolerance_units & ...
+            edgeMaximum_units(secondIndices,:) >= ...
+            edgeMinimum_units(firstIndex,:)-positionTolerance_units,2);
+        for secondIndex = reshape(secondIndices(overlapping),1,[])
             secondNext = mod(secondIndex,count)+1;
             if secondIndex==firstNext || secondNext==firstIndex
                 continue;

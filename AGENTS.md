@@ -20,6 +20,16 @@ generation, independent validation, and plots of those returned core results.
 - Build the visibility graph exhaustively from exact prepared geometry. Do not
   add route heuristics, preferred detours, hidden waypoints, route-class pruning,
   retry schedules, fixture-specific seeds, or silent fallbacks.
+- Treat the planning pipeline like a factory: every stage must emit a truthful,
+  usable intermediate for the next stage. When an output is invalid, trace the
+  defect to the earliest stage that introduced it and eliminate it there. Do not
+  carry a known-bad seed, clock, corridor, or geometry representation downstream,
+  and do not add compensating filters, repair branches, retry machines, or cleanup
+  stages around it.
+- Before changing a downstream solver or validator, reproduce the failure by hand
+  at each stage boundary and distinguish proposal, timing, kinematic, clearance,
+  certification, and selection failures. Preserve the physical inputs while doing
+  so; diagnostic labels and provenance must never change planner behavior.
 - Use BMTP for motion generation. Keep any future heuristic out until identical,
   deterministic benchmarks demonstrate a necessary benefit without a correctness
   or motion-quality regression.

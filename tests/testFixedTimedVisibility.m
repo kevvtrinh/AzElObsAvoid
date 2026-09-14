@@ -116,16 +116,19 @@ function testMovingCrossingRetainsCertifiedEndpointJerk(testCase)
         limits.maxJerk_units_s3+result.Options.ConstraintTolerance);
 end
 
-function testPersistentSpatialPairsUseTimedSeed(testCase)
+function testArrivalSnapshotAvoidsTimedFallback(testCase)
     scenario=createRandomAzimuthScenario(26,true);
     result=planner(scenario.Obstacles,scenario.InitialState, ...
         scenario.GoalState,scenario.Limits,scenario.Options);
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.SeedSource,"timeExpandedVisibilityGraph");
+    verifyEqual(testCase,result.SeedSource,"arrivalSpatialSnapshot");
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
-        "timeExpandedVisibilityGraph");
-    spatial=result.VisibilityGraph.SpatialSeedDiagnostics;
-    verifyEqual(testCase,spatial.IterationCount,2);
-    verifyGreaterThan(testCase,spatial.FinalCollisionPairCount,0);
+        "arrivalSpatialSnapshot");
+    verifyFalse(testCase,isfield(result.VisibilityGraph,'SpatialSeedDiagnostics'));
+    verifyTrue(testCase,isfield(result.VisibilityGraph,'InitialSpatialSeedDiagnostics'));
+    verifyFalse(testCase,result.VisibilityGraph.InitialSpatialSeedDiagnostics.Accepted);
+    verifyEqual(testCase, ...
+        result.VisibilityGraph.InitialSpatialSeedDiagnostics.IterationCount,2);
+    verifyGreaterThan(testCase,size(result.Route_units,1),2);
 end

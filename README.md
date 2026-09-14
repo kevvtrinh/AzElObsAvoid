@@ -8,6 +8,8 @@ audit at commit `bdb3a65`. The subsequent C3 quintic change and its
 verification are documented in [C3_QUINTIC.md](C3_QUINTIC.md).
 The subsequent runtime investigation and controlled comparisons are in
 [RUNTIME_OPTIMIZATION.md](RUNTIME_OPTIMIZATION.md).
+The current branch-by-branch routing audit is in
+[benchmarks/planner_decision_flow.md](benchmarks/planner_decision_flow.md).
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
@@ -47,16 +49,18 @@ default request arrives at 3000 s from a 2770 s start. Use
 [benchmark report](benchmarks/vietnam_boundary.md) document the data, declared
 interpolation, continuous motion, and measured preparation improvement.
 
-Fixed-arrival moving-obstacle requests use one deterministic two-guide policy.
-The exact initial visibility route receives the initial BMTP solve and one
-refined collision-mesh solve. If neither returns a complete certified motion,
-the planner evaluates the existing exact timed visibility route once. This proof
-boundary preserves the shorter spatial result when it works and changes
-homotopy before repeated optimization of the same failing seed becomes costly.
-The timed guide supports a fixed-position goal and zero endpoint velocity and
-acceleration; intermediate motion carries derivatives continuously through BMTP
-joins. `VisibilityGraph.SpatialSeedDiagnostics` retains the rejected spatial
-attempt when the timed guide is selected. Legacy `FixedArrivalSearch` values are
+Fixed-arrival moving-obstacle requests use one deterministic three-guide
+cascade. The exact initial visibility route receives the initial BMTP solve and
+one refined collision-mesh solve. If the solver reports infeasibility, a
+distinct exact route on the arrival-time snapshot is tried the same way, and
+only if that also reports infeasibility is the exact timed visibility route
+evaluated once. Identical routes are never solved twice, and a solver success
+that the public validator rejects terminates as a defect rather than starting
+another guide. The timed guide supports a fixed-position goal and zero endpoint
+velocity and acceleration; intermediate motion carries derivatives continuously
+through BMTP joins. `VisibilityGraph.InitialSpatialSeedDiagnostics` and
+`VisibilityGraph.SpatialSeedDiagnostics` retain the rejected spatial attempts
+when a later guide is selected. Legacy `FixedArrivalSearch` values are
 accepted for input compatibility but no longer split planner behavior. See the
 [fixed-arrival consolidation](benchmarks/fixed_arrival_timed_visibility.md).
 
@@ -156,11 +160,10 @@ fixed-arrival trials, with `TemporalResolution_s` (default 0.5 s) and
 For fixed-position goals, physically impossible times are excluded using the
 same necessary travel-time bound as endpoint validation before applying the
 trial budget. A validated delayed straight crossing remains an incumbent while
-earlier detours are tested. Those trials are skipped when the exact initial
-visibility route is disconnected or its optimistic route-length/maximum-speed
-bound cannot beat the incumbent. Immediate certified crossings keep their
-direct path. `SolverDiagnostics.DepartureSchedule.InitialRouteTimeBound_s`
-records the skip bound.
+the single variable-clock timed profile is tested; chronological trials run
+only when neither produces a certified motion. Immediate certified crossings
+keep their direct path. No initial-snapshot route bound skips trials, because
+later moving geometry can expose a shorter route.
 When trials run, `TemporalSearch` reports their budget, unsearched intervals, and the absence
 of a global earliest proof. `arrivalSearchExhausted` means no tested time was
 certified; it does not prove physical infeasibility.
@@ -175,8 +178,10 @@ union, including holes and disconnected components. It classifies every graph
 edge exactly; proven boundary-cone rejections avoid unnecessary full intersection
 queries without pruning an edge from the returned graph evidence.
 
-Returned position spans use degree-five polynomials, with continuous position,
-velocity, acceleration, and jerk at every internal join. Endpoint position,
+Returned position spans use degree-five polynomials (degree eight for static
+earliest-arrival guides), with continuous position, velocity, acceleration, and
+jerk at every internal join. The degree is selected from the physical request,
+never from a seed label. Endpoint position,
 velocity, and acceleration remain prescribed; endpoint jerk is free unless
 joining a stationary wait. No new snap limit is imposed.
 
@@ -283,13 +288,18 @@ suite. Its current guide-route length is 17.366977678962233 versus the retained
 
 Passing this suite is a measured result, not a universal optimality or runtime
 guarantee. Static optimization uses a visibility-selected topology and a finite
-polynomial family. Dense rest-to-rest histories first use a time-expanded
-visibility proposal over declared source, midpoint, and uniform time layers.
-The selected layer is not a continuous-time global-optimality proof. Sparse
-histories and unsuccessful timed proposals use a certified delayed chord when
-available; chronological fixed-arrival search continues only when the initial
-spatial-route bound can beat it. Feasible times may be disconnected and open
-gaps remain unsearched.
+polynomial family. Earliest arrival with moving obstacles evaluates one
+complete C3 departure family first: a certified zero-delay chord attains the
+physical travel lower bound and returns immediately, and a delayed chord is
+only an incumbent. One source-independent variable-clock timed profile, seeded
+by a time-expanded visibility proposal over declared source, midpoint, and
+uniform time layers, may replace that incumbent with an earlier independently
+valid motion. The proposal is not a continuous-time global-optimality proof:
+static edges use the exact segment predicate, but moving edges are still
+sampled and are rejected before any solve when their exact corridor cannot be
+built. Chronological fixed-arrival search runs only when both fail. Feasible
+times may be disconnected and open gaps remain unsearched. See
+[the decision-flow audit](benchmarks/planner_decision_flow.md).
 Nonlinear optimization and fixed-clock conic failures do not prove physical
 infeasibility. These cases return stable failure outcomes without weakening
 validation.

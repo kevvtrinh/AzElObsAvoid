@@ -9,7 +9,9 @@ function isVisible = checkVisibilitySegments(first_units, second_units, shape, e
 %   edgeStart_units, edgeEnd_units (M-by-2 numeric matrices) Ordered proposal-boundary edge
 %   endpoints.
 % OUTPUTS: isVisible (N-by-1 logical vector) True where the segment avoids the proposal shape and
-%   its boundary.
+%   its boundary. Boundary contact counts as blocked (zero clearance), including a zero-length
+%   segment whose point lies on the boundary; the occupancy oracle treats boundary points as free,
+%   so callers place search nodes at a positive offset from the protected boundary.
 % UNITS: All geometry is coordinate units.
 
 %% Section 1: Reject Interior And Boundary Intersections
@@ -20,6 +22,11 @@ if isempty(shape.Vertices)
     return;
 end
 segment_units         = second_units - first_units;
+isDegenerate          = all(segment_units == 0, 2);
+if any(isDegenerate)
+    isVisible(isDegenerate) = ~isinterior(shape,first_units(isDegenerate,1), ...
+        first_units(isDegenerate,2));
+end
 boundary_units        = edgeEnd_units - edgeStart_units;
 offsetX_units   = edgeStart_units(:, 1).' - first_units(:, 1);
 offsetY_units = edgeStart_units(:, 2).' - first_units(:, 2);
@@ -39,8 +46,9 @@ nextOffsetX_units   = edgeEnd_units(:, 1).' - first_units(:, 1);
 nextOffsetY_units = edgeEnd_units(:, 2).' - first_units(:, 2);
 secondProjection        = (nextOffsetX_units .* segment_units(:, 1) + nextOffsetY_units .* segment_units(:, 2)) ./ segmentScale_units2;
 overlaps                = isCollinear & max(min(firstProjection, secondProjection), 0) <= min(max(firstProjection, secondProjection), 1) + 1e-12;
-isVisible = ~any(crosses | overlaps, 2);
-candidates = find(isVisible);
+isVisible(~isDegenerate) = ~any(crosses(~isDegenerate,:) | ...
+    overlaps(~isDegenerate,:), 2);
+candidates = find(isVisible & ~isDegenerate);
 if isempty(candidates), return; end
 middle_units = (first_units(candidates,:) + second_units(candidates,:)) / 2;
 isVisible(candidates) = ~isinterior(shape,middle_units(:,1),middle_units(:,2));

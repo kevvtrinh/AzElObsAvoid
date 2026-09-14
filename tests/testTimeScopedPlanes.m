@@ -203,7 +203,38 @@ function testSolveRequestCarriesMinimumArrivalBound(testCase)
     verifyTrue(testCase,request.UsesVariableClock);
     verifyEqual(testCase,request.Degree,5);
     warmStart=bmtpEngine.createWarmStart(request);
-    verifyGreaterThanOrEqual(testCase,warmStart.Duration_s,6-1e-12);
+    verifyEqual(testCase,warmStart.Duration_s,6,'AbsTol',1e-12);
+end
+
+function testTimedProfileDoesNotDependOnSeedSource(testCase)
+    initial=struct('time_s',0,'position_units',[-1,0]);
+    goal=struct('time_s',10,'position_units',[1,0.5]);
+    normalized=planner([],initial,goal,[], ...
+        struct('GoalTimeMode',"earliestArrival"));
+    coverage=struct('Passed',true,'MinimumMotionDuration_s',4, ...
+        'SeedMotionDuration_s',6,'ActiveTimeInterval_s',zeros(0,2), ...
+        'BreakTime_s',[0;3;10]);
+    firstSeed=struct('position_units',[-1,0;-0.5,0;1,0.5], ...
+        'tau',[0;0.25;1],'Source',"firstDiagnosticLabel", ...
+        'TimingMode',"variableClock");
+    secondSeed=firstSeed;
+    secondSeed.Source="unrelatedDiagnosticLabel";
+    firstRequest=bmtpEngine.createSolveRequest(firstSeed,cell(0,1),coverage, ...
+        normalized.Inputs.initialState,normalized.Inputs.goalState, ...
+        normalized.Limits,normalized.Options);
+    secondRequest=bmtpEngine.createSolveRequest(secondSeed,cell(0,1),coverage, ...
+        normalized.Inputs.initialState,normalized.Inputs.goalState, ...
+        normalized.Limits,normalized.Options);
+    firstWarm=bmtpEngine.createWarmStart(firstRequest);
+    secondWarm=bmtpEngine.createWarmStart(secondRequest);
+    verifyEqual(testCase,firstRequest.Degree,secondRequest.Degree);
+    verifyEqual(testCase,firstRequest.SplitCount,secondRequest.SplitCount);
+    verifyEqual(testCase,firstWarm.ControlPoint_units, ...
+        secondWarm.ControlPoint_units,'AbsTol',0);
+    verifyEqual(testCase,firstWarm.SegmentTime_s, ...
+        secondWarm.SegmentTime_s,'AbsTol',0);
+    verifyEqual(testCase,firstWarm.RegionActiveBySegment, ...
+        secondWarm.RegionActiveBySegment);
 end
 
 function testVariableClockUsesActualMovingCellOverlap(testCase)
@@ -349,10 +380,10 @@ function testTimedSearchMovingAndStationaryIntervals(testCase)
     for hasStationaryInterval = [false,true]
         if hasStationaryInterval
             sourceTimes_s = [0;6;6.5;12]; shifts_units = [0;0;8;8];
-            expectedDeparture_s = 3.75; expectedArrival_s = 8.75;
+            expectedDeparture_s = 3.75; expectedArrival_s = 9;
         else
             sourceTimes_s = [0;12]; shifts_units = [0;8];
-            expectedDeparture_s = 2.25; expectedArrival_s = 7.25;
+            expectedDeparture_s = 2.25; expectedArrival_s = 7.5;
         end
         obstacle = obstacleAvoidance.obstacles.createObstacle('crossing barrier',sourceTimes_s, ...
             repmat({box(:,1)},numel(sourceTimes_s),1), ...
@@ -403,12 +434,27 @@ function testMixedStaticObstacleLifetimes(testCase)
                 struct('GoalTimeMode',"earliestArrival"));
             assertNotEmpty(testCase,routeTime_s);
             if variant == 3
-                % Once the stationary obstacle disappears, the direct edge opens.
-                verifyEqual(testCase,routeTime_s(end-1:end),[3;8.25]);
+                % Once the stationary obstacle disappears, the direct edge
+                % opens. A 5.25 s crossing from 3 s is at x = 0.5 by 5.89 s,
+                % inside the box that exists until 6 s; the exact sub-interval
+                % check rejects it (thirteen samples straddle that contact),
+                % so the accepted direct edge takes 5.5 s and stays at
+                % x <= 0.45 until the box disappears.
+                verifyEqual(testCase,routeTime_s(end-1:end),[3;8.5]);
                 verifyEqual(testCase,route_units(end-1:end,:),nodes(1:2,:));
+            elseif variant == 4
+                % Near-equal boundaries still use the affine moving-cell
+                % predicate. It catches the same protected-corner contact as
+                % the exact static predicate, including between old samples.
+                verifyEqual(testCase,routeTime_s(end-3:end),[3.75;4;8;9.5]);
+                verifyEqual(testCase,route_units(end-3:end,:),nodes([1,1,6,2],:));
             else
-                verifyEqual(testCase,routeTime_s(end-3:end),[3.75;5.25;7.25;8.75]);
-                verifyEqual(testCase,route_units(end-3:end,:),nodes([1,3,6,2],:));
+                % The edge [-2,0]->[2,2] passes at distance exactly zero from
+                % the protected corner (0.5,1.25). The complete-interval
+                % predicate rejects it, so the route departs after the moving
+                % barrier passes and enters through [2,2] with clearance.
+                verifyEqual(testCase,routeTime_s(end-2:end),[4;8;9.5]);
+                verifyEqual(testCase,route_units(end-2:end,:),nodes([1,6,2],:));
             end
         end
     end
@@ -436,7 +482,7 @@ function testSavedMovingDetourEarliestArrival(testCase)
         result.GoalArrivalWindow_s(2)+1e-8);
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");
     verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpTimeCellsDegree5");
-    verifyEqual(testCase,result.TemporalSearch.TrialStage,"timeExpandedWaitGuide");
+    verifyEqual(testCase,result.TemporalSearch.TrialStage,"timeExpandedVisibilityGraph");
     verifyEqual(testCase,result.SolverDiagnostics.TaggedPairCount, ...
         result.SolverDiagnostics.ApplicablePairCount);
     verifyEqual(testCase,result.SolverDiagnostics.FinalCollisionPairCount,0);

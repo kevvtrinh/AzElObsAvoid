@@ -33,58 +33,31 @@ end
 allPositions_units = [initialState.position_units; ...
     goalState.position_units; proposalShape.Vertices];
 coordinateScale_units = bmtpEngine.createCoordinateTolerances(allPositions_units);
-candidateOffset_units = max(1e-3, 256 * eps(coordinateScale_units));
-maximumOffset_units = max([diff(limits.xInterval_units), diff(limits.yInterval_units)]);
+% Nodes need room for a bounded-speed path to reverse velocity, but that
+% clearance cannot consume a material fraction of a small workspace. Use
+% one scale derived from both physical limits and the supplied domain.
+turnScale_units=max(limits.maxVelocity_units_s.^2 ./ ...
+    limits.maxAcceleration_units_s2);
+workspaceScale_units=max([diff(limits.xInterval_units), ...
+    diff(limits.yInterval_units)])/64;
+candidateOffset_units=max([1e-3,256*eps(coordinateScale_units), ...
+    min(turnScale_units,workspaceScale_units)]);
 workBudget = 1e6;
-offsetRetryCount = 0;
-while true
-    attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
-        proposalShape, initialState.position_units, goalState.position_units, ...
-        limits, candidateOffset_units, offsetRetryCount, workBudget);
-    if offsetRetryCount == 0
-        attempts = attempt;
-    else
-        attempts(end + 1, 1) = attempt; %#ok<AGROW>
-    end
-    if attempt.IsConnected || candidateOffset_units >= maximumOffset_units
-        break;
-    end
-    candidateOffset_units = min(4 * candidateOffset_units, maximumOffset_units);
-    offsetRetryCount = offsetRetryCount + 1;
-end
+nodes = obstacleAvoidance.search.createTimedVisibilityNodes( ...
+    proposalShape, initialState.position_units, goalState.position_units, ...
+    limits, candidateOffset_units, workBudget);
 
 %% Section 3: Search Physical Time Layers
-% Search the closest exact-boundary nodes first. A swept envelope can
-% disconnect start and goal even while its moving geometry opens a route,
-% so spatial disconnection does not justify discarding these staging nodes.
-[route_units,routeTime_s]=deal(zeros(0,2),zeros(0,1));
-timedRecord=struct();
-timedNodeAttemptIndex=0;
-attemptOrder=numel(attempts):-1:1;
-if options.GoalTimeMode=="earliestArrival" && numel(attempts)>1
-    % Preserve a connected recovered graph when one exists. If its enlarged
-    % envelope discarded temporal staging nodes, recover from the exact-side
-    % attempts starting with the closest boundary.
-    attemptOrder=[numel(attempts),1:numel(attempts)-1];
-end
-for attemptIndex=attemptOrder
-    nodes_units = attempts(attemptIndex).Nodes.Positions_units;
-    timedCost_units = hypot(nodes_units(:,1) - nodes_units(:,1).', ...
-        nodes_units(:,2) - nodes_units(:,2).');
-    [attemptRoute_units,attemptRouteTime_s,timedRecord] = ...
-        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
-        nodes_units,timedCost_units,obstacles,initialState,goalState, ...
-        limits,sampleTimes_s,options);
-    timedNodeAttemptIndex=attemptIndex;
-    if ~isempty(attemptRouteTime_s)
-        route_units=attemptRoute_units;
-        routeTime_s=attemptRouteTime_s;
-        break;
-    end
-end
+% The staging nodes propose a corridor only. Complete-interval collision
+% checks guard every temporal edge before BMTP receives the route.
+nodes_units = nodes.Positions_units;
+timedCost_units = hypot(nodes_units(:,1) - nodes_units(:,1).', ...
+    nodes_units(:,2) - nodes_units(:,2).');
+[route_units,routeTime_s,timedRecord] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodes_units,timedCost_units,obstacles,initialState,goalState, ...
+    limits,sampleTimes_s,options);
 record = struct('ProposalShape',proposalShape,'SampleTimes_s',sampleTimes_s, ...
-    'Attempts',attempts,'CandidateOffset_units',candidateOffset_units, ...
-    'OffsetRetryCount',offsetRetryCount, ...
-    'TimedNodeAttemptIndex',timedNodeAttemptIndex, ...
+    'Nodes',nodes,'CandidateOffset_units',candidateOffset_units, ...
     'TimedSearch',timedRecord);
 end

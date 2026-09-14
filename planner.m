@@ -8,9 +8,9 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
 %     then construct independently certified C3 quintic BMTP motion.
-%   - Fixed-arrival moving-obstacle requests retain the exact spatial guide
-%     when its first refined BMTP proof succeeds, otherwise they use one
-%     time-expanded guide for a different homotopy.
+%   - Fixed-arrival moving-obstacle requests try the initial exact spatial
+%     guide, a distinct arrival-snapshot guide, then one time-expanded guide.
+%     Every accepted motion passes independent validation.
 %
 % INPUTS
 %   - obstacles: static polygon structs or canonical polygon histories.
@@ -102,7 +102,7 @@ end
 
 totalTimer = tic;
 earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
-preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
+preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s],true);
 isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(obstacle) ...
     ~obstacle.InternalPreparation.IsTimeInvariant || ...
     (numel(obstacle.time_s)>1 && (initialState.time_s<obstacle.time_s(1) || ...
@@ -167,43 +167,60 @@ isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, 
     goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
 if options.GoalTimeMode=="earliestArrival" && ...
         (isDynamic || earliestTarget || ~isRest)
-    result.ElapsedTime_s = toc(totalTimer);
-    [timedResult,timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
-    if timedAccepted
-        result = timedResult;
-        return;
-    end
-    % Preserve the delayed chord as an incumbent when the dense-history
-    % fast path is inapplicable or does not certify a motion.
+    % A certified zero-delay C3 chord attains the physical travel lower
+    % bound and is globally earliest. A delayed chord is only an incumbent;
+    % the single timed BMTP profile may still find an earlier homotopy.
+    departureCandidate=struct('Success',false);
+    departureDiagnostics=struct();
+    departureRoute_units=[initialState.position_units;goalState.position_units];
     if isDynamic && ~earliestTarget && isRest
-        route_units = [initialState.position_units;goalState.position_units];
-        seed = struct('position_units',route_units,'tau',[0;1],'Source',"departureSchedule");
-        [candidate,diagnostics] = bmtpEngine.solve(seed,regions_units,coverage,initialState,goalState,limits,options);
-        if candidate.Success
-            result=obstacleAvoidance.input.finalizeCandidate( ...
-                result,candidate,route_units,diagnostics);
-            result.VisibilityGraph.SearchKind="c3DepartureSchedule";
-            result.ElapsedTime_s=toc(totalTimer);
-            hasWait = isfield(diagnostics,'DepartureSchedule') && ...
-                diagnostics.DepartureSchedule.DepartureDelay_s>options.ArrivalTimeTolerance_s;
-            if result.Success
-                if ~hasWait, return; end
-                initialVisibilityGraph=obstacleAvoidance.search.createVisibilityGraph( ...
-                    scene,initialState.position_units,goalState.position_units,limits,options);
-                initialRouteTimeBound_s=Inf;
-                if initialVisibilityGraph.IsConnected
-                    initialRouteTimeBound_s=initialVisibilityGraph.RouteLength_units/ ...
-                        norm(limits.maxVelocity_units_s);
-                end
-                diagnostics.DepartureSchedule.InitialRouteTimeBound_s=initialRouteTimeBound_s;
-                if initialRouteTimeBound_s>=result.TrajectoryDuration_s-options.ArrivalTimeTolerance_s
-                    result.SolverDiagnostics=diagnostics;
-                    result.Message="The initial visibility route cannot beat the certified delayed chord under the velocity bound; fixed-arrival trials were skipped.";
-                    return;
-                end
+        departureSeed=struct('position_units',departureRoute_units, ...
+            'tau',[0;1],'Source',"departureSchedule");
+        [departureCandidate,departureDiagnostics]=bmtpEngine.solve( ...
+            departureSeed,regions_units,coverage,initialState,goalState, ...
+            limits,options);
+        if departureCandidate.Success
+            departureDelay_s=0;
+            if isfield(departureDiagnostics,'DepartureSchedule')
+                departureDelay_s= ...
+                    departureDiagnostics.DepartureSchedule.DepartureDelay_s;
+            end
+            if departureDelay_s<=options.ArrivalTimeTolerance_s
+                result=obstacleAvoidance.input.finalizeCandidate( ...
+                    result,departureCandidate,departureRoute_units, ...
+                    departureDiagnostics);
+                result.VisibilityGraph.SearchKind="c3DepartureSchedule";
+                result.ElapsedTime_s=toc(totalTimer);
+                if result.Success,return;end
             end
         end
     end
+    result.ElapsedTime_s=toc(totalTimer);
+    [timedResult,timedAccepted]=obstacleAvoidance.input.tryTimedArrival(result);
+    if timedAccepted
+        if departureCandidate.Success && ...
+                departureCandidate.ArrivalTime_s<=timedResult.ArrivalTime_s+ ...
+                options.ArrivalTimeTolerance_s
+            result=obstacleAvoidance.input.finalizeCandidate( ...
+                result,departureCandidate,departureRoute_units, ...
+                departureDiagnostics);
+            result.VisibilityGraph.SearchKind="c3DepartureSchedule";
+            result.ElapsedTime_s=toc(totalTimer);
+        else
+            result=timedResult;
+        end
+        return
+    end
+    if departureCandidate.Success
+        result=obstacleAvoidance.input.finalizeCandidate( ...
+            result,departureCandidate,departureRoute_units, ...
+            departureDiagnostics);
+        result.VisibilityGraph.SearchKind="c3DepartureSchedule";
+        result.ElapsedTime_s=toc(totalTimer);
+        if result.Success,return;end
+    end
+    result=timedResult;
+    result.ElapsedTime_s=toc(totalTimer);
     result = obstacleAvoidance.input.searchArrivalTimes(result);
     return;
 end
@@ -212,28 +229,56 @@ motionGoalState = goalState;
 %% Section 3: Construct A Spatial Guide And Solve C3 Quintic Motion
 
 route_units = [initialState.position_units;goalState.position_units];
-futureGoalBlocked = isDynamic && obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+fixedPositionDynamic = isDynamic && options.GoalTimeMode=="fixedArrival" && ...
+    isempty(goalState.targetMotion);
+initialSpatialAttempted = false;
+initialSpatialRoute_units = zeros(0,2);
+initialSpatialCandidate = struct();
+initialSpatialDiagnostics = struct();
+if fixedPositionDynamic
+    initialVisibilityGraph = getVisibilityGraph(scene,initialState.position_units, ...
+        goalState.position_units,limits,options,"initialSpatialSnapshot");
+    if initialVisibilityGraph.IsConnected
+        initialSpatialAttempted = true;
+        initialSpatialRoute_units = initialVisibilityGraph.Route_units;
+        initialEdgeLength_units = vecnorm(diff(initialSpatialRoute_units,1,1),2,2);
+        initialSeed = struct('position_units',initialSpatialRoute_units, ...
+            'tau',[0;cumsum(initialEdgeLength_units)]/sum(initialEdgeLength_units), ...
+            'Index',1,'Source',"initialSpatialSnapshot", ...
+            'ObstacleEnvelope_units',zeros(0,2), ...
+            'MaximumAlternatingIterations',2);
+        [initialSpatialCandidate,initialSpatialDiagnostics] = bmtpEngine.solve( ...
+            initialSeed,regions_units,coverage,initialState,motionGoalState, ...
+            limits,options);
+        if initialSpatialCandidate.Success
+            % A solver success that the public validator rejects is a defect
+            % to diagnose upstream, not a reason to try another guide.
+            result.VisibilityGraph = initialVisibilityGraph;
+            result = obstacleAvoidance.input.finalizeCandidate( ...
+                result,initialSpatialCandidate,initialSpatialRoute_units, ...
+                initialSpatialDiagnostics);
+            result.ElapsedTime_s = toc(totalTimer);
+            return
+        end
+    end
+end
+futureGoalBlocked = isDynamic && ~fixedPositionDynamic && ...
+    obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     preparedObstacles,goalState.position_units(1),goalState.position_units(2),initialState.time_s);
-if futureGoalBlocked
+if fixedPositionDynamic
+    guideScene = obstacleAvoidance.obstacles.snapshot( ...
+        preparedObstacles,motionGoalState.time_s);
+    visibilityGraph = getVisibilityGraph(guideScene,initialState.position_units, ...
+        goalState.position_units,limits,options,"arrivalSpatialSnapshot");
+elseif futureGoalBlocked
     visibilityGraph.Route_units = route_units;
     visibilityGraph.RouteLength_units = norm(diff(route_units));
     visibilityGraph.SearchKind = "temporalDirectSeed";
 else
     guideScene = scene;
     guideKind = "initialSpatialSnapshot";
-    % Chronological trials often share exactly the same spatial problem.
-    % Compare all graph inputs directly so changed source geometry cannot
-    % reuse stale visibility edges. Retain only the most recent graph.
-    persistent previousVisibilityInput previousVisibilityGraph
-    visibilityInput=struct('Scene',guideScene,'Start',initialState.position_units, ...
-        'Goal',goalState.position_units,'Limits',limits,'Options',options);
-    if isequaln(visibilityInput,previousVisibilityInput)
-        visibilityGraph=previousVisibilityGraph;
-    else
-        visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(guideScene,initialState.position_units,goalState.position_units,limits,options);
-        previousVisibilityInput=visibilityInput; previousVisibilityGraph=visibilityGraph;
-    end
-    visibilityGraph.SearchKind = guideKind;
+    visibilityGraph = getVisibilityGraph(guideScene,initialState.position_units, ...
+        goalState.position_units,limits,options,guideKind);
 end
 if isDynamic && ~visibilityGraph.IsConnected
     % A disconnected spatial guide cannot rule out a later temporal opening.
@@ -244,6 +289,9 @@ if isDynamic && ~visibilityGraph.IsConnected
     futureGoalBlocked = true;
 end
 result.VisibilityGraph = visibilityGraph;
+if initialSpatialAttempted
+    result.VisibilityGraph.InitialSpatialSeedDiagnostics = initialSpatialDiagnostics;
+end
 if ~futureGoalBlocked && ~visibilityGraph.IsConnected
     result.Message = "The initial visibility graph contains no start-to-goal route.";
     result.TerminationReason = "noVisibilityRoute";
@@ -261,14 +309,23 @@ if isDynamic && options.GoalTimeMode=="fixedArrival"
     % same failed homotopy.
     seed.MaximumAlternatingIterations=2;
 end
-[candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
-    initialState,motionGoalState,limits,options);
+sameFailedSpatialRoute = fixedPositionDynamic && initialSpatialAttempted && ...
+    isequaln(route_units,initialSpatialRoute_units);
+if sameFailedSpatialRoute
+    candidate = initialSpatialCandidate;
+    solverDiagnostics = initialSpatialDiagnostics;
+else
+    [candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
+        initialState,motionGoalState,limits,options);
+end
 
-if isDynamic && options.GoalTimeMode=="fixedArrival" && ...
-        isempty(goalState.targetMotion) && ~candidate.Success && ...
-        candidate.TerminationReason=="noOptimizedFeasibleIterate"
-    result=obstacleAvoidance.input.finalizeCandidate( ...
-        result,candidate,route_units,solverDiagnostics);
+result=obstacleAvoidance.input.finalizeCandidate( ...
+    result,candidate,route_units,solverDiagnostics);
+% Only solver-level infeasibility of the spatial guide admits the timed guide.
+% A motion the public validator rejects terminates here as a defect.
+spatialFailureCanUseTimedGuide = ~candidate.Success && ...
+    candidate.TerminationReason=="noOptimizedFeasibleIterate";
+if fixedPositionDynamic && spatialFailureCanUseTimedGuide
     result.VisibilityGraph.SpatialSeedDiagnostics=solverDiagnostics;
     result.ElapsedTime_s=toc(totalTimer);
     [result,~]=obstacleAvoidance.input.tryTimedArrival(result);
@@ -277,12 +334,26 @@ end
 
 %% Section 4: Independently Validate The Complete Returned Motion
 
-result=obstacleAvoidance.input.finalizeCandidate( ...
-    result,candidate,route_units,solverDiagnostics);
 result.ElapsedTime_s = toc(totalTimer);
 end
 
 %% Section 5: Local Functions
+
+function graph = getVisibilityGraph(scene,start_units,goal_units,limits,options,kind)
+    % Reuse only a graph with exactly identical geometry and public inputs.
+    persistent previousInput previousGraph
+    input = struct('Scene',scene,'Start',start_units,'Goal',goal_units, ...
+        'Limits',limits,'Options',options);
+    if isequaln(input,previousInput)
+        graph = previousGraph;
+    else
+        graph = obstacleAvoidance.search.createVisibilityGraph( ...
+            scene,start_units,goal_units,limits,options);
+        previousInput = input;
+        previousGraph = graph;
+    end
+    graph.SearchKind = kind;
+end
 
 function [obstacles, initialState, goalState, limits, options] = createDefaults()
     % Provide one independently runnable static detour request.

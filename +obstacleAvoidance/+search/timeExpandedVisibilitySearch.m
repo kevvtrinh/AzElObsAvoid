@@ -4,6 +4,8 @@ function [route_units, routeTime_s, record] = timeExpandedVisibilitySearch(nodeP
 %   obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units,
 %   obstacles, initialState, goalState, limits, sampleTimes_s, options)
 % PURPOSE: Search forward reachability using waits and moving edges at every supplied planning time.
+%   Static segments and affine moving convex cells are checked over their complete active
+%   intervals. Layer-snapped arrivals do not prove global earliest arrival.
 % INPUTS: nodePosition_units (N-by-2 numeric matrix) Nodes with start first and goal second.
 %   edgeCost_units (N-by-N numeric matrix) Finite entries enable motion edges. obstacles (canonical
 %   protected obstacle struct array) initialState, goalState, limits, options (scalar structs)
@@ -53,52 +55,41 @@ for j=1:numel(obstacles)
     obstacles(j).InternalPreparation.QueryGeometryCacheCapacity=floor(2^14 / max(1,numel(obstacles)) / ...
         max([1;cellfun(@numel,obstacles(j).x_units(:))]));
 end
-[geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacles);
-
-% Cache unknown/free/occupied as 0/1/2 within 300 MiB. Eviction only repeats
-% authoritative queries; it never removes a search candidate.
-bytesPerGeometry = 13 * nodeCount ^ 2;
 maximumCacheBytes = 300 * 1024 ^ 2;
-batchPositions_units = zeros(0, 2);
-batchPointIndices = zeros(0, 1);
-hasStationarySpan = any(stationaryTimeCell(3:2:end - 2));
-% Cache directed-edge samples only for exactly unchanged source boundaries.
-staticObstacles = obstacles([]);
-dynamicObstacles = obstacles;
-staticEdgeCache = zeros(0,1,'uint8');
-staticTimeRange_s = [-Inf,Inf];
-if ~hasStationarySpan && nodeCount^2 <= maximumCacheBytes
-    isStatic = false(size(obstacles));
-    for j = 1:numel(obstacles)
-        obstacle = obstacles(j);
-        isStatic(j) = obstacle.InternalPreparation.SamplesExactlyEqual;
-        if isStatic(j) && numel(obstacle.time_s)>1
-            staticTimeRange_s = [max(staticTimeRange_s(1),obstacle.time_s(1)), ...
-                min(staticTimeRange_s(2),obstacle.time_s(end))];
-        end
+% Time-invariant obstacles are checked exactly, one obstacle at a time, over
+% the part of each edge's clock during which that obstacle exists. The
+% prepared sample geometry is the protected boundary itself, so no snapshot or
+% closure tolerance is introduced.
+isStatic = arrayfun(@(obstacle) obstacle.InternalPreparation.SamplesExactlyEqual, obstacles);
+dynamicObstacles = obstacles(~isStatic);
+staticObstacles = obstacles(isStatic);
+staticCount = numel(staticObstacles);
+dynamicCells = obstacleAvoidance.obstacles.createTimeCells( ...
+    dynamicObstacles,initialState.time_s,goalState.time_s);
+staticShapes = cell(staticCount,1);
+staticEdgeStart_units = cell(staticCount,1);
+staticEdgeEnd_units = cell(staticCount,1);
+staticActive_s = repmat([-Inf,Inf],staticCount,1);
+staticExists = false(staticCount,1);
+for k = 1:staticCount
+    obstacle = staticObstacles(k);
+    preparation = obstacle.InternalPreparation;
+    preparedSampleIndex = find(preparation.SamplePrepared,1,"first");
+    if isempty(preparedSampleIndex), continue; end
+    staticExists(k) = true;
+    staticShapes{k} = preparation.SampleShapes{preparedSampleIndex};
+    staticEdgeStart_units{k} = preparation.SampleEdgeStart_units{preparedSampleIndex};
+    staticEdgeEnd_units{k} = preparation.SampleEdgeEnd_units{preparedSampleIndex};
+    if numel(obstacle.time_s)>1
+        staticActive_s(k,:) = [obstacle.time_s(1),obstacle.time_s(end)];
     end
-    staticObstacles = obstacles(isStatic);
-    dynamicObstacles = obstacles(~isStatic);
-    if any(isStatic,'all'), staticEdgeCache = zeros(nodeCount^2,1,'uint8'); end
 end
-if hasStationarySpan && 24 * bytesPerGeometry <= maximumCacheBytes / 2
-    % Every edge uses the same 13 spatial fractions regardless of its clock.
-    % Keep exact arithmetic and merge only numerically identical positions.
-    [firstNode, secondNode] = ndgrid(1:nodeCount, 1:nodeCount);
-    firstPosition_units = nodePosition_units(firstNode(:), :);
-    secondPosition_units = nodePosition_units(secondNode(:), :);
-    batchPositions_units = zeros(bytesPerGeometry, 2);
-    fractions = linspace(0, 1, 13);
-    for fractionIndex = 1:13
-        batchIndices = (fractionIndex - 1) * nodeCount ^ 2 + (1:nodeCount ^ 2);
-        batchPositions_units(batchIndices, :) = firstPosition_units + fractions(fractionIndex) .* (secondPosition_units - firstPosition_units);
-    end
-    [batchPositions_units, ~, batchPointIndices] = unique(batchPositions_units, 'rows');
+% Cache only clock-independent answers: edges whose whole clock lies inside
+% the obstacle's lifetime. Partially covered edges are checked directly.
+staticEdgeCache = zeros(0,0,'uint8');
+if staticCount > 0 && nodeCount^2*staticCount <= maximumCacheBytes
+    staticEdgeCache = zeros(nodeCount^2,staticCount,'uint8');
 end
-lookupBytes = 8 * (numel(batchPositions_units) + numel(batchPointIndices));
-cacheSlotCount = min(numel(stationaryTimeCell), floor((maximumCacheBytes - lookupBytes) / max(1, bytesPerGeometry)));
-occupancyCache = cell(cacheSlotCount, 1);
-occupancyCacheKey = zeros(cacheSlotCount, 1);
 nodeIsFree   = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
@@ -134,16 +125,12 @@ for sourceIndex = 1:nodeCount
 end
 distanceToGoal_units = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
 goalCanWaitToFinal = nodeIsFree(:, 2) & double(waitComponentFinalLayerIndex(:, 2)) == layerCount;
-preferNearGoalWait=options.GoalTimeMode=="earliestArrival" && ...
-    nnz(isWaitComponentStart(:,2) & nodeIsFree(:,2))>1;
 reachable        = false(layerCount, nodeCount);
 spatialCost_units  = Inf(layerCount, nodeCount);
-goalExposure_units_s = Inf(layerCount,nodeCount);
 parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
 parentNodeIndex  = zeros(layerCount, nodeCount, "uint16");
 reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_units(1, 1) = 0;
-goalExposure_units_s(1,1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount, goalBoundRejectionCount, candidateBatchSplitCount] = deal(0);
 goalCostBound_units=Inf;
 exploredNodes_units = zeros(0, 2);
@@ -167,14 +154,10 @@ for layerIndex = 1:layerCount - 1
         % Add the same-node transition only when the obstacle sweep permits waiting through the full layer interval.
         if waitIsClear(layerIndex, currentNodeIndex)
             waitCount = waitCount + 1;
-            exposureIncrement_units_s=(layerTimes_s(layerIndex+1)-layerTimes_s(layerIndex))* ...
-                distanceToGoal_units(currentNodeIndex);
-            [reachable, spatialCost_units, goalExposure_units_s, ...
-                parentLayerIndex,parentNodeIndex] = updateTemporalState( ...
-                reachable,spatialCost_units,goalExposure_units_s, ...
+            [reachable,spatialCost_units,parentLayerIndex,parentNodeIndex] = ...
+                updateTemporalState(reachable,spatialCost_units, ...
                 parentLayerIndex,parentNodeIndex,layerIndex,currentNodeIndex, ...
-                layerIndex+1,currentNodeIndex,0,exposureIncrement_units_s, ...
-                preferNearGoalWait);
+                layerIndex+1,currentNodeIndex,0);
         else
             rejectedCount = rejectedCount + 1;
         end
@@ -218,15 +201,10 @@ for layerIndex = 1:layerCount - 1
                 sourceNodeIndex=motionCandidates(motionIndex,1);
                 targetNodeIndex=motionCandidates(motionIndex,2);
                 candidateTargetLayerIndex=motionCandidates(motionIndex,3);
-                edgeDuration_s=layerTimes_s(candidateTargetLayerIndex)-layerTimes_s(layerIndex);
-                exposureIncrement_units_s=0.5*edgeDuration_s* ...
-                    (distanceToGoal_units(sourceNodeIndex)+distanceToGoal_units(targetNodeIndex));
-                [reachable, spatialCost_units, goalExposure_units_s, ...
-                    parentLayerIndex,parentNodeIndex] = updateTemporalState( ...
-                    reachable,spatialCost_units,goalExposure_units_s, ...
+                [reachable,spatialCost_units,parentLayerIndex,parentNodeIndex] = ...
+                    updateTemporalState(reachable,spatialCost_units, ...
                     parentLayerIndex,parentNodeIndex,layerIndex,sourceNodeIndex, ...
-                    candidateTargetLayerIndex,targetNodeIndex,motionCandidates(motionIndex,5), ...
-                    exposureIncrement_units_s,preferNearGoalWait);
+                    candidateTargetLayerIndex,targetNodeIndex,motionCandidates(motionIndex,5));
             end
             clearGoalIndices=clearIndices(motionCandidates(clearIndices,2)==2 & ...
                 goalCanWaitToFinal(motionCandidates(clearIndices,3)));
@@ -306,107 +284,56 @@ record = struct("LayerTimes_s", layerTimes_s, ...
     "EligibleGoalLayerCount",nnz(goalLayerIsEligible), ...
     "WaitSeedGoalLayerIndex",waitSeedGoalLayerIndex, ...
     "WaitRoute_units",waitRoute_units,"WaitRouteTime_s",waitRouteTime_s, ...
-    "ReachableGoalLayerCount", nnz(reachable(:, 2)));
+    "ReachableGoalLayerCount", nnz(reachable(:, 2)), ...
+    "DynamicEdgeCheckKind","exactAffineConvexCells");
 function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
-    % A blocked sample rejects the edge. Check interior samples first, then keep
-    % all remaining samples for edges that could still be clear.
-    fraction     = linspace(0, 1, 13).';
+    % Check the complete segment clock against exact static geometry and every
+    % affine moving convex cell. A zero-length edge is a stationary point path.
     firstNodeIndices = firstNodeIndices(:);
     secondNodeIndices = secondNodeIndices(:);
     first_units = nodePosition_units(firstNodeIndices, :);
     second_units = nodePosition_units(secondNodeIndices, :);
     edgeCount    = numel(firstNodeIndices);
-    time_s       = first_s + fraction * (second_s - first_s);
-    middleIndex  = ceil(numel(fraction) / 2);
-    sampleOrder  = [middleIndex, 1:middleIndex - 1, middleIndex + 1:numel(fraction)];
     clear        = true(edgeCount, 1);
-    if ~hasStationarySpan
-        % A cached edge retains all thirteen original sample checks. Only use
-        % it while every cached obstacle is active at every sampled time.
-        queryObstacles = obstacles;
-        if ~isempty(staticEdgeCache) && all(time_s>=staticTimeRange_s(1) & time_s<=staticTimeRange_s(2))
-            cacheKeys = firstNodeIndices + nodeCount*(secondNodeIndices-1);
-            unknown = find(staticEdgeCache(cacheKeys)==0);
-            batchSize = max(1,floor(2^18/numel(fraction)));
-            for batchStart = 1:batchSize:numel(unknown)
-                indices = unknown(batchStart:min(numel(unknown),batchStart+batchSize-1));
-                x_units = first_units(indices,1) + fraction.' .* (second_units(indices,1)-first_units(indices,1));
-                y_units = first_units(indices,2) + fraction.' .* (second_units(indices,2)-first_units(indices,2));
-                occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                    staticObstacles,x_units,y_units,repmat(time_s.',numel(indices),1),false);
-                staticEdgeCache(cacheKeys(indices)) = 1+uint8(any(occupied,2));
-            end
-            clear = staticEdgeCache(cacheKeys)==1;
-            queryObstacles = dynamicObstacles;
-        end
-        % Test the quarter, midpoint, and three-quarter samples together.
-        % Reject blocked edges before batching the remaining original samples.
-        for sampleGroup = {[4,7,10],[1:3,5:6,8:9,11:13]}
-            samples = sampleGroup{1};
-            candidates = find(clear);
-            edgeBatchSize = max(1,floor(2^18/numel(samples)));
-            for batchStart = 1:edgeBatchSize:numel(candidates)
-                indices = candidates(batchStart:min(numel(candidates),batchStart+edgeBatchSize-1));
-                x_units = first_units(indices,1) + fraction(samples).' .* ...
-                    (second_units(indices,1)-first_units(indices,1));
-                y_units = first_units(indices,2) + fraction(samples).' .* ...
-                    (second_units(indices,2)-first_units(indices,2));
-                occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                    queryObstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),false);
-                clear(indices) = ~any(occupied,2);
-            end
-        end
-        return;
-    end
-    for sampleIndex = sampleOrder
+    % Exact check against every time-invariant obstacle over the sub-segment
+    % traversed while that obstacle exists. A zero-length wait reduces to
+    % point containment inside the same predicate.
+    cacheKeys = firstNodeIndices + nodeCount*(secondNodeIndices-1);
+    for staticIndex = find(staticExists).'
+        active_s = staticActive_s(staticIndex,:);
+        overlapStart_s = max(first_s,active_s(1));
+        overlapEnd_s = min(second_s,active_s(2));
+        if overlapStart_s > overlapEnd_s, continue; end
         candidate = find(clear);
-        if isempty(candidate)
-            break;
-        end
-        if sampleIndex == 1 || sampleIndex == numel(fraction)
-            % Reachability already checked both endpoint nodes. Reuse that
-            % result only when the sampled arithmetic reaches the same point and time.
-            sampledEndpoint_units = first_units(candidate, :) + fraction(sampleIndex) .* (second_units(candidate, :) - first_units(candidate, :));
-            if sampleIndex == 1
-                checkedEndpoint_units = first_units(candidate, :);
-                checkedTime_s = first_s;
-            else
-                checkedEndpoint_units = second_units(candidate, :);
-                checkedTime_s = second_s;
-            end
-            candidate = candidate(~(all(sampledEndpoint_units == checkedEndpoint_units, 2) & time_s(sampleIndex) == checkedTime_s));
+        if isempty(candidate), break; end
+        coversWholeClock = overlapStart_s <= first_s && overlapEnd_s >= second_s;
+        if coversWholeClock && ~isempty(staticEdgeCache)
+            known = staticEdgeCache(cacheKeys(candidate),staticIndex);
+            clear(candidate(known==2)) = false;
+            candidate = candidate(known==0);
             if isempty(candidate), continue; end
         end
-        geometryKey = 1 + 2 * nnz(geometryTimes_s < time_s(sampleIndex)) + any(geometryTimes_s == time_s(sampleIndex));
-        useCache = cacheSlotCount > 0 && isfinite(time_s(sampleIndex)) && stationaryTimeCell(geometryKey);
-        if useCache
-            cacheSlot = 1 + mod(geometryKey - 1, cacheSlotCount);
-            if occupancyCacheKey(cacheSlot) ~= geometryKey
-                if ~isempty(batchPointIndices) && mod(geometryKey, 2) == 1
-                    % Populate stationary intervals in one query. Exact sample
-                    % times retain lazy entries; moving intervals bypass reuse.
-                    batchOccupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                        obstacles,batchPositions_units(:,1),batchPositions_units(:,2),time_s(sampleIndex),false);
-                    occupancyCache{cacheSlot} = reshape(1 + uint8(batchOccupied(batchPointIndices)), nodeCount ^ 2, 13);
-                else
-                    occupancyCache{cacheSlot} = zeros(nodeCount ^ 2, 13, 'uint8');
-                end
-                occupancyCacheKey(cacheSlot) = geometryKey;
-            end
-            cacheIndices = firstNodeIndices(candidate) + nodeCount * (secondNodeIndices(candidate) - 1) + nodeCount ^ 2 * (sampleIndex - 1);
-            priorOccupancy = occupancyCache{cacheSlot}(cacheIndices);
-            clear(candidate(priorOccupancy == 2)) = false;
-            candidate = candidate(priorOccupancy == 0);
-            cacheIndices = cacheIndices(priorOccupancy == 0);
+        startFraction = 0; endFraction = 1;
+        if second_s > first_s
+            startFraction = (overlapStart_s-first_s)/(second_s-first_s);
+            endFraction = (overlapEnd_s-first_s)/(second_s-first_s);
         end
-        if isempty(candidate), continue; end
-        position_units = first_units(candidate, :) + fraction(sampleIndex) .* (second_units(candidate, :) - first_units(candidate, :));
-        clear(candidate) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-            obstacles,position_units(:,1),position_units(:,2),time_s(sampleIndex),false);
-        if useCache
-            occupancyCache{cacheSlot}(cacheIndices) = 2 - uint8(clear(candidate));
+        subStart_units = first_units(candidate,:) + startFraction*(second_units(candidate,:)-first_units(candidate,:));
+        subEnd_units = first_units(candidate,:) + endFraction*(second_units(candidate,:)-first_units(candidate,:));
+        exactlyClear = obstacleAvoidance.search.checkVisibilitySegments( ...
+            subStart_units,subEnd_units,staticShapes{staticIndex}, ...
+            staticEdgeStart_units{staticIndex},staticEdgeEnd_units{staticIndex});
+        clear(candidate) = exactlyClear;
+        if coversWholeClock && ~isempty(staticEdgeCache)
+            staticEdgeCache(cacheKeys(candidate),staticIndex) = 1+uint8(~exactlyClear);
         end
     end
+    if isempty(dynamicCells.Regions_units) || ~any(clear)
+        return;
+    end
+    candidate=find(clear);
+    clear(candidate)=affineEdgesAreClear(first_units(candidate,:), ...
+        second_units(candidate,:),first_s,second_s,dynamicCells);
 end
 end
 %% Section 3: Local Functions
@@ -462,52 +389,113 @@ function [candidates, rejectedCount] = buildCandidateBatch(sourceNodes, sourceTi
     candidates = [selectedSources, targetNodes, entryLayers, finalLayers, motionEdgeLengths_units(edgeIndices)];
 end
 
-function [geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacles)
-    % Exact history samples and open intervals have distinct geometry keys.
-    geometryTimes_s = zeros(0, 1);
-    for obstacleIndex = 1:numel(obstacles)
-        geometryTimes_s = [geometryTimes_s; double(obstacles(obstacleIndex).time_s(:))]; %#ok<AGROW>
-    end
-    geometryTimes_s = unique(geometryTimes_s);
-    stationaryTimeCell = true(2 * numel(geometryTimes_s) + 1, 1);
-    for obstacleIndex = 1:numel(obstacles)
-        obstacle = obstacles(obstacleIndex);
-        preparation = obstacle.InternalPreparation;
-        movingIntervals = find(preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s > 0);
-        for intervalIndex = reshape(movingIntervals, 1, [])
-            inInterval = geometryTimes_s >= obstacle.time_s(intervalIndex) & geometryTimes_s < obstacle.time_s(intervalIndex + 1);
-            stationaryTimeCell(2 * find(inInterval) + 1) = false;
+function clear = affineEdgesAreClear(first_units,second_units,first_s,second_s,cells)
+    % A path point and every vertex of a time cell are affine in time. Each
+    % convex half-space residual is therefore quadratic; its real roots
+    % partition the clock into intervals of constant inside/outside sign.
+    clear=true(size(first_units,1),1);
+    for cellIndex=1:numel(cells.Regions_units)
+        overlapStart_s=max(first_s,cells.ActiveTimeInterval_s(cellIndex,1));
+        overlapEnd_s=min(second_s,cells.ActiveTimeInterval_s(cellIndex,2));
+        if overlapStart_s>overlapEnd_s,continue;end
+        candidates=find(clear);
+        if isempty(candidates),break;end
+        edgeDuration_s=second_s-first_s;
+        if edgeDuration_s>0
+            startFraction=(overlapStart_s-first_s)/edgeDuration_s;
+            endFraction=(overlapEnd_s-first_s)/edgeDuration_s;
+        else
+            startFraction=0;
+            endFraction=0;
+        end
+        pathStart_units=first_units(candidates,:)+startFraction.* ...
+            (second_units(candidates,:)-first_units(candidates,:));
+        pathEnd_units=first_units(candidates,:)+endFraction.* ...
+            (second_units(candidates,:)-first_units(candidates,:));
+        cellDuration_s=diff(cells.ActiveTimeInterval_s(cellIndex,:));
+        cellStartFraction=(overlapStart_s-cells.ActiveTimeInterval_s(cellIndex,1))/cellDuration_s;
+        cellEndFraction=(overlapEnd_s-cells.ActiveTimeInterval_s(cellIndex,1))/cellDuration_s;
+        regionStart_units=cells.Regions_units{cellIndex};
+        regionDelta_units=cells.EndRegions_units{cellIndex}-regionStart_units;
+        overlapRegionStart_units=regionStart_units+cellStartFraction.*regionDelta_units;
+        overlapRegionEnd_units=regionStart_units+cellEndFraction.*regionDelta_units;
+        for candidateOffset=1:numel(candidates)
+            if affinePointTouchesConvex(pathStart_units(candidateOffset,:), ...
+                    pathEnd_units(candidateOffset,:),overlapRegionStart_units, ...
+                    overlapRegionEnd_units)
+                clear(candidates(candidateOffset))=false;
+            end
         end
     end
 end
-function [reachable, spatialCost_units, goalExposure_units_s, parentLayerIndex, parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, goalExposure_units_s, parentLayerIndex, parentNodeIndex, sourceLayerIndex, sourceNodeIndex, targetLayerIndex, targetNodeIndex, edgeLength_units, exposureIncrement_units_s, preferNearGoalWait)
-    % When the goal disappears and reopens, place unavoidable waiting near
-    % it. Otherwise retain spatial length as the primary route objective.
+
+function touches = affinePointTouchesConvex(pointStart_units,pointEnd_units, ...
+        regionStart_units,regionEnd_units)
+    vertexCount=size(regionStart_units,1);
+    following=[2:vertexCount,1];
+    edgeStart_units=regionStart_units(following,:)-regionStart_units;
+    edgeDelta_units=(regionEnd_units(following,:)-regionEnd_units)-edgeStart_units;
+    relativeStart_units=pointStart_units-regionStart_units;
+    relativeDelta_units=(pointEnd_units-pointStart_units)- ...
+        (regionEnd_units-regionStart_units);
+    coefficients_units2=[cross2(edgeDelta_units,relativeDelta_units), ...
+        cross2(edgeDelta_units,relativeStart_units)+ ...
+        cross2(edgeStart_units,relativeDelta_units), ...
+        cross2(edgeStart_units,relativeStart_units)];
+    cuts=unique([0;1;quadraticUnitRoots(coefficients_units2)]);
+    probes=unique([cuts;(cuts(1:end-1)+cuts(2:end))/2]);
+    middleRegion_units=(regionStart_units+regionEnd_units)/2;
+    signedArea_units2=sum(cross2(middleRegion_units, ...
+        middleRegion_units(following,:)))/2;
+    coordinateScale_units=max(1,max(abs([pointStart_units;pointEnd_units; ...
+        regionStart_units;regionEnd_units]),[],'all'));
+    residualTolerance_units2=4096*eps(coordinateScale_units^2);
+    residual_units2=coefficients_units2(:,1).*probes.'.^2+ ...
+        coefficients_units2(:,2).*probes.'+coefficients_units2(:,3);
+    if signedArea_units2>=0
+        touches=any(all(residual_units2>=-residualTolerance_units2,1));
+    else
+        touches=any(all(residual_units2<=residualTolerance_units2,1));
+    end
+end
+
+function values=quadraticUnitRoots(coefficients)
+    values=zeros(0,1);
+    for row=1:size(coefficients,1)
+        a=coefficients(row,1);b=coefficients(row,2);c=coefficients(row,3);
+        scale=max(1,max(abs(coefficients(row,:))));
+        tolerance=256*eps(scale);
+        if abs(a)<=tolerance
+            if abs(b)>tolerance
+                root=-c/b;
+                if root>=0 && root<=1,values(end+1,1)=root;end %#ok<AGROW>
+            end
+            continue
+        end
+        discriminant=b*b-4*a*c;
+        if discriminant<-tolerance,continue;end
+        discriminant=max(0,discriminant);
+        roots=[-b-sqrt(discriminant);-b+sqrt(discriminant)]/(2*a);
+        values=[values;roots(roots>=0 & roots<=1)]; %#ok<AGROW>
+    end
+end
+
+function value=cross2(first,second)
+    value=first(:,1).*second(:,2)-first(:,2).*second(:,1);
+end
+function [reachable,spatialCost_units,parentLayerIndex,parentNodeIndex] = ...
+        updateTemporalState(reachable,spatialCost_units,parentLayerIndex, ...
+        parentNodeIndex,sourceLayerIndex,sourceNodeIndex,targetLayerIndex, ...
+        targetNodeIndex,edgeLength_units)
+    % Arrival layer is fixed by the state. Retain only the shortest spatial
+    % ancestry, with deterministic first-discovered selection on exact ties.
     trialCost_units          = spatialCost_units(sourceLayerIndex, sourceNodeIndex) + edgeLength_units;
     storedCost_units         = spatialCost_units(targetLayerIndex, targetNodeIndex);
-    trialExposure_units_s = goalExposure_units_s(sourceLayerIndex,sourceNodeIndex)+ ...
-        exposureIncrement_units_s;
-    storedExposure_units_s = goalExposure_units_s(targetLayerIndex,targetNodeIndex);
-    if preferNearGoalWait
-        costIsEqual=abs(trialCost_units-storedCost_units)<=1e-12;
-        exposureIsBetter=trialExposure_units_s<storedExposure_units_s-1e-12;
-        if trialCost_units>storedCost_units+1e-12 || ...
-                (costIsEqual && ~exposureIsBetter)
-            return;
-        end
-    else
-        costIsEqual=abs(trialCost_units-storedCost_units)<=1e-12;
-        isLaterFinalTransition=targetLayerIndex==size(reachable,1) && ...
-            edgeLength_units>0 && sourceLayerIndex> ...
-            double(parentLayerIndex(targetLayerIndex,targetNodeIndex));
-        if trialCost_units>storedCost_units+1e-12 || ...
-                (costIsEqual && ~isLaterFinalTransition)
-            return;
-        end
+    if trialCost_units>=storedCost_units-1e-12
+        return;
     end
     reachable(targetLayerIndex, targetNodeIndex) = true;
     spatialCost_units(targetLayerIndex, targetNodeIndex) = trialCost_units;
-    goalExposure_units_s(targetLayerIndex,targetNodeIndex)=trialExposure_units_s;
     parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint32(sourceLayerIndex);
     parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
 end

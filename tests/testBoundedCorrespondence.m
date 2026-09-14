@@ -109,6 +109,30 @@ function testConcaveDeformationUsesExactMovingPartition(testCase)
     end
 end
 
+function testSeparatedCollinearEdgesRemainValidDuringNonaffineMotion(testCase)
+    % Disjoint horizontal ledges are not a self-intersection, even when their
+    % orientation polynomial is identically zero throughout a deformation.
+    lower=[0,0;6,0;6,4;5,4;5,1;4,1;4,4;3,4;3,1;2,1;2,4;0,4];
+    upper=lower;
+    upper([5,6],2)=1.2;
+    upper([9,10],2)=0.8;
+    for scale=[1e-3,1,1e3]
+        prepared=preparePair(scale*lower,scale*upper);
+        verifyTrue(testCase,prepared.InternalPreparation.MatchingTopology);
+        cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
+        for tau=[0,0.25,0.5,0.75,1]
+            regions=cell(size(cells.Regions_units));
+            for index=1:numel(regions)
+                regions{index}=(1-tau)*cells.Regions_units{index}+ ...
+                    tau*cells.EndRegions_units{index};
+            end
+            expected=polyshape(scale*((1-tau)*lower+tau*upper),'Simplify',false);
+            verifyLessThan(testCase,area(xor(unionRegions(regions),expected)), ...
+                1e-10*max(1,scale^2));
+        end
+    end
+end
+
 function testContainmentClassificationMatchesBooleanReference(testCase)
     % Unequal ring lengths bypass correspondence. Cover shrinking, growing,
     % equal-area shifted, disconnected and holed shapes, in both orders.

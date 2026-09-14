@@ -73,7 +73,7 @@ if request.UsesVariableClock && isfield(request.Coverage,'BreakTime_s')
     % subdivide its normalized intervals so changing the arrival clock scales
     % the complete guide instead of deleting its waits.
     routeTau=double(request.Seed.tau(:));
-    minimumSegmentCount=max([8,numel(sourceBreaks_s)-1, ...
+    minimumSegmentCount=max([20,numel(sourceBreaks_s)-1, ...
         originalSegmentCount*request.SplitCount]);
     segmentCountByEdge=allocateSegmentsByMeasure(diff(routeTau), ...
         minimumSegmentCount);
@@ -101,10 +101,14 @@ end
 if request.Options.GoalTimeMode=="fixedArrival"
     % The motion mesh follows the guide, not the obstacle sampling frequency.
     % Every source interval still constrains its exact overlap with these spans.
-    minimumSegmentCount = 8;
-    if request.Degree>=8, minimumSegmentCount = 16; end
-    segmentCount=max(minimumSegmentCount,originalSegmentCount);
     isTimedSeed = request.UsesTimeScopedSolver;
+    minimumSegmentCount = 8;
+    if request.Degree>=8
+        minimumSegmentCount = 16;
+    elseif isTimedSeed
+        minimumSegmentCount=16;
+    end
+    segmentCount=max(minimumSegmentCount,originalSegmentCount);
     if isTimedSeed
         segmentCount=max(segmentCount,originalSegmentCount*request.SplitCount);
         segmentCountByEdge=allocateSegmentsByMeasure(diff(request.Seed.tau), ...
@@ -144,12 +148,13 @@ end
 warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s,request.InitialState,request.GoalState);
 if request.UsesVariableClock
-    requiredSegmentTime_s=bmtpEngine.findRequiredSegmentTime( ...
-        warmStart.ControlPoint_units,request.Limits);
-    % Preserve the collision-free timed guide's physical clock for plane
-    % initialization without turning that proposal time into an arrival bound.
-    commonSegmentTime_s=max([requiredSegmentTime_s./warmStart.SegmentRatio; ...
-        request.SeedMotionDuration_s/sum(warmStart.SegmentRatio)]);
+    % A timed visibility route is a geometric corridor proposal at one
+    % supplied physical clock, not a complete feasible motion. Initialize
+    % its exact obstacle planes on that clock. Stretching the unsolved guide
+    % to satisfy dynamics first changes which moving geometry it encounters
+    % and therefore corrupts the proposal before BMTP sees it.
+    commonSegmentTime_s=request.SeedMotionDuration_s/ ...
+        sum(warmStart.SegmentRatio);
     warmStart.SegmentTime_s=commonSegmentTime_s*warmStart.SegmentRatio;
     warmStart.Duration_s=sum(warmStart.SegmentTime_s);
     if isfield(request.Coverage,'ActiveTimeInterval_s')

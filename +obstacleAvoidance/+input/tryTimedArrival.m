@@ -15,14 +15,10 @@ result.Success = false;
 accepted = false;
 initialState = previous.Inputs.initialState;
 goalState = previous.Inputs.goalState;
-sourceIntervalCount = sum(arrayfun(@(obstacle) ...
-    max(0,numel(obstacle.time_s)-1),previous.PreparedObstacles));
 isRest = all([initialState.velocity_units_s(:);initialState.acceleration_units_s2(:); ...
     goalState.velocity_units_s(:);goalState.acceleration_units_s2(:)] == 0);
-% The timed mesh compresses dense histories. Sparse earliest-arrival histories
-% remain faster through the exact chronological planner and its validated wait incumbent.
 isFixedArrival = previous.Options.GoalTimeMode=="fixedArrival";
-if ~isempty(goalState.targetMotion) || (~isFixedArrival && (~isRest || sourceIntervalCount < 16))
+if ~isempty(goalState.targetMotion) || (~isFixedArrival && ~isRest)
     result.Message = "Timed visibility requires a fixed-position goal; earliest-arrival mode also requires zero endpoint velocity and acceleration.";
     result.TerminationReason = "unsupportedTimedRequest";
     result.ElapsedTime_s = previous.ElapsedTime_s+toc(timer);
@@ -56,45 +52,37 @@ result.VisibilityGraph.Route_units = route_units;
 result.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units),2,2));
 result.Route_units = route_units;
 
-%% Section 2: Solve The Earliest Layer Then Its Window Wait Guide
+%% Section 2: Solve The Timed Route On Its Supplied Physical Clock
 timedSearch=searchRecord.TimedSearch;
 useFreeGoalWindow = ~isFixedArrival && ...
     isfield(timedSearch,'SelectedGoalWindowEndTime_s') && ...
     timedSearch.SelectedGoalWindowEndTime_s > ...
     routeTime_s(end) + previous.Options.ArrivalTimeTolerance_s;
-motionGoalState = goalState;
-motionOptions = previous.Options;
-seedRoute_units=route_units;
-seedRouteTime_s=routeTime_s;
-seedSource="timeExpandedVisibilityGraph";
+seedDuration_s=routeTime_s(end)-initialState.time_s;
+seed=struct('position_units',route_units, ...
+    'tau',(routeTime_s-initialState.time_s)/seedDuration_s, ...
+    'Index',1,'Source',"timeExpandedVisibilityGraph", ...
+    'ObstacleEnvelope_units',zeros(0,2));
+motionGoalState=goalState;
+motionOptions=previous.Options;
 if useFreeGoalWindow
     motionGoalState.time_s=timedSearch.SelectedGoalWindowEndTime_s;
     motionOptions.GoalTimeMode="earliestArrival";
     minimumArrivalTime_s=max(timedSearch.SelectedGoalWindowStartTime_s, ...
         timedSearch.MinimumGoalArrivalTime_s);
-    seedSource="timeExpandedWaitGuide";
+    [regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
+        initialState.time_s,motionGoalState.time_s);
+    coverage.MinimumMotionDuration_s=minimumArrivalTime_s-initialState.time_s;
+    coverage.SeedMotionDuration_s=seedDuration_s;
+    seed.TimingMode="variableClock";
 else
     motionGoalState.time_s=routeTime_s(end);
     motionOptions.GoalTimeMode="fixedArrival";
-end
-[regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
-    initialState.time_s,motionGoalState.time_s);
-if useFreeGoalWindow
-    coverage.MinimumMotionDuration_s=minimumArrivalTime_s-initialState.time_s;
-    coverage.SeedMotionDuration_s=routeTime_s(end)-initialState.time_s;
-end
-seedDuration_s=seedRouteTime_s(end)-initialState.time_s;
-seed = struct('position_units',seedRoute_units, ...
-    'tau',(seedRouteTime_s - initialState.time_s) / ...
-    seedDuration_s, ...
-    'Index',1,'Source',seedSource, ...
-    'ObstacleEnvelope_units',zeros(0,2));
-if useFreeGoalWindow
-    seed.TimingMode="variableClock";
-else
+    [regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
+        initialState.time_s,motionGoalState.time_s);
     seed.TimingMode="timeScopedClock";
 end
-[candidate,diagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
+[candidate,diagnostics]=bmtpEngine.solve(seed,regions_units,coverage, ...
     initialState,motionGoalState,previous.RequestedLimits,motionOptions);
 if ~candidate.Success
     result.Message="The timed route did not produce a feasible BMTP motion: "+ ...
@@ -122,7 +110,7 @@ end
 if isFixedArrival
     result.Message = "The prescribed goal layer produced an independently validated timed BMTP motion.";
 elseif useFreeGoalWindow
-    result.Message="The first reachable goal window produced an independently validated BMTP motion from a near-goal wait guide.";
+    result.Message="The first reachable goal window produced an independently validated free-clock BMTP motion.";
 else
     result.Message = "The earliest reachable timed-route layer produced an independently validated BMTP motion.";
 end
@@ -132,7 +120,7 @@ necessaryArrival_s = initialState.time_s + ...
     previous.Limits);
 result.TemporalSearch = struct('Resolution_s',previous.Options.TemporalResolution_s, ...
     'TrialTime_s',candidate.ArrivalTime_s,'TrialTerminationReason',"goalReached", ...
-    'TrialStage',string(seed.Source),'GlobalEarliestProven',false, ...
+    'TrialStage',string(candidate.SeedSource),'GlobalEarliestProven',false, ...
     'NecessaryArrivalBound_s',necessaryArrival_s,'IncumbentArrival_s',NaN, ...
     'RetainedIncumbent',false,'PriorTerminationReason',previous.TerminationReason);
 result.ElapsedTime_s = previous.ElapsedTime_s + toc(timer);

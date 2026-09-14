@@ -13,16 +13,40 @@ distance_units = abs(displacement_units);
 velocity_s1 = min(limits.maxVelocity_units_s./distance_units);
 acceleration_s2 = min(limits.maxAcceleration_units_s2./distance_units);
 jerk_s3 = min(limits.maxJerk_units_s3./distance_units);
-rampTime_s = min(acceleration_s2/jerk_s3,sqrt(velocity_s1/jerk_s3));
-holdTime_s = max(0,velocity_s1/(jerk_s3*rampTime_s)-rampTime_s);
-cruiseTime_s = 1/velocity_s1-(2*rampTime_s+holdTime_s);
-if cruiseTime_s < 0
+accelerationRampTime_s = acceleration_s2/jerk_s3;
+velocityRampTime_s = sqrt(velocity_s1/jerk_s3);
+if velocityRampTime_s <= accelerationRampTime_s
+    rampTime_s = velocityRampTime_s;
+    holdTime_s = 0;
+else
+    rampTime_s = accelerationRampTime_s;
+    holdTime_s = (velocity_s1-jerk_s3*rampTime_s^2)/ ...
+        (jerk_s3*rampTime_s);
+end
+noCruiseDistance = velocity_s1*(2*rampTime_s+holdTime_s);
+regimeTolerance = 64*eps(max(1,abs(noCruiseDistance)));
+if noCruiseDistance < 1-regimeTolerance
+    cruiseTime_s = (1-noCruiseDistance)/velocity_s1;
+elseif noCruiseDistance <= 1+regimeTolerance
     cruiseTime_s = 0;
-    rampTime_s = min(acceleration_s2/jerk_s3,(1/(2*jerk_s3))^(1/3));
-    holdTime_s = max(0,(-3*rampTime_s+sqrt(rampTime_s^2+4/(jerk_s3*rampTime_s)))/2);
+else
+    cruiseTime_s = 0;
+    displacementRampTime_s = (1/(2*jerk_s3))^(1/3);
+    if displacementRampTime_s <= accelerationRampTime_s
+        rampTime_s = displacementRampTime_s;
+        holdTime_s = 0;
+    else
+        rampTime_s = accelerationRampTime_s;
+        rootTerm_s = sqrt(rampTime_s^2+4/(jerk_s3*rampTime_s));
+        holdTime_s = 2*(1/(jerk_s3*rampTime_s)-2*rampTime_s^2)/ ...
+            (rootTerm_s+3*rampTime_s);
+    end
 end
 segmentTime_s = [rampTime_s;holdTime_s;rampTime_s;cruiseTime_s;rampTime_s;holdTime_s;rampTime_s];
 segmentJerk_s3 = jerk_s3*[1;0;-1;0;-1;0;1];
+% Analytic regime selection assigns inactive phases exactly zero. Do not
+% compare one phase with another: a short physical ramp can legitimately
+% coexist with a very long cruise.
 active = segmentTime_s>0;
 segmentTime_s = segmentTime_s(active);
 segmentJerk_s3 = segmentJerk_s3(active);

@@ -114,9 +114,14 @@ elseif options.GoalTimeMode=="fixedArrival"
             obstacleTarget_units,certificateCache,true);
     end
 end
-% A certified zero-delay chord already supplies this schedule's first departure.
-% Preserve its absolute clock and certificate instead of computing them again.
-if seed.Source=="departureSchedule" && ~(preparedMotion.Success && certificate.Passed)
+% A direct rest-to-rest earliest request with moving cells and no timed guide
+% is the departure family: a certified zero-delay chord already supplies its
+% first departure, otherwise the delayed chord is constructed from the same
+% physical request. The seed label never selects this branch.
+usesDepartureSchedule = size(route_units,1)==2 && ...
+    options.GoalTimeMode=="earliestArrival" && request.IsRest && ...
+    ~request.UsesTimeScopedSolver && isfield(coverage,'ActiveTimeInterval_s');
+if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
     [controls_units,times_s,powers_units,departure] = bmtpEngine.createDelayedChord(request);
     diagnostics.DepartureSchedule = departure;
     if isempty(times_s)

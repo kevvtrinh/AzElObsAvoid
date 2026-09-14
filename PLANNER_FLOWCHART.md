@@ -1,7 +1,13 @@
 # Planner decision-flow ledger
 
-This file describes the live `build-core` working tree. It is a coverage
-ledger, not a claim that the remaining fallback tree is acceptable.
+This file is the historical coverage ledger that motivated the earliest-arrival
+consolidation. The routing table below is current; the "remaining policy
+splits", coverage-audit, and experiment narratives after it describe the tree
+as it stood before the consolidation and are retained as the record of why
+each branch was removed. The current decision map, fixtures, removed branches,
+rejected trials, and identical-input measurements are in
+`benchmarks/planner_decision_flow.md`, which supersedes this file wherever the
+two disagree.
 
 ## Intended core
 
@@ -44,24 +50,27 @@ distinctions, not alternative planner policies.
 | Earliest direct C3 chord | `initialSpatialSnapshot`, `c3JerkLimitedChord`, `analyticC3Clock`; `testPlannerDecisionFlow/testEarliestStaticDirectUsesAnalyticClock` | A directly certifiable C3 construction. Its smoothed duration is not a proof of globally earliest kinematic arrival. |
 | Static fixed detour | exhaustive spatial graph and `bmtpStaticDegree5`; `testPlanningCore/testDetourAndTampering` | Necessary fixed-clock specialization. |
 | Static earliest detour | exhaustive spatial graph and `bmtpStaticDegree8`; `testStaticActivePairBmtp/testSeparatedSlalomBarriers` | The clock is semantically necessary. The separate active-pair implementation remains a numerical split to consolidate only after an equivalent common formulation is measured. |
-| Fixed time-expanded detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree8`; `testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline` | Necessary absolute-time geometry; fixed-clock and variable-clock implementations can share more machinery. |
-| Dense dynamic earliest detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree5`; `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival` | Necessary absolute-time geometry. Current sampled graph and uniformly scaled clock are not a final general formulation. |
-| Analytic delayed direct chord | `c3DepartureSchedule`; `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, and arrival-search regressions | Exact for this single route, but currently reached as a fallback and selected with an invalid initial-snapshot bound. It belongs as an exact timed edge, not a competing planner. |
-| Delayed chord challenged and retained | `TemporalSearch.RetainedIncumbent=true`; `testArrivalSearchRegressions/testChallengedDelayedChordIncumbentIsRetained` | Necessary selection behavior until one common search replaces the ladder. A failed earlier proposal must not discard an independently certified incumbent. |
-| Chronological fixed clocks | `TemporalSearch`, `FixedArrivalTrialTime_s`; `testPlannerDecisionFlow/testEarliestMovingTargetUsesChronologicalClock` and `exampleMovingCircleNoWrap` | Target position changes with time and the sparse fixed-goal timed clock can miss a faster detour. The recursive full planner invocation is implementation duplication, not the desired common solve. |
+| Fixed time-expanded detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree5`; `testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline` | Necessary absolute-time geometry, tried only after the initial and arrival spatial guides fail. The representation is chosen from the physical timing mode, never from the seed label. |
+| Dynamic earliest detour | `timeExpandedVisibilityGraph`, `bmtpTimeCellsDegree5`; `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival`, `exampleMovingCircleNoWrap` | Necessary absolute-time geometry; one variable-clock profile for every free goal window regardless of source density. The sampled moving-edge graph is a proposal, not a final general formulation (see `benchmarks/planner_decision_flow.md`). |
+| Analytic delayed direct chord | `c3DepartureSchedule`; `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, and arrival-search regressions | Exact for this single route and evaluated first as the incumbent; the timed profile may replace it only with an earlier independently valid motion. The former initial-snapshot bound is removed. |
+| Delayed chord challenged and retained | `c3DepartureSchedule` with no `TemporalSearch`; `testArrivalSearchRegressions/testChallengedDelayedChordIncumbentIsRetained` | Necessary selection behavior. A failed timed profile must not discard an independently certified incumbent. |
+| Chronological fixed clocks | `TemporalSearch`, `FixedArrivalTrialTime_s`; `testPlannerDecisionFlow/testEarliestMovingTargetUsesChronologicalClock`, `testEarliestStaticNonrestUsesPhysicalClockTrials` | Target position or endpoint state changes with the clock; used only after the departure family and the timed profile both fail. The recursive full planner invocation is implementation duplication, not the desired common solve. |
 
-## Remaining policy splits that block completion
+## Policy splits recorded before the consolidation (historical)
 
-These branches are active and must not be described as consolidated:
+Items 1 to 3 and 6 were removed on 2026-09-14; see
+`benchmarks/planner_decision_flow.md` for the retained flow. Items 4, 5, and 7
+remain and are listed there as limitations.
 
-1. `tryTimedArrival` changes algorithms when source history has fewer than 16
-   intervals. Geometry sampling density is not a physical distinction.
-2. Earliest dynamic planning currently tries timed visibility, then an analytic
-   delayed chord, then a chronological fixed-arrival schedule. This is a
-   fallback ladder rather than one declared objective.
-3. A delayed chord can skip chronological trials using initial spatial route
-   length divided by velocity. That is not a valid lower bound for a moving
-   scene; an initially disconnected scene produces `Inf` even when it opens.
+1. (Removed) `tryTimedArrival` changed algorithms when source history had fewer
+   than 16 intervals. Geometry sampling density is not a physical distinction.
+2. (Removed) Earliest dynamic planning tried timed visibility, then an analytic
+   delayed chord, then a chronological fixed-arrival schedule. It now evaluates
+   the complete departure family first, then one variable-clock timed profile,
+   then chronological trials only when both fail.
+3. (Removed) A delayed chord could skip chronological trials using initial
+   spatial route length divided by velocity. That is not a valid lower bound
+   for a moving scene.
 4. Initial goal occupancy or a disconnected initial dynamic snapshot silently
    replaces the graph route with a direct chord seed. The corresponding fixtures
    are `testInitiallyOccupiedFutureGoalUsesTemporalSeed` and
@@ -69,9 +78,9 @@ These branches are active and must not be described as consolidated:
 5. Timed proposal construction uses selected snapshot unions, an offset retry,
    a work-budget node cap, Delaunay-first pairs, and sampled edge checks. These
    are proposal heuristics, not an exhaustive exact visibility graph.
-6. Timed search commits to the first goal window. Its selected free window is
-   solved once from the wait guide; the provably unreachable second wait-guide
-   retry has been removed.
+6. (Removed) Timed search committed to the first goal window and solved it from
+   a separately labelled wait guide. The free window is now solved once by the
+   single variable-clock profile with the proposal's own clock.
 7. Static active-pair, variable-clock timed, and fixed-clock all-pair BMTP use
    different degree, mesh, slack, plane-update, and refinement policies. Clock
    treatment differs physically; the remaining solver-policy differences need
