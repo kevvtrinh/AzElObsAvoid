@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleMovingDeformingUSOutlineVisibility(options)
+function result = exampleMovingDeformingUSOutlineVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleMovingDeformingUSOutlineVisibility()
@@ -16,7 +16,6 @@ function [result, diagnosis] = exampleMovingDeformingUSOutlineVisibility(options
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units, time is seconds, velocity is coordinate units per second,
@@ -32,7 +31,7 @@ function [result, diagnosis] = exampleMovingDeformingUSOutlineVisibility(options
 if nargin < 1 || isempty(options)
     options = struct();
 end
-[options, jerkConfiguration] = resolveExampleOptions(options, struct("GoalTimeMode", "earliestArrival", "MaximumDisplayedSlicesPerObstacle", 10, "ShowSweptSurfaces", true, "FigureVisible", "on", "Title", "Extreme growing/rotating U.S. with moving sun"), [12 12]);
+[options, jerkConfiguration] = resolveExampleOptions(options, struct("GoalTimeMode", "earliestArrival", "FigureVisible", "on", "Title", "Extreme growing/rotating U.S. with moving sun"), [12 12]);
 
 %% Section 2: Create Obstacles
 
@@ -73,7 +72,7 @@ limits = struct("maxVelocity_units_s", [8 8], "maxAcceleration_units_s2", [3 3],
 
 % Run the public planner with both obstacle histories.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -86,7 +85,7 @@ if result.TerminationReason=="unsupportedObstacleInterpolation"
 else
     exampleValidation = validateExampleResult(result, ...
         "extreme moving/deforming U.S. with moving sun", ...
-        struct("RequireDirectBlocked", true), diagnosis);
+        struct("RequireDirectBlocked", true));
 end
 
 initialUS_units = [ ...
@@ -124,7 +123,7 @@ end
 % Plot and animate the returned result with the supplied obstacle histories.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions);
 end
 
 end

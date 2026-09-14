@@ -1,19 +1,12 @@
 function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
 % SYNTAX: warmStart = bmtpEngine.createWarmStart(request)
-% PURPOSE: Convert an exact visibility route into BMTP Bezier controls, or
-%   preserve a supplied complete polynomial-edge motion without rebuilding it.
-% INPUTS: request: validated BMTP request with static or timed exclusion cells;
-%   request.Seed.PolynomialEdges optionally carries a complete physical motion.
+% PURPOSE: Convert an exact visibility route into BMTP Bezier controls.
+% INPUTS: request: validated BMTP request with static or timed exclusion cells.
 % OUTPUTS: warmStart: route, control points, time, and all-pair region mask.
 % UNITS: Position is coordinate units and time is seconds.
 
 %% Section 1: Use The Exact Visibility Route
-if isfield(request.Seed,'PolynomialEdges') && ...
-        ~isempty(request.Seed.PolynomialEdges)
-    warmStart=completeMotionWarmStart(request);
-    return
-end
 route_units = double(request.Seed.position_units);
 route_units([1 end], :) = [request.InitialState.position_units; request.GoalState.position_units];
 suppliedSegmentCount = size(route_units, 1) - 1;
@@ -164,96 +157,6 @@ if request.UsesVariableClock
             breaks_s(2:end)>intervals_s(:,1).';
     end
 end
-end
-
-function warmStart=completeMotionWarmStart(request)
-    % Validate and preserve the complete edge clock and physical jet state.
-    edges=request.Seed.PolynomialEdges(:);
-    requiredFields={'StartTime_s','EndTime_s','SegmentDuration_s', ...
-        'ControlPoint_units','PositionPower_units','StartJet','EndJet'};
-    valid=isstruct(edges) && ~isempty(edges) && all(isfield(edges,requiredFields));
-    edgeCount=numel(edges);
-    degree=request.Degree;
-    controlPoint_units=zeros(edgeCount,degree+1,2);
-    positionPower_units=zeros(edgeCount,2,degree+1);
-    segmentTime_s=zeros(edgeCount,1);
-    startTime_s=zeros(edgeCount,1);
-    endTime_s=zeros(edgeCount,1);
-    for edgeIndex=1:edgeCount
-        control=edges(edgeIndex).ControlPoint_units;
-        power=edges(edgeIndex).PositionPower_units;
-        valid=valid && isequal(size(control),[degree+1,2]) && ...
-            isequal(size(power),[2,degree+1]) && ...
-            isequal(size(edges(edgeIndex).StartJet),[4,2]) && ...
-            isequal(size(edges(edgeIndex).EndJet),[4,2]);
-        if ~valid,break;end
-        controlPoint_units(edgeIndex,:,:)=control;
-        positionPower_units(edgeIndex,:,:)=power;
-        segmentTime_s(edgeIndex)=edges(edgeIndex).SegmentDuration_s;
-        startTime_s(edgeIndex)=edges(edgeIndex).StartTime_s;
-        endTime_s(edgeIndex)=edges(edgeIndex).EndTime_s;
-    end
-    tolerance=request.Options.ConstraintTolerance;
-    if valid
-        startJet=cat(3,edges.StartJet);
-        endJet=cat(3,edges.EndJet);
-        sharedResidual=0;
-        if edgeCount>1
-            sharedResidual=max(abs(endJet(:,:,1:end-1)- ...
-                startJet(:,:,2:end)),[],'all');
-        end
-        expectedInitial=[request.InitialState.position_units; ...
-            request.InitialState.velocity_units_s; ...
-            request.InitialState.acceleration_units_s2];
-        expectedGoal=[request.GoalState.position_units; ...
-            request.GoalState.velocity_units_s; ...
-            request.GoalState.acceleration_units_s2];
-        valid=all(isfinite([controlPoint_units(:);positionPower_units(:); ...
-            segmentTime_s;startTime_s;endTime_s])) && ...
-            all(segmentTime_s>0) && ...
-            max(abs(startJet(1:3,:,1)-expectedInitial),[],'all')<=tolerance && ...
-            max(abs(endJet(1:3,:,end)-expectedGoal),[],'all')<=tolerance && ...
-            sharedResidual<=tolerance && ...
-            abs(startTime_s(1)-request.InitialState.time_s)<=tolerance && ...
-            max(abs(endTime_s-startTime_s-segmentTime_s))<=tolerance && ...
-            (edgeCount==1 || max(abs(startTime_s(2:end)- ...
-                endTime_s(1:end-1)))<=tolerance) && ...
-            endTime_s(end)<=request.GoalState.time_s+ ...
-                request.Options.ArrivalTimeTolerance_s;
-        if request.Options.GoalTimeMode=="fixedArrival"
-            valid=valid && abs(endTime_s(end)-request.GoalState.time_s)<= ...
-                request.Options.ArrivalTimeTolerance_s;
-        end
-    end
-    if ~valid
-        error('bmtpEngine:InvalidPolynomialEdges', ...
-            'Complete polynomial edges must match the request clock, degree, endpoints, and shared physical jets.');
-    end
-    route_units=zeros(edgeCount+1,2);
-    for edgeIndex=1:edgeCount
-        route_units(edgeIndex,:)=edges(edgeIndex).StartJet(1,:);
-    end
-    route_units(end,:)=edges(end).EndJet(1,:);
-    intervals_s=zeros(0,2);
-    if isfield(request.Coverage,'ActiveTimeInterval_s')
-        intervals_s=request.Coverage.ActiveTimeInterval_s;
-    end
-    regionActiveBySegment=true(edgeCount,numel(request.Regions_units));
-    if ~isempty(intervals_s)
-        regionActiveBySegment=startTime_s<intervals_s(:,2).' & ...
-            endTime_s>intervals_s(:,1).';
-    end
-    warmStart=struct('Route_units',route_units, ...
-        'ControlPoint_units',controlPoint_units, ...
-        'PrescribedPower_units',positionPower_units, ...
-        'SegmentTime_s',segmentTime_s, ...
-        'Duration_s',sum(segmentTime_s), ...
-        'SegmentRatio',segmentTime_s/mean(segmentTime_s), ...
-        'SegmentCount',edgeCount, ...
-        'RegionActiveBySegment',regionActiveBySegment, ...
-        'OriginalSeedSegmentCount',edgeCount, ...
-        'SuppliedSeedSegmentCount',edgeCount, ...
-        'WarmRouteResampled',false);
 end
 
 function route_units=removeRedundantRouteVertices(route_units)

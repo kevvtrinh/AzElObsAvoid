@@ -37,12 +37,6 @@ usesVariableClock=isfield(seed,'TimingMode') && ...
     string(seed.TimingMode)=="variableClock";
 usesTimeScopedSolver=usesVariableClock || (isfield(seed,'TimingMode') && ...
     string(seed.TimingMode)=="timeScopedClock");
-hasCompleteMotion=isfield(seed,'PolynomialEdges') && ...
-    ~isempty(seed.PolynomialEdges);
-if hasCompleteMotion
-    degree=size(seed.PolynomialEdges(1).ControlPoint_units,1)-1;
-    splitCount=1;
-end
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");

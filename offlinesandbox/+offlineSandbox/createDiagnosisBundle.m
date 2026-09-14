@@ -1,8 +1,8 @@
-function diagnosisBundle = createDiagnosisBundle(request, result, independentValidation, diagnosis)
+function diagnosisBundle = createDiagnosisBundle(request, result, independentValidation)
 %% Section 0: Header & Readme
 % SYNTAX
 %   diagnosisBundle = offlineSandbox.createDiagnosisBundle( ...
-%       request, result, independentValidation, diagnosis)
+%       request, result, independentValidation)
 %**************************************************************************
 % PURPOSE
 %   - Create the handle-free MATLAB diagnosis record saved by the HTML
@@ -17,7 +17,6 @@ function diagnosisBundle = createDiagnosisBundle(request, result, independentVal
 %       Stable unprojected public planner result for that exact request.
 %   - independentValidation (scalar struct)
 %       Public validation record associated with result.
-%   - diagnosis (optional scalar struct): the planner's second output.
 %**************************************************************************
 % OUTPUTS
 %   - diagnosisBundle (scalar struct)
@@ -32,7 +31,6 @@ function diagnosisBundle = createDiagnosisBundle(request, result, independentVal
 
 %% Section 1: Validate And Sanitize Planner Records
 
-if nargin < 4, diagnosis = struct(); end
 if ~isstruct(request) || ~isscalar(request) || ~isfield(request, "requestId") || ~isfield(request, "obstacles")
     error("createDiagnosisBundle:InvalidRequest", "request must be one validated offline-sandbox request record.");
 end
@@ -45,6 +43,10 @@ end
 
 sanitizedResult = result;
 sanitizedResult.Options = removeCallbacks(result.Options);
+solverDiagnostics = struct();
+if isfield(sanitizedResult,"SolverDiagnostics")
+    solverDiagnostics = sanitizedResult.SolverDiagnostics;
+end
 plannerOptions = removeCallbacks(request.options);
 plannerInputs  = sanitizedResult.Inputs;
 plannerInputs.initialState = request.initialState;
@@ -80,7 +82,7 @@ environment = struct("MATLABVersion", string(version), ...
     "Computer", string(computer), ...
     "WorkingDirectory", string(pwd));
 reproduction = struct("LoadCommand", ...
-        "loaded = load(filePath, 'diagnosisBundle');", "PlannerCommand", "[reproduced, reproducedDiagnosis] = planner(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);", "ValidationCommand", "reproducedValidation = " + "obstacleAvoidance.validateTrajectory(reproduced);");
+        "loaded = load(filePath, 'diagnosisBundle');", "PlannerCommand", "reproduced = planner(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);", "ValidationCommand", "reproducedValidation = " + "obstacleAvoidance.validateTrajectory(reproduced);");
 exportRequest = struct("RequestId", string(request.requestId), ...
     "HasCompleteScene", true, ...
     "PlannerInputs", plannerInputs, ...
@@ -105,7 +107,7 @@ diagnosisBundle = struct("Format", "obstacleAvoidanceSandboxDiagnosis-v2", ...
     "PlannerInputs", plannerInputs, ...
     "PlannerOptions", plannerOptions, ...
     "Result", sanitizedResult, ...
-    "Diagnosis", diagnosis, ...
+    "SolverDiagnostics", solverDiagnostics, ...
     "IndependentValidation", independentValidation, ...
     "Status", string(sanitizedResult.Message), ...
     "PlannerLog", plannerLog, ...

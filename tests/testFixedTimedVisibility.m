@@ -48,12 +48,6 @@ function testFixedTimedSearchRetainsBoundaryVelocity(testCase)
         'AbsTol',1e-8);
 end
 
-function testInvalidSearchChoice(testCase)
-    data=testCase.TestData; data.Options.FixedArrivalSearch='unknown';
-    verifyError(testCase,@()planner([],data.Initial,data.Goal,data.Limits,data.Options), ...
-        'planner:UnsupportedFixedArrivalSearch');
-end
-
 function testSavedDetourUsesPrescribedDeadline(testCase)
     root=fileparts(mfilename('fullpath'));
     request=jsondecode(fileread(fullfile(root,'fixtures','savedMovingDetour.json')));

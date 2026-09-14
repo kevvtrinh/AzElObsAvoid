@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleInterceptMovingTargetEarliest(exampleOverrides)
+function result = exampleInterceptMovingTargetEarliest(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleInterceptMovingTargetEarliest()
@@ -58,7 +58,7 @@ plannerOptions.GoalTimeMode = "earliestArrival";
 
 % Run the moving-target planner. It searches for the earliest valid meeting.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
+result = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 
@@ -75,7 +75,7 @@ end
 % Plot the target history and the returned intercept motion when enabled.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

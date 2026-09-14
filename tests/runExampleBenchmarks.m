@@ -57,8 +57,8 @@ for caseIndex = 1:numel(caseNames)
     for repeatIndex = 1:repetitions
         try
             timer = tic;
-            if nargout(name)>=3
-                [result,~,caseResults] = feval(name,struct('PlotOutputs',false,'Verbose',false));
+            if nargout(name)>=2
+                [result,caseResults] = feval(name,struct('PlotOutputs',false,'Verbose',false));
             else
                 result = feval(name,struct('PlotOutputs',false,'Verbose',false));
                 caseResults = {result};

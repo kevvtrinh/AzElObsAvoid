@@ -214,18 +214,6 @@ function testPeriodicMovingTargetIsRejected(testCase)
         struct('WrapY',true)),'planner:UnsupportedPeriodicRequest');
 end
 
-function testLegacyTimedChoiceDoesNotSplitMovingTargetFlow(testCase)
-    targetMotion=struct('time_s',[0;10], ...
-        'position_units',[4,0;5,0],'InterpolationMethod','linear');
-    goal=struct('time_s',10,'targetMotion',targetMotion);
-    result=planner([],state(0,[0,0]),goal,standardLimits(), ...
-        struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded'));
-    verifyTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,10,'AbsTol',1e-8);
-    verifyEqual(testCase,result.SeedSource,"initialSpatialSnapshot");
-end
-
 function testInitiallyOccupiedFutureGoalUsesArrivalDetour(testCase)
     local=[-0.8,-0.8;0.8,-0.8;0.8,0.8;-0.8,0.8];
     first=local+[4,0];
@@ -311,19 +299,6 @@ function testArrivalSearchExhausted(testCase)
     verifyFailure(testCase,result,"arrivalSearchExhausted");
     verifyTrue(testCase,isfield(result,'TemporalSearch'));
     verifyGreaterThan(testCase,numel(result.TemporalSearch.TrialTime_s),0);
-end
-
-function testLegacySearchChoiceDoesNotSplitInfeasibleFlow(testCase)
-    obstacle=struct('Vertices_units',[-1,-1;1,-1;1,1;-1,1]);
-    initial=state(0,[-4,0]); goal=state(5.5,[4,0]);
-    options=struct('GoalTimeMode','fixedArrival');
-    spatial=planner(obstacle,initial,goal,standardLimits(),options);
-    verifyFailure(testCase,spatial,"noOptimizedFeasibleIterate");
-    options.FixedArrivalSearch='timeExpanded';
-    options.TemporalResolution_s=0.5;
-    legacy=planner(obstacle,initial,goal,standardLimits(),options);
-    verifyFailure(testCase,legacy,"noOptimizedFeasibleIterate");
-    verifyEqual(testCase,legacy.TerminationReason,spatial.TerminationReason);
 end
 
 function testStateValidationDecisions(testCase)

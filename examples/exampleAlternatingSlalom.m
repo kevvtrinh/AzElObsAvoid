@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleAlternatingSlalom(exampleOverrides)
+function result = exampleAlternatingSlalom(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleAlternatingSlalom()
@@ -14,7 +14,6 @@ function [result, diagnosis] = exampleAlternatingSlalom(exampleOverrides)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
@@ -69,7 +68,7 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 
 % Call the maintained planner once. The example does not add route hints.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -86,7 +85,7 @@ end
 % Plot only from the returned result. A failed plan shows search diagnostics.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

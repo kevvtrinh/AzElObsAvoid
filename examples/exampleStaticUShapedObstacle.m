@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleStaticUShapedObstacle(exampleOverrides)
+function result = exampleStaticUShapedObstacle(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleStaticUShapedObstacle()
@@ -15,7 +15,6 @@ function [result, diagnosis] = exampleStaticUShapedObstacle(exampleOverrides)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
@@ -57,14 +56,14 @@ limits    = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [0.
 
 % Run the public planner once with the complete scenario input.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 % Check the full path through the cavity opening. A direct segment through a U
 % wall must fail collision validation.
 
-exampleValidation = validateExampleResult(result, "single U", struct("RequireDirectBlocked", true), diagnosis);
+exampleValidation = validateExampleResult(result, "single U", struct("RequireDirectBlocked", true));
 if ~exampleValidation.Passed
     warning("exampleStaticUShapedObstacle:ValidationFailed", "%s", exampleValidation.Message);
 end
@@ -74,7 +73,7 @@ end
 % The workspace plot shows how the route leaves the concave cavity.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

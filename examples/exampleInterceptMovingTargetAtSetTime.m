@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleInterceptMovingTargetAtSetTime(interceptTime_s, options)
+function result = exampleInterceptMovingTargetAtSetTime(interceptTime_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleInterceptMovingTargetAtSetTime()
@@ -74,14 +74,14 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 goalState = struct("time_s",interceptTime_s,"targetMotion",targetMotion);
 plannerOptions = options;
 plannerOptions.GoalTimeMode = "fixedArrival";
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
+result = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 
 % Confirm that the final gimbal position equals the target position. Also check
 % velocity, acceleration, and jerk limits.
 
-exampleValidation      = validateExampleResult(result, "specified-time moving-target intercept", struct(), diagnosis);
+exampleValidation      = validateExampleResult(result, "specified-time moving-target intercept", struct());
 specifiedTimeSatisfied = isempty(result.Inputs.obstacles) && result.Validation.Passed && abs(result.Intercept.Time_s - interceptTime_s) <= 1e-8;
 exampleValidation.SpecifiedTimeSatisfied = specifiedTimeSatisfied;
 exampleValidation.Passed                 = exampleValidation.Passed && specifiedTimeSatisfied;
@@ -94,7 +94,7 @@ end
 % Plot the full target track and mark the requested meeting point.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions);
 end
 
 end

@@ -1,10 +1,10 @@
-function [runs, results] = benchmarkFixedArrivalSearch(repetitions)
+function [runs, results] = benchmarkFixedArrivalPolicy(repetitions)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [runs, results] = benchmarkFixedArrivalSearch(repetitions)
+%   [runs, results] = benchmarkFixedArrivalPolicy(repetitions)
 %
 % PURPOSE
-%   - Measure the unified fixed-arrival seed policy on two deterministic
+%   - Measure the unified fixed-arrival seed policy on three deterministic
 %     requests that previously favored different caller-selected modes.
 %
 % INPUTS

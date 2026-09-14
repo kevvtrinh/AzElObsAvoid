@@ -1,9 +1,8 @@
-function validation = validateExampleResult(result, scenarioLabel, requirements, diagnosis)
+function validation = validateExampleResult(result, scenarioLabel, requirements)
 %% Section 0: Header & Readme
 % SYNTAX
 %   validation = validateExampleResult(result, scenarioLabel)
-%   validation = validateExampleResult( ...
-%       result, scenarioLabel, requirements, diagnosis)
+%   validation = validateExampleResult(result, scenarioLabel, requirements)
 %
 % PURPOSE
 %   - Independently validate one maintained example result.
@@ -14,7 +13,6 @@ function validation = validateExampleResult(result, scenarioLabel, requirements,
 %   - scenarioLabel (scalar text)
 %   - requirements (scalar struct, optional; default struct())
 %       ExpectedSuccess defaults true. RequireDirectBlocked defaults false.
-%   - diagnosis (optional scalar struct): search attempts from the planner.
 %
 % OUTPUTS
 %   - validation (scalar struct)
@@ -30,7 +28,6 @@ function validation = validateExampleResult(result, scenarioLabel, requirements,
 % valid no-path result from an unexpected planner failure. RequireDirectBlocked
 % checks that an obstacle example does not accidentally have a clear direct line.
 
-if nargin < 4, diagnosis = struct(); end
 if nargin < 3 || isempty(requirements)
     requirements = struct();
 end

@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleOpeningUShapedObstacle(exampleOverrides)
+function result = exampleOpeningUShapedObstacle(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleOpeningUShapedObstacle()
@@ -14,7 +14,6 @@ function [result, diagnosis] = exampleOpeningUShapedObstacle(exampleOverrides)
 % OUTPUTS
 %   - result (scalar planTrajectory result)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
@@ -81,7 +80,7 @@ warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
 warningCleanup = onCleanup(@() warning(warningState));
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 clear warningCleanup;
 
 %% Section 5: Validate Result
@@ -89,7 +88,7 @@ clear warningCleanup;
 % Run common trajectory checks. Then confirm that the returned motion waits and
 % crosses the gap only after it opens.
 
-exampleValidation = validateExampleResult(result, "opening U-shaped obstacle", struct(), diagnosis);
+exampleValidation = validateExampleResult(result, "opening U-shaped obstacle", struct());
 openingValidation = validateOpeningUse(result, openingTime_s, gapHalfWidth_units, safetyMargin_units);
 exampleValidation.Passed = exampleValidation.Passed && openingValidation.Passed;
 if ~openingValidation.Passed
@@ -104,7 +103,7 @@ end
 % Animation shows the opening event and the later crossing on one time axis.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

@@ -59,9 +59,6 @@ displayDefaults.Pause_s                             = 0.01;
 displayDefaults.SaveAnimationGif                    = false;
 displayDefaults.AnimationGifFile                    = "obstacleAvoidanceTrajectory.gif";
 displayDefaults.AnimationGifDelay_s                 = 0.01;
-displayDefaults.ShowSweptSurfaces                   = true;
-displayDefaults.MaximumDisplayedSlicesPerObstacle   = 30;
-displayDefaults.MaximumDisplayedVisibilitySnapshots = 30;
 normalizedOverrides = normalizeDisplayAliases(exampleOverrides);
 displayOptions      = displayDefaults;
 displayNames        = string(fieldnames(displayDefaults));
@@ -90,7 +87,7 @@ end
 maxJerk_units_s3 = reshape(double(maxJerk_units_s3), 1, []);
 logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
     "ShowAnimation", "ShowSearchEdges", "ShowVisibilityGraphs", ...
-    "ShowSweptSurfaces", "SaveAnimationGif", "Verbose"];
+    "SaveAnimationGif", "Verbose"];
 
 % Convert each display toggle to one true or false value.
 for name = logicalNames
@@ -111,13 +108,6 @@ end
 validateattributes(displayOptions.FrameStride, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 validateattributes(displayOptions.Pause_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 validateattributes(displayOptions.AnimationGifDelay_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-displayCountNames = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"];
-
-% Require positive integer limits for both displayed-slice controls.
-for name = displayCountNames
-    validateattributes(displayOptions.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-end
-
 %% Section 2: Forward Only Public Planner Options
 
 % Get the maintained planner defaults before scenario values are applied.
@@ -129,7 +119,6 @@ plannerOptions = struct("GoalTimeMode", "earliestArrival", "SampleTime_s", 0.05,
     "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
     "TemporalResolution_s",0.5,"MaxArrivalTrials",100);
 plannerNames   = string(fieldnames(plannerOptions));
-legacyPlannerNames = "FixedArrivalSearch";
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.
 for name = intersect(string(fieldnames(scenarioDefaults)), plannerNames, "stable").'
@@ -140,8 +129,8 @@ end
 overrideNames        = string(fieldnames(normalizedOverrides));
 aliasNames           = ["ShowKinematicPlot", "AnimationFrameStride", "AnimationPause_s", "MaxJerk_units_s3"];
 scenarioNames        = string(fieldnames(scenarioDefaults));
-unknownNames         = setdiff(overrideNames, [plannerNames; legacyPlannerNames; displayNames; aliasNames.'], "stable");
-unknownScenarioNames = setdiff(scenarioNames(:), [plannerNames; legacyPlannerNames; displayNames(:)], "stable");
+unknownNames         = setdiff(overrideNames, [plannerNames; displayNames; aliasNames.'], "stable");
+unknownScenarioNames = setdiff(scenarioNames(:), [plannerNames; displayNames(:)], "stable");
 unknownNames         = unique([unknownNames(:); unknownScenarioNames(:)], "stable");
 if ~isempty(unknownNames)
     warning("resolveExampleOptions:UnknownOptions", "Ignoring unknown example fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -154,14 +143,6 @@ for name = intersect(overrideNames, plannerNames, "stable").'
     end
 end
 
-% Forward the retired selector only when a caller supplied it. The planner
-% validates both historical values and then applies its unified policy.
-if isfield(scenarioDefaults, legacyPlannerNames) && ~isempty(scenarioDefaults.(legacyPlannerNames))
-    plannerOptions.(legacyPlannerNames) = scenarioDefaults.(legacyPlannerNames);
-end
-if isfield(normalizedOverrides, legacyPlannerNames) && ~isempty(normalizedOverrides.(legacyPlannerNames))
-    plannerOptions.(legacyPlannerNames) = normalizedOverrides.(legacyPlannerNames);
-end
 plotOptions = rmfield(displayOptions, ["PlotOutputs", "Verbose"]);
 displayOptions.JerkConstraintEnabled          = true;
 displayOptions.MaxJerk_units_s3                 = maxJerk_units_s3;

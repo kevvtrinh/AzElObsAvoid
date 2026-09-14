@@ -95,7 +95,7 @@ obstacles = createObstacles(request.obstacles);
 
 %% Section 3: Run The Public Planner & Independent Validator
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 if result.Success
     validation = obstacleAvoidance.validateTrajectory(result);
 else
@@ -116,7 +116,7 @@ response           = struct("schemaVersion", "offlineSandboxResult/v1", ...
 if nargout > 1
     request.initialState = initialState;
     request.goalState = goalState;
-    diagnosisBundle = offlineSandbox.createDiagnosisBundle(request, result, validation, diagnosis);
+    diagnosisBundle = offlineSandbox.createDiagnosisBundle(request, result, validation);
 end
 
 % MATLAB's documented JSON conversion maps unavailable NaN/Inf values to

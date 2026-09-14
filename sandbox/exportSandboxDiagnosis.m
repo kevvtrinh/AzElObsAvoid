@@ -81,9 +81,8 @@ if ~isstruct(modeState) || ~isscalar(modeState) || ~all(isfield(modeState, requi
     error("exportSandboxDiagnosis:InvalidModeState", "The selected mode record does not have the stable sandbox format.");
 end
 result    = modeState.LastPlannerResult;
-diagnosis = struct();
-if isfield(modeState, "LastDiagnosis"), diagnosis = modeState.LastDiagnosis; end
 hasPlannerResult = isstruct(result) && isscalar(result) && ~isempty(fieldnames(result));
+solverDiagnostics = struct();
 if hasPlannerResult && (~isfield(result, "Inputs") || ~isfield(result, "Options"))
     error("exportSandboxDiagnosis:InvalidResult", "The retained planner result must contain Inputs and Options.");
 end
@@ -102,6 +101,9 @@ if hasPlannerResult
         if isfield(result, "SuppliedLimits"), plannerInputs.limits = result.SuppliedLimits; end
     end
     independentValidation = modeState.LastValidation;
+    if isfield(result,"SolverDiagnostics")
+        solverDiagnostics = result.SolverDiagnostics;
+    end
     plannerSuccess        = logical(result.Success);
     terminationReason     = string(result.TerminationReason);
     exportRequest         = struct();
@@ -150,7 +152,7 @@ validationCommand   = "";
 if hasReplayableInputs
     % Store commands as guidance only. The exporter does not run the planner.
     % A developer can load the file and use these commands in a clean session.
-    plannerCommand    = "[reproduced, reproducedDiagnosis] = planner(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);";
+    plannerCommand    = "reproduced = planner(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);";
     validationCommand = "reproducedValidation = obstacleAvoidance.validateTrajectory(reproduced);";
 end
 reproduction = struct("LoadCommand", ...
@@ -171,7 +173,7 @@ diagnosisBundle = struct("Format", "obstacleAvoidanceSandboxDiagnosis-v2", ...
     "PlannerInputs", plannerInputs, ...
     "PlannerOptions", plannerOptions, ...
     "Result", result, ...
-    "Diagnosis", diagnosis, ...
+    "SolverDiagnostics", solverDiagnostics, ...
     "IndependentValidation", independentValidation, ...
     "Status", string(modeState.Status), ...
     "PlannerLog", string(modeState.PlannerLog), ...

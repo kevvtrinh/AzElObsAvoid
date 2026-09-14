@@ -1,4 +1,4 @@
-function [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options)
+function result = planner(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = planner()
@@ -22,12 +22,10 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %     magnitudes allocated equally, and two-element vectors are per-axis.
 %   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
 %     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
-%     Legacy FixedArrivalSearch values are accepted but no longer split the flow.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
 %     prepared geometry, visibility graph, BMTP diagnostics, and validation.
-%   - diagnosis: optional empty compatibility output; evidence is in result.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
@@ -44,7 +42,6 @@ if ~startsWith(path,[productionPath pathsep])
     addpath(productionPath,'-begin');
 end
 
-diagnosis = struct();
 [defaultObstacles, defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();
 if nargin == 0
     obstacles = defaultObstacles;
@@ -146,8 +143,15 @@ if ~endpointFeasible
     result.ElapsedTime_s = toc(totalTimer);
     return;
 end
-regions_units = cell(0,1);
-for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
+regionCount = sum(arrayfun(@(obstacle) numel(obstacle.Regions_units),scene));
+regions_units = cell(regionCount,1);
+nextRegionIndex = 1;
+for obstacleIndex = 1:numel(scene)
+    obstacleRegionCount = numel(scene(obstacleIndex).Regions_units);
+    targetIndices = nextRegionIndex:nextRegionIndex+obstacleRegionCount-1;
+    regions_units(targetIndices) = scene(obstacleIndex).Regions_units;
+    nextRegionIndex = nextRegionIndex+obstacleRegionCount;
+end
 if isDynamic
     cells = obstacleAvoidance.obstacles.createTimeCells(preparedObstacles,initialState.time_s,goalState.time_s);
     regions_units = cells.Regions_units;
@@ -445,17 +449,6 @@ function options = resolveOptions(options, defaults)
     % Resolve all BMTP controls in one place and warn once about unknown fields.
     if ~isstruct(options) || ~isscalar(options)
         error("planTrajectory:InvalidOptions", "options must be a scalar struct.");
-    end
-    % Accept the former selector as an input-only compatibility alias. Both
-    % values now use the same deterministic spatial-then-timed seed policy.
-    if isfield(options,'FixedArrivalSearch')
-        legacySearch=string(options.FixedArrivalSearch);
-        if ~isscalar(legacySearch) || ...
-                ~any(legacySearch==["spatial","timeExpanded"])
-            error("planner:UnsupportedFixedArrivalSearch", ...
-                "FixedArrivalSearch must be spatial or timeExpanded.");
-        end
-        options=rmfield(options,'FixedArrivalSearch');
     end
     knownFields = string(fieldnames(defaults));
     unknownFields = setdiff(string(fieldnames(options)), knownFields);

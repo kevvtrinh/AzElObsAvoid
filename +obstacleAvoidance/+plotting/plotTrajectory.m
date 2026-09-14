@@ -1,18 +1,15 @@
-function handles = plotTrajectory(result, optionOverrides, ~)
+function handles = plotTrajectory(result, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX: options = obstacleAvoidance.plotting.plotTrajectory()
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides)
-%   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides, diagnosis)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, axesHandle)
 % PURPOSE: Plot retained core geometry, visibility graph, motion, and physical limits. Animate
 %   returned samples against time-varying obstacles and targets.
 % INPUTS: result (scalar planner result) Success or failure record; plotting never reruns the
 %   planner. optionOverrides (scalar struct, optional; default struct()) Display, animation, and GIF
 %   controls. Hidden figures never pause. A Cartesian axes handle instead selects a workspace-only
-%   plot. ShowSeedPaths, ShowSweptSurfaces, and MaximumDisplayed* are retained for example
-%   compatibility; the core has no such diagnostic histories. diagnosis (optional compatibility
-%   argument, unused) The retained visibility graph is read directly from result.
+%   plot. The retained visibility graph is read directly from result.
 % OUTPUTS: handles (scalar struct) Stable workspace, visibility, kinematic, and animation handles,
 %   plus the core Axes, obstacle, graph, Route, Trajectory, Endpoint aliases.
 % UNITS: Axes use coordinate units, seconds, units/s, units/s^2, and units/s^3.
@@ -24,7 +21,6 @@ defaults.Title                               = "X/Y motion plan";
 defaults.ShowWorkspace                       = true;
 defaults.ShowKinematics                      = true;
 defaults.ShowAnimation                       = true;
-defaults.ShowSeedPaths                       = false;
 defaults.ShowSearchEdges                     = true;
 defaults.ShowVisibilityGraphs                = true;
 defaults.FrameStride                         = 5;
@@ -32,9 +28,6 @@ defaults.Pause_s                             = 0.001;
 defaults.SaveAnimationGif                    = false;
 defaults.AnimationGifFile                    = "obstacleAvoidanceTrajectory.gif";
 defaults.AnimationGifDelay_s                 = 0.01;
-defaults.ShowSweptSurfaces                   = true;
-defaults.MaximumDisplayedSlicesPerObstacle   = 30;
-defaults.MaximumDisplayedVisibilitySnapshots = 30;
 if nargin == 0
     handles = defaults;
     return;
@@ -70,8 +63,8 @@ end
 if ~isscalar(options.Title) || ~isscalar(options.AnimationGifFile) || strlength(options.AnimationGifFile) == 0
     error("plotTrajectory:InvalidTextOption", "Title/file must be nonempty scalar text.");
 end
-logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", "ShowSeedPaths", ...
-    "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces", "SaveAnimationGif"];
+logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
+    "ShowSearchEdges", "ShowVisibilityGraphs", "SaveAnimationGif"];
 for name = logicalNames
     options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name), name, "plotTrajectory:InvalidLogicalOption");
 end
@@ -80,9 +73,6 @@ for name = nonnegativeNames
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end
 validateattributes(options.FrameStride, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-for name = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"]
-    validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-end
 handles    = createEmptyHandles(options);
 plotTimeRange_s=[result.Inputs.initialState.time_s,result.Inputs.goalState.time_s];
 obstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles,plotTimeRange_s);

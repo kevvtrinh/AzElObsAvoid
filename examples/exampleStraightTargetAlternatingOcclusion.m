@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleStraightTargetAlternatingOcclusion(exampleOverrides)
+function result = exampleStraightTargetAlternatingOcclusion(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleStraightTargetAlternatingOcclusion()
@@ -105,14 +105,14 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 goalState = struct("time_s",specifiedInterceptTime_s,"targetMotion",targetMotion);
 plannerOptions = options;
 plannerOptions.GoalTimeMode = "fixedArrival";
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
+result = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 
 % Check the trajectory and independently sample target occupancy. Extra probes
 % show whether each shape blocks the intended part of the track.
 
-exampleValidation    = validateExampleResult(result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true), diagnosis);
+exampleValidation    = validateExampleResult(result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true));
 obstacleQueryOptions = struct();
 
 occupancySampleCount = 1201;
@@ -186,7 +186,7 @@ end
 % Show the target track, blocked intervals, and selected intercept.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions);
 end
 
 end

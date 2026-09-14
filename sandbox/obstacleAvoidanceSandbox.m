@@ -365,7 +365,6 @@ function modeState = emptyModeState(graphicsHandles)
         "SelectedPolygonIndex", 0, ...
         "CanonicalObstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
         "LastPlannerResult", struct(), ...
-        "LastDiagnosis", struct(), ...
         "LastValidation", obstacleAvoidance.validateTrajectory(struct("Success", false)), ...
         "GraphicsHandles", graphicsHandles, ...
         "InteractionState", "idle", ...
@@ -935,14 +934,13 @@ function executeGoalPlan(figureHandle)
     planningCleanup = onCleanup(@() restorePlanningControls(figureHandle));
     refreshApplication(figureHandle);
     drawnow;
-    [result, validation, logLines, diagnosis] = callPlanner(canonicalObstacles, initialState, goalState, limits, plannerOptions, controls.Verbose, "Goal Mode");
+    [result, validation, logLines] = callPlanner(canonicalObstacles, initialState, goalState, limits, plannerOptions, controls.Verbose, "Goal Mode");
     applicationState = guidata(figureHandle);
     modeState        = applicationState.GoalMode;
     modeState.LastPlannerResult = result;
     modeState.LastPlannerRequest = struct("PlannerInputs", ...
         struct("obstacles", canonicalObstacles, "initialState", initialState, ...
         "goalState", goalState, "limits", limits), "PlannerOptions", plannerOptions);
-    modeState.LastDiagnosis     = diagnosis;
     modeState.LastValidation    = validation;
     modeState.PlannerLog        = [modeState.PlannerLog; logLines];
     modeState.Status            = formatGoalStatus(result, validation);
@@ -976,11 +974,10 @@ function playGoalAnimationAfterRun(figureHandle, result, validation)
         "ShowAnimation", true, ...
         "ShowSearchEdges", false, ...
         "ShowVisibilityGraphs", false, ...
-        "ShowSweptSurfaces", false, ...
         "FrameStride", options.AnimationFrameStride, ...
         "Pause_s", options.AnimationPause_s);
     try
-        animationHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, modeState.LastDiagnosis);
+        animationHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions);
         applicationState = guidata(figureHandle);
         modeState        = applicationState.GoalMode;
         modeState.GraphicsHandles.AnimationPlotHandles = animationHandles;
@@ -996,15 +993,15 @@ function playGoalAnimationAfterRun(figureHandle, result, validation)
     refreshApplication(figureHandle);
 end
 
-function [result, validation, logLines, diagnosis] = callPlanner(obstacles, initialState, goalState, limits, options, captureVerbose, labelText)
-    % Capture optional verbose text for the sandbox log. Keep structured planner
-    % diagnostics separately from the motion result.
+function [result, validation, logLines] = callPlanner(obstacles, initialState, goalState, limits, options, captureVerbose, labelText)
+    % Capture optional verbose text for the sandbox log. Structured planner
+    % diagnostics remain in the returned result.
     result      = struct();
     plannerText = "";
     if captureVerbose
-        plannerText = string(evalc('[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);'));
+        plannerText = string(evalc('result = planner(obstacles, initialState, goalState, limits, options);'));
     else
-        [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+        result = planner(obstacles, initialState, goalState, limits, options);
     end
     if result.Success
         validation = obstacleAvoidance.validateTrajectory(result);
@@ -1467,7 +1464,6 @@ function modeState = clearModeSolution(modeState)
     modeState.CanonicalObstacles = obstacleAvoidance.obstacles.combineObstacles();
     modeState.LastPlannerResult  = struct();
     modeState.LastPlannerRequest = struct();
-    modeState.LastDiagnosis      = struct();
     modeState.LastValidation     = obstacleAvoidance.validateTrajectory(struct("Success", false));
     modeState.ResolvedControls   = struct();
 end
@@ -1496,9 +1492,8 @@ function openDiagnostics(figureHandle)
     end
     plotOptions = struct("FigureVisible", applicationState.Options.FigureVisible, ...
         "Title", "Goal Mode diagnostics", ...
-        "ShowSeedPaths", true, ...
         "ShowAnimation", false);
-    modeState.GraphicsHandles.DiagnosticPlotHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, modeState.LastDiagnosis);
+    modeState.GraphicsHandles.DiagnosticPlotHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions);
     applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
 end

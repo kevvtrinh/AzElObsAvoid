@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleFourAcceleratingCircles(exampleOverrides)
+function result = exampleFourAcceleratingCircles(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleFourAcceleratingCircles()
@@ -121,14 +121,14 @@ limits             = struct("maxVelocity_units_s", [2 2], ...
 goalState = struct("time_s",missionEndTime_s,"targetMotion",targetMotion);
 plannerOptions = options;
 plannerOptions.GoalTimeMode = "fixedArrival";
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
+result = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 
 % Check the intercept, circle tangency, center motion, collision freedom, and
 % gimbal limits. These checks separate setup errors from planner errors.
 
-exampleValidation = validateExampleResult(result, "four accelerating circles", struct(), diagnosis);
+exampleValidation = validateExampleResult(result, "four accelerating circles", struct());
 
 midpointIndex          = find(obstacleTime_s == 0.5 * obstacleMotionDuration_s, 1, "first");
 pairCenterDistance_units = [ ...
@@ -196,7 +196,7 @@ end
 % Show the gimbal, target, and circles on one time base.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions);
 end
 
 end

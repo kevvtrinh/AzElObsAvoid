@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleNoPath(exampleOverrides)
+function result = exampleNoPath(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleNoPath()
@@ -59,7 +59,7 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 % The planner must return a failure result. It must not stop the example with an
 % error for this expected planning outcome.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -84,7 +84,7 @@ end
 % final trajectory is available in this case.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

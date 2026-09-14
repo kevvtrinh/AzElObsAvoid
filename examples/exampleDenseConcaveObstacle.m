@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleDenseConcaveObstacle(exampleOverrides)
+function result = exampleDenseConcaveObstacle(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleDenseConcaveObstacle()
@@ -14,7 +14,6 @@ function [result, diagnosis] = exampleDenseConcaveObstacle(exampleOverrides)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
@@ -62,7 +61,7 @@ limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1],
 
 % Run the public planner with the visible inputs defined above.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -79,7 +78,7 @@ end
 % Show protected geometry, the selected route, and motion limits when enabled.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

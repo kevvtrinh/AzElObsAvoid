@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleTwoOpposingUVisibilityGraph(options)
+function result = exampleTwoOpposingUVisibilityGraph(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleTwoOpposingUVisibilityGraph()
@@ -15,7 +15,6 @@ function [result, diagnosis] = exampleTwoOpposingUVisibilityGraph(options)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Positions use coordinate units and time uses seconds.
@@ -59,13 +58,13 @@ limits    = struct("maxVelocity_units_s", [1 1], ...
 
 % Run the automatic visibility planner. Do not supply route directions.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 % Check that smoothing preserves the collision-free geometric route.
 
-exampleValidation = validateExampleResult(result, "two opposing Us", struct("RequireDirectBlocked", true), diagnosis);
+exampleValidation = validateExampleResult(result, "two opposing Us", struct("RequireDirectBlocked", true));
 if ~exampleValidation.Passed
     warning("exampleTwoOpposingUVisibilityGraph:ValidationFailed", "%s", exampleValidation.Message);
 end
@@ -75,7 +74,7 @@ end
 % Plot visibility search data and the selected trajectory when enabled.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions);
 end
 
 end

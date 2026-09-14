@@ -1,13 +1,13 @@
 # Unified fixed-arrival guide selection
 
-Fixed-arrival moving-obstacle planning now has one deterministic production
-flow. The planner first solves from the exact initial visibility route. That
-guide receives the initial BMTP solve and one solve after exact collision-mesh
-refinement. If neither produces a complete certified motion, the planner tries
-the existing exact timed visibility route once. The caller does not choose a
+Fixed-arrival moving-obstacle planning has one deterministic production flow.
+The planner first solves from the exact initial visibility route. If that
+proposal is solver-infeasible, it evaluates the exact arrival-snapshot route;
+only another solver-level infeasibility admits the exact timed visibility route.
+Each route receives the same BMTP implementation. The caller does not choose a
 method, and no example identity changes this decision.
 
-The two-guide boundary comes from the solver's own evidence. Successful spatial
+Each proposal boundary comes from the solver's own evidence. Successful spatial
 requests in the random suite either certify on the initial mesh or after the
 first refinement. The four hard requests still contain unresolved curve-region
 pairs after that refinement and formerly repeat the same homotopy for all 35
@@ -16,10 +16,8 @@ obstacle, then certify in one or two iterations. The rejected spatial attempt is
 retained in `VisibilityGraph.SpatialSeedDiagnostics` whenever the timed guide is
 selected.
 
-Legacy `FixedArrivalSearch='spatial'` and `'timeExpanded'` inputs remain
-validated and accepted so saved requests still load, but both values use the
-same policy and are removed from returned options. Fixed-arrival moving targets
-and earliest-arrival planning retain their existing flows.
+No public search selector remains. Fixed-arrival moving targets and
+earliest-arrival requests use the same input-driven planner policy.
 
 ## Full random-suite comparison
 
@@ -62,7 +60,7 @@ changed production files have no new Code Analyzer findings, and `git diff
 
 ```matlab
 addpath('benchmarks');
-[fixedRuns,fixedResults] = benchmarkFixedArrivalSearch(3);
+[fixedRuns,fixedResults] = benchmarkFixedArrivalPolicy(3);
 [randomRuns,randomResults] = benchmarkRandomAzimuth(1:80);
 ```
 

@@ -79,7 +79,9 @@ or cleanup solvers around it. `AGENTS.md` records this rule for future work.
 
 ## Final verification
 
-- Final complete MATLAB suite: 121/121 passed in 183.5 s.
+- The consolidated planner commit passed 121/121 tests in 183.5 s.
+- The final dead-code cleanup removed four compatibility-only tests; the
+  remaining behavioral suite passes 117/117.
 - Final maintained examples: 21/21 documented outcomes valid, including
   spinning U and both expected unsupported-deformation results.
 - Small-workspace gate: rotating field 9.1376249 s / 20.4272801; spinning U
@@ -90,7 +92,9 @@ or cleanup solvers around it. `AGENTS.md` records this rule for future work.
 
 ## Adoption status
 
-The verified tree has been transferred to `build-core`. Final static analysis
-reported zero `checkcode` messages and a clean `git diff --check`. The adoption
-commit and removal of task-created worktrees/CSV/scratch artifacts complete this
-plan; user Rogue Cases and unrelated sandboxes remain untouched.
+The verified tree is on `build-core`. The cleanup removed uncalled wrappers,
+future-only adapters, retired selector compatibility, the empty planner
+diagnosis output, unused plot controls, and superseded design narratives. The
+planner, examples, plots, and sandboxes now consume the single returned result
+directly. Static analysis and `git diff --check` are clean. User Rogue Cases and
+unrelated sandbox experiments remain untouched.

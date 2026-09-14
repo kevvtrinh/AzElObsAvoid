@@ -1,4 +1,4 @@
-function [result, diagnosis, regionResults] = exampleUSOutlineExtremeVisibility(options)
+function [result, regionResults] = exampleUSOutlineExtremeVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleUSOutlineExtremeVisibility()
@@ -15,7 +15,7 @@ function [result, diagnosis, regionResults] = exampleUSOutlineExtremeVisibility(
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result for the final region.
-%   - regionResults (optional third output): every unmodified region result.
+%   - regionResults (optional second output): every unmodified region result.
 %
 % UNITS
 %   - Position is coordinate units, time is seconds, velocity is coordinate units per second,
@@ -30,7 +30,7 @@ function [result, diagnosis, regionResults] = exampleUSOutlineExtremeVisibility(
 if nargin < 1 || isempty(options)
     options = struct();
 end
-[options, jerkConfiguration] = resolveExampleOptions(options, struct("GoalTimeMode", "earliestArrival", "MaximumDisplayedSlicesPerObstacle", 1, "ShowSweptSurfaces", false, "FigureVisible", "on", "Title", "Extreme geographic-region visibility sequence"), [12 12]);
+[options, jerkConfiguration] = resolveExampleOptions(options, struct("GoalTimeMode", "earliestArrival", "FigureVisible", "on", "Title", "Extreme geographic-region visibility sequence"), [12 12]);
 
 %% Section 2: Create Obstacles
 
@@ -60,8 +60,7 @@ limits = struct("maxVelocity_units_s", [8 8], "maxAcceleration_units_s2", [3 3],
 
 %% Section 4: Run Planner
 
-regionResults   = cell(regionCount, 1);
-regionDiagnoses = cell(regionCount, 1);
+regionResults = cell(regionCount, 1);
 
 % Plan each geographic region independently. Use the same physical limits.
 for regionIndex = 1:regionCount
@@ -69,7 +68,7 @@ for regionIndex = 1:regionCount
     initialState  = struct("time_s", 0, "position_units", scenario.initialPosition_units);
     goalState     = struct("time_s", missionEndTime_s, "position_units", scenario.goalPosition_units);
     regionOptions = options;
-    [regionResults{regionIndex}, regionDiagnoses{regionIndex}] = planner(obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
+    regionResults{regionIndex} = planner(obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
 end
 
 %% Section 5: Validate Result
@@ -79,7 +78,7 @@ regionPassed = false(regionCount, 1);
 % Validate every region. Record geometry size for a fair comparison.
 for regionIndex = 1:regionCount
     resultForRegion   = regionResults{regionIndex};
-    exampleValidation = validateExampleResult(resultForRegion, "static " + lower(regionNames(regionIndex)) + " outline", struct("RequireDirectBlocked", true), regionDiagnoses{regionIndex});
+    exampleValidation = validateExampleResult(resultForRegion, "static " + lower(regionNames(regionIndex)) + " outline", struct("RequireDirectBlocked", true));
     regionPassed(regionIndex) = exampleValidation.Passed;
     if ~exampleValidation.Passed
         warning("exampleUSOutlineExtremeVisibility:ValidationFailed", "%s: %s", regionNames(regionIndex), exampleValidation.Message);
@@ -94,12 +93,11 @@ if jerkConfiguration.PlotOutputs
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
         plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);
-        obstacleAvoidance.plotting.plotTrajectory(regionResults{regionIndex}, plotOptions, regionDiagnoses{regionIndex});
+        obstacleAvoidance.plotting.plotTrajectory(regionResults{regionIndex}, plotOptions);
     end
 end
 
-result    = regionResults{end};
-diagnosis = regionDiagnoses{end};
+result = regionResults{end};
 if ~all(regionPassed)
     warning("exampleUSOutlineExtremeVisibility:SequenceValidationFailed", "One or more regional planning results failed independent validation.");
 end

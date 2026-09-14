@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleTargetExitsObstacle(exampleOverrides)
+function result = exampleTargetExitsObstacle(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleTargetExitsObstacle()
@@ -99,14 +99,14 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 goalState = struct("time_s",missionEndTime_s,"targetMotion",targetMotion);
 plannerOptions = options;
 plannerOptions.GoalTimeMode = "fixedArrival";
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
+result = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 
 % Confirm that the target starts blocked and ends clear. Confirm that the gimbal
 % avoids both circles and reaches the target at the set time.
 
-exampleValidation    = validateExampleResult(result, "target exits a containing obstacle", struct("RequireDirectBlocked", true), diagnosis);
+exampleValidation    = validateExampleResult(result, "target exits a containing obstacle", struct("RequireDirectBlocked", true));
 obstacleQueryOptions = struct();
 
 targetOccupied        = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, targetPosition_units(:, 1), targetPosition_units(:, 2), targetTime_s, obstacleQueryOptions);
@@ -148,7 +148,7 @@ end
 % Show the target exit and the gimbal detour on one time axis.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions);
 end
 
 end

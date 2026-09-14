@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleObstacleFree(exampleOverrides)
+function result = exampleObstacleFree(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleObstacleFree()
@@ -14,7 +14,6 @@ function [result, diagnosis] = exampleObstacleFree(exampleOverrides)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
@@ -58,7 +57,7 @@ limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1],
 
 % Run the public planner and let it find the minimum feasible arrival time.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -75,7 +74,7 @@ end
 % Use this plot as the simplest reference for more complex example plots.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

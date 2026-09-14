@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleSpinningUAtStartAndGoal(exampleOverrides)
+function result = exampleSpinningUAtStartAndGoal(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleSpinningUAtStartAndGoal()
@@ -16,7 +16,6 @@ function [result, diagnosis] = exampleSpinningUAtStartAndGoal(exampleOverrides)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
@@ -75,12 +74,12 @@ limits = struct("xInterval_units", [-13 13], "yInterval_units", [-8 8], ...
 
 %% Section 4: Run Planner
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result And Scenario Motion
 
 exampleValidation = validateExampleResult(result, ...
-    "spinning U obstacles at both endpoints", struct(), diagnosis);
+    "spinning U obstacles at both endpoints", struct());
 rotationValidation = validateSpinningUs(startHistory, goalHistory, ...
     startCenter_units, goalCenter_units, spinAngle_rad, obstacles, ...
     missionEndTime_s);
@@ -96,7 +95,7 @@ end
 %% Section 6: Plot Diagnostics And Motion
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

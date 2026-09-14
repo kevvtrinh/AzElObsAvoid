@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleVietnamKeepoutSlew(exampleOverrides)
+function result = exampleVietnamKeepoutSlew(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleVietnamKeepoutSlew()
@@ -15,7 +15,6 @@ function [result, diagnosis] = exampleVietnamKeepoutSlew(exampleOverrides)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
@@ -58,7 +57,7 @@ limits.maxJerk_units_s3 = displayOptions.MaxJerk_units_s3;
 % Use the public entry point so the example exercises normalization, timed
 % search, motion construction, independent validation, and diagnostics.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -74,7 +73,7 @@ end
 % Show the complete moving histories, selected route, search, and kinematics.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

@@ -1,6 +1,6 @@
-function tests = testClockGuide
+function tests = testMovingObstacle220
 %% Section 0: Header & Readme
-% SYNTAX: results = runtests('tests/testClockGuide.m')
+% SYNTAX: results = runtests('tests/testMovingObstacle220.m')
 % PURPOSE: Keep the dense moving-obstacle benchmark in the compact core suite.
 % INPUTS: MATLAB unit test framework and maintained 220-vertex example.
 % OUTPUTS: Independent validity, quality, and exercised-fast-path checks.
@@ -18,9 +18,9 @@ function testMovingObstacle220Quality(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.TrajectoryDuration_s,230,'AbsTol',1e-10);
-    historicalLength_units=121.503236303671;
+    referenceLength_units=121.503236303671;
     verifyLessThanOrEqual(testCase,abs( ...
-        result.MotionLength_units/historicalLength_units-1),0.01);
+        result.MotionLength_units/referenceLength_units-1),0.01);
     verifyGreaterThan(testCase,result.PlaneCertificate.MinimumSignedGap_units,0);
     verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
     verifyGreaterThan(testCase,result.PlaneCertificate.CachedGeometryPairCount,0);

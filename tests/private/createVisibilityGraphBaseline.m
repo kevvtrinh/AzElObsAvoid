@@ -1,7 +1,7 @@
 function visibilityGraph = createVisibilityGraphBaseline(preparedObstacles, start_units, goal_units, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
+%   visibilityGraph = createVisibilityGraphBaseline( ...
 %       preparedObstacles, start_units, goal_units, limits, options)
 %
 % PURPOSE

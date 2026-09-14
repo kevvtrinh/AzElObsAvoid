@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleMovingRotatingObstacleField(exampleOverrides)
+function result = exampleMovingRotatingObstacleField(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleMovingRotatingObstacleField()
@@ -17,7 +17,6 @@ function [result, diagnosis] = exampleMovingRotatingObstacleField(exampleOverrid
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
@@ -72,11 +71,11 @@ limits = struct('xInterval_units', [-12 12], 'yInterval_units', [-6 6], ...
     'maxJerk_units_s3', displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 exampleValidation = validateExampleResult(result, ...
-    "mixed moving and static obstacle field", struct('RequireDirectBlocked', true), diagnosis);
+    "mixed moving and static obstacle field", struct('RequireDirectBlocked', true));
 centerTravel_units = sum(vecnorm(diff(movingCenter_units, 1, 1), 2, 2));
 rotationTravel_rad = sum(abs(diff(movingAngle_rad)));
 if centerTravel_units <= 0 || rotationTravel_rad <= 0
@@ -89,6 +88,6 @@ end
 
 %% Section 6: Plot Diagnostics And Motion
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 end
