@@ -23,6 +23,10 @@ function result = planner(obstacles, initialState, goalState, limits, options, o
 %       Workspace intervals and scalar or per-axis motion limits.
 %   - options (scalar struct, optional; default struct())
 %       Arrival, sampling, validation, wrapping, matching, and search controls.
+%       A wrapped axis is planned in the unwrapped frame inside the reach
+%       band: obstacle images that meet the band, a target lifted by
+%       continuity, and every goal image in the band planned and accepted
+%       against the periodic request.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -103,22 +107,29 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
     end
 end
 
-% Wrapping shifts the goal into the nearest period and bounds the workspace
-% by the reachable span.
-if options.WrapX || options.WrapY
-    if ~isempty(obstacles) || ~isempty(goalState.targetMotion)
-        error('planner:UnsupportedPeriodicRequest', 'Wrapping supports obstacle-free fixed-position goals only.');
+% A wrapped axis is planned in the unwrapped frame. A moving target is lifted
+% by continuity from the initial position, a fixed goal takes its nearest
+% image, and each wrapped interval becomes the reach band of the request.
+wrapAxes = [options.WrapX options.WrapY];
+if any(wrapAxes)
+    intervalNames   = ["xInterval_units", "yInterval_units"];
+    intervals_units = [limits.xInterval_units; limits.yInterval_units];
+    if ~isempty(goalState.targetMotion)
+        goalState.targetMotion   = obstacleAvoidance.input.liftPeriodicTarget( ...
+            goalState.targetMotion, initialState.position_units, intervals_units, wrapAxes);
+        goalState.position_units = obstacleAvoidance.input.targetPositionAtTime( ...
+            goalState.targetMotion, goalState.time_s);
     end
-    intervalNames = ["xInterval_units", "yInterval_units"];
-    for axisIndex = find([options.WrapX options.WrapY])
-        period_units   = diff(limits.(intervalNames(axisIndex)));
-        start_units    = initialState.position_units(axisIndex);
-        goal_units     = goalState.position_units(axisIndex);
-        periodOffset   = floor((start_units - goal_units) / period_units + 0.5);
-        reach_units    = limits.maxVelocity_units_s(axisIndex) * (goalState.time_s - initialState.time_s);
-
-        goalState.position_units(axisIndex) = goal_units + period_units * periodOffset;
-        limits.(intervalNames(axisIndex))   = start_units + [-reach_units reach_units];
+    for axisIndex = find(wrapAxes)
+        period_units = diff(intervals_units(axisIndex, :));
+        start_units  = initialState.position_units(axisIndex);
+        goal_units   = goalState.position_units(axisIndex);
+        reach_units  = limits.maxVelocity_units_s(axisIndex) * (goalState.time_s - initialState.time_s);
+        if isempty(goalState.targetMotion)
+            periodOffset = floor((start_units - goal_units) / period_units + 0.5);
+            goalState.position_units(axisIndex) = goal_units + period_units * periodOffset;
+        end
+        limits.(intervalNames(axisIndex)) = start_units + [-reach_units reach_units];
     end
 end
 
@@ -127,6 +138,19 @@ if goalState.time_s <= initialState.time_s
 end
 if norm(goalState.position_units - initialState.position_units) <= options.ConstraintTolerance
     error("planTrajectory:CoincidentEndpoints", "Initial and goal positions must be distinct.");
+end
+
+% Every goal image inside the band is planned as a plain request in the
+% unwrapped frame and accepted against this periodic request.
+if any(wrapAxes)
+    periodicRequest = struct( ...
+        'SuppliedLimits',     suppliedLimits, ...
+        'SuppliedGoalState',  suppliedGoalState, ...
+        'RequestedLimits',    requestedLimits, ...
+        'RequestedGoalState', requestedGoalState);
+    result = obstacleAvoidance.input.planPeriodicRequest( ...
+        obstacles, initialState, goalState, limits, options, periodicRequest);
+    return
 end
 
 %% Section 2: Prepare Authoritative Geometry And Motion Coverage

@@ -208,40 +208,66 @@ if isfield(result, 'SuppliedLimits')
 end
 
 % A fixed-arrival trial accepted for an earliest-arrival request was
-% planned on its declared trial clock: its periodic reach and its final
-% time are checked against that clock, and its final time against the
-% outer horizon above.
-clockEnd_s = goalState.time_s;
+% planned on its declared trial clock: its final time is checked against
+% that clock here and against the outer horizon above.
 if isfield(result, 'FixedArrivalTrialTime_s')
-    clockEnd_s = result.FixedArrivalTrialTime_s;
     metadataIsConsistent = metadataIsConsistent && ...
         abs(result.FixedArrivalTrialTime_s - polynomial.FinalTime_s) <= result.Options.ArrivalTimeTolerance_s;
 end
+
+% A wrapped axis is planned inside the reach band of the whole request.
+wrapAxes = [result.Options.WrapX, result.Options.WrapY];
 if isfield(result, 'RequestedLimits')
     for intervalName = ["xInterval_units", "yInterval_units"]
         axisIndex              = 1 + (intervalName == "yInterval_units");
         expectedInterval_units = result.RequestedLimits.(intervalName);
-        wrapAxes               = [result.Options.WrapX, result.Options.WrapY];
         if wrapAxes(axisIndex)
             reach_units            = result.Limits.maxVelocity_units_s(axisIndex) * ...
-                (clockEnd_s - initialState.time_s);
+                (goalState.time_s - initialState.time_s);
             expectedInterval_units = initialState.position_units(axisIndex) + [-reach_units reach_units];
         end
         metadataIsConsistent = metadataIsConsistent && ...
             isequal(expectedInterval_units, result.Limits.(intervalName));
     end
 end
-if isfield(result, 'RequestedGoalState') && (result.Options.WrapX || result.Options.WrapY)
-    expectedGoal_units        = result.RequestedGoalState.position_units;
+
+% The unwrapped goal must be an image of the requested goal inside the band.
+% A lifted target must be the requested target lifted by continuity from the
+% initial position and moved by one period offset.
+if isfield(result, 'RequestedGoalState') && any(wrapAxes)
     requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
-    for axisIndex = find([result.Options.WrapX result.Options.WrapY])
-        period_units = diff(requestedIntervals_units(axisIndex, :));
-        expectedGoal_units(axisIndex) = expectedGoal_units(axisIndex) + ...
-            period_units * floor( ...
-                (initialState.position_units(axisIndex) - expectedGoal_units(axisIndex)) / period_units + 0.5);
+    bands_units              = [result.Limits.xInterval_units; result.Limits.yInterval_units];
+    requestedGoal            = result.RequestedGoalState;
+    if isfield(requestedGoal, 'targetMotion') && ~isempty(requestedGoal.targetMotion)
+        liftedTarget = obstacleAvoidance.input.liftPeriodicTarget( ...
+            requestedGoal.targetMotion, initialState.position_units, requestedIntervals_units, wrapAxes);
+        actualTarget         = result.Inputs.goalState.targetMotion;
+        actualPosition_units = double(actualTarget.position_units);
+        offset_units         = zeros(1, 2);
+        for axisIndex = find(wrapAxes)
+            period_units = diff(requestedIntervals_units(axisIndex, :));
+            offset_units(axisIndex) = period_units * round( ...
+                (actualPosition_units(1, axisIndex) - liftedTarget.position_units(1, axisIndex)) / period_units);
+        end
+        metadataIsConsistent = metadataIsConsistent && ...
+            isequal(size(actualPosition_units), size(liftedTarget.position_units)) && ...
+            isequal(double(actualTarget.time_s(:)), double(requestedGoal.targetMotion.time_s(:))) && ...
+            max(abs(actualPosition_units - (liftedTarget.position_units + offset_units)), [], 'all') <= tolerance;
+    else
+        for axisIndex = find(wrapAxes)
+            period_units = diff(requestedIntervals_units(axisIndex, :));
+            imageCount   = round( ...
+                (goalState.position_units(axisIndex) - requestedGoal.position_units(axisIndex)) / period_units);
+            metadataIsConsistent = metadataIsConsistent && ...
+                abs(goalState.position_units(axisIndex) - requestedGoal.position_units(axisIndex) - ...
+                imageCount * period_units) <= tolerance;
+        end
     end
-    metadataIsConsistent = metadataIsConsistent && ...
-        max(abs(expectedGoal_units - goalState.position_units)) <= tolerance;
+    for axisIndex = find(wrapAxes)
+        metadataIsConsistent = metadataIsConsistent && ...
+            goalState.position_units(axisIndex) >= bands_units(axisIndex, 1) - tolerance && ...
+            goalState.position_units(axisIndex) <= bands_units(axisIndex, 2) + tolerance;
+    end
 end
 if isfield(goalState, 'targetMotion') && ~isempty(goalState.targetMotion)
     metadataIsConsistent = metadataIsConsistent && ...
@@ -309,6 +335,14 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
     authoritativeInput = result.Inputs.obstacles;
     if isstruct(authoritativeInput) && isfield(authoritativeInput, 'InternalPreparation')
         authoritativeInput = rmfield(authoritativeInput, 'InternalPreparation');
+    end
+    if (result.Options.WrapX || result.Options.WrapY) && ~isempty(authoritativeInput)
+        % Periodic obstacles are rebuilt as the same translated images the
+        % planner used, from the supplied obstacles and the record's band.
+        authoritativeInput = obstacleAvoidance.input.replicatePeriodicObstacles(authoritativeInput, ...
+            [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units], ...
+            [result.Options.WrapX, result.Options.WrapY], ...
+            [result.Limits.xInterval_units; result.Limits.yInterval_units]);
     end
     coverageEnd_s = result.Inputs.goalState.time_s;
     if isfield(result, 'TrajectoryCoverageEndTime_s')

@@ -204,15 +204,75 @@ function testWrappedNonrestEarliestTrialIsAcceptedOnce(testCase)
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
-    reach=result.Limits.maxVelocity_units_s(1)*result.FixedArrivalTrialTime_s;
+    reach=result.Limits.maxVelocity_units_s(1)*(result.Inputs.goalState.time_s-0);
     verifyEqual(testCase,result.Limits.xInterval_units,179+[-reach,reach]);
 end
 
-function testPeriodicRequestWithObstacleIsRejected(testCase)
-    obstacle=struct('Vertices_units',[-1,-1;1,-1;1,1;-1,1]);
-    call=@() planner(obstacle,state(0,[179,0]),state(10,[-179,0]), ...
-        standardLimits(),struct('GoalTimeMode','fixedArrival','WrapX',true));
-    verifyError(testCase,call,'planner:UnsupportedPeriodicRequest');
+function testPeriodicObstacleImageBlocksTheSeam(testCase)
+    % A wall just inside the negative edge of the periodic interval is, in
+    % the unwrapped frame, the image between the initial position and the
+    % nearest goal image. The planner must detour around that image, the
+    % record must keep the supplied obstacle, and the validator must rebuild
+    % the same image on its own.
+    limits=standardLimits();
+    limits.xInterval_units=[-180,180];
+    obstacle=struct('Vertices_units',[-180,-3;-179.5,-3;-179.5,3;-180,3]);
+    result=planner(obstacle,state(0,[179,0]),state(10,[-179,0]),limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapX',true));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.Inputs.obstacles,obstacle);
+    verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
+    verifyEqual(testCase,result.PeriodicImages.ObstacleImageCount,1);
+    verifyEqual(testCase,numel(result.PreparedObstacles),1);
+    verifyGreaterThanOrEqual(testCase,min(result.PreparedObstacles(1).x_units{1}),180);
+    verifyGreaterThan(testCase,result.MotionLength_units,6);
+    verifyGreaterThan(testCase,max(abs(result.position_units(:,2))),3);
+end
+
+function testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
+    % A non-rest earliest-arrival request with a wall at the seam reaches the
+    % chronological search inside the unwrapped frame. Each trial is accepted
+    % against the periodic request, so the record keeps the supplied obstacle
+    % and periodic options while the motion detours around the wall's image.
+    limits=standardLimits();
+    limits.xInterval_units=[-180,180];
+    obstacle=struct('Vertices_units',[-180,-3;-179.5,-3;-179.5,3;-180,3]);
+    initial=state(0,[179,0]); initial.velocity_units_s=[0.1,0];
+    % A coarse trial grid keeps the fixture cheap: the first declared clock
+    % (6 s) admits the detour, so one trial is planned and accepted.
+    result=planner(obstacle,initial,state(10,[-179,0]),limits, ...
+        struct('GoalTimeMode','earliestArrival','WrapX',true, ...
+        'TemporalResolution_s',6,'MaxArrivalTrials',2));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyTrue(testCase,isfield(result,'TemporalSearch'));
+    verifyLessThanOrEqual(testCase,numel(result.TemporalSearch.TrialTime_s),2);
+    verifyEqual(testCase,result.Options.GoalTimeMode,"earliestArrival");
+    verifyTrue(testCase,result.Options.WrapX);
+    verifyEqual(testCase,result.Inputs.obstacles,obstacle);
+    verifyEqual(testCase,result.Inputs.goalState.time_s,10);
+    verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-9);
+    verifyLessThan(testCase,result.ArrivalTime_s,10);
+    verifyGreaterThan(testCase,result.MotionLength_units,6);
+end
+
+function testPeriodicFarImageBeatsABlockedNearImage(testCase)
+    % With a short period every goal image lies inside the band. A tall wall
+    % between the initial position and the nearest image makes the far way
+    % round shorter, so the shortest valid candidate must win.
+    limits=standardLimits();
+    limits.xInterval_units=[-5,5];
+    wall=struct('Vertices_units',[4.4,-12;4.6,-12;4.6,12;4.4,12]);
+    result=planner(wall,state(0,[4,0]),state(10,[-4,0]),limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapX',true));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.RequestedGoalState.position_units,[-4,0]);
+    verifyEqual(testCase,result.Inputs.goalState.position_units,[-4,0]);
+    verifyEqual(testCase,result.PeriodicImages.GoalOffset_units,[-10,0]);
+    verifyEqual(testCase,result.MotionLength_units,8,'AbsTol',1e-6);
+    verifyGreaterThan(testCase,nnz(result.PeriodicImages.CandidatePlanned),1);
 end
 
 function testPeriodicYAndDualAxisWrap(testCase)
@@ -231,13 +291,22 @@ function testPeriodicYAndDualAxisWrap(testCase)
     verifyEqual(testCase,bothResult.MotionLength_units,sqrt(8),'AbsTol',1e-8);
 end
 
-function testPeriodicMovingTargetIsRejected(testCase)
+function testPeriodicMovingTargetIsLiftedAcrossTheSeam(testCase)
+    % A target that crosses the seam is lifted by continuity, so the
+    % intercept is planned on a two-unit move and the record keeps the
+    % supplied periodic target for the validator to lift again.
     limits=standardLimits(); limits.yInterval_units=[-90,90];
     targetMotion=struct('time_s',[0;10], ...
         'position_units',[0,89;0,-89],'InterpolationMethod','linear');
     goal=struct('time_s',10,'targetMotion',targetMotion);
-    verifyError(testCase,@()planner([],state(0,[0,89]),goal,limits, ...
-        struct('WrapY',true)),'planner:UnsupportedPeriodicRequest');
+    result=planner([],state(0,[0,85]),goal,limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapY',true));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.Inputs.goalState.targetMotion.position_units,[0,89;0,91]);
+    verifyEqual(testCase,result.RequestedGoalState.targetMotion.position_units,[0,89;0,-89]);
+    verifyEqual(testCase,result.Intercept.TargetPosition_units,[0,91],'AbsTol',1e-9);
+    verifyEqual(testCase,result.MotionLength_units,6,'AbsTol',1e-6);
 end
 
 function testInitiallyOccupiedFutureGoalUsesArrivalDetour(testCase)

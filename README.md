@@ -97,8 +97,15 @@ Public planner options are:
 - `TemporalResolution_s`
 - `MaxArrivalTrials`
 
-Unknown options issue one warning and do not change planner behavior. Periodic
-coordinates are supported only for obstacle-free fixed-position goals.
+Unknown options issue one warning and do not change planner behavior. A
+wrapped axis is planned in the unwrapped frame inside the reach band of the
+request: obstacles are represented by exact translated images at every period
+offset that meets the band, a moving target is lifted by continuity from the
+initial position, and every goal image inside the band is planned as a plain
+request and accepted against the periodic request in the one acceptance gate
+(earliest arrival first, or shortest motion for a fixed arrival). The
+validator rebuilds the images, the lift, and the goal image from the supplied
+request. Returned positions stay in the unwrapped frame.
 
 ## Outputs and validation
 

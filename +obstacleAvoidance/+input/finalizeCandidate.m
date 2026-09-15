@@ -62,22 +62,15 @@ if candidate.Success && ~isempty(goalState.targetMotion)
     end
 end
 
-%% Section 2: Carry A Chronological Trial's Outer Request Into The Record
+%% Section 2: Carry The Outer Request Into An Accepted Record
 
-% The chronological search plans every trial on its own fixed clock and
-% must accept it against the outer request. The record that reaches the
-% gate therefore carries the outer request, with the trial clock declared
-% in FixedArrivalTrialTime_s, so one validation asserts both the trial
-% clock and the outer horizon; nothing is validated twice.
-if isfield(result, 'OuterRequest')
-    outerRequest = result.OuterRequest;
-    result = rmfield(result, 'OuterRequest');
-    result.FixedArrivalTrialTime_s = result.Inputs.goalState.time_s;
-    result.SuppliedLimits          = outerRequest.SuppliedLimits;
-    result.SuppliedGoalState       = outerRequest.SuppliedGoalState;
-    result.RequestedGoalState      = outerRequest.RequestedGoalState;
-    result.Inputs.goalState.time_s = outerRequest.GoalTime_s;
-    result.Options.GoalTimeMode    = outerRequest.GoalTimeMode;
+% A periodic request is planned as plain requests in the unwrapped frame,
+% and the chronological search plans trials on their own fixed clocks. A
+% successful candidate's record declares the outer request before the one
+% validation, so nothing is validated twice. A failed candidate keeps its
+% own request so later stages can still read the outer one.
+if isfield(result, 'OuterRequest') && candidate.Success
+    result = obstacleAvoidance.input.applyOuterRequest(result, result.OuterRequest);
 end
 
 %% Section 3: Apply The One Public Acceptance Gate

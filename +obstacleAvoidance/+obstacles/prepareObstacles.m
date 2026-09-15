@@ -40,27 +40,7 @@ else
         'The requested time interval must be nondecreasing.');
 end
 
-if iscell(obstacles)
-    obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-end
-if ~isempty(obstacles) && isstruct(obstacles) && isfield(obstacles, 'Vertices_units')
-    canonicalObstacles = cell(numel(obstacles), 1);
-    for obstacleIndex = 1:numel(obstacles)
-        vertices_units = obstacles(obstacleIndex).Vertices_units;
-        validateattributes(vertices_units, {'numeric'}, {'2d', 'ncols', 2, 'real', 'finite'});
-        obstacleName       = "obstacle " + obstacleIndex;
-        safetyMargin_units = 0;
-        if isfield(obstacles, 'Name')
-            obstacleName = obstacles(obstacleIndex).Name;
-        end
-        if isfield(obstacles, 'SafetyMargin_units')
-            safetyMargin_units = obstacles(obstacleIndex).SafetyMargin_units;
-        end
-        canonicalObstacles{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle( ...
-            obstacleName, 0, vertices_units(:, 1), vertices_units(:, 2), safetyMargin_units);
-    end
-    obstacles = vertcat(canonicalObstacles{:});
-end
+obstacles = obstacleAvoidance.obstacles.canonicalizeObstacles(obstacles);
 
 if isempty(obstacles)
     return;
