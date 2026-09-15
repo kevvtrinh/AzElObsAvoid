@@ -22,7 +22,8 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 %**************************************************************************
 % OUTPUTS
 %   - polynomial (scalar struct)
-%       Position and derivative powers, segment timing, and terminal state.
+%       Position and derivative powers, segment timing, terminal state, and
+%       the largest control displacement the C3 join projection introduced.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -47,8 +48,14 @@ fullyPrescribed = nargin >= 4 && ~isempty(prescribedPower_units) && ...
     all(isfinite(prescribedPower_units), 'all');
 % Fully prescribed powers replace every converted coefficient below. Avoid
 % solving a discarded control projection, especially on very short spans.
+% The projection may only absorb roundoff-sized join residuals; the largest
+% control displacement it introduces is reported so the producer can reject
+% a repair that would change the motion.
+projectionDisplacement_units = 0;
 if degree == 5 && ~fullyPrescribed
-    controlPoint_units = projectQuinticContinuity(controlPoint_units, segmentTime_s);
+    suppliedControlPoint_units   = controlPoint_units;
+    controlPoint_units           = projectQuinticContinuity(controlPoint_units, segmentTime_s);
+    projectionDisplacement_units = max(abs(controlPoint_units - suppliedControlPoint_units), [], 'all');
 end
 % Subtract the common origin before conversion to avoid cancellation between
 % large absolute coordinates; only the constant power carries the origin.
@@ -92,7 +99,8 @@ polynomial = struct( ...
     "velocityPower_units_s",      velocityPower_units_s, ...
     "accelerationPower_units_s2", accelerationPower_units_s2, ...
     "jerkPower_units_s3",         jerkPower_units_s3, ...
-    "TerminalState",              terminalState);
+    "TerminalState",              terminalState, ...
+    "ContinuityProjectionDisplacement_units", projectionDisplacement_units);
 end
 
 %% Section 3: Local Functions

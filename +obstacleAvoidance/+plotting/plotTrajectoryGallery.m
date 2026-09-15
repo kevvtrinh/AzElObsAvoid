@@ -67,7 +67,11 @@ for pageIndex = 1:pageCount
         axesHandle = nexttile(layoutHandle);
         hold(axesHandle, 'on');
 
-        times_s = linspace(result.Inputs.initialState.time_s, result.Inputs.goalState.time_s, 3);
+        % A failure result may carry geometry prepared only up to the
+        % unsupported interval; unprepared snapshot times are reported, not
+        % queried.
+        times_s             = linspace(result.Inputs.initialState.time_s, result.Inputs.goalState.time_s, 3);
+        unpreparedTimeCount = 0;
         for obstacleIndex = 1:numel(result.PreparedObstacles)
             obstacle         = result.PreparedObstacles(obstacleIndex);
             obstacleIsMoving = ~obstacle.InternalPreparation.IsTimeInvariant;
@@ -79,6 +83,10 @@ for pageIndex = 1:pageCount
                 queryTimes_s = times_s(1);
             end
             for time_s = queryTimes_s
+                if ~preparedTimeIsCovered(obstacle, time_s)
+                    unpreparedTimeCount = unpreparedTimeCount + 1;
+                    continue
+                end
                 obstacleShape = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s);
                 plot(axesHandle, obstacleShape, 'FaceColor', obstacleColor, ...
                     'FaceAlpha', 0.12, 'EdgeColor', obstacleColor);
@@ -96,6 +104,9 @@ for pageIndex = 1:pageCount
         else
             caption = labels(resultIndex) + " | " + result.TerminationReason;
         end
+        if unpreparedTimeCount > 0
+            caption = caption + sprintf(' | %d unprepared snapshot(s)', unpreparedTimeCount);
+        end
         plot(axesHandle, start_units(1), start_units(2), 'o', ...
             'Color', [0.05, 0.45, 0.2], 'MarkerFaceColor', [0.05, 0.45, 0.2]);
         plot(axesHandle, goal_units(1), goal_units(2), 'x', ...
@@ -108,4 +119,31 @@ for pageIndex = 1:pageCount
         ylabel(axesHandle, 'Elevation / y');
     end
 end
+end
+
+%% Section 3: Local Functions
+
+function covered = preparedTimeIsCovered(obstacle, queryTime_s)
+    % Apply the coverage rule of preparedShapeAtTime without throwing.
+    % A time outside a multi-sample history draws as inactive and is covered.
+    preparation = obstacle.InternalPreparation;
+    time_s      = double(obstacle.time_s(:));
+    covered     = true;
+    if isempty(time_s) || ~isfield(preparation, 'SamplePrepared')
+        return
+    end
+    queryOutsideHistory = numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end));
+    if queryOutsideHistory
+        return
+    end
+    lowerSampleIndex = find(time_s <= queryTime_s, 1, "last");
+    upperSampleIndex = find(time_s >= queryTime_s, 1, "first");
+    if isscalar(time_s)
+        lowerSampleIndex = 1;
+        upperSampleIndex = 1;
+    end
+    covered = preparation.SamplePrepared(lowerSampleIndex) && preparation.SamplePrepared(upperSampleIndex);
+    if lowerSampleIndex ~= upperSampleIndex
+        covered = covered && preparation.IntervalPrepared(lowerSampleIndex);
+    end
 end

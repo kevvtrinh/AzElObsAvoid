@@ -718,6 +718,26 @@ function finalSampleIndices = affineSpanEnds(obstacle, usesSourceIndex)
             if velocityChanged
                 break;
             end
+            % Equal velocities are only a proposal: over a long interval a
+            % sub-epsilon velocity difference is still a real displacement.
+            % The merged affine span must reproduce every interior
+            % authoritative sample in position.
+            spanStartTime_s = time_s(intervalIndex);
+            spanEndTime_s   = time_s(lastIntervalIndex + 2);
+            spanIsAffine    = true;
+            for interiorIndex = intervalIndex + 1:lastIntervalIndex + 1
+                fraction        = (time_s(interiorIndex) - spanStartTime_s) / (spanEndTime_s - spanStartTime_s);
+                predicted_units = lower_units + fraction * (next_units - lower_units);
+                interior_units  = [obstacle.x_units{interiorIndex}, obstacle.y_units{interiorIndex}];
+                positionError_units = max(abs(interior_units - predicted_units), [], 'all');
+                if positionError_units > 64 * eps(coordinateScale_units)
+                    spanIsAffine = false;
+                    break;
+                end
+            end
+            if ~spanIsAffine
+                break;
+            end
             if ~usesSourceIndex
                 nextKeepsAlignment = isequal( ...
                     obstacleAvoidance.obstacles.alignCorrespondingRing(upper_units, next_units), ...

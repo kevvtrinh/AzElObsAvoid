@@ -28,7 +28,9 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 % OUTPUTS
 %   - preparedMotion (scalar struct)
 %       Prepared controls, time, timing certificate, and expected failure.
-%       An infeasible horizon is reported as Success = false, not thrown.
+%       An infeasible horizon, or a C3 join projection that would move a
+%       control beyond the join-repair tolerance, is reported as
+%       Success = false, not thrown.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -120,10 +122,23 @@ end
 
 %% Section 5: Report The Expected Horizon Failure
 
-success           = minimumDuration_s <= request.MotionHorizon_s + request.Options.ConstraintTolerance;
-message           = "";
-terminationReason = "";
-if ~success
+% The C3 join projection may only absorb solver join residuals. Measured
+% residuals on fixed-clock timed motions reach two parts in ten million of
+% the coordinate scale; a repair beyond one part per million (or the
+% clearance tolerance, if larger) would change the motion the optimizer
+% separated, so it is rejected instead of exported.
+coordinateScale_units        = max(1, max(abs(controlPoint_units), [], 'all'));
+projectionTolerance_units    = max(request.Options.CollisionClearanceTolerance_units, 1e-6 * coordinateScale_units);
+projectionDisplacement_units = exportPolynomial.ContinuityProjectionDisplacement_units;
+projectionRepairsMotion      = projectionDisplacement_units > projectionTolerance_units;
+horizonIsFeasible            = minimumDuration_s <= request.MotionHorizon_s + request.Options.ConstraintTolerance;
+success                      = horizonIsFeasible && ~projectionRepairsMotion;
+message                      = "";
+terminationReason            = "";
+if projectionRepairsMotion
+    message           = "The C3 join projection would move the supplied controls beyond the join-repair tolerance.";
+    terminationReason = "continuityProjectionExceedsTolerance";
+elseif ~horizonIsFeasible
     reasons  = ["timeWindowInfeasible", "fixedArrivalInfeasible"];
     messages = ["The certified motion exceeds the goal horizon.", ...
         "The certified minimum exceeds the fixed arrival."];
@@ -143,7 +158,8 @@ preparedMotion    = struct( ...
     "SegmentTime_s",               segmentTime_s, ...
     "RequiredSegmentTime_s",       requiredTime_s, ...
     "DilationScale",               dilationScale, ...
-    "MotionCertificate",           motionCertificate);
+    "MotionCertificate",           motionCertificate, ...
+    "ContinuityProjectionDisplacement_units", projectionDisplacement_units);
 preparedMotion.PrescribedPower_units = prescribedPower_units;
 end
 

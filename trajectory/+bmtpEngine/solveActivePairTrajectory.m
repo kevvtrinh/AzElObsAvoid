@@ -80,7 +80,22 @@ for iterationIndex = 1:maximumIterationCount
     collisionPairs = bmtpEngine.findSampledObstacleOverlaps(trialControl_units, ...
         request.Regions_units, request.RegionMinimum_units, request.RegionMaximum_units, ...
         regionActiveBySegment);
-    duration_s                           = sum(trialTimes_s);
+    duration_s = sum(trialTimes_s);
+    % Sampling only guides optimization. An iterate becomes the feasible
+    % incumbent when every applicable pair holds a certified separating
+    % line; a pair the certificate cannot verify is a collision to separate.
+    trialCertificate    = struct('Passed', false);
+    trialPreparedMotion = struct('Success', false);
+    if ~any(collisionPairs, 'all')
+        [trialCertificate, trialPreparedMotion] = certifyTravelCandidate( ...
+            request, trialControl_units, trialTimes_s, reserve_units, target_units);
+        certificateIsDecisive = trialPreparedMotion.Success && trialCertificate.WorkspacePassed && ...
+            trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed;
+        if certificateIsDecisive
+            collisionPairs = uncertifiedPairsBySegment(trialCertificate, ...
+                trialPreparedMotion.SegmentTime_s, trialTimes_s, regionActiveBySegment);
+        end
+    end
     diagnostics.FinalCollisionPairCount = nnz(collisionPairs);
     newPairs                             = collisionPairs & ~taggedPairs;
     taggedPairs                          = taggedPairs | newPairs;
@@ -91,7 +106,13 @@ for iterationIndex = 1:maximumIterationCount
             bestControl_units       = trialControl_units;
             bestTimes_s             = trialTimes_s;
             bestDuration_s          = duration_s;
+            bestPreparedMotion      = struct('Success', false);
+            bestCertificate         = struct('Passed', false);
             diagnostics.BestDuration_s = duration_s;
+            if trialCertificate.Passed
+                bestPreparedMotion = trialPreparedMotion;
+                bestCertificate    = trialCertificate;
+            end
         end
         improvementReachedTolerance = isfinite(retainedImprovement_s) && ...
             retainedImprovement_s <= request.Options.ArrivalTimeTolerance_s;
@@ -180,6 +201,23 @@ result = struct( ...
 end
 
 %% Section 5: Local Functions
+
+function collisionPairs = uncertifiedPairsBySegment(certificate, spanTime_s, segmentTime_s, regionActiveBySegment)
+    % Map every unverified certified-span pair back to its optimizer segment.
+    % Spans partition the segments in order; a uniform dilation of the span
+    % clock preserves each span's fraction of the total motion time.
+    failedPairs         = ~reshape([certificate.Planes.Verified], size(certificate.Planes)) & ...
+        certificate.RegionActiveBySegment;
+    collisionPairs      = false(size(regionActiveBySegment));
+    segmentEndFraction  = cumsum(segmentTime_s(:)) / sum(segmentTime_s);
+    spanEndFraction     = cumsum(spanTime_s(:)) / sum(spanTime_s);
+    spanMidFraction     = spanEndFraction - 0.5 * spanTime_s(:) / sum(spanTime_s);
+    for spanIndex = reshape(find(any(failedPairs, 2)), 1, [])
+        segmentIndex = find(segmentEndFraction >= spanMidFraction(spanIndex), 1, 'first');
+        collisionPairs(segmentIndex, :) = collisionPairs(segmentIndex, :) | failedPairs(spanIndex, :);
+    end
+    collisionPairs = collisionPairs & regionActiveBySegment;
+end
 
 function [certificate, preparedMotion] = certifyTravelCandidate(request, controls_units, ...
         times_s, reserve_units, target_units)

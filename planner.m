@@ -98,7 +98,9 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
         hasExplicitDerivative = isfield(suppliedGoalState, derivativeName) && ...
             ~isempty(suppliedGoalState.(derivativeName));
         if hasExplicitDerivative
-            derivativeResidual = abs(suppliedGoalState.(derivativeName) - targetDerivative);
+            % Compare the normalized 1-by-2 row so a supplied column is not
+            % broadcast into a 2-by-2 residual.
+            derivativeResidual = abs(goalState.(derivativeName) - targetDerivative);
             if any(derivativeResidual > options.ConstraintTolerance)
                 error('planner:ConflictingTargetDerivative', 'Explicit and matched target derivatives conflict.');
             end
@@ -136,7 +138,11 @@ end
 if goalState.time_s <= initialState.time_s
     error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
 end
-if norm(goalState.position_units - initialState.position_units) <= options.ConstraintTolerance
+% A moving target's deadline position only bounds the earliest-arrival
+% search; a fixed goal or a fixed-arrival intercept is a required endpoint.
+goalIsRequiredEndpoint = isempty(goalState.targetMotion) || options.GoalTimeMode == "fixedArrival";
+endpointsCoincide      = norm(goalState.position_units - initialState.position_units) <= options.ConstraintTolerance;
+if goalIsRequiredEndpoint && endpointsCoincide
     error("planTrajectory:CoincidentEndpoints", "Initial and goal positions must be distinct.");
 end
 
@@ -275,59 +281,59 @@ endpointDerivatives = [initialState.velocity_units_s, initialState.acceleration_
 isRest              = all(endpointDerivatives == 0);
 needsTimedPlanning  = isDynamic || earliestTarget || ~isRest;
 if options.GoalTimeMode == "earliestArrival" && needsTimedPlanning
-    % A certified zero-delay C3 chord attains the physical travel lower
-    % bound and is globally earliest. A delayed chord is only an incumbent;
-    % the single timed BMTP profile may still find an earlier homotopy.
-    departureCandidate   = struct('Success', false);
-    departureDiagnostics = struct();
-    departureRoute_units = [initialState.position_units; goalState.position_units];
+    % The C3 chord is the retained analytic departure profile. A chord that
+    % certifies with zero departure delay is accepted directly; a delayed
+    % chord is only an incumbent that the single timed BMTP profile may beat.
+    % Each candidate passes the public acceptance gate exactly once, and only
+    % a candidate that passed it can be selected.
+    departureResult   = result;
+    departureAccepted = false;
     if isDynamic && ~earliestTarget && isRest
-        departureSeed = struct('position_units', departureRoute_units, 'tau', [0; 1], 'Source', "departureSchedule");
+        departureRoute_units = [initialState.position_units; goalState.position_units];
+        departureSeed        = struct('position_units', departureRoute_units, 'tau', [0; 1], 'Source', "departureSchedule");
         [departureCandidate, departureDiagnostics] = bmtpEngine.solve( ...
             departureSeed, regions_units, coverage, initialState, goalState, ...
             limits, options);
         if departureCandidate.Success
+            departureResult = obstacleAvoidance.input.finalizeCandidate( ...
+                result, departureCandidate, departureRoute_units, departureDiagnostics);
+            departureResult.VisibilityGraph.SearchKind = "c3DepartureSchedule";
+            departureAccepted = departureResult.Success;
+
             departureDelay_s = 0;
             if isfield(departureDiagnostics, 'DepartureSchedule')
                 departureDelay_s = departureDiagnostics.DepartureSchedule.DepartureDelay_s;
             end
-            if departureDelay_s <= options.ArrivalTimeTolerance_s
-                result = obstacleAvoidance.input.finalizeCandidate( ...
-                    result, departureCandidate, departureRoute_units, ...
-                    departureDiagnostics);
-                result.VisibilityGraph.SearchKind = "c3DepartureSchedule";
-                result.ElapsedTime_s               = toc(totalTimer);
-                if result.Success
-                    return
-                end
+            if departureAccepted && departureDelay_s <= options.ArrivalTimeTolerance_s
+                result               = departureResult;
+                result.ElapsedTime_s = toc(totalTimer);
+                return
+            end
+            if ~departureAccepted
+                % A solver success the public gate rejected is reported to the
+                % later stages as their prior outcome, never reselected.
+                result.Message           = departureResult.Message;
+                result.TerminationReason = departureResult.TerminationReason;
             end
         end
     end
     result.ElapsedTime_s         = toc(totalTimer);
     [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
     if timedAccepted
-        departureIsNoLater = departureCandidate.Success && ...
-            departureCandidate.ArrivalTime_s <= timedResult.ArrivalTime_s + options.ArrivalTimeTolerance_s;
+        departureIsNoLater = departureAccepted && ...
+            departureResult.ArrivalTime_s <= timedResult.ArrivalTime_s + options.ArrivalTimeTolerance_s;
         if departureIsNoLater
-            result = obstacleAvoidance.input.finalizeCandidate( ...
-                result, departureCandidate, departureRoute_units, ...
-                departureDiagnostics);
-            result.VisibilityGraph.SearchKind = "c3DepartureSchedule";
-            result.ElapsedTime_s               = toc(totalTimer);
+            result               = departureResult;
+            result.ElapsedTime_s = toc(totalTimer);
         else
             result = timedResult;
         end
         return
     end
-    if departureCandidate.Success
-        result = obstacleAvoidance.input.finalizeCandidate( ...
-            result, departureCandidate, departureRoute_units, ...
-            departureDiagnostics);
-        result.VisibilityGraph.SearchKind = "c3DepartureSchedule";
-        result.ElapsedTime_s               = toc(totalTimer);
-        if result.Success
-            return
-        end
+    if departureAccepted
+        result               = departureResult;
+        result.ElapsedTime_s = toc(totalTimer);
+        return
     end
     result               = timedResult;
     result.ElapsedTime_s = toc(totalTimer);

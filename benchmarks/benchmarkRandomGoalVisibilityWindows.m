@@ -37,7 +37,7 @@ function [runs, cases, results] = benchmarkRandomGoalVisibilityWindows(requestFi
 
 if nargin < 1 || strlength(string(requestFilePath)) == 0
     repositoryRoot  = fileparts(fileparts(mfilename("fullpath")));
-    requestFilePath = fullfile(repositoryRoot, "RogueCasses", "x-y-request.json");
+    requestFilePath = fullfile(repositoryRoot, "Rogue Cases", "x-y-request.json");
 end
 if nargin < 2 || isempty(caseCount)
     caseCount = 50;

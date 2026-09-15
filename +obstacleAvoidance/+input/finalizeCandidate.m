@@ -39,8 +39,15 @@ goalState = result.Inputs.goalState;
 if candidate.Success && ~isempty(goalState.targetMotion)
     targetMotion  = goalState.targetMotion;
     arrivalTime_s = candidate.ArrivalTime_s;
-    [tgtPosition_units, tgtVel_units_s, tgtAcc_units_s2] = ...
-        obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
+    % Target derivatives are evaluated only when a matching option needs
+    % them: a position-only intercept at a linear target corner is valid.
+    matchesDerivative = result.Options.MatchTargetVelocity || result.Options.MatchTargetAcceleration;
+    if matchesDerivative
+        [tgtPosition_units, tgtVel_units_s, tgtAcc_units_s2] = ...
+            obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
+    else
+        tgtPosition_units = obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
+    end
     result.Intercept = struct( ...
         'Time_s',                     arrivalTime_s, ...
         'TargetPosition_units',       tgtPosition_units, ...
