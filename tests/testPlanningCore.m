@@ -51,6 +51,91 @@ function testDirect(testCase)
     verifyEqual(testCase,r.SolverDiagnostics.Identifier,"minimumJerkQuintic");
 end
 
+function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
+    initial = struct('time_s', 0, 'position_units', [-1, 0]);
+    goal    = struct('time_s', 10, 'position_units', [1, 0]);
+    limits  = struct( ...
+        'xInterval_units',          [-5, 5], ...
+        'yInterval_units',          [-5, 5], ...
+        'maxVelocity_units_s',      [10, 10], ...
+        'maxAcceleration_units_s2', [10, 10], ...
+        'maxJerk_units_s3',         [10, 10]);
+    looseTolerance      = 1e-3;
+    tightTolerance      = 1e-8;
+    crossedTolerances  = [looseTolerance, tightTolerance; tightTolerance, looseTolerance];
+    expectedAcceptance = [false; true];
+    clockOffset_s       = 1e-4;
+    controlPoint_units  = zeros(1, 6, 2);
+    controlPoint_units(1, :, 1) = [-1, -1, -1, 1, 1, 1];
+
+    for settingIndex = 1:size(crossedTolerances, 1)
+        options = struct( ...
+            'GoalTimeMode',          'fixedArrival', ...
+            'ConstraintTolerance',   crossedTolerances(settingIndex, 1), ...
+            'ArrivalTimeTolerance_s', crossedTolerances(settingIndex, 2));
+        baseResult = planner([], initial, goal, limits, options);
+        assertTrue(testCase, baseResult.Success, baseResult.Message);
+        assertTrue(testCase, obstacleAvoidance.validateTrajectory(baseResult).Passed);
+
+        seed = struct( ...
+            'position_units', [initial.position_units; goal.position_units], ...
+            'tau',            [0; 1]);
+        request = bmtpEngine.createSolveRequest(seed, cell(0, 1), struct('Passed', true), ...
+            baseResult.Inputs.initialState, baseResult.Inputs.goalState, ...
+            baseResult.Limits, baseResult.Options);
+        preparedMotion = bmtpEngine.prepareFinalMotion(request, controlPoint_units, ...
+            request.MotionHorizon_s + clockOffset_s);
+        output = createCertifiedOutput(baseResult, request, preparedMotion);
+        validation = obstacleAvoidance.validateTrajectory(output);
+
+        verifyEqual(testCase, preparedMotion.Success, expectedAcceptance(settingIndex));
+        verifyEqual(testCase, validation.Passed, expectedAcceptance(settingIndex));
+    end
+
+    for constraintTolerance = [tightTolerance, looseTolerance]
+        options = struct( ...
+            'GoalTimeMode',          'fixedArrival', ...
+            'ConstraintTolerance',   constraintTolerance, ...
+            'ArrivalTimeTolerance_s', tightTolerance);
+        result = planner([], initial, goal, limits, options);
+        assertTrue(testCase, result.Success, result.Message);
+        result.Inputs.goalState.time_s = result.Polynomial.FinalTime_s + clockOffset_s;
+        validation = obstacleAvoidance.validateTrajectory(result);
+        verifyFalse(testCase, validation.Passed);
+        verifyFalse(testCase, validation.EndpointStatesMatched);
+
+        if constraintTolerance == looseTolerance
+            altered = result;
+            altered.Polynomial.FinalTime_s = altered.Polynomial.FinalTime_s + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SegmentTimingConsistent);
+
+            altered = result;
+            altered.Polynomial.SegmentStartTime_s(1) = ...
+                altered.Polynomial.SegmentStartTime_s(1) + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SegmentTimingConsistent);
+            verifyFalse(testCase, validation.EndpointStatesMatched);
+
+            altered           = result;
+            altered.time_s(1) = altered.time_s(1) + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SampledHistoriesMatched);
+
+            altered             = result;
+            altered.time_s(end) = altered.time_s(end) - clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SampledHistoriesMatched);
+
+            altered = result;
+            altered.Inputs.initialState.time_s = ...
+                altered.Inputs.initialState.time_s + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.PlaneCertificateValid);
+        end
+    end
+end
+
 function testC3ChordDropsRoundoffZeroPhases(testCase)
     % A regime-boundary hold can evaluate to a positive 1e-16-second
     % remnant. It must not become the smoothing kernel and erase the chord.
@@ -211,4 +296,14 @@ function testReflectedAndTranslatedConcavities(testCase)
             end
         end
     end
+end
+
+function output = createCertifiedOutput(baseResult, request, preparedMotion)
+    % Build an adversarial validator fixture without stale planner decisions.
+    reserve_units = baseResult.PlaneCertificate.RoundoffReserve_units;
+    target_units  = baseResult.PlaneCertificate.RequiredGap_units - reserve_units;
+    output = rmfield(baseResult, {'Validation', 'SolverDiagnostics', 'PlaneCertificate'});
+    output = bmtpEngine.createMotionOutput(output, request, preparedMotion);
+    output.PlaneCertificate = bmtpEngine.checkFinalMotion( ...
+        request, preparedMotion, reserve_units, target_units);
 end

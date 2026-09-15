@@ -10,6 +10,8 @@ function validation = validateTrajectory(result)
 % INPUTS
 %   - result (scalar struct)
 %       Public planner result record to check independently of the planner.
+%       ArrivalTimeTolerance_s bounds comparisons in seconds;
+%       ConstraintTolerance bounds coordinates, derivatives, and algebraic residuals.
 %**************************************************************************
 % OUTPUTS
 %   - validation (scalar struct)
@@ -122,11 +124,12 @@ if ~polynomialIsValid
     return
 end
 
+timeTolerance_s     = result.Options.ArrivalTimeTolerance_s;
 tolerance           = result.Options.ConstraintTolerance;
 expectedStartTime_s = segmentStartTime_s(1) + [0; cumsum(duration_s(1:end - 1))];
 timingResidual_s    = max(abs([segmentStartTime_s - expectedStartTime_s; ...
     polynomial.FinalTime_s - segmentStartTime_s(1) - sum(duration_s)]));
-validation.SegmentTimingConsistent = timingResidual_s <= tolerance;
+validation.SegmentTimingConsistent = timingResidual_s <= timeTolerance_s;
 
 dynamicsResidual = zeros(0, 1);
 for derivativeOrder = 0:2
@@ -201,12 +204,12 @@ terminalPolynomialState = [sum(reshape(powerArrays{1}(end, :, :), 2, []), 2).', 
 expectedEndpointState = [initialState.position_units initialState.velocity_units_s ...
     initialState.acceleration_units_s2 goalState.position_units ...
     goalState.velocity_units_s goalState.acceleration_units_s2];
-timeMatched = abs(polynomial.SegmentStartTime_s(1) - initialState.time_s) <= tolerance;
+timeMatched = abs(polynomial.SegmentStartTime_s(1) - initialState.time_s) <= timeTolerance_s;
 if result.Options.GoalTimeMode == "fixedArrival"
     timeMatched = timeMatched && ...
-        abs(polynomial.FinalTime_s - goalState.time_s) <= result.Options.ArrivalTimeTolerance_s;
+        abs(polynomial.FinalTime_s - goalState.time_s) <= timeTolerance_s;
 else
-    timeMatched = timeMatched && polynomial.FinalTime_s <= goalState.time_s + result.Options.ArrivalTimeTolerance_s;
+    timeMatched = timeMatched && polynomial.FinalTime_s <= goalState.time_s + timeTolerance_s;
 end
 
 metadataFields       = {'TerminalState'};
@@ -219,8 +222,8 @@ if metadataIsConsistent
     metadataIsConsistent = max(abs(terminalState - terminalPolynomialState)) <= tolerance;
 end
 metadataIsConsistent = metadataIsConsistent && ...
-    abs(result.ArrivalTime_s - polynomial.FinalTime_s) <= result.Options.ArrivalTimeTolerance_s && ...
-    abs(result.TrajectoryDuration_s - sum(duration_s)) <= result.Options.ArrivalTimeTolerance_s;
+    abs(result.ArrivalTime_s - polynomial.FinalTime_s) <= timeTolerance_s && ...
+    abs(result.TrajectoryDuration_s - sum(duration_s)) <= timeTolerance_s;
 if isfield(result, 'SuppliedLimits')
     for limitName = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"]
         suppliedLimit = result.RequestedLimits.(limitName);
@@ -240,7 +243,7 @@ end
 % that clock here and against the outer horizon above.
 if isfield(result, 'FixedArrivalTrialTime_s')
     metadataIsConsistent = metadataIsConsistent && ...
-        abs(result.FixedArrivalTrialTime_s - polynomial.FinalTime_s) <= result.Options.ArrivalTimeTolerance_s;
+        abs(result.FixedArrivalTrialTime_s - polynomial.FinalTime_s) <= timeTolerance_s;
 end
 
 % A wrapped axis is planned inside the reach band of the whole request.
@@ -303,7 +306,7 @@ if isfield(goalState, 'targetMotion') && ~isempty(goalState.targetMotion)
         max(abs(result.Inputs.goalState.acceleration_units_s2 - goalState.acceleration_units_s2)) <= tolerance;
     metadataIsConsistent = metadataIsConsistent && ...
         max(abs(result.Intercept.TargetPosition_units - goalState.position_units)) <= tolerance && ...
-        abs(result.Intercept.Time_s - polynomial.FinalTime_s) <= result.Options.ArrivalTimeTolerance_s;
+        abs(result.Intercept.Time_s - polynomial.FinalTime_s) <= timeTolerance_s;
 end
 validation.OutputMetadataConsistent = metadataIsConsistent;
 validation.EndpointStatesMatched    = timeMatched && ...
@@ -315,8 +318,8 @@ validation.EndpointStatesMatched    = timeMatched && ...
     bmtpEngine.evaluatePolynomial(polynomial, result.time_s);
 historyMatches = ~isempty(result.time_s) && all(isfinite(result.time_s)) && ...
     all(diff(result.time_s) > 0) && ...
-    abs(result.time_s(1) - segmentStartTime_s(1)) <= tolerance && ...
-    abs(result.time_s(end) - polynomial.FinalTime_s) <= tolerance && ...
+    abs(result.time_s(1) - segmentStartTime_s(1)) <= timeTolerance_s && ...
+    abs(result.time_s(end) - polynomial.FinalTime_s) <= timeTolerance_s && ...
     isequal(size(position_units), size(result.position_units)) && ...
     isequal(size(velocity_units_s), size(result.velocity_units_s)) && ...
     isequal(size(acceleration_units_s2), size(result.acceleration_units_s2)) && ...
@@ -384,7 +387,7 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
     motionEnd_s            = result.Polynomial.FinalTime_s;
     coverageExcludesMotion = ~(isnumeric(coverageEnd_s) && isscalar(coverageEnd_s) && isfinite(coverageEnd_s)) || ...
         coverageEnd_s < motionEnd_s - result.Options.ArrivalTimeTolerance_s || ...
-        result.Inputs.initialState.time_s > motionStart_s + result.Options.ConstraintTolerance;
+        result.Inputs.initialState.time_s > motionStart_s + result.Options.ArrivalTimeTolerance_s;
     if coverageExcludesMotion
         certificateIsValid = false;
         return

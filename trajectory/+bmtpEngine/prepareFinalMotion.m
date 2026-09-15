@@ -13,6 +13,9 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 % INPUTS
 %   - request (scalar struct)
 %       Checked BMTP request, limits, horizon, and goal-time policy.
+%       ArrivalTimeTolerance_s bounds horizon feasibility. ConstraintTolerance
+%       is not used here; endpoint projection uses the larger of collision
+%       clearance and one part per million of the curve coordinate scale.
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Selected composite Bezier control points.
 %   - segmentTime_s (positive finite numeric vector)
@@ -131,7 +134,8 @@ coordinateScale_units        = max(1, max(abs(controlPoint_units), [], 'all'));
 projectionTolerance_units    = max(request.Options.CollisionClearanceTolerance_units, 1e-6 * coordinateScale_units);
 projectionDisplacement_units = exportPolynomial.ContinuityProjectionDisplacement_units;
 projectionRepairsMotion      = projectionDisplacement_units > projectionTolerance_units;
-horizonIsFeasible            = minimumDuration_s <= request.MotionHorizon_s + request.Options.ConstraintTolerance;
+horizonIsFeasible            = minimumDuration_s <= request.MotionHorizon_s + ...
+    request.Options.ArrivalTimeTolerance_s;
 success                      = horizonIsFeasible && ~projectionRepairsMotion;
 message                      = "";
 terminationReason            = "";
