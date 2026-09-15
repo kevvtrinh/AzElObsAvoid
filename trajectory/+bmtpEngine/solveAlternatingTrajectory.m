@@ -90,19 +90,18 @@ if allPlanesActive
             ~isempty(output.MaximumClearanceSlack_units) && ...
             output.MaximumClearanceSlack_units + ...
             max(0, output.MaximumPlaneConstraintResidual) <= roundoffReserve_units;
+        [updatedPlanes, ~, verifiedPairs, diagnostics, verifiedPairCount] = ...
+            updatePlanes(trialControl_units, trialTime_s, planes, request, ...
+            diagnostics, obstacleTarget_units, roundoffReserve_units, true);
         if rowProofComplete
             % Every plane's obstacle side was fixed and certified when it was
             % constructed. Zero-reserve elastic slack plus complete exact row
             % separation proves the trajectory side for every pair directly.
-            updatedPlanes     = planes;
-            verifiedPairs     = true(size(request.RegionActiveBySegment));
-            verifiedPairCount = nnz(request.RegionActiveBySegment);
+            % Refresh the stored gap on this returned curve without solving a
+            % new separating-line problem.
             diagnostics.ConstraintRowPairVerificationCount = ...
                 diagnostics.ConstraintRowPairVerificationCount + verifiedPairCount;
         else
-            [updatedPlanes, ~, verifiedPairs, diagnostics, verifiedPairCount] = ...
-                updatePlanes(trialControl_units, trialTime_s, planes, request, ...
-                diagnostics, obstacleTarget_units, roundoffReserve_units, true);
             diagnostics.ExistingPlanePairVerificationCount = ...
                 diagnostics.ExistingPlanePairVerificationCount + verifiedPairCount;
         end
@@ -116,7 +115,6 @@ if allPlanesActive
         end
         planes = updatedPlanes;
         unverifiedPairCount = nnz(~verifiedPairs);
-        duration_s = sum(trialTime_s);
         diagnostics.FinalCollisionPairCount = unverifiedPairCount;
         if ~allPlanesActive
             solverMessage = "A complete separating-line update failed.";
@@ -154,7 +152,6 @@ if allPlanesActive
 
         selectedControl_units       = trialControl_units;
         selectedSegmentTime_s       = trialTime_s;
-        diagnostics.BestDuration_s = duration_s;
         diagnostics.Converged      = output.OptimizationConverged;
         solverMessage              = "A complete all-pair-verified iterate was found.";
         break;

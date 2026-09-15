@@ -39,28 +39,29 @@ segmentRatio = warmStart.SegmentRatio(:);
 emptyPlane   = bmtpEngine.createEmptyPlane();
 planes       = repmat(emptyPlane, segmentCount, numel(request.Regions_units));
 
-selectedControl_units = zeros(0, request.Degree + 1, 2);
-selectedSegmentTime_s = NaN;
-selectedPlanes        = planes;
-selectedPairs         = false(size(planes));
-selectedPairCount     = 0;
-previousFailedPairs   = false(size(planes));
-solverMessage         = "The time-scoped alternating iteration limit was reached.";
-
-trajectoryOptions = optimoptions("coneprog", "Display", "none", ...
-    "MaxIterations", 300);
-diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
+selectedControl_units      = zeros(0, request.Degree + 1, 2);
+selectedSegmentTime_s      = NaN;
+selectedPlanes             = planes;
+selectedPairs              = false(size(planes));
+selectedPairCount          = 0;
+selectedCollisionPairCount = 0;
+selectedSolverMessage      = "";
+previousFailedPairs        = false(size(planes));
+lastAttemptMessage         = "The time-scoped alternating iteration limit was reached.";
+diagnostics.ConicSolver    = bmtpEngine.accumulateConicDiagnostics();
 
 % Establish the exact moving corridor at the timed guide's physical clock.
 % An unconstrained first solve would collapse to a straight collision path
 % before the alternating method had any obstacle planes to retain.
-[planes, activePairs, complete, planeStatistics] = ...
+[planes, ~, complete] = ...
     bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
-diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
 if ~complete
-    diagnostics.TaggedPairCount = 0;
-    diagnostics.SolverMessage   = "The timed visibility guide could not initialize its exact corridor.";
+    diagnostics.ApplicablePairCount     = 0;
+    diagnostics.FinalCollisionPairCount = 0;
+    diagnostics.TaggedPairCount         = 0;
+    diagnostics.SolverMessage           = "The timed visibility guide could not initialize its exact corridor.";
+    diagnostics.LastAttemptMessage      = diagnostics.SolverMessage;
     result = struct('Success', false, 'SolverMessage', diagnostics.SolverMessage, ...
         'ControlPoint_units', selectedControl_units, ...
         'SegmentTime_s',      selectedSegmentTime_s, ...
@@ -68,24 +69,23 @@ if ~complete
         'TaggedPairs',        selectedPairs);
     return
 end
-selectedPairs      = activePairs;
 previousDuration_s = warmStart.Duration_s;
 
 %% Section 2: Solve And Rebuild Constraints On Every Returned Clock
-for iterationIndex = 1:35
+for iterationIndex = 1:request.MaximumAlternatingIterations
     diagnostics.IterationCount = iterationIndex;
     trajectoryGoalTimeMode     = request.Options.GoalTimeMode;
     [trialControl_units, trialSegmentTime_s, exitFlag, output] = ...
         bmtpEngine.solveTimedTrajectoryStep(segmentCount, request.Degree, ...
         request.InitialState.position_units, request.GoalState.position_units, ...
         request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, ...
-        trajectoryGoalTimeMode, trajectoryOptions, request.MinimumMotionDuration_s, ...
+        trajectoryGoalTimeMode, request.TimedTrajectoryOptions, request.MinimumMotionDuration_s, ...
         segmentRatio);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver, output);
     if ~bmtpEngine.hasUsableConicIterate(trialControl_units, exitFlag)
-        solverMessage = "Trajectory SOCP failed: " + string(output.message);
+        lastAttemptMessage = "Trajectory SOCP failed: " + string(output.message);
         break
     end
 
@@ -99,7 +99,6 @@ for iterationIndex = 1:35
     failedPairs = ~reshape([trialCertificate.Planes.Verified], ...
         size(trialCertificate.Planes)) & trialCertificate.RegionActiveBySegment;
     collisionFree = ~any(failedPairs, 'all');
-    diagnostics.FinalCollisionPairCount = nnz(failedPairs);
 
     trialIsFullyCertified = collisionFree && trialCertificate.WorkspacePassed && ...
         trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed;
@@ -107,12 +106,11 @@ for iterationIndex = 1:35
         % The exact planes of this feasible iterate constrain the next solve.
         % They become the returned planes only if the iterate is retained, so
         % the returned planes and mask always describe the returned motion.
-        [trialPlanes, trialPairs, complete, planeStatistics] = ...
+        [trialPlanes, trialPairs, complete] = ...
             bmtpEngine.createTimeScopedPlanes(trialControl_units, ...
             trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
-        diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
         if ~complete
-            solverMessage = "The feasible timed motion did not produce a complete exact plane set.";
+            lastAttemptMessage = "The feasible timed motion did not produce a complete exact plane set.";
             break
         end
         previousFeasibleDuration_s = Inf;
@@ -124,35 +122,40 @@ for iterationIndex = 1:35
             selectedSegmentTime_s      = trialSegmentTime_s;
             selectedPlanes             = trialPlanes;
             selectedPairs              = trialPairs;
-            selectedPairCount          = planeStatistics.ActivePairCount;
-            diagnostics.BestDuration_s = duration_s;
+            selectedPairCount          = nnz(trialPairs);
+            selectedCollisionPairCount = nnz(failedPairs);
+            selectedSolverMessage      = "A complete time-scoped feasible iterate was retained.";
         end
         diagnostics.Converged = output.OptimizationConverged;
         arrivalImprovementReachedTolerance = ...
             previousFeasibleDuration_s - duration_s <= request.Options.ArrivalTimeTolerance_s;
         if arrivalImprovementReachedTolerance
-            solverMessage = "The feasible arrival improvement reached tolerance.";
+            if duration_s < previousFeasibleDuration_s
+                selectedSolverMessage = "The feasible arrival improvement reached tolerance.";
+                lastAttemptMessage    = selectedSolverMessage;
+            else
+                lastAttemptMessage = ...
+                    "A later feasible trial did not improve the retained duration within tolerance.";
+            end
             break
         end
         planes              = trialPlanes;
         previousDuration_s  = duration_s;
         previousFailedPairs = false(size(failedPairs));
-        solverMessage       = "A complete time-scoped feasible iterate was retained.";
         continue
     end
 
-    [planes, ~, complete, planeStatistics] = ...
+    [planes, ~, complete] = ...
         bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
         trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
-    diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
     if ~complete
-        solverMessage = "The timed visibility guide could not initialize every exact clock pair.";
+        lastAttemptMessage = "The timed visibility guide could not initialize every exact clock pair.";
         break
     end
     unchangedClock = abs(duration_s - previousDuration_s) <= ...
         request.Options.ArrivalTimeTolerance_s;
     if unchangedClock && isequal(failedPairs, previousFailedPairs)
-        solverMessage = "The exact timed pair set stopped changing before feasibility.";
+        lastAttemptMessage = "The exact timed pair set stopped changing before feasibility.";
         break
     end
     previousDuration_s  = duration_s;
@@ -163,10 +166,17 @@ end
 
 % A returned motion carries the pair count of its own exact planes.
 if ~isempty(selectedControl_units)
-    diagnostics.ApplicablePairCount = selectedPairCount;
+    diagnostics.ApplicablePairCount     = selectedPairCount;
+    diagnostics.FinalCollisionPairCount = selectedCollisionPairCount;
+    solverMessage                       = selectedSolverMessage;
+else
+    diagnostics.ApplicablePairCount     = 0;
+    diagnostics.FinalCollisionPairCount = 0;
+    solverMessage                       = lastAttemptMessage;
 end
-diagnostics.TaggedPairCount = nnz(selectedPairs);
-diagnostics.SolverMessage   = solverMessage;
+diagnostics.TaggedPairCount    = nnz(selectedPairs);
+diagnostics.SolverMessage      = solverMessage;
+diagnostics.LastAttemptMessage = lastAttemptMessage;
 result = struct('Success', ~isempty(selectedControl_units), ...
     'SolverMessage',      solverMessage, ...
     'ControlPoint_units', selectedControl_units, ...
