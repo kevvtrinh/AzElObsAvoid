@@ -100,14 +100,16 @@ roundoff tolerance. Failure discards the candidate geometry and records
 shrink protection, or replace the samples. Unequal original counts or an
 unavailable single-ring source map also remain unsupported.
 
-Vertex correspondence between samples is declared per obstacle in
-`vertexCorrespondence`. `circularCorrelation` (the default of the generic
-constructor) recovers a cyclic shift and orientation by centered, scaled
-circular correlation. `sourceIndex` states that every sample is one source
-ring under the caller's transform, so vertices correspond by index;
-`createMovingObstacle` declares it, because correlation can undo a rotation
-by a cyclic index shift and thereby describe a motion the caller did not
-supply. The declaration never changes geometry.
+Vertex correspondence between samples is reported per obstacle in
+`vertexCorrespondence`. The generic constructor normalizes that declaration
+into the logical `UsesSourceIndex` field consumed by preparation. It defaults to
+reported `circularCorrelation`, which recovers a cyclic shift and orientation by
+centered, scaled circular correlation. `createMovingObstacle` passes reported
+`sourceIndex` into the generic constructor before normalization because every
+sample is one source ring under the caller's transform. Its returned public
+record therefore reports `sourceIndex` and has `UsesSourceIndex` true. This
+prevents correlation from undoing a supplied rotation by a cyclic index shift.
+The retained name reports provenance and does not select later behavior.
 
 For a certified swept interval, cells are static over its absolute active
 interval, interior point queries return their union and union-boundary edges,
@@ -134,6 +136,12 @@ complete span; its restrictions certify every constituent interval with the
 same partition. A span without that certificate is not merged. The supplied
 sample geometry remains authoritative at each retained sample time.
 
+`IntervalGeometryModel` retains the reported model name. Preparation also emits
+`IntervalHasExactPartition`, `IntervalIsStationary`, `IntervalUsesSweptCells`,
+and `IntervalIsUnsupported`; geometry, search, and planner branches consume
+those logical facts rather than the reported name. Exact partition consumers
+read `IntervalStartRegions_units` and `IntervalEndRegions_units`.
+
 `MergedSpanTime_s` and `MergedIntervalCount` expose the preparation-only
 reduction. `RejectedMergeSpanSampleIndex` records spans
 without a shared exact partition. Cells use certified span boundaries and
@@ -158,8 +166,8 @@ prepare their requested times; internal prepared queries reject missing
 coverage. Planning, validation, and plotting request their physical window;
 independent validation rebuilds preparation from source geometry.
 
-Generic single-ring correspondence (`vertexCorrespondence` equal to
-`circularCorrelation`) uses centered, scaled circular correlation in both
+Generic single-ring correspondence (reported as `circularCorrelation`) uses
+centered, scaled circular correlation in both
 orientations, with O(N log N) alignment work; a declared `sourceIndex`
 correspondence skips alignment. Numerically tied shifts
 are selected at a fixed physical anchor so cyclic starting indices do not

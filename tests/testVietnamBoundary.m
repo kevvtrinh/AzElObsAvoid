@@ -54,6 +54,9 @@ function testExactDeformationIsNeverReplacedByAConvexHull(testCase)
     prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[initial.time_s,goal.time_s]);
     models=prepared.InternalPreparation.IntervalGeometryModel;
     verifyEqual(testCase,models,repmat("linearCorrespondingConvexPartition",920,1));
+    verifyTrue(testCase,all(prepared.InternalPreparation.IntervalHasExactPartition));
+    verifyFalse(testCase,any(prepared.InternalPreparation.IntervalUsesSweptCells));
+    verifyFalse(testCase,any(prepared.InternalPreparation.IntervalIsUnsupported));
     verifyFalse(testCase,any(contains(models,"ConvexHull",'IgnoreCase',true)));
     cells=obstacleAvoidance.obstacles.createTimeCells(prepared,2770,3000);
     verifyEqual(testCase,unique(cells.ActiveTimeInterval_s,'rows'),[2770,2910;2910,3000]);

@@ -206,8 +206,7 @@ for obstacleIndex = 1:numel(preparedObstacles)
     preparation    = preparedObstacles(obstacleIndex).InternalPreparation;
     obstacleTime_s = preparedObstacles(obstacleIndex).time_s;
 
-    intervalIsUnsupported   = preparation.IntervalPrepared & ...
-        preparation.IntervalGeometryModel == "unsupportedContinuousDeformation";
+    intervalIsUnsupported   = preparation.IntervalPrepared & preparation.IntervalIsUnsupported;
     intervalOverlapsRequest = obstacleTime_s(1:end-1) < requestedInterval_s(2) & ...
         obstacleTime_s(2:end) > requestedInterval_s(1);
 

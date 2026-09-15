@@ -39,7 +39,7 @@ for obstacleIndex = 1:numel(obstacles)
     end
     regions_units = cell(0, 1);
     if includeConvexRegions
-        if geometry.GeometryModel == "sweptCorrespondingConvexCells"
+        if geometry.UsesSweptCells
             regions_units = obstacles(obstacleIndex).InternalPreparation.IntervalStartRegions_units{geometry.LowerSampleIndex};
         else
             regions_units = obstacleAvoidance.geometry.convexRegions(shape);

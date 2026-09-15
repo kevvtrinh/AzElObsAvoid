@@ -45,7 +45,7 @@ obstacles = obstacleAvoidance.obstacles.canonicalizeObstacles(obstacles);
 if isempty(obstacles)
     return;
 end
-preparationVersion = 10;
+preparationVersion = 11;
 
 %% Section 2: Extend Only The Requested Entries
 
@@ -94,5 +94,5 @@ function snapshot = createSourceSnapshot(obstacle)
         "originalY_units",      {obstacle.originalY_units}, ...
         "safetyMargin_units",   obstacle.safetyMargin_units, ...
         "status",               obstacle.status, ...
-        "vertexCorrespondence", string(obstacle.vertexCorrespondence));
+        "UsesSourceIndex",      obstacle.UsesSourceIndex);
 end

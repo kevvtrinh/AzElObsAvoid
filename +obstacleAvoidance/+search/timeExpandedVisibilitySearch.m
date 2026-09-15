@@ -624,8 +624,7 @@ function [shapes, starts_units, ends_units, active_s, cells] = ...
     for obstacleIndex = 1:numel(obstacles)
         obstacle    = obstacles(obstacleIndex);
         preparation = obstacle.InternalPreparation;
-        sweptIntervalIndices = find( ...
-            preparation.IntervalGeometryModel == "sweptCorrespondingConvexCells");
+        sweptIntervalIndices = find(preparation.IntervalUsesSweptCells);
         for intervalIndex = reshape(sweptIntervalIndices, 1, [])
             interval_s = obstacle.time_s(intervalIndex:intervalIndex + 1).';
             cellIsSelected = cells.SourceObstacleIndex == obstacleIndex & ...
