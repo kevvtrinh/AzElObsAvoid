@@ -43,6 +43,7 @@ selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 selectedPlanes        = planes;
 selectedPairs         = false(size(planes));
+selectedPairCount     = 0;
 previousFailedPairs   = false(size(planes));
 solverMessage         = "The time-scoped alternating iteration limit was reached.";
 
@@ -103,7 +104,10 @@ for iterationIndex = 1:35
     trialIsFullyCertified = collisionFree && trialCertificate.WorkspacePassed && ...
         trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed;
     if trialIsFullyCertified
-        [selectedPlanes, selectedPairs, complete, planeStatistics] = ...
+        % The exact planes of this feasible iterate constrain the next solve.
+        % They become the returned planes only if the iterate is retained, so
+        % the returned planes and mask always describe the returned motion.
+        [trialPlanes, trialPairs, complete, planeStatistics] = ...
             bmtpEngine.createTimeScopedPlanes(trialControl_units, ...
             trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
         diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
@@ -116,8 +120,11 @@ for iterationIndex = 1:35
             previousFeasibleDuration_s = sum(selectedSegmentTime_s);
         end
         if duration_s < previousFeasibleDuration_s
-            selectedControl_units       = trialControl_units;
-            selectedSegmentTime_s       = trialSegmentTime_s;
+            selectedControl_units      = trialControl_units;
+            selectedSegmentTime_s      = trialSegmentTime_s;
+            selectedPlanes             = trialPlanes;
+            selectedPairs              = trialPairs;
+            selectedPairCount          = planeStatistics.ActivePairCount;
             diagnostics.BestDuration_s = duration_s;
         end
         diagnostics.Converged = output.OptimizationConverged;
@@ -127,15 +134,14 @@ for iterationIndex = 1:35
             solverMessage = "The feasible arrival improvement reached tolerance.";
             break
         end
-        planes              = selectedPlanes;
-        selectedPairs       = activePairs;
+        planes              = trialPlanes;
         previousDuration_s  = duration_s;
         previousFailedPairs = false(size(failedPairs));
         solverMessage       = "A complete time-scoped feasible iterate was retained.";
         continue
     end
 
-    [planes, activePairs, complete, planeStatistics] = ...
+    [planes, ~, complete, planeStatistics] = ...
         bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
         trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
     diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
@@ -151,10 +157,14 @@ for iterationIndex = 1:35
     end
     previousDuration_s  = duration_s;
     previousFailedPairs = failedPairs;
-    selectedPairs       = activePairs;
 end
 
 %% Section 3: Return Only A Clock-Consistent Feasible Iterate
+
+% A returned motion carries the pair count of its own exact planes.
+if ~isempty(selectedControl_units)
+    diagnostics.ApplicablePairCount = selectedPairCount;
+end
 diagnostics.TaggedPairCount = nnz(selectedPairs);
 diagnostics.SolverMessage   = solverMessage;
 result = struct('Success', ~isempty(selectedControl_units), ...
