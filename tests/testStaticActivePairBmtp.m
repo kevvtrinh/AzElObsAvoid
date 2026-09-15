@@ -111,25 +111,26 @@ function testReturnedActivePlanesCertifyReturnedControls(testCase)
     verifyEqual(testCase, diagnostics.FinalCollisionPairCount, 0);
 end
 
-function testRowProofRefreshesReturnedSignedGaps(testCase)
+function testRowProofReturnsPlanesThatCertifyReturnedControls(testCase)
+    % The constraint-row proof accepts a motion without per-pair verification;
+    % every returned plane must still separate the returned controls exactly.
     [request, warmStart, diagnostics, target_units, reserve_units] = ...
         createStaticAlternatingFixture("fixedArrival");
     [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
         request, warmStart, diagnostics, target_units, reserve_units);
     verifyTrue(testCase, result.Success, result.SolverMessage);
     verifyGreaterThan(testCase, diagnostics.ConstraintRowPairVerificationCount, 0);
+    verifyEqual(testCase, diagnostics.ExistingPlanePairVerificationCount, 0);
+    verifyEqual(testCase, diagnostics.FinalCollisionPairCount, 0);
     activePairs = reshape([result.Planes.Active], size(result.Planes));
-    gapTolerance_units = request.Options.ConstraintTolerance;
+    verifyEqual(testCase, result.TaggedPairs, activePairs);
     for pairIndex = reshape(find(activePairs), 1, [])
         [segmentIndex, regionIndex] = ind2sub(size(result.TaggedPairs), pairIndex);
         checkedPlane = bmtpEngine.verifySeparatingLine( ...
             result.Planes(segmentIndex, regionIndex), ...
             squeeze(result.ControlPoint_units(segmentIndex, :, :)), ...
             request.Regions_units{regionIndex}, reserve_units, target_units);
-        % The repeated certificate check may differ within the shared solver tolerance.
-        verifyEqual(testCase, checkedPlane.SignedGap_units, ...
-            result.Planes(segmentIndex, regionIndex).SignedGap_units, ...
-            'AbsTol', gapTolerance_units);
+        verifyTrue(testCase, checkedPlane.Verified);
     end
 end
 

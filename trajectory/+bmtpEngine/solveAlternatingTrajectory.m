@@ -24,9 +24,13 @@ function [result, diagnostics] = solveAlternatingTrajectory( ...
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Best all-pair-verified controls and per-segment durations. An expected
-%       infeasible solve returns Success = false with empty controls. Invalid
-%       input throws an error.
+%       Best all-pair-verified controls and per-segment durations, with the
+%       constraint planes the returned motion satisfied. A plane's gap is the
+%       one measured when it was built or last verified; a motion accepted by
+%       the constraint-row proof keeps those planes unchanged, and the final
+%       motion is certified again independently. An expected infeasible solve
+%       returns Success = false with empty controls. Invalid input throws an
+%       error.
 %   - diagnostics (scalar struct)
 %       Solver counts, residual pair counts, and termination data.
 %**************************************************************************
@@ -90,18 +94,21 @@ if allPlanesActive
             ~isempty(output.MaximumClearanceSlack_units) && ...
             output.MaximumClearanceSlack_units + ...
             max(0, output.MaximumPlaneConstraintResidual) <= roundoffReserve_units;
-        [updatedPlanes, ~, verifiedPairs, diagnostics, verifiedPairCount] = ...
-            updatePlanes(trialControl_units, trialTime_s, planes, request, ...
-            diagnostics, obstacleTarget_units, roundoffReserve_units, true);
         if rowProofComplete
             % Every plane's obstacle side was fixed and certified when it was
             % constructed. Zero-reserve elastic slack plus complete exact row
-            % separation proves the trajectory side for every pair directly.
-            % Refresh the stored gap on this returned curve without solving a
-            % new separating-line problem.
+            % separation proves the trajectory side for every pair directly,
+            % so no per-pair verification runs and the planes keep the gaps
+            % measured on the curve they were built from.
+            updatedPlanes     = planes;
+            verifiedPairs     = true(size(request.RegionActiveBySegment));
+            verifiedPairCount = nnz(request.RegionActiveBySegment);
             diagnostics.ConstraintRowPairVerificationCount = ...
                 diagnostics.ConstraintRowPairVerificationCount + verifiedPairCount;
         else
+            [updatedPlanes, ~, verifiedPairs, diagnostics, verifiedPairCount] = ...
+                updatePlanes(trialControl_units, trialTime_s, planes, request, ...
+                diagnostics, obstacleTarget_units, roundoffReserve_units, true);
             diagnostics.ExistingPlanePairVerificationCount = ...
                 diagnostics.ExistingPlanePairVerificationCount + verifiedPairCount;
         end
