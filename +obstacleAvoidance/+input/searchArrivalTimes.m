@@ -3,6 +3,8 @@ function result = searchArrivalTimes(previous)
 % SYNTAX: result = obstacleAvoidance.input.searchArrivalTimes(previous)
 % PURPOSE: Search declared chronological fixed-arrival trials without assuming
 %   monotone feasibility or inserting a stationary wait at the initial state.
+%   Each trial is planned on its own clock and accepted against the outer
+%   request inside the planner's one acceptance gate.
 % INPUTS: Public result containing the original request and any valid incumbent.
 % OUTPUTS: Independently valid candidate or honest exhausted-search outcome;
 %   TemporalSearch records trial times, results, and unsearched intervals.
@@ -42,6 +44,11 @@ times_s = unique([start_s+(firstStep:lastStep)'*resolution_s;boundaries_s]);
 times_s = times_s(times_s>initial.time_s & times_s>=earliest_s-options.ArrivalTimeTolerance_s & times_s<=horizon_s);
 times_s = times_s(1:min(numel(times_s),options.MaxArrivalTrials));
 options.GoalTimeMode = "fixedArrival";
+outerRequest = struct('SuppliedLimits',previous.SuppliedLimits, ...
+    'SuppliedGoalState',previous.SuppliedGoalState, ...
+    'RequestedGoalState',previous.RequestedGoalState, ...
+    'GoalTime_s',previous.Inputs.goalState.time_s, ...
+    'GoalTimeMode',previous.Options.GoalTimeMode);
 reasons = strings(numel(times_s),1);
 result = previous;
 selectedTrial = false;
@@ -52,7 +59,7 @@ for k = 1:numel(times_s)
     trialGoal = goal; trialGoal.time_s = times_s(k);
     tried = k;
     try
-        candidate = planner(previous.PreparedObstacles,initial,trialGoal,previous.RequestedLimits,options);
+        candidate = planner(previous.PreparedObstacles,initial,trialGoal,previous.RequestedLimits,options,outerRequest);
         candidate.Inputs.obstacles = previous.Inputs.obstacles;
     catch exception
         if any(string(exception.identifier)==["planner:UndefinedTargetDerivative","planTrajectory:CoincidentEndpoints"])
@@ -76,15 +83,7 @@ result.TemporalSearch = struct('Resolution_s',resolution_s, ...
     'RetainedIncumbent',previous.Success && ~selectedTrial, ...
     'PriorTerminationReason',previous.TerminationReason);
 if selectedTrial
-    result.SuppliedLimits = previous.SuppliedLimits;
-    result.SuppliedGoalState = previous.SuppliedGoalState;
-    result.RequestedGoalState = previous.RequestedGoalState;
-    result.FixedArrivalTrialTime_s = result.ArrivalTime_s;
-    result.Inputs.goalState.time_s = previous.Inputs.goalState.time_s;
-    result.Options.GoalTimeMode = "earliestArrival";
     result.Message = "A chronological fixed-arrival trial passed independent validation; earlier gaps remain unsearched.";
-    result.Validation = obstacleAvoidance.validateTrajectory(result);
-    result.Success = result.Validation.Passed;
 elseif ~result.Success
     result.TerminationReason = "arrivalSearchExhausted";
     result.Message = "No declared arrival trial was certified. Unsearched times and solver failures do not prove infeasibility.";

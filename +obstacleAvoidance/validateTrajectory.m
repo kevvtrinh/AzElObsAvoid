@@ -159,20 +159,26 @@ if isfield(result,'SuppliedLimits')
         metadata = metadata && isequal(reshape(supplied,1,[]),result.Limits.(name));
     end
 end
+% A fixed-arrival trial accepted for an earliest-arrival request was
+% planned on its declared trial clock: its periodic reach and its final
+% time are checked against that clock, and its final time against the
+% outer horizon above.
+clockEnd_s = goalState.time_s;
+if isfield(result,'FixedArrivalTrialTime_s')
+    clockEnd_s = result.FixedArrivalTrialTime_s;
+    metadata = metadata && abs(result.FixedArrivalTrialTime_s-polynomial.FinalTime_s)<=result.Options.ArrivalTimeTolerance_s;
+end
 if isfield(result,'RequestedLimits')
     for name = ["xInterval_units","yInterval_units"]
         axis = 1+(name=="yInterval_units");
         expectedInterval = result.RequestedLimits.(name);
         wrapAxes = [result.Options.WrapX,result.Options.WrapY];
         if wrapAxes(axis)
-            reach = result.Limits.maxVelocity_units_s(axis)*(goalState.time_s-initialState.time_s);
+            reach = result.Limits.maxVelocity_units_s(axis)*(clockEnd_s-initialState.time_s);
             expectedInterval = initialState.position_units(axis)+[-reach reach];
         end
         metadata = metadata && isequal(expectedInterval,result.Limits.(name));
     end
-end
-if isfield(result,'FixedArrivalTrialTime_s')
-    metadata = metadata && result.FixedArrivalTrialTime_s==polynomial.FinalTime_s;
 end
 if isfield(result,'RequestedGoalState') && (result.Options.WrapX || result.Options.WrapY)
     expectedGoal = result.RequestedGoalState.position_units;

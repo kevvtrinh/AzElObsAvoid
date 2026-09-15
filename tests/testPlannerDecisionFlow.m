@@ -182,6 +182,32 @@ function testPeriodicWrapUsesNearestImage(testCase)
     verifyEqual(testCase,result.MotionLength_units,2,'AbsTol',1e-8);
 end
 
+function testWrappedNonrestEarliestTrialIsAcceptedOnce(testCase)
+    % A chronological trial is planned on its own clock, so its periodic
+    % reach follows the trial clock. Accepting it against the outer request
+    % in one validation must keep the record consistent: before this gate
+    % was unified, the trial passed its own validation and a second pass
+    % rejected the same motion against the outer horizon.
+    limits=standardLimits();
+    limits.xInterval_units=[-180,180];
+    initial=state(0,[179,0]); initial.velocity_units_s=[0.1,0];
+    goal=state(10,[-179,0]);
+    result=planner([],initial,goal,limits, ...
+        struct('GoalTimeMode','earliestArrival','WrapX',true));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.TerminationReason,"goalReached");
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyTrue(testCase,isfield(result,'TemporalSearch'));
+    verifyEqual(testCase,result.Options.GoalTimeMode,"earliestArrival");
+    verifyEqual(testCase,result.Inputs.goalState.time_s,10);
+    verifyLessThan(testCase,result.ArrivalTime_s,10);
+    verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
+    verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
+    reach=result.Limits.maxVelocity_units_s(1)*result.FixedArrivalTrialTime_s;
+    verifyEqual(testCase,result.Limits.xInterval_units,179+[-reach,reach]);
+end
+
 function testPeriodicRequestWithObstacleIsRejected(testCase)
     obstacle=struct('Vertices_units',[-1,-1;1,-1;1,1;-1,1]);
     call=@() planner(obstacle,state(0,[179,0]),state(10,[-179,0]), ...

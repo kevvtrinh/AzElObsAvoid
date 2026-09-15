@@ -1,9 +1,11 @@
-function result = planner(obstacles, initialState, goalState, limits, options)
+function result = planner(obstacles, initialState, goalState, limits, options, outerRequest)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = planner()
 %   result = planner( ...
 %       obstacles, initialState, goalState, limits, options)
+%   result = planner( ...
+%       obstacles, initialState, goalState, limits, options, outerRequest)
 %
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
@@ -22,6 +24,9 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %     magnitudes allocated equally, and two-element vectors are per-axis.
 %   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
 %     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
+%   - outerRequest (internal): supplied by the chronological arrival search
+%     so a fixed-arrival trial planned on its own clock is accepted against
+%     the outer earliest-arrival request in the one acceptance gate.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
@@ -50,6 +55,7 @@ if nargin < 2 || isempty(initialState), initialState = defaultInitialState; end
 if nargin < 3 || isempty(goalState), goalState = defaultGoalState; end
 if nargin < 4 || isempty(limits), limits = defaultLimits; end
 if nargin < 5 || isempty(options), options = struct(); end
+if nargin < 6, outerRequest = []; end
 suppliedLimits = limits;
 suppliedGoalState = goalState;
 initialState = normalizeState(initialState, defaultInitialState, "initialState");
@@ -114,6 +120,9 @@ result.SuppliedLimits = suppliedLimits;
 result.RequestedLimits = requestedLimits;
 result.RequestedGoalState = requestedGoalState;
 result.SuppliedGoalState = suppliedGoalState;
+if ~isempty(outerRequest)
+    result.OuterRequest = outerRequest;
+end
 requestedInterval_s=[initialState.time_s,goalState.time_s];
 % Swept corresponding cells have a declared conservative continuous model.
 % Only intervals without correspondence or any certificate stop preparation.

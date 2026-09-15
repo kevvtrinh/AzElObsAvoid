@@ -100,7 +100,9 @@ if useFreeGoalWindow
     result.GoalArrivalWindow_s=[minimumArrivalTime_s,motionGoalState.time_s];
     result.TrajectoryCoverageEndTime_s=motionGoalState.time_s;
 else
-    result.FixedArrivalTrialTime_s = candidate.ArrivalTime_s;
+    % Declare the prescribed clock the motion was solved on, not the
+    % achieved arrival; the validator compares the two.
+    result.FixedArrivalTrialTime_s = motionGoalState.time_s;
 end
 result=obstacleAvoidance.input.finalizeCandidate( ...
     result,candidate,route_units,diagnostics);

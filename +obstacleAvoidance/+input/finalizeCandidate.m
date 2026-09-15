@@ -37,7 +37,25 @@ if candidate.Success && ~isempty(goalState.targetMotion)
     end
 end
 
-%% Section 2: Apply The One Public Acceptance Gate
+%% Section 2: Carry A Chronological Trial's Outer Request Into The Record
+
+% The chronological search plans every trial on its own fixed clock and
+% must accept it against the outer request. The record that reaches the
+% gate therefore carries the outer request, with the trial clock declared
+% in FixedArrivalTrialTime_s, so one validation asserts both the trial
+% clock and the outer horizon; nothing is validated twice.
+if isfield(result,'OuterRequest')
+    outer=result.OuterRequest;
+    result=rmfield(result,'OuterRequest');
+    result.FixedArrivalTrialTime_s=result.Inputs.goalState.time_s;
+    result.SuppliedLimits=outer.SuppliedLimits;
+    result.SuppliedGoalState=outer.SuppliedGoalState;
+    result.RequestedGoalState=outer.RequestedGoalState;
+    result.Inputs.goalState.time_s=outer.GoalTime_s;
+    result.Options.GoalTimeMode=outer.GoalTimeMode;
+end
+
+%% Section 3: Apply The One Public Acceptance Gate
 
 result.Validation=obstacleAvoidance.validateTrajectory(result);
 result.Success=candidate.Success && result.Validation.Passed;
