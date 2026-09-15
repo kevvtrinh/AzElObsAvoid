@@ -51,7 +51,10 @@ bestCertificate                        = struct('Passed', false);
 taggedPairs                            = false(segmentCount, regionCount);
 emptyPlane                             = bmtpEngine.createEmptyPlane();
 planes                                 = repmat(emptyPlane, segmentCount, regionCount);
-solverMessage                          = "The active-pair BMTP iteration limit was reached.";
+bestPlanes                             = planes;
+bestTaggedPairs                        = taggedPairs;
+bestSolverMessage                      = "";
+lastAttemptMessage                     = "The active-pair BMTP iteration limit was reached.";
 
 %% Section 2: Alternate Trajectory And Plane Updates
 
@@ -73,7 +76,7 @@ for iterationIndex = 1:maximumIterationCount
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     if ~bmtpEngine.hasUsableConicIterate(trialControl_units, exitFlag)
-        solverMessage = "Trajectory SOCP failed: " + string(output.message);
+        lastAttemptMessage = "Trajectory SOCP failed: " + string(output.message);
         break
     end
 
@@ -96,19 +99,22 @@ for iterationIndex = 1:maximumIterationCount
                 trialPreparedMotion.SegmentTime_s, trialTimes_s, regionActiveBySegment);
         end
     end
-    diagnostics.FinalCollisionPairCount = nnz(collisionPairs);
-    newPairs                             = collisionPairs & ~taggedPairs;
-    taggedPairs                          = taggedPairs | newPairs;
+    newPairs    = collisionPairs & ~taggedPairs;
+    taggedPairs = taggedPairs | newPairs;
+    trialWasRetained = false;
     if ~any(collisionPairs, 'all')
         retainedImprovement_s = bestDuration_s - duration_s;
         feasibleControl_units = trialControl_units;
         if duration_s < bestDuration_s
-            bestControl_units       = trialControl_units;
-            bestTimes_s             = trialTimes_s;
-            bestDuration_s          = duration_s;
-            bestPreparedMotion      = struct('Success', false);
-            bestCertificate         = struct('Passed', false);
-            diagnostics.BestDuration_s = duration_s;
+            bestControl_units          = trialControl_units;
+            bestTimes_s                = trialTimes_s;
+            bestDuration_s             = duration_s;
+            bestPreparedMotion         = struct('Success', false);
+            bestCertificate            = struct('Passed', false);
+            bestPlanes                 = trajectoryPlanes;
+            bestTaggedPairs            = reshape([bestPlanes.Active], size(bestPlanes));
+            bestSolverMessage          = "A complete active-pair feasible iterate was retained.";
+            trialWasRetained           = true;
             if trialCertificate.Passed
                 bestPreparedMotion = trialPreparedMotion;
                 bestCertificate    = trialCertificate;
@@ -118,7 +124,9 @@ for iterationIndex = 1:maximumIterationCount
             retainedImprovement_s <= request.Options.ArrivalTimeTolerance_s;
         if improvementReachedTolerance
             diagnostics.Converged = true;
-            solverMessage         = "The feasible arrival improvement reached tolerance.";
+            if trialWasRetained
+                bestSolverMessage = "The feasible arrival improvement reached tolerance.";
+            end
             break
         end
         planes(:)   = emptyPlane;
@@ -126,7 +134,7 @@ for iterationIndex = 1:maximumIterationCount
     elseif any(newPairs, 'all')
         activePairs = newPairs;
     else
-        solverMessage = "A tagged pair crossed its retained separating plane.";
+        lastAttemptMessage = "A tagged pair crossed its retained separating plane.";
         break
     end
 
@@ -142,7 +150,7 @@ for iterationIndex = 1:maximumIterationCount
             diagnostics.ConicSolver, planeOutput);
         planeUpdateFailed = (planeExitFlag <= 0 && planeExitFlag ~= -7) || ~plane.Active;
         if planeUpdateFailed
-            solverMessage = "A separating-plane update failed.";
+            lastAttemptMessage = "A separating-plane update failed.";
             updateFailed  = true;
             break
         end
@@ -150,6 +158,10 @@ for iterationIndex = 1:maximumIterationCount
     end
     if updateFailed
         break
+    end
+    if trialWasRetained
+        bestPlanes      = planes;
+        bestTaggedPairs = reshape([bestPlanes.Active], size(bestPlanes));
     end
 end
 
@@ -160,7 +172,7 @@ diagnostics.TravelRefinementAccepted  = false;
 if ~isempty(bestControl_units)
     [shortControl_units, shortTimes_s, shortFlag, shortOutput] = bmtpEngine.solveTrajectoryStep( ...
         segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, ...
-        planes, reserve_units, bestDuration_s, request.TrajectoryOptions, ...
+        bestPlanes, reserve_units, bestDuration_s, request.TrajectoryOptions, ...
         ones(segmentCount, 1), true);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + shortOutput.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics( ...
@@ -187,15 +199,34 @@ end
 
 %% Section 4: Return The Best Sampled-Clear Proposal
 
-diagnostics.TaggedPairCount = nnz(taggedPairs);
-diagnostics.SolverMessage   = solverMessage;
+selectedControl_units      = bestControl_units;
+selectedTimes_s            = bestTimes_s;
+selectedPlanes             = bestPlanes;
+selectedPairs              = bestTaggedPairs;
+selectedCollisionPairCount = 0;
+solverMessage              = lastAttemptMessage;
+if ~isempty(bestControl_units)
+    solverMessage = bestSolverMessage;
+    if bestCertificate.Passed
+        selectedControl_units      = bestPreparedMotion.ControlPoint_units;
+        selectedTimes_s            = bestPreparedMotion.SegmentTime_s;
+        selectedPlanes             = bestCertificate.Planes;
+        selectedPairs              = bestCertificate.RegionActiveBySegment;
+        selectedCollisionPairCount = bestCertificate.AllPairCount - ...
+            bestCertificate.VerifiedPairCount;
+    end
+end
+diagnostics.ApplicablePairCount     = nnz(selectedPairs);
+diagnostics.FinalCollisionPairCount = selectedCollisionPairCount;
+diagnostics.TaggedPairCount         = nnz(selectedPairs);
+diagnostics.SolverMessage           = solverMessage;
 result = struct( ...
-    'Success',            ~isempty(bestControl_units), ...
+    'Success',            ~isempty(selectedControl_units), ...
     'SolverMessage',      solverMessage, ...
-    'ControlPoint_units', bestControl_units, ...
-    'SegmentTime_s',      bestTimes_s, ...
-    'Planes',             planes, ...
-    'TaggedPairs',        taggedPairs, ...
+    'ControlPoint_units', selectedControl_units, ...
+    'SegmentTime_s',      selectedTimes_s, ...
+    'Planes',             selectedPlanes, ...
+    'TaggedPairs',        selectedPairs, ...
     'PreparedMotion',     bestPreparedMotion, ...
     'Certificate',        bestCertificate);
 end

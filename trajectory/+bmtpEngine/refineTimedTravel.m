@@ -34,8 +34,7 @@ function [result, diagnostics] = refineTimedTravel(request, alternatingResult, d
 
 %% Section 1: Preserve The Feasible Alternating Result
 
-result = struct("ControlPoint_units", alternatingResult.ControlPoint_units, ...
-    "SegmentTime_s", alternatingResult.SegmentTime_s);
+result = alternatingResult;
 
 %% Section 2: Refine Travel At The Selected Arrival Clock
 
@@ -51,10 +50,11 @@ baseLength_units = controlPolygonLength(baseControl_units);
 selectedControl_units    = baseControl_units;
 selectedSegmentTime_s    = baseSegmentTime_s;
 selectedPlanes           = alternatingResult.Planes;
+selectedPairs            = alternatingResult.TaggedPairs;
+selectedSolverMessage    = alternatingResult.SolverMessage;
 selectedLength_units     = baseLength_units;
 travelRefinementAccepted = false;
 travelPlanes             = alternatingResult.Planes;
-taggedPairs              = alternatingResult.TaggedPairs;
 
 assert(request.UsesVariableClock && ...
     request.Options.GoalTimeMode == "earliestArrival", ...
@@ -70,15 +70,14 @@ diagnostics.TravelRefinementFinalLength_units   = baseLength_units;
 diagnostics.TravelRefinementInitialDuration_s   = baseDuration_s;
 diagnostics.TravelRefinementFinalDuration_s     = baseDuration_s;
 diagnostics.TravelRefinementAccepted            = false;
-trajectoryOptions = optimoptions("coneprog", "Display", "none", "MaxIterations", 300);
-segmentRatio      = baseSegmentTime_s / mean(baseSegmentTime_s);
+segmentRatio = baseSegmentTime_s / mean(baseSegmentTime_s);
 for refinementIndex = 1:8
     [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = ...
         bmtpEngine.solveTimedTrajectoryStep(segmentCount, request.Degree, ...
         request.InitialState.position_units, request.GoalState.position_units, ...
         request.Limits, travelPlanes, ...
         roundoffReserve_units, refinementHorizon_s, "fixedArrival", ...
-        trajectoryOptions, 0, segmentRatio);
+        request.TimedTrajectoryOptions, 0, segmentRatio);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     diagnostics.TravelRefinementExitFlag             = travelExitFlag;
     diagnostics.TravelRefinementOptimizationConverged = output.OptimizationConverged;
@@ -98,15 +97,15 @@ for refinementIndex = 1:8
     refinedCollisionPairs = ~reshape([refinedCertificate.Planes.Verified], ...
         size(refinedCertificate.Planes)) & refinedCertificate.RegionActiveBySegment;
     if any(refinedCollisionPairs, "all")
-        [travelPlanes, activeTravelPairs, complete, planeStatistics] = ...
+        [rebuiltPlanes, ~, complete] = ...
             bmtpEngine.createTimeScopedPlanes(baseControl_units, ...
             baseSegmentTime_s, request, ...
             obstacleTarget_units, roundoffReserve_units);
-        diagnostics.TaggedPairCount = planeStatistics.ActivePairCount;
-        if ~complete
+        planeSetChanged = ~isequaln(rebuiltPlanes, travelPlanes);
+        if ~complete || ~planeSetChanged
             break
         end
-        taggedPairs = taggedPairs | activeTravelPairs;
+        travelPlanes = rebuiltPlanes;
         continue
     end
     if ~refinedCertificate.Passed
@@ -119,7 +118,9 @@ for refinementIndex = 1:8
     if refinementIsBetter
         selectedControl_units    = refinedControl_units;
         selectedSegmentTime_s    = refinedSegmentTime_s;
-        selectedPlanes           = travelPlanes;
+        selectedPlanes           = refinedCertificate.Planes;
+        selectedPairs            = refinedCertificate.RegionActiveBySegment;
+        selectedSolverMessage    = "A travel-shortened time-scoped feasible iterate was retained.";
         selectedLength_units     = refinedLength_units;
         travelRefinementAccepted = true;
     end
@@ -131,9 +132,14 @@ end
 if travelRefinementAccepted
     result.ControlPoint_units = selectedControl_units;
     result.SegmentTime_s      = selectedSegmentTime_s;
-    taggedPairs = taggedPairs | reshape([selectedPlanes.Active], size(selectedPlanes));
+    result.Planes             = selectedPlanes;
+    result.TaggedPairs        = selectedPairs;
+    result.SolverMessage      = selectedSolverMessage;
+    diagnostics.ApplicablePairCount     = nnz(result.TaggedPairs);
+    diagnostics.TaggedPairCount         = nnz(result.TaggedPairs);
+    diagnostics.FinalCollisionPairCount = 0;
+    diagnostics.SolverMessage           = result.SolverMessage;
 end
-diagnostics.TaggedPairCount                   = nnz(taggedPairs);
 diagnostics.TravelRefinementFinalLength_units = selectedLength_units;
 diagnostics.TravelRefinementFinalDuration_s   = sum(selectedSegmentTime_s);
 diagnostics.TravelRefinementAccepted          = travelRefinementAccepted;
