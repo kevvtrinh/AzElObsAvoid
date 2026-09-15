@@ -114,7 +114,7 @@ resolution_units = max([max(vecnorm(upper_units-lower_units,2,2)) + 2*halfWidth_
 if resolution_units <= 0
     % No vertex moved and no margin applies: the union is the sample itself.
     shape = sweptUnion;
-    regions_units = obstacleAvoidance.geometry.convexRegions(shape,true);
+    regions_units = obstacleAvoidance.geometry.convexRegions(shape);
 else
     minimum_units = min(sweptUnion.Vertices,[],1);
     maximum_units = max(sweptUnion.Vertices,[],1);
@@ -146,7 +146,7 @@ else
         cover(regionIndex) = polyshape(regions_units{regionIndex},'Simplify',false,'KeepCollinearPoints',true);
     end
     shape = balancedUnion(cover);
-    regions_units = obstacleAvoidance.geometry.convexRegions(shape,true);
+    regions_units = obstacleAvoidance.geometry.convexRegions(shape);
 end
 timing_s(4) = toc(stageTimer);
 counts(2) = numel(regions_units);

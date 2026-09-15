@@ -330,7 +330,7 @@ result=obstacleAvoidance.input.finalizeCandidate( ...
 % Only solver-level infeasibility of the spatial guide admits the timed guide.
 % A motion the public validator rejects terminates here as a defect.
 spatialFailureCanUseTimedGuide = ~candidate.Success && ...
-    candidate.TerminationReason=="noOptimizedFeasibleIterate";
+    candidate.OptimizerIterateUnavailable;
 if fixedPositionDynamic && spatialFailureCanUseTimedGuide
     result.VisibilityGraph.SpatialSeedDiagnostics=solverDiagnostics;
     result.ElapsedTime_s=toc(totalTimer);

@@ -20,8 +20,9 @@ if usesLengthBalancedMesh
     minimumSteeringSegmentCount=2*(request.Degree-2);
     targetSegmentCount=max(minimumSteeringSegmentCount, ...
         originalSegmentCount*request.SplitCount);
-    segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount);
-    solverRoute_units=splitRouteByCount(route_units,segmentCountByEdge);
+    segmentCountByEdge=allocateSegmentsByMeasure( ...
+        vecnorm(diff(route_units),2,2),targetSegmentCount);
+    solverRoute_units=splitByCount(route_units,segmentCountByEdge);
 end
 segmentCount = size(solverRoute_units, 1) - 1;
 regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
@@ -68,7 +69,7 @@ if request.UsesVariableClock && isfield(request.Coverage,'BreakTime_s')
         originalSegmentCount*request.SplitCount]);
     segmentCountByEdge=allocateSegmentsByMeasure(diff(routeTau), ...
         minimumSegmentCount);
-    meshTau=splitScalarByCount(routeTau,segmentCountByEdge);
+    meshTau=splitByCount(routeTau,segmentCountByEdge);
     segmentRatio=diff(meshTau)/mean(diff(meshTau));
     segmentTime_s=request.MotionHorizon_s*diff(meshTau);
     segmentCount=numel(segmentTime_s);
@@ -94,17 +95,15 @@ if request.Options.GoalTimeMode=="fixedArrival"
     % Every source interval still constrains its exact overlap with these spans.
     isTimedSeed = request.UsesTimeScopedSolver;
     minimumSegmentCount = 8;
-    if request.Degree>=8
+    if isTimedSeed
         minimumSegmentCount = 16;
-    elseif isTimedSeed
-        minimumSegmentCount=16;
     end
     segmentCount=max(minimumSegmentCount,originalSegmentCount);
     if isTimedSeed
         segmentCount=max(segmentCount,originalSegmentCount*request.SplitCount);
         segmentCountByEdge=allocateSegmentsByMeasure(diff(request.Seed.tau), ...
             segmentCount);
-        routeTau=splitScalarByCount(request.Seed.tau(:),segmentCountByEdge);
+        routeTau=splitByCount(request.Seed.tau(:),segmentCountByEdge);
         segmentCount=numel(routeTau)-1;
         timedRoute_units = interp1(request.Seed.tau,route_units,routeTau,'linear');
         start_units = reshape(timedRoute_units(1:end-1,:),segmentCount,1,2);
@@ -187,11 +186,6 @@ function route_units=removeRedundantRouteVertices(route_units)
     route_units=route_units(keep,:);
 end
 
-function segmentCountByEdge=allocateSegmentsByLength(route_units,targetSegmentCount)
-    edgeLength_units=vecnorm(diff(route_units),2,2);
-    segmentCountByEdge=allocateSegmentsByMeasure(edgeLength_units,targetSegmentCount);
-end
-
 function segmentCountByEdge=allocateSegmentsByMeasure(edgeMeasure,targetSegmentCount)
     edgeMeasure=edgeMeasure(:);
     edgeCount=numel(edgeMeasure);
@@ -206,30 +200,18 @@ function segmentCountByEdge=allocateSegmentsByMeasure(edgeMeasure,targetSegmentC
     segmentCountByEdge(order(1:unassigned))=segmentCountByEdge(order(1:unassigned))+1;
 end
 
-function refined=splitScalarByCount(values,segmentCountByEdge)
-    refined=zeros(sum(segmentCountByEdge)+1,1);
+function refined=splitByCount(values,segmentCountByEdge)
+    % Interpolate one knot column or a two-column route at the identical
+    % fractions of every supplied edge.
+    refined=zeros(sum(segmentCountByEdge)+1,size(values,2));
     target=1;
     for edgeIndex=1:numel(segmentCountByEdge)
         count=segmentCountByEdge(edgeIndex);
         fraction=(0:count-1).'/count;
         rows=target:target+count-1;
-        refined(rows)=values(edgeIndex)+ ...
-            fraction*(values(edgeIndex+1)-values(edgeIndex));
+        refined(rows,:)=values(edgeIndex,:)+ ...
+            fraction.*(values(edgeIndex+1,:)-values(edgeIndex,:));
         target=target+count;
     end
-    refined(end)=values(end);
-end
-
-function refined_units=splitRouteByCount(route_units,segmentCountByEdge)
-    refined_units=zeros(sum(segmentCountByEdge)+1,2);
-    target=1;
-    for edgeIndex=1:numel(segmentCountByEdge)
-        count=segmentCountByEdge(edgeIndex);
-        fraction=(0:count-1).'/count;
-        rows=target:target+count-1;
-        refined_units(rows,:)=route_units(edgeIndex,:)+ ...
-            fraction.*(route_units(edgeIndex+1,:)-route_units(edgeIndex,:));
-        target=target+count;
-    end
-    refined_units(end,:)=route_units(end,:);
+    refined(end,:)=values(end,:);
 end

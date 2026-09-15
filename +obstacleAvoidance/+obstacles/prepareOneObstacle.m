@@ -1,7 +1,7 @@
 function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnapshot, timeRange_s, previous, stopAtUnsupported)
 %% Section 0: Header & Readme
 % SYNTAX: obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( obstacle, preparationVersion,
-%   sourceSnapshot, timeRange_s, previous)
+%   sourceSnapshot, timeRange_s, previous, stopAtUnsupported)
 % PURPOSE: Prepare requested entries of one obstacle history for repeated geometry queries.
 %   Retain the interval method, bounds, edges, motion, and static status.
 % INPUTS: obstacle (scalar canonical obstacle struct) Protected and original source histories remain
@@ -9,18 +9,15 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 %   preparationVersion (positive integer scalar) Version written into the internal preparation
 %   record.
 %   sourceSnapshot (scalar struct) Source fields assembled by prepareObstacles for cache validation.
-%   timeRange_s: requested closed interval; omitted means the full history.
-%   previous: source-checked preparation to extend; omitted means empty.
-%   stopAtUnsupported: optional logical; return after a requested interval cannot be represented.
+%   timeRange_s: requested closed interval.
+%   previous: source-checked preparation to extend; empty starts a new record.
+%   stopAtUnsupported (logical scalar): return after a requested interval cannot be represented.
 % OUTPUTS: obstacle (scalar canonical obstacle struct) InternalPreparation contains reusable
 %   source-derived geometry data.
 % UNITS: Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 
 %% Section 1: Select Source Samples Without Changing The History
 validateattributes(preparationVersion, {'numeric'}, {'real','finite','scalar','integer','positive'});
-if nargin<4, timeRange_s=[-Inf,Inf]; end
-if nargin<5, previous=[]; end
-if nargin<6, stopAtUnsupported=false; end
 time_s=obstacle.time_s; sampleCount=numel(time_s); intervalCount=sampleCount-1;
 neededSamples=time_s>=timeRange_s(1) & time_s<=timeRange_s(2);
 neededIntervals=time_s(1:end-1)<timeRange_s(2) & time_s(2:end)>timeRange_s(1);
@@ -261,7 +258,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
             alignedUpper_units = upper_units;
             startRegions_units = reusableStartRegions_units;
             if isempty(startRegions_units)
-                startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+                startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape);
             else
                 partitionReused = true;
             end
@@ -298,7 +295,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         % relying on polyshape's vertex ordering after cyclic/reversed input.
         startRegions_units = reusableStartRegions_units;
         if isempty(startRegions_units)
-            startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+            startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape);
         else
             partitionReused = true;
         end
@@ -316,7 +313,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         geometryModel = "linearCorrespondingVertices";
         return;
     end
-    [globalAffineVerified,~] = verifiedGlobalAffineMap( ...
+    globalAffineVerified = verifiedGlobalAffineMap( ...
         lower_units,alignedUpper_units,coordinateScale_units);
     [partitionVerified,startRegions_units,endRegions_units] = ...
         createVerifiedMovingPartition(lower_units,alignedUpper_units,lowerShape,upperShape,coordinateScale_units);
@@ -326,14 +323,13 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         geometryModel = "linearCorrespondingConvexPartition";
         return;
     end
-    if ~verified
-        alignedUpper_units = zeros(0, 2);
-        startRegions_units = cell(0,1);
-        endRegions_units = cell(0,1);
-    end
+    % Every verified branch above returned, so this cleanup is unconditional.
+    alignedUpper_units = zeros(0, 2);
+    startRegions_units = cell(0,1);
+    endRegions_units = cell(0,1);
 end
 
-function [verified,transformation] = verifiedGlobalAffineMap(lower_units,upper_units,coordinateScale_units)
+function verified = verifiedGlobalAffineMap(lower_units,upper_units,coordinateScale_units)
     % A single affine map preserves every edge and face. Its linear blend
     % with identity is valid when the determinant stays strictly positive.
     source = [lower_units,ones(size(lower_units,1),1)];
@@ -365,7 +361,7 @@ function [verified,startRegions_units,endRegions_units] = createVerifiedMovingPa
     % Carry one exact lower-sample partition through the supplied vertex
     % correspondence. Every face must remain convex for the whole interval.
     verified = false;
-    startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape,true);
+    startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape);
     endRegions_units = cell(size(startRegions_units));
     for regionIndex = 1:numel(startRegions_units)
         [isSourceVertex,sourceIndex] = ismember(startRegions_units{regionIndex},lower_units,'rows');

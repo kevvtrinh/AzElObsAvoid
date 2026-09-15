@@ -14,8 +14,9 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %   (resolved scalar planner-options struct) Goal-time policy, sampling interval, work limits, and
 %   tolerances.
 % OUTPUTS: candidate (scalar struct) Stable motion record. Expected infeasibility returns
-%   Success=false. diagnostics (scalar struct) Solver, timing, coverage, motion, and
-%   plane-certificate evidence.
+%   Success=false and, when the optimizer produced no collision-free iterate,
+%   OptimizerIterateUnavailable=true. diagnostics (scalar struct) Solver, timing, coverage,
+%   motion, and plane-certificate evidence.
 % UNITS: Position is coordinate units and time is seconds. Derivatives use units/s, units/s^2, and
 %   units/s^3. Polynomial powers use local normalized time.
 
@@ -127,6 +128,9 @@ else
         end
     end
     if ~alternatingResult.Success
+        % The optimizer produced no collision-free iterate for this guide. The
+        % typed flag, not the explanatory reason, admits another guide upstream.
+        candidate.OptimizerIterateUnavailable = true;
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
         return;
     end
@@ -178,7 +182,7 @@ candidate.PlaneCertificate = certificate;
 
 % Convert the checked curve to the public motion format and sample it.
 candidate = bmtpEngine.createMotionOutput(candidate, request, preparedMotion);
-[candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = deal(true, preparedMotion.ArrivalAtHorizon);
+candidate.OptimizerFeasible = true;
 diagnostics.BestDuration_s = candidate.TrajectoryDuration_s;
 % Reject optimizer output that fails the independent certificate even when the numerical solver reported success.
 if ~certificate.Passed
@@ -190,7 +194,6 @@ end
 [candidate.Message, candidate.TerminationReason]        = deal("A directly certified BMTP trajectory was found.", "goalReached");
 [candidate.Success, diagnostics.Accepted]               = deal(true);
 diagnostics.ElapsedTime_s                              = toc(totalTimer);
-candidate.SolverDiagnostics = diagnostics;
 end
 
 %% Section 5: Local Functions
@@ -241,12 +244,12 @@ function candidate = createEmptyCandidate(seed, initialState)
     candidate = struct();
     candidate.Success = false;
     candidate.OptimizerFeasible = false;
+    candidate.OptimizerIterateUnavailable = false;
     candidate.Message = "The BMTP kernel was not run.";
     candidate.TerminationReason = "notRun";
     candidate.SeedSource = seedSource;
     candidate.ArrivalTime_s = NaN;
     candidate.TrajectoryDuration_s = NaN;
-    candidate.ArrivalAtHorizon = false;
     candidate.MotionLength_units = Inf;
     candidate.IntegratedSquaredJerk_units2_s5 = Inf;
     candidate.MaximumConstraintViolation = Inf;
@@ -257,7 +260,6 @@ function candidate = createEmptyCandidate(seed, initialState)
     candidate.jerk_units_s3 = zeros(0, dimensionCount);
     candidate.Polynomial = struct();
     candidate.PlaneCertificate = struct();
-    candidate.SolverDiagnostics = struct();
 end
 
 function value = optionalField(record, name, defaultValue)
@@ -290,5 +292,4 @@ function [candidate, diagnostics] = finishFailure(candidate, diagnostics, timer,
     % Return a failure without fabricating motion data.
     [candidate.Message, candidate.TerminationReason, candidate.OptimizerFeasible] = deal(message, reason, optimizerFeasible);
     [diagnostics.Accepted, diagnostics.ElapsedTime_s]                             = deal(false, toc(timer));
-    candidate.SolverDiagnostics = diagnostics;
 end

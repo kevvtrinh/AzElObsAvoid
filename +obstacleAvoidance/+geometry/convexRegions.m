@@ -1,14 +1,15 @@
-function regions_units = convexRegions(shape, longestSharedEdgeFirst)
+function regions_units = convexRegions(shape)
 %% Section 0: Header & Readme
 % SYNTAX: regions_units = obstacleAvoidance.geometry.convexRegions(shape)
-%         regions_units = obstacleAvoidance.geometry.convexRegions(shape,true)
 % PURPOSE: Exactly cover a polygon (including holes) with convex regions.
-% INPUTS: A valid polyshape and optional deterministic merge ordering.
+%   One canonical decomposition serves every producer and the independent
+%   validator: interior diagonals are removed longest shared edge first, and
+%   the returned regions are ordered by their own geometry.
+% INPUTS: A valid polyshape.
 % OUTPUTS: Column cell array of convex vertex arrays.
 % UNITS: Coordinate units.
 
 %% Section 1: Keep Convex Components Or Triangulate Exact Geometry
-if nargin < 2, longestSharedEdgeFirst = false; end
 regions_units = cell(0, 1);
 components = regions(shape);
 for k = 1:numel(components)
@@ -23,12 +24,12 @@ for k = 1:numel(components)
         end
     end
     mesh = triangulation(components(k));
-    faces = mergeConvexFaces(mesh,longestSharedEdgeFirst);
+    faces = mergeConvexFaces(mesh);
     for j = 1:numel(faces)
         regions_units{end+1,1} = mesh.Points(faces{j},:); %#ok<AGROW>
     end
 end
-if longestSharedEdgeFirst && numel(regions_units) > 1
+if numel(regions_units) > 1
     sortKeys = zeros(numel(regions_units),5);
     for regionIndex = 1:numel(regions_units)
         vertices_units = regions_units{regionIndex};
@@ -41,7 +42,7 @@ end
 end
 
 %% Section 2: Remove Interior Diagonals Without Changing Geometry
-function faces = mergeConvexFaces(mesh,longestSharedEdgeFirst)
+function faces = mergeConvexFaces(mesh)
     % Every accepted merge removes one shared diagonal from two exact faces.
     % Original vertices and the occupied union remain unchanged. Concave or
     % multiply connected unions are rejected, with no geometric tolerance.
@@ -52,7 +53,7 @@ function faces = mergeConvexFaces(mesh,longestSharedEdgeFirst)
     first = repmat(owner,1,3);
     pairs = [first(:),adjacent(:)];
     pairs = pairs(isfinite(pairs(:,2)) & pairs(:,1)<pairs(:,2),:);
-    if longestSharedEdgeFirst && ~isempty(pairs)
+    if ~isempty(pairs)
         % Neighbour column k is across the edge opposite triangle vertex k.
         % Assemble those same shared endpoints in one batch, without a set
         % intersection and sort for every mesh edge.

@@ -127,17 +127,18 @@ function testDepartureFamilyDoesNotDependOnSeedLabel(testCase)
         'EndRegions_units',{cells.EndRegions_units});
     route_units = [initial.position_units;goal.position_units];
     results = cell(2,1);
+    diagnostics = cell(2,1);
     labels = ["departureSchedule","unrelatedDiagnosticLabel"];
     for k = 1:2
         seed = struct('position_units',route_units,'tau',[0;1],'Source',labels(k));
-        results{k} = bmtpEngine.solve(seed,cells.Regions_units,coverage, ...
-            normalized.Inputs.initialState,normalized.Inputs.goalState, ...
+        [results{k},diagnostics{k}] = bmtpEngine.solve(seed,cells.Regions_units, ...
+            coverage,normalized.Inputs.initialState,normalized.Inputs.goalState, ...
             normalized.Limits,normalized.Options);
     end
     verifyTrue(testCase,results{1}.Success,results{1}.Message);
     verifyTrue(testCase,results{2}.Success,results{2}.Message);
     verifyEqual(testCase,results{2}.ArrivalTime_s,results{1}.ArrivalTime_s,'AbsTol',0);
-    verifyEqual(testCase,results{2}.SolverDiagnostics.Identifier,"c3DepartureSchedule");
+    verifyEqual(testCase,diagnostics{2}.Identifier,"c3DepartureSchedule");
     verifyEqual(testCase,results{2}.position_units,results{1}.position_units,'AbsTol',0);
 end
 

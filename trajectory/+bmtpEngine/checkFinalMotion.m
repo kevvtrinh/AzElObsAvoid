@@ -90,7 +90,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     planes         = repmat(bmtpEngine.createEmptyPlane(), segmentCount, regionCount);
     previousPlanes = repmat(bmtpEngine.createEmptyPlane(),1,regionCount);
     verifiedCount  = 0;
-    analyticCount  = 0;
     reusedCount    = 0;
     cachedCount    = 0;
     cachedGeometryCount = 0;
@@ -181,7 +180,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
                 end
                 plane = bmtpEngine.solveSeparatingLine(restricted_units,vertices_units, ...
                     target_units,reserve_units,geometry);
-                analyticCount = analyticCount + 1;
             end
             plane.TimeFraction = timeFraction;
             previousPlanes(regionIndex) = plane;
@@ -211,6 +209,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         "MinimumSignedGap_units", minimumGap_units, ...
         "Coverage", coverage, ...
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-        "ReusedPairCount", reusedCount, "CachedPairCount", cachedCount, "AnalyticPairCount", analyticCount, ...
+        "ReusedPairCount", reusedCount, "CachedPairCount", cachedCount, ...
         "CachedGeometryPairCount",cachedGeometryCount);
 end

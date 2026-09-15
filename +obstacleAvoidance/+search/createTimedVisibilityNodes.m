@@ -1,11 +1,11 @@
-function nodes_units = createTimedVisibilityNodes(shape, start_units, goal_units, limits, candidateOffset_units, workBudget)
+function nodes_units = createTimedVisibilityNodes(shape, start_units, goal_units, limits, candidateOffset_units)
 %% Section 0: Header & Readme
 % SYNTAX: nodes_units = obstacleAvoidance.search.createTimedVisibilityNodes(
-%   shape,start_units,goal_units,limits,candidateOffset_units,workBudget)
+%   shape,start_units,goal_units,limits,candidateOffset_units)
 % PURPOSE: Create one deterministic staging-node set for the timed route
 %   proposal. This helper does not search, retry, or certify a motion.
-% INPUTS: Sampled swept proposal shape, endpoints, workspace, one physical
-%   steering offset, and a finite pair-work budget.
+% INPUTS: Sampled swept proposal shape, endpoints, workspace, and one physical
+%   steering offset.
 % OUTPUTS: nodes_units (N-by-2) Retained proposal nodes, endpoints first.
 % UNITS: Positions and offsets are coordinate units.
 
@@ -23,8 +23,9 @@ candidateNodes_units = unique(rawNodes_units(isInsideWorkspace,:),"rows","stable
 
 %% Section 2: Retain A Deterministic Global Boundary Cover
 % The timed graph checks every retained node pair at every physical layer.
-% Bound that proposal-only quadratic work explicitly; final acceptance still
-% comes exclusively from BMTP and the independent validator.
+% This stage owns that proposal-only quadratic work budget; final acceptance
+% still comes exclusively from BMTP and the independent validator.
+workBudget = 1e6;
 [edgeStart_units,~] = obstacleAvoidance.geometry.boundaryToEdges(shape,1e-12);
 candidateLimit = max(2,floor(sqrt(2*workBudget/max(1,size(edgeStart_units,1))))-2);
 if size(candidateNodes_units,1)>candidateLimit

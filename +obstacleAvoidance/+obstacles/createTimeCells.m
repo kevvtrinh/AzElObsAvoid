@@ -1,16 +1,13 @@
-function cells = createTimeCells(obstacles, initialTime_s, finalTime_s, longestSharedEdgeFirst)
+function cells = createTimeCells(obstacles, initialTime_s, finalTime_s)
 %% Section 0: Header & Readme
 % SYNTAX: cells = obstacleAvoidance.obstacles.createTimeCells(obstacles,t0,t1)
-%         cells = obstacleAvoidance.obstacles.createTimeCells(obstacles,t0,t1,true)
 % PURPOSE: Prepare convex exclusion cells with affine vertex motion in
 %          absolute time; static cells have equal endpoint vertices.
-% INPUTS: Prepared authoritative obstacle histories, physical horizon, and
-%         optional deterministic merge ordering.
+% INPUTS: Prepared authoritative obstacle histories and the physical horizon.
 % OUTPUTS: Convex regions, absolute active intervals, source IDs, event knots.
 % UNITS: Coordinate units and seconds.
 
 %% Section 1: Cover Every Active Source Interval
-if nargin < 4, longestSharedEdgeFirst = false; end
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialTime_s,finalTime_s]);
 regions_units = cell(0,1); endRegions_units = cell(0,1);
 intervals_s = zeros(0,2); sources = zeros(0,1);
@@ -36,7 +33,7 @@ for k = 1:numel(obstacles)
         if active_s(1) >= active_s(2), continue; end
         if isscalar(obstacle.time_s) || preparation.IsTimeInvariant
             shape = preparation.SampleShapes{j};
-            regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);
+            regions = obstacleAvoidance.geometry.convexRegions(shape);
             endRegions = regions;
         elseif preparation.IntervalGeometryModel(j)=="sweptCorrespondingConvexCells"
             regions = preparation.IntervalStartRegions_units{j};
@@ -45,7 +42,7 @@ for k = 1:numel(obstacles)
             % A history can change elsewhere while this interval remains
             % stationary. Preserve its cavities and disconnected components.
             regions = obstacleAvoidance.geometry.convexRegions( ...
-                preparation.SampleShapes{j},longestSharedEdgeFirst);
+                preparation.SampleShapes{j});
             endRegions = regions;
         elseif preparation.MatchingTopology(j) && ...
                 preparation.IntervalGeometryModel(j)=="linearCorrespondingConvexPartition"
@@ -77,7 +74,7 @@ for k = 1:numel(obstacles)
                 'The obstacle interval has no verified exact continuous geometry model.');
         elseif preparation.IntervalGeometryModel(j)=="staticEquivalentSamples"
             shape = preparation.IntervalUnionShapes{j};
-            regions = obstacleAvoidance.geometry.convexRegions(shape,longestSharedEdgeFirst);
+            regions = obstacleAvoidance.geometry.convexRegions(shape);
             endRegions = regions;
         else
             error('createTimeCells:UnknownGeometryModel', ...

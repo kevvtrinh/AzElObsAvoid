@@ -191,9 +191,17 @@ current exact-geometry, one-method, no-retry contract.
 
 Several targeted experiments explain why the expensive settings remain:
 
-- Longest-shared-edge-first exact face merging increased the region counts to
-  299, 343, and 2,216. The default deterministic merge order is better for
-  these inputs.
+- Longest-shared-edge-first exact face merging raises those region counts to
+  299, 343, and 2,216, and the static contiguous U.S. outline from 46 to 48
+  cells, so the profiled counts above were recorded with the other order. It
+  is nevertheless the single canonical decomposition now used everywhere: the
+  prepared moving-interval partitions and the swept-enclosure contract already
+  require exactly those faces, and one decomposition removes the stored
+  merge-order label that used to choose which geometry the independent
+  validator rebuilt. On the maintained examples that canonical order changed
+  no outcome, improved the extreme geographic example from 6.83892 to 6.55513
+  seconds of arrival and from 22.1563 to 21.2121 units of length, and left the
+  160-request random corpus identical.
 - Replacing maximum-margin planes with analytic supporting axes kept static U
   valid but worsened arrival from 20.8452 to 20.9236 seconds, worsened length
   from 39.3457 to 39.4043 units, and did not reduce wall time. The rotating

@@ -252,10 +252,8 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
     expectedActive = true(size(positionPower_units,1),numel(regions_units));
     if isfield(certificate,'Coverage') && isfield(certificate.Coverage,'ActiveTimeInterval_s')
-        longestSharedEdgeFirst = isfield(certificate.Coverage,'ConvexMergeOrder') && ...
-            string(certificate.Coverage.ConvexMergeOrder)=="longestSharedEdgeFirst";
         cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
-            result.Inputs.initialState.time_s,coverageEnd_s,longestSharedEdgeFirst);
+            result.Inputs.initialState.time_s,coverageEnd_s);
         regions_units = cells.Regions_units;
         starts_s = result.Polynomial.SegmentStartTime_s;
         ends_s = starts_s+result.Polynomial.SegmentDuration_s;

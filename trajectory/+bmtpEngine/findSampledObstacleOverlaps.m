@@ -1,19 +1,21 @@
-function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment, sampleCount)
+function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment)
 %% Section 0: Header & Readme
 % SYNTAX: collisionPairs = bmtpEngine.findSampledObstacleOverlaps( controlPoint_units,
-%   regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment, sampleCount)
+%   regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment)
 % PURPOSE: Identify sampled Bezier span and convex-region overlaps that require separating-line
 %   updates during optimization. Never treat the sampled result as a final acceptance certificate.
 % INPUTS: controlPoint_units (S-by-(D+1)-by-2 numeric array) Composite Bezier control points.
 %   regions_units (R-by-1 cell array) Convex exclusion polygons. regionMinimum_units,
 %   regionMaximum_units (R-by-2 numeric arrays) Cached region bounds. regionActiveBySegment (S-by-R
-%   logical array) Applicable curve-region pairs. sampleCount (positive integer scalar) Samples per
-%   curve span.
+%   logical array) Applicable curve-region pairs.
 % OUTPUTS: collisionPairs (S-by-R logical array) Sampled-overlap tags used only to guide later
 %   optimization.
 % UNITS: Position and region bounds are coordinate units.
 
 %% Section 1: Check Sampled Span And Region Overlaps
+% This stage owns its span sampling resolution. It guides optimization only;
+% continuous separating-plane certification remains the acceptance test.
+sampleCount    = 1201;
 segmentCount   = size(controlPoint_units, 1);
 collisionPairs = false(segmentCount, numel(regions_units));
 tau            = linspace(0, 1, sampleCount).';

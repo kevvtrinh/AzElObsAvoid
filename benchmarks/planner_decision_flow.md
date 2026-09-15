@@ -66,6 +66,10 @@ subdivision, solver formulation, or acceptance.
 The polynomial representation is selected from the physical request only:
 degree 8 for static earliest-arrival guides, degree 5 with three subspans for
 everything else, and the seed's own degree for a complete polynomial seed.
+The physical clock is declared by the seed's producer as typed
+`UsesVariableClock` / `UsesTimeScopedSolver` logicals, never by a timing
+label, and one canonical convex decomposition serves every producer and the
+independent validator, so no stored merge-order label selects geometry.
 `testTimeScopedPlanes/testTimedProfileDoesNotDependOnSeedSource` proves that
 two unrelated source labels produce identical degree, split count, warm
 controls, segment clock, and active region pairs.
@@ -111,9 +115,10 @@ controls, segment clock, and active region pairs.
   `testDepartureFamilyDoesNotDependOnSeedLabel` proves label invariance
   through `solve`, not only through request construction.
 - The fixed-arrival guide cascade advancing past a solver success that the
-  public validator rejected; only solver-level infeasibility
-  (`noOptimizedFeasibleIterate`) admits the next guide, and a rejected motion
-  terminates as a defect to diagnose upstream.
+  public validator rejected; only solver-level infeasibility admits the next
+  guide, and a rejected motion terminates as a defect to diagnose upstream.
+  The admitting condition is the typed `candidate.OptimizerIterateUnavailable`
+  flag; `TerminationReason` stays explanatory.
 
 ## Defects found by hand at stage boundaries
 

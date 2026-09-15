@@ -4,7 +4,8 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 %   goalState, limits, options)
 % PURPOSE: Check BMTP inputs and select the established polynomial representation. Collect horizon,
 %   region, objective, and numerical solver controls once.
-% INPUTS: seed (scalar route-seed struct) Ordered positions and normalized route progress.
+% INPUTS: seed (scalar route-seed struct) Ordered positions, normalized route progress, and
+%   optional typed UsesVariableClock/UsesTimeScopedSolver clock declarations.
 %   regions_units (R-by-1 cell array) Convex exclusion polygons. coverage (scalar struct) Static
 %   region-coverage evidence from the caller. initialState, goalState, limits, options (scalar
 %   structs) Dimension-neutral boundary request, limits, and resolved controls.
@@ -14,11 +15,11 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 %   units/s^3.
 
 %% Section 1: Check The Engine Inputs
-% Validate convex static regions before solving.
+% Validate convex static regions before solving. The caller normalizes both
+% endpoint states completely, so the engine checks the supplied derivatives
+% and never substitutes a missing one.
 
 for name = ["velocity_units_s","acceleration_units_s2"]
-    if ~isfield(initialState,name) || isempty(initialState.(name)), initialState.(name) = [0 0]; end
-    if ~isfield(goalState,name) || isempty(goalState.(name)), goalState.(name) = [0 0]; end
     validateattributes(initialState.(name),{'numeric'},{'real','finite','size',[1 2]});
     validateattributes(goalState.(name),{'numeric'},{'real','finite','size',[1 2]});
 end
@@ -26,17 +27,17 @@ validateKernelInputs(seed, regions_units, coverage, initialState, goalState, lim
 
 %% Section 2: Select The Polynomial Representation
 % Choose the representation from the physical request, never from a
-% diagnostic seed label. Every non-static timed proposal uses the same
+% diagnostic seed label. The seed's producer declares its own physical clock
+% with typed logical fields. Every non-static timed proposal uses the same
 % quintic C3 representation; its physical clock controls only the time mesh.
 
 [degree, splitCount] = deal(5, 3);
 if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
     degree=8;
 end
-usesVariableClock=isfield(seed,'TimingMode') && ...
-    string(seed.TimingMode)=="variableClock";
-usesTimeScopedSolver=usesVariableClock || (isfield(seed,'TimingMode') && ...
-    string(seed.TimingMode)=="timeScopedClock");
+usesVariableClock=isfield(seed,'UsesVariableClock') && seed.UsesVariableClock;
+usesTimeScopedSolver=usesVariableClock || ...
+    (isfield(seed,'UsesTimeScopedSolver') && seed.UsesTimeScopedSolver);
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");
@@ -124,7 +125,7 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
     endpointDerivative = [initialState.velocity_units_s, ...
         initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
     limitsMatrix       = [limits.maxVelocity_units_s; limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-    requestIsSupported = all(isfinite(endpointDerivative)) && any(string(options.GoalTimeMode) == ["fixedArrival", "earliestArrival"]) && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
+    requestIsSupported = all(isfinite(endpointDerivative)) && any(string(options.GoalTimeMode) == ["fixedArrival", "earliestArrival"]) && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all");
     if ~requestIsSupported
         error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped full-state request.");
     end

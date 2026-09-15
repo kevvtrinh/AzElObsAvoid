@@ -35,7 +35,6 @@ end
 %% Section 2: Separate Every Pair On Its Exact Physical Interval
 complete=true;
 verifiedCount=0;
-analyticCount=0;
 for segmentIndex=1:segmentCount
     for regionIndex=reshape(find(activePairs(segmentIndex,:)),1,[])
         controls_units=squeeze(referenceControl_units(segmentIndex,:,:));
@@ -53,12 +52,10 @@ for segmentIndex=1:segmentCount
         end
         vertices_units=bmtpEngine.regionOnInterval(request.Regions_units{regionIndex}, ...
             request.Coverage,regionIndex,interval_s);
-        [plane,exitFlag,output]=bmtpEngine.solveSeparatingLine(controls_units, ...
+        [plane,exitFlag]=bmtpEngine.solveSeparatingLine(controls_units, ...
             vertices_units,target_units,reserve_units,geometry);
         plane.TimeFraction=timeFraction;
         planes(segmentIndex,regionIndex)=plane;
-        analyticCount=analyticCount+double(isfield(output,'IsAnalytic') && ...
-            output.IsAnalytic);
         if exitFlag<=0 || ~plane.Active || ~plane.Verified
             complete=false;
         else
@@ -67,5 +64,5 @@ for segmentIndex=1:segmentCount
     end
 end
 statistics=struct('ActivePairCount',nnz(activePairs), ...
-    'VerifiedPairCount',verifiedCount,'AnalyticPairCount',analyticCount);
+    'VerifiedPairCount',verifiedCount);
 end

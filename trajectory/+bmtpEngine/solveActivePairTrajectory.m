@@ -51,7 +51,7 @@ for iterationIndex=1:maximumIterationCount
     end
     collisionPairs=bmtpEngine.findSampledObstacleOverlaps(trialControl_units, ...
         request.Regions_units,request.RegionMinimum_units,request.RegionMaximum_units, ...
-        regionActiveBySegment,1201);
+        regionActiveBySegment);
     duration_s=sum(trialTimes_s);
     diagnostics.FinalCollisionPairCount=nnz(collisionPairs);
     newPairs=collisionPairs & ~taggedPairs;
@@ -111,7 +111,7 @@ if ~isempty(bestControl_units)
     if bmtpEngine.hasUsableConicIterate(shortControl_units,shortFlag)
         overlaps=bmtpEngine.findSampledObstacleOverlaps(shortControl_units, ...
             request.Regions_units,request.RegionMinimum_units,request.RegionMaximum_units, ...
-            regionActiveBySegment,1201);
+            regionActiveBySegment);
         if ~any(overlaps,'all')
             originalLength_units=sum(vecnorm(diff(bestControl_units,1,2),2,3),'all');
             shortLength_units=sum(vecnorm(diff(shortControl_units,1,2),2,3),'all');

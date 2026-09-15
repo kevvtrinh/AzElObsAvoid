@@ -59,9 +59,12 @@ useFreeGoalWindow = ~isFixedArrival && ...
     timedSearch.SelectedGoalWindowEndTime_s > ...
     routeTime_s(end) + previous.Options.ArrivalTimeTolerance_s;
 seedDuration_s=routeTime_s(end)-initialState.time_s;
+% The producer declares the physical clock this guide was built on. Source
+% remains a diagnostic label and never selects a solver.
 seed=struct('position_units',route_units, ...
     'tau',(routeTime_s-initialState.time_s)/seedDuration_s, ...
-    'Source',"timeExpandedVisibilityGraph");
+    'Source',"timeExpandedVisibilityGraph", ...
+    'UsesVariableClock',false,'UsesTimeScopedSolver',false);
 motionGoalState=goalState;
 motionOptions=previous.Options;
 if useFreeGoalWindow
@@ -73,13 +76,13 @@ if useFreeGoalWindow
         initialState.time_s,motionGoalState.time_s);
     coverage.MinimumMotionDuration_s=minimumArrivalTime_s-initialState.time_s;
     coverage.SeedMotionDuration_s=seedDuration_s;
-    seed.TimingMode="variableClock";
+    seed.UsesVariableClock=true;
 else
     motionGoalState.time_s=routeTime_s(end);
     motionOptions.GoalTimeMode="fixedArrival";
     [regions_units,coverage]=createTimedCoverage(previous.PreparedObstacles, ...
         initialState.time_s,motionGoalState.time_s);
-    seed.TimingMode="timeScopedClock";
+    seed.UsesTimeScopedSolver=true;
 end
 [candidate,diagnostics]=bmtpEngine.solve(seed,regions_units,coverage, ...
     initialState,motionGoalState,previous.RequestedLimits,motionOptions);
@@ -130,11 +133,10 @@ end
 function [regions_units,coverage]=createTimedCoverage(obstacles,startTime_s,finishTime_s)
     % Give every timed BMTP path the same exact cells and reconstruction metadata.
     cells=obstacleAvoidance.obstacles.createTimeCells( ...
-        obstacles,startTime_s,finishTime_s,true);
+        obstacles,startTime_s,finishTime_s);
     regions_units=cells.Regions_units;
     coverage=struct('Passed',true,'ExactRegionCount',numel(regions_units), ...
         'ActiveTimeInterval_s',cells.ActiveTimeInterval_s, ...
         'EndRegions_units',{cells.EndRegions_units}, ...
-        'BreakTime_s',cells.BreakTime_s, ...
-        'ConvexMergeOrder',"longestSharedEdgeFirst");
+        'BreakTime_s',cells.BreakTime_s);
 end
