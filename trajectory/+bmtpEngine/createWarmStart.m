@@ -27,93 +27,19 @@ if usesLengthBalancedMesh
     route_units = removeRedundantRouteVertices(route_units);
 end
 originalSegmentCount = size(route_units, 1) - 1;
-solverRoute_units     = route_units;
-if usesLengthBalancedMesh
-    minimumSteeringSegmentCount = 2 * (request.Degree - 2);
-    targetSegmentCount          = max(minimumSteeringSegmentCount, ...
-        originalSegmentCount * request.SplitCount);
-    segmentCountByEdge          = allocateSegmentsByMeasure( ...
-        vecnorm(diff(route_units), 2, 2), targetSegmentCount);
-    solverRoute_units           = splitByCount(route_units, segmentCountByEdge);
-end
-segmentCount          = size(solverRoute_units, 1) - 1;
-regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
 
-%% Section 2: Create Linear Rest-To-Rest Controls
-degree             = request.Degree;
-fraction           = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
-start_units        = reshape(solverRoute_units(1:end - 1, :), segmentCount, 1, 2);
-finish_units       = reshape(solverRoute_units(2:end, :), segmentCount, 1, 2);
-controlPoint_units = (1 - fraction) .* start_units + fraction .* finish_units;
-segmentTime_s      = bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits);
-if request.SplitCount > 1 && ~usesLengthBalancedMesh
-    subdivisionCount = request.SplitCount;
-    refined_units    = zeros(segmentCount * subdivisionCount, degree + 1, 2);
-    for segmentIndex = 1:segmentCount
-        for subdivisionIndex = 1:subdivisionCount
-            targetIndex    = (segmentIndex - 1) * subdivisionCount + subdivisionIndex;
-            sourceInterval = [subdivisionIndex - 1, subdivisionIndex] / subdivisionCount;
-            refined_units(targetIndex, :, :) = bmtpEngine.restrictBezier( ...
-                squeeze(controlPoint_units(segmentIndex, :, :)), sourceInterval);
-        end
-    end
-    controlPoint_units    = refined_units;
-    segmentTime_s         = repelem(segmentTime_s, subdivisionCount) / subdivisionCount;
-    regionActiveBySegment = repelem(regionActiveBySegment, subdivisionCount, 1);
-    segmentCount          = segmentCount * subdivisionCount;
-end
-
-%% Section 3: Return The Solver Initialization
-warmStart                          = struct();
-warmStart.Route_units              = route_units;
-warmStart.ControlPoint_units       = controlPoint_units;
-warmStart.SegmentTime_s            = segmentTime_s(:);
-warmStart.Duration_s               = sum(segmentTime_s);
-warmStart.SegmentRatio             = segmentTime_s(:) / mean(segmentTime_s);
-warmStart.SegmentCount             = segmentCount;
-warmStart.RegionActiveBySegment    = regionActiveBySegment;
-warmStart.OriginalSeedSegmentCount = originalSegmentCount;
-warmStart.WarmRouteResampled       = false;
-if request.UsesVariableClock && isfield(request.Coverage, 'BreakTime_s')
-    sourceBreaks_s = request.Coverage.BreakTime_s;
-    % The timed guide's knots are physical events. Preserve every knot and
-    % subdivide its normalized intervals so changing the arrival clock scales
-    % the complete guide instead of deleting its waits.
-    routeTau            = double(request.Seed.tau(:));
-    minimumSegmentCount = max([20, numel(sourceBreaks_s) - 1, ...
-        originalSegmentCount * request.SplitCount]);
-    segmentCountByEdge  = allocateSegmentsByMeasure(diff(routeTau), ...
-        minimumSegmentCount);
-    meshTau             = splitByCount(routeTau, segmentCountByEdge);
-    segmentRatio       = diff(meshTau) / mean(diff(meshTau));
-    segmentTime_s      = request.MotionHorizon_s * diff(meshTau);
-    segmentCount       = numel(segmentTime_s);
-    tau                = meshTau(1:end - 1) + diff(meshTau) .* ((0:degree) / degree);
-    breakTime_s        = request.InitialState.time_s + [0; cumsum(segmentTime_s)];
-    controls_units     = interp1(request.Seed.tau, route_units, tau(:), 'linear');
-    controlPoint_units = reshape(controls_units, segmentCount, degree + 1, 2);
-    controlPoint_units(1, 1:3, :) = reshape( ...
-        repmat(request.InitialState.position_units, 3, 1), 1, 3, 2);
-    controlPoint_units(end, end - 2:end, :) = reshape( ...
-        repmat(request.GoalState.position_units, 3, 1), 1, 3, 2);
-    intervals_s                        = request.Coverage.ActiveTimeInterval_s;
-    warmStart.ControlPoint_units       = controlPoint_units;
-    warmStart.SegmentTime_s            = segmentTime_s(:);
-    warmStart.SegmentRatio             = segmentRatio;
-    warmStart.Duration_s               = sum(segmentTime_s);
-    warmStart.SegmentCount             = segmentCount;
-    warmStart.RegionActiveBySegment    = breakTime_s(1:end - 1) < intervals_s(:, 2).' & ...
-        breakTime_s(2:end) > intervals_s(:, 1).';
-    warmStart.WarmRouteResampled = true;
-end
+%% Section 2: Build One Clock-Specific Representation
+degree   = request.Degree;
+fraction = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
 
 if request.Options.GoalTimeMode == "fixedArrival"
     % The motion mesh follows the guide, not the obstacle sampling frequency.
     % Every source interval still constrains its exact overlap with these spans.
     seedUsesTimedSolver = request.UsesTimeScopedSolver;
-    minimumSegmentCount = 8;
     if seedUsesTimedSolver
         minimumSegmentCount = 16;
+    else
+        minimumSegmentCount = 8;
     end
     segmentCount = max(minimumSegmentCount, originalSegmentCount);
     if seedUsesTimedSolver
@@ -122,60 +48,143 @@ if request.Options.GoalTimeMode == "fixedArrival"
             segmentCount);
         routeTau           = splitByCount(request.Seed.tau(:), segmentCountByEdge);
         segmentCount       = numel(routeTau) - 1;
-        timedRoute_units   = interp1(request.Seed.tau, route_units, routeTau, 'linear');
-        start_units        = reshape(timedRoute_units(1:end - 1, :), segmentCount, 1, 2);
-        finish_units       = reshape(timedRoute_units(2:end, :), segmentCount, 1, 2);
-        warmStart.ControlPoint_units = ...
-            (1 - fraction) .* start_units + fraction .* finish_units;
-        warmStart.Route_units        = timedRoute_units;
-        warmStart.SegmentTime_s      = diff(routeTau) * request.MotionHorizon_s;
-        warmStart.SegmentRatio       = warmStart.SegmentTime_s / ...
-            mean(warmStart.SegmentTime_s);
+        solverRoute_units  = interp1(request.Seed.tau, route_units, routeTau, 'linear');
+        start_units        = reshape(solverRoute_units(1:end - 1, :), segmentCount, 1, 2);
+        finish_units       = reshape(solverRoute_units(2:end, :), segmentCount, 1, 2);
+        controlPoint_units = (1 - fraction) .* start_units + fraction .* finish_units;
+        segmentTime_s      = diff(routeTau) * request.MotionHorizon_s;
+        segmentRatio       = segmentTime_s / mean(segmentTime_s);
+        outputRoute_units  = solverRoute_units;
     else
-        tau                          = ((0:segmentCount - 1).' + (0:degree) / degree) / segmentCount;
-        controls_units               = interp1(request.Seed.tau, route_units, tau(:), 'linear');
-        warmStart.ControlPoint_units = reshape(controls_units, segmentCount, degree + 1, 2);
-        warmStart.SegmentTime_s      = repmat( ...
+        tau                = ((0:segmentCount - 1).' + (0:degree) / degree) / segmentCount;
+        controls_units     = interp1(request.Seed.tau, route_units, tau(:), 'linear');
+        controlPoint_units = reshape(controls_units, segmentCount, degree + 1, 2);
+        segmentTime_s      = repmat( ...
             request.MotionHorizon_s / segmentCount, segmentCount, 1);
-        warmStart.SegmentRatio       = ones(segmentCount, 1);
+        segmentRatio       = ones(segmentCount, 1);
+        outputRoute_units  = route_units;
     end
-    warmStart.SegmentCount          = segmentCount;
-    warmStart.RegionActiveBySegment = true(segmentCount, numel(request.Regions_units));
     if isfield(request.Coverage, 'ActiveTimeInterval_s')
-        breaks_s    = request.InitialState.time_s + [0; cumsum(warmStart.SegmentTime_s)];
+        breaks_s    = request.InitialState.time_s + [0; cumsum(segmentTime_s)];
         intervals_s = request.Coverage.ActiveTimeInterval_s;
-        warmStart.RegionActiveBySegment = breaks_s(1:end - 1) < intervals_s(:, 2).' & ...
+        regionActiveBySegment = breaks_s(1:end - 1) < intervals_s(:, 2).' & ...
             breaks_s(2:end) > intervals_s(:, 1).';
+    else
+        regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
     end
-    warmStart.WarmRouteResampled = true;
-end
-if request.Options.GoalTimeMode == "fixedArrival"
-    warmStart.SegmentTime_s = warmStart.SegmentTime_s * request.MotionHorizon_s / ...
-        sum(warmStart.SegmentTime_s);
-    warmStart.Duration_s    = request.MotionHorizon_s;
-end
-warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
-    warmStart.SegmentTime_s, request.InitialState, request.GoalState);
-if request.UsesVariableClock
+    segmentTime_s = segmentTime_s * request.MotionHorizon_s / sum(segmentTime_s);
+    duration_s    = request.MotionHorizon_s;
+    endpointControlTime_s = segmentTime_s;
+    warmRouteResampled    = true;
+elseif request.UsesVariableClock
+    if isfield(request.Coverage, 'BreakTime_s')
+        sourceBreaks_s = request.Coverage.BreakTime_s;
+        % The timed guide's knots are physical events. Preserve every knot and
+        % subdivide its normalized intervals so changing the arrival clock scales
+        % the complete guide instead of deleting its waits.
+        routeTau            = double(request.Seed.tau(:));
+        minimumSegmentCount = max([20, numel(sourceBreaks_s) - 1, ...
+            originalSegmentCount * request.SplitCount]);
+        segmentCountByEdge  = allocateSegmentsByMeasure(diff(routeTau), ...
+            minimumSegmentCount);
+        meshTau               = splitByCount(routeTau, segmentCountByEdge);
+        segmentRatio          = diff(meshTau) / mean(diff(meshTau));
+        endpointControlTime_s = request.MotionHorizon_s * diff(meshTau);
+        segmentCount          = numel(endpointControlTime_s);
+        tau                   = meshTau(1:end - 1) + diff(meshTau) .* ((0:degree) / degree);
+        controls_units        = interp1(request.Seed.tau, route_units, tau(:), 'linear');
+        controlPoint_units    = reshape(controls_units, segmentCount, degree + 1, 2);
+        warmRouteResampled = true;
+    else
+        [controlPoint_units, endpointControlTime_s, segmentCount] = ...
+            createUntimedMesh(route_units, request, usesLengthBalancedMesh, fraction);
+        segmentRatio = endpointControlTime_s(:) / mean(endpointControlTime_s);
+        warmRouteResampled = false;
+    end
     % A timed visibility route is a geometric corridor proposal at one
     % supplied physical clock, not a complete feasible motion. Initialize
     % its exact obstacle planes on that clock. Stretching the unsolved guide
     % to satisfy dynamics first changes which moving geometry it encounters
     % and therefore corrupts the proposal before BMTP sees it.
-    commonSegmentTime_s = request.SeedMotionDuration_s / ...
-        sum(warmStart.SegmentRatio);
-    warmStart.SegmentTime_s = commonSegmentTime_s * warmStart.SegmentRatio;
-    warmStart.Duration_s    = sum(warmStart.SegmentTime_s);
+    commonSegmentTime_s = request.SeedMotionDuration_s / sum(segmentRatio);
+    segmentTime_s       = commonSegmentTime_s * segmentRatio;
+    duration_s          = sum(segmentTime_s);
     if isfield(request.Coverage, 'ActiveTimeInterval_s')
-        breaks_s    = request.InitialState.time_s + [0; cumsum(warmStart.SegmentTime_s)];
+        breaks_s    = request.InitialState.time_s + [0; cumsum(segmentTime_s)];
         intervals_s = request.Coverage.ActiveTimeInterval_s;
-        warmStart.RegionActiveBySegment = breaks_s(1:end - 1) < intervals_s(:, 2).' & ...
+        regionActiveBySegment = breaks_s(1:end - 1) < intervals_s(:, 2).' & ...
             breaks_s(2:end) > intervals_s(:, 1).';
+    else
+        regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
     end
+    outputRoute_units = route_units;
+else
+    [controlPoint_units, segmentTime_s, segmentCount] = ...
+        createUntimedMesh(route_units, request, usesLengthBalancedMesh, fraction);
+    regionActiveBySegment = true(segmentCount, numel(request.Regions_units));
+    segmentTime_s         = segmentTime_s(:);
+    duration_s            = sum(segmentTime_s);
+    segmentRatio          = segmentTime_s / mean(segmentTime_s);
+    endpointControlTime_s = segmentTime_s;
+    outputRoute_units     = route_units;
+    warmRouteResampled    = false;
 end
+
+controlPoint_units = bmtpEngine.imposeEndpointControls(controlPoint_units, ...
+    endpointControlTime_s, request.InitialState, request.GoalState);
+
+%% Section 3: Return The Solver Initialization
+warmStart                          = struct();
+warmStart.Route_units              = outputRoute_units;
+warmStart.ControlPoint_units       = controlPoint_units;
+warmStart.SegmentTime_s            = segmentTime_s(:);
+warmStart.Duration_s               = duration_s;
+warmStart.SegmentRatio             = segmentRatio;
+warmStart.SegmentCount             = segmentCount;
+warmStart.RegionActiveBySegment    = regionActiveBySegment;
+warmStart.OriginalSeedSegmentCount = originalSegmentCount;
+warmStart.WarmRouteResampled       = warmRouteResampled;
 end
 
 %% Section 4: Local Functions
+
+function [controlPoint_units, segmentTime_s, segmentCount] = createUntimedMesh( ...
+    route_units, request, usesLengthBalancedMesh, fraction)
+    % Build the shared untimed route mesh and its derivative-required times.
+    if usesLengthBalancedMesh
+        originalSegmentCount        = size(route_units, 1) - 1;
+        minimumSteeringSegmentCount = 2 * (request.Degree - 2);
+        targetSegmentCount          = max(minimumSteeringSegmentCount, ...
+            originalSegmentCount * request.SplitCount);
+        segmentCountByEdge          = allocateSegmentsByMeasure( ...
+            vecnorm(diff(route_units), 2, 2), targetSegmentCount);
+        solverRoute_units           = splitByCount(route_units, segmentCountByEdge);
+    else
+        solverRoute_units = route_units;
+    end
+
+    degree             = request.Degree;
+    segmentCount       = size(solverRoute_units, 1) - 1;
+    start_units        = reshape(solverRoute_units(1:end - 1, :), segmentCount, 1, 2);
+    finish_units       = reshape(solverRoute_units(2:end, :), segmentCount, 1, 2);
+    controlPoint_units = (1 - fraction) .* start_units + fraction .* finish_units;
+    segmentTime_s      = bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits);
+    if request.SplitCount > 1 && ~usesLengthBalancedMesh
+        subdivisionCount = request.SplitCount;
+        refined_units    = zeros(segmentCount * subdivisionCount, degree + 1, 2);
+        for segmentIndex = 1:segmentCount
+            for subdivisionIndex = 1:subdivisionCount
+                targetIndex    = (segmentIndex - 1) * subdivisionCount + subdivisionIndex;
+                sourceInterval = [subdivisionIndex - 1, subdivisionIndex] / subdivisionCount;
+                refined_units(targetIndex, :, :) = bmtpEngine.restrictBezier( ...
+                    squeeze(controlPoint_units(segmentIndex, :, :)), sourceInterval);
+            end
+        end
+        controlPoint_units = refined_units;
+        segmentTime_s      = repelem(segmentTime_s, subdivisionCount) / subdivisionCount;
+        segmentCount       = segmentCount * subdivisionCount;
+    end
+end
 
 function route_units = removeRedundantRouteVertices(route_units)
     % Remove zero-length and collinear interior route vertices.
