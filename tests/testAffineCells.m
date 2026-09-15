@@ -13,6 +13,21 @@ function setupOnce(~)
     addpath(root,fullfile(root,'trajectory'));
 end
 
+function testEmptyCanonicalSchemaMatchesNonemptyRecord(testCase)
+    % Keep the obstacle-free canonical schema equal to populated records.
+    vertices_units = [
+        0, 0
+        1, 0
+        1, 1
+        0, 1
+    ];
+    populated = obstacleAvoidance.obstacles.createObstacle( ...
+        'schema reference', 0, vertices_units(:, 1), vertices_units(:, 2));
+    empty = obstacleAvoidance.obstacles.combineObstacles();
+    verifyEmpty(testCase, empty);
+    verifyEqual(testCase, fieldnames(empty), fieldnames(populated));
+end
+
 function testMovingPlaneCertifiesTranslation(testCase)
     first = [1.5,-0.5;2.5,-0.5;2.5,0.5;1.5,0.5];
     vertices = cat(3,first,first+[10,0]);

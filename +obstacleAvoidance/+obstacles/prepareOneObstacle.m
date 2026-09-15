@@ -50,7 +50,7 @@ end
 %% Section 2: Extend The Single Source-Checked Preparation Record
 
 if isempty(previous)
-    usesUnbufferedSourceIndex = string(obstacle.vertexCorrespondence) == "sourceIndex" && ...
+    usesUnbufferedSourceIndex = obstacle.UsesSourceIndex && ...
         obstacle.safetyMargin_units == 0;
     preparation = struct( ...
         'PreparationVersion',                         preparationVersion, ...
@@ -69,6 +69,10 @@ if isempty(previous)
         'DeltaY_units',                               {cell(intervalCount, 1)}, ...
         'MatchingTopology',                           false(intervalCount, 1), ...
         'IntervalGeometryModel',                      strings(intervalCount, 1), ...
+        'IntervalHasExactPartition',                  false(intervalCount, 1), ...
+        'IntervalIsStationary',                       false(intervalCount, 1), ...
+        'IntervalUsesSweptCells',                     false(intervalCount, 1), ...
+        'IntervalIsUnsupported',                      false(intervalCount, 1), ...
         'IntervalPartitionReused',                    false(intervalCount, 1), ...
         'IntervalSweptCellCount',                     zeros(intervalCount, 2), ...
         'IntervalSweptTiming_s',                      zeros(intervalCount, 4), ...
@@ -92,7 +96,7 @@ else
     preparation = previous;
 end
 if stopAtUnsupported && any(neededIntervals & preparation.IntervalPrepared & ...
-        preparation.IntervalGeometryModel == "unsupportedContinuousDeformation")
+        preparation.IntervalIsUnsupported)
     obstacle.InternalPreparation = preparation;
     return;
 end
@@ -127,7 +131,7 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
     reusableStartRegions_units = cell(0, 1);
     precedingPartitionIsReusable = intervalIndex > 1 && ...
         preparation.IntervalPrepared(intervalIndex - 1) && ...
-        preparation.IntervalGeometryModel(intervalIndex - 1) == "linearCorrespondingConvexPartition" && ...
+        preparation.IntervalHasExactPartition(intervalIndex - 1) && ...
         ~isempty(preparation.IntervalEndRegions_units{intervalIndex - 1});
     if precedingPartitionIsReusable
         reusableStartRegions_units = preparation.IntervalEndRegions_units{intervalIndex - 1};
@@ -136,12 +140,12 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
     % Protected rings are only those rings when no margin was applied;
     % buffered rings carry no index correspondence, so they admit only the
     % translation certificate, and every other motion uses the original rings.
-    usesSourceIndex     = string(obstacle.vertexCorrespondence) == "sourceIndex";
+    usesSourceIndex     = obstacle.UsesSourceIndex;
     protectedKeepsIndex = usesSourceIndex && obstacle.safetyMargin_units == 0;
     translationOnly     = usesSourceIndex && obstacle.safetyMargin_units > 0;
     preserveAlignment   = protectedKeepsIndex || finalSampleIndex > intervalIndex + 1;
     [matched, alignedUpper_units, startRegions_units, endRegions_units, ...
-        geometryModel, partitionReused] = alignVerifiedSingleRing( ...
+        geometryModel, hasExactPartition, partitionReused] = alignVerifiedSingleRing( ...
         lowerX_units, lowerY_units, upperX_units, upperY_units, ...
         preparation.SampleShapes{intervalIndex}, ...
         preparation.SampleShapes{finalSampleIndex}, ...
@@ -156,13 +160,16 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
         upperX_units = obstacle.x_units{finalSampleIndex};
         upperY_units = obstacle.y_units{finalSampleIndex};
         [matched, alignedUpper_units, startRegions_units, endRegions_units, ...
-            geometryModel, partitionReused] = alignVerifiedSingleRing( ...
+            geometryModel, hasExactPartition, partitionReused] = alignVerifiedSingleRing( ...
             lowerX_units, lowerY_units, upperX_units, upperY_units, ...
             preparation.SampleShapes{intervalIndex}, ...
             preparation.SampleShapes{finalSampleIndex}, ...
             reusableStartRegions_units, protectedKeepsIndex, translationOnly);
     end
-    preparation.MatchingTopology(intervalIndex)        = matched;
+    intervalIsStationary   = false;
+    intervalUsesSweptCells = false;
+    intervalIsUnsupported  = false;
+    preparation.MatchingTopology(intervalIndex) = matched;
     preparation.IntervalPartitionReused(intervalIndex) = partitionReused;
     if matched
         preparation.DeltaX_units{intervalIndex} = alignedUpper_units(:, 1) - lowerX_units;
@@ -175,14 +182,14 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
             (time_s(finalSampleIndex) - time_s(intervalIndex));
         preparation.IntervalSpeedBound_units_s(intervalIndex) = ...
             max([0; speed_units_s(isfinite(speed_units_s))]);
-        preparation.IntervalGeometryModel(intervalIndex) = geometryModel;
     else
         firstShape = preparation.SampleShapes{intervalIndex};
         lastShape  = preparation.SampleShapes{finalSampleIndex};
         equivalent = compareShapes(firstShape, lastShape);
         if equivalent
-            shape  = firstShape;
-            method = "staticEquivalentSamples";
+            shape                = firstShape;
+            geometryModel        = "staticEquivalentSamples";
+            intervalIsStationary = true;
         else
             lowerOriginal_units = [obstacle.originalX_units{intervalIndex}, ...
                 obstacle.originalY_units{intervalIndex}];
@@ -192,7 +199,6 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
                 obstacleAvoidance.obstacles.createSweptCorrespondingCells( ...
                 lowerOriginal_units, upperOriginal_units, ...
                 obstacle.safetyMargin_units, usesSourceIndex);
-            method = "unsupportedContinuousDeformation";
             if supported
                 % The sqrt(2)-margin squares contain the constructor's
                 % square-join protection, but both authoritative protected
@@ -210,20 +216,24 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
                 end
             end
             if supported
-                method = "sweptCorrespondingConvexCells";
+                geometryModel = "sweptCorrespondingConvexCells";
                 preparation.IntervalStartRegions_units{intervalIndex} = regions_units;
                 preparation.IntervalEndRegions_units{intervalIndex}   = regions_units;
+            else
+                geometryModel = "unsupportedContinuousDeformation";
             end
+            intervalUsesSweptCells = supported;
+            intervalIsUnsupported  = ~supported;
             preparation.IntervalSweptCellCount(intervalIndex, :) = counts;
             preparation.IntervalSweptTiming_s(intervalIndex, :)  = timing_s;
         end
         preparation.IntervalUnionShapes{intervalIndex} = shape;
-        preparation.IntervalGeometryModel(intervalIndex) = method;
         preparation.IntervalSpeedBound_units_s(intervalIndex) = 0;
         [preparation.IntervalUnionEdgeStart_units{intervalIndex}, ...
             preparation.IntervalUnionEdgeEnd_units{intervalIndex}] = ...
             obstacleAvoidance.geometry.boundaryToEdges(shape, 0);
     end
+    classifiedIntervalIndices = intervalIndex;
     if finalSampleIndex > intervalIndex + 1
         % One certified partition restricts to every source subinterval with
         % identical face indices. Source samples themselves remain authoritative.
@@ -245,23 +255,27 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
             preparation.IntervalEndRegions_units{sourceIndex} = endRegions_units;
         end
         spanIndices = intervalIndex:finalSampleIndex - 1;
+        classifiedIntervalIndices = spanIndices;
         preparation.IntervalPrepared(spanIndices) = true;
         preparation.MatchingTopology(spanIndices) = true;
-        preparation.IntervalGeometryModel(spanIndices) = geometryModel;
         preparation.IntervalSpeedBound_units_s(spanIndices) = preparation.IntervalSpeedBound_units_s(intervalIndex);
         preparation.IntervalPartitionReused(intervalIndex + 1:finalSampleIndex - 1) = true;
         preparation.SpanStartSampleIndex(spanIndices) = intervalIndex;
         preparation.SpanEndSampleIndex(spanIndices) = finalSampleIndex;
         preparation.MergedIntervalCount = preparation.MergedIntervalCount + numel(spanIndices) - 1;
     end
+    preparation.IntervalGeometryModel(classifiedIntervalIndices)     = geometryModel;
+    preparation.IntervalHasExactPartition(classifiedIntervalIndices) = hasExactPartition;
+    preparation.IntervalIsStationary(classifiedIntervalIndices)      = intervalIsStationary;
+    preparation.IntervalUsesSweptCells(classifiedIntervalIndices)    = intervalUsesSweptCells;
+    preparation.IntervalIsUnsupported(classifiedIntervalIndices)     = intervalIsUnsupported;
     preparation.IntervalPrepared(intervalIndex) = true;
-    if stopAtUnsupported && ...
-            preparation.IntervalGeometryModel(intervalIndex) == "unsupportedContinuousDeformation"
+    if stopAtUnsupported && preparation.IntervalIsUnsupported(intervalIndex)
         break;
     end
 end
 if ~stopAtUnsupported || ~any(neededIntervals & preparation.IntervalPrepared & ...
-        preparation.IntervalGeometryModel == "unsupportedContinuousDeformation")
+        preparation.IntervalIsUnsupported)
     preparation = prepareSamples(preparation, obstacle, find(neededSamples).');
 end
 
@@ -269,9 +283,9 @@ end
 
 preparation.SampleSpeedBound_units_s = max([0; preparation.IntervalSpeedBound_units_s], ...
     [preparation.IntervalSpeedBound_units_s; 0]);
-sweptIntervalIndices = find(preparation.IntervalGeometryModel == "sweptCorrespondingConvexCells");
+sweptIntervalIndices = find(preparation.IntervalUsesSweptCells);
 preparation.SampleSpeedBound_units_s(unique([sweptIntervalIndices; sweptIntervalIndices + 1])) = Inf;
-staticIntervals = preparation.IntervalGeometryModel == "staticEquivalentSamples" | ...
+staticIntervals = preparation.IntervalIsStationary | ...
     (preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s == 0);
 preparation.IsTimeInvariant = preparation.IsTimeInvariant || ...
     (all(preparation.IntervalPrepared) && all(staticIntervals));
@@ -301,7 +315,7 @@ function preparation = prepareSamples(preparation, obstacle, sampleIndices)
 end
 
 function [verified, alignedUpper_units, startRegions_units, endRegions_units, ...
-        geometryModel, partitionReused] = alignVerifiedSingleRing( ...
+        geometryModel, hasExactPartition, partitionReused] = alignVerifiedSingleRing( ...
         lowerX_units, lowerY_units, upperX_units, upperY_units, lowerShape, ...
         upperShape, reusableStartRegions_units, preserveAlignment, translationOnly)
     % Align rings, then certify either one moving convex region or an exact
@@ -314,6 +328,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
     startRegions_units = cell(0, 1);
     endRegions_units   = cell(0, 1);
     geometryModel      = "";
+    hasExactPartition  = false;
     partitionReused    = false;
     lowerFinite = all(isfinite(lower_units), 2);
     upperFinite = all(isfinite(upper_units), 2);
@@ -335,6 +350,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
                 startRegions_units, 'UniformOutput', false);
             verified         = true;
             geometryModel    = "linearCorrespondingConvexPartition";
+            hasExactPartition = true;
             return;
         end
     end
@@ -377,6 +393,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         verified = ~isempty(startRegions_units);
         if verified
             geometryModel = "linearCorrespondingConvexPartition";
+            hasExactPartition = true;
             return;
         end
     end
@@ -396,6 +413,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         lower_units, alignedUpper_units, coordinateScale_units));
     if verified
         geometryModel = "linearCorrespondingConvexPartition";
+        hasExactPartition = true;
         return;
     end
     % Every verified branch above returned, so this cleanup is unconditional.

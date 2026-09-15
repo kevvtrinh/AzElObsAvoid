@@ -45,7 +45,8 @@ shape       = [];
 queryOutsideHistory = numel(time_s) > 1 && ...
     (queryTime_s < time_s(1) || queryTime_s > time_s(end));
 if isempty(time_s) || queryOutsideHistory
-    geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, "inactive", classifyBoundary);
+    geometry = boundaryGeometry( ...
+        zeros(0, 1), zeros(0, 1), 0, false, false, 0, "inactive", classifyBoundary);
     if ~geometryOnly
         shape = polyshape();
     end
@@ -76,6 +77,7 @@ end
 x_units                = double(obstacle.x_units{lowerSampleIndex}(:));
 y_units                = double(obstacle.y_units{lowerSampleIndex}(:));
 topologyIsInterpolated = true;
+usesSweptCells         = false;
 if lowerSampleIndex == upperSampleIndex
     speed_units_s = preparation.SampleSpeedBound_units_s(lowerSampleIndex);
     geometryModel = "authoritativeSample";
@@ -103,15 +105,16 @@ elseif preparation.MatchingTopology(lowerSampleIndex)
     if ~geometryOnly && speed_units_s == 0
         shape = preparation.SampleShapes{lowerSampleIndex};
     end
-elseif preparation.IntervalGeometryModel(lowerSampleIndex) == "unsupportedContinuousDeformation"
+elseif preparation.IntervalIsUnsupported(lowerSampleIndex)
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
-elseif any(preparation.IntervalGeometryModel(lowerSampleIndex) == ...
-        ["staticEquivalentSamples", "sweptCorrespondingConvexCells"])
+elseif preparation.IntervalIsStationary(lowerSampleIndex) || ...
+        preparation.IntervalUsesSweptCells(lowerSampleIndex)
     shape = preparation.IntervalUnionShapes{lowerSampleIndex};
     [x_units, y_units] = boundary(shape);
     speed_units_s          = 0;
     topologyIsInterpolated = false;
+    usesSweptCells         = preparation.IntervalUsesSweptCells(lowerSampleIndex);
     geometryModel          = preparation.IntervalGeometryModel(lowerSampleIndex);
 else
     error('preparedShapeAtTime:UnknownGeometryModel', ...
@@ -126,14 +129,14 @@ if nargout < 2
     return;
 end
 geometry = boundaryGeometry( ...
-    x_units, y_units, speed_units_s, topologyIsInterpolated, ...
+    x_units, y_units, speed_units_s, topologyIsInterpolated, usesSweptCells, ...
     lowerSampleIndex, geometryModel, classifyBoundary);
 end
 
 %% Section 3: Local Functions
 
 function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
-        topologyIsInterpolated, lowerSampleIndex, geometryModel, classifyBoundary)
+        topologyIsInterpolated, usesSweptCells, lowerSampleIndex, geometryModel, classifyBoundary)
     % Classify one ordered boundary without changing its vertices or ring order.
     finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
@@ -165,6 +168,7 @@ function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
         "IsConvex",                  isConvex, ...
         "OutwardSign",               outwardSign, ...
         "TopologyIsInterpolated",    topologyIsInterpolated, ...
+        "UsesSweptCells",            usesSweptCells, ...
         "GeometryModel",             string(geometryModel), ...
         "LowerSampleIndex",          lowerSampleIndex);
 end

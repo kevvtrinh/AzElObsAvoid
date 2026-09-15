@@ -26,7 +26,9 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %   - safetyMargin_units (nonnegative numeric scalar, optional; default 0)
 %       Protection margin rebuilt from the retained original geometry.
 %   - constructionOptions (scalar struct, optional; default struct())
-%       Construction controls; Verbose defaults to false.
+%       Verbose applies to both construction paths and defaults to false.
+%       vertexCorrespondence applies only to raw construction and defaults
+%       to circularCorrelation. Canonical records retain their declaration.
 %**************************************************************************
 % OUTPUTS
 %   - obstacleData (canonical scalar or column struct array)
@@ -54,7 +56,7 @@ elseif isContainer && nargin >= 2 && nargin <= 3
         options = varargin{2};
     end
     validateattributes(safetyMargin_units, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
-    verbose      = resolveVerbose(options);
+    [verbose, ~] = resolveConstructionOptions(options, false);
     obstacleData = obstacleAvoidance.obstacles.combineObstacles(obstacleInput);
     obstacleData = protectObstacles(obstacleData, safetyMargin_units, verbose);
     return;
@@ -77,6 +79,7 @@ if nargin == 6 && ~isempty(varargin{5})
     options = varargin{5};
 end
 validateattributes(safetyMargin_units, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
+[verbose, vertexCorrespondence] = resolveConstructionOptions(options, true);
 sampleCount = numel(time_s);
 if ~iscell(xBySlice_units)
     xBySlice_units = repmat({double(xBySlice_units(:))}, sampleCount, 1);
@@ -93,9 +96,9 @@ rawObstacle = struct( ...
     "originalY_units",      {reshape(yBySlice_units, [], 1)}, ...
     "safetyMargin_units",   0, ...
     "status",               repmat("visible", sampleCount, 1), ...
-    "vertexCorrespondence", "circularCorrelation");
+    "vertexCorrespondence", vertexCorrespondence);
 obstacleData = normalizeOne(rawObstacle);
-obstacleData = protectObstacles(obstacleData, safetyMargin_units, resolveVerbose(options));
+obstacleData = protectObstacles(obstacleData, safetyMargin_units, verbose);
 end
 
 %% Section 3: Local Functions
@@ -218,10 +221,8 @@ function obstacle = normalizeOne(inputData)
     else
         error("createObstacle:StatusSizeMismatch", "status must contain one value per time sample.");
     end
-    % The caller may declare that ring vertices correspond by source index
-    % (one source ring transformed per sample). Otherwise correspondence is
-    % recovered by circular correlation. The declaration never changes
-    % geometry; it selects which correspondence the continuous model uses.
+    % Normalize the reported declaration once so later geometry branches use
+    % logical state rather than provenance text.
     vertexCorrespondence = "circularCorrelation";
     if isfield(inputData, "vertexCorrespondence") && ~isempty(inputData.vertexCorrespondence)
         vertexCorrespondence = string(inputData.vertexCorrespondence);
@@ -230,6 +231,7 @@ function obstacle = normalizeOne(inputData)
             "createObstacle:InvalidVertexCorrespondence", ...
             "vertexCorrespondence must be circularCorrelation or sourceIndex.");
     end
+    usesSourceIndex = vertexCorrespondence == "sourceIndex";
     obstacle = struct( ...
         "targetName",               targetName, ...
         "time_s",                   time_s, ...
@@ -240,7 +242,8 @@ function obstacle = normalizeOne(inputData)
         "safetyMargin_units",       safetyMargin_units, ...
         "status",                   status, ...
         "NormalizationDiagnostics", normalization, ...
-        "vertexCorrespondence",     vertexCorrespondence);
+        "vertexCorrespondence",     vertexCorrespondence, ...
+        "UsesSourceIndex",          usesSourceIndex);
 end
 
 function [xHistory_units, yHistory_units, removedCount, removalBySample, repairBySample] = ...
@@ -433,12 +436,16 @@ function [retained, changedArea_units2] = removeCrossingZigzags(points_units)
     end
 end
 
-function verbose = resolveVerbose(options)
-    % Resolve construction options and warn about unknown fields.
+function [verbose, vertexCorrespondence] = resolveConstructionOptions(options, isRawConstruction)
+    % Resolve shared controls and the raw-only correspondence declaration.
     requireCondition(isstruct(options) && isscalar(options), ...
         "createObstacle:InvalidProtectionOptions", "options must be a scalar struct.");
-    [options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
-        struct("Verbose", false), options);
+    defaults             = struct("Verbose", false);
+    vertexCorrespondence = "circularCorrelation";
+    if isRawConstruction
+        defaults.vertexCorrespondence = vertexCorrespondence;
+    end
+    [options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, options);
     if ~isempty(unknownNames)
         warning("createObstacle:UnknownProtectionOptions", ...
             "Ignoring unknown option fields: %s. No behavior changed.", ...
@@ -446,6 +453,9 @@ function verbose = resolveVerbose(options)
     end
     verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
         options.Verbose, "Verbose", "createObstacle:InvalidVerbose");
+    if isRawConstruction
+        vertexCorrespondence = options.vertexCorrespondence;
+    end
 end
 
 function obstacles = protectObstacles(obstacles, safetyMargin_units, verbose)

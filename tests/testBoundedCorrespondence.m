@@ -94,6 +94,9 @@ function testConcaveDeformationUsesExactMovingPartition(testCase)
     verifyTrue(testCase,prepared.InternalPreparation.MatchingTopology);
     verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
         "linearCorrespondingConvexPartition");
+    verifyTrue(testCase,prepared.InternalPreparation.IntervalHasExactPartition);
+    verifyFalse(testCase,prepared.InternalPreparation.IntervalUsesSweptCells);
+    verifyFalse(testCase,prepared.InternalPreparation.IntervalIsUnsupported);
     cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
     verifyGreaterThan(testCase,numel(cells.Regions_units),1);
     for tau=[0,0.25,0.5,0.75,1]
@@ -155,6 +158,8 @@ function testContainmentClassificationMatchesBooleanReference(testCase)
             if equivalent, expected="staticEquivalentSamples";
             else, expected="unsupportedContinuousDeformation"; end
             verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel,expected);
+            verifyEqual(testCase,prepared.InternalPreparation.IntervalIsStationary,equivalent);
+            verifyEqual(testCase,prepared.InternalPreparation.IntervalIsUnsupported,~equivalent);
         end
     end
 end
@@ -216,8 +221,7 @@ function testProperCrossingZigzagHasDeclaredRepair(testCase)
 end
 
 function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
-    lower=[0,0;4,0;4,4;2,4;2,4-1e-13;1,4;0,4];
-    upper=lower; upper(5,1)=2.2; upper([2,3],1)=4.2;
+    [lower, upper] = thinNotchFixture();
     for margin_units=[0,0.1]
         source=obstacleAvoidance.obstacles.createObstacle('thin notch',[0;1], ...
             {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},margin_units);
@@ -226,6 +230,8 @@ function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
         if margin_units==0
             verifyEqual(testCase,preparation.IntervalGeometryModel,"sweptCorrespondingConvexCells");
             verifyFalse(testCase,preparation.MatchingTopology);
+            verifyTrue(testCase,preparation.IntervalUsesSweptCells);
+            verifyFalse(testCase,preparation.IntervalIsUnsupported);
             cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
             verifyEqual(testCase,cells.Regions_units,cells.EndRegions_units);
             enclosure=unionRegions(cells.Regions_units);
@@ -253,8 +259,7 @@ function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
 end
 
 function testSweptCellsDoNotBecomeAnExactTranslationPartition(testCase)
-    first=[0,0;4,0;4,4;2,4;2,4-1e-13;1,4;0,4];
-    second=first; second(5,1)=2.2; second([2,3],1)=4.2;
+    [first, second] = thinNotchFixture();
     third=second+[1,0];
     source=obstacleAvoidance.obstacles.createObstacle('mixed models',[0;1;2], ...
         {first(:,1);second(:,1);third(:,1)},{first(:,2);second(:,2);third(:,2)},0);
@@ -321,6 +326,7 @@ function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
     obstacle=obstacleAvoidance.obstacles.createMovingObstacle('rotating lobe',[0;1;2], ...
         source_units(:,1),source_units(:,2),rotate,0.05);
     verifyEqual(testCase,string(obstacle.vertexCorrespondence),"sourceIndex");
+    verifyTrue(testCase,obstacle.UsesSourceIndex);
     generic=obstacleAvoidance.obstacles.createObstacle('generic copy',obstacle.time_s, ...
         obstacle.originalX_units,obstacle.originalY_units,0.05);
     verifyEqual(testCase,string(generic.vertexCorrespondence),"circularCorrelation");
@@ -329,6 +335,7 @@ function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
     verifyNotEqual(testCase,obstacleAvoidance.obstacles.alignCorrespondingRing(lower,upper),upper);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,1]);
     preparation=prepared.InternalPreparation;
+    verifyTrue(testCase,prepared.UsesSourceIndex);
     verifyTrue(testCase,preparation.IntervalPrepared(1));
     % Buffered protected rings carry no index order, so the only faithful
     % model here is the swept enclosure built from the original rings.
@@ -340,6 +347,65 @@ function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
     end
     verifyFalse(testCase,geometry.TopologyIsInterpolated && ...
         preparation.IntervalGeometryModel(1)=="sweptCorrespondingConvexCells");
+end
+
+function testReportedModelMutationDoesNotSelectBehavior(testCase)
+    % Prove that retained provenance labels cannot select geometry behavior.
+    [lower_units, upper_units] = thinNotchFixture();
+    source = obstacleAvoidance.obstacles.createObstacle( ...
+        'model mutation', [0; 1], ...
+        {lower_units(:, 1); upper_units(:, 1)}, ...
+        {lower_units(:, 2); upper_units(:, 2)}, 0);
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
+    verifyTrue(testCase, prepared.InternalPreparation.IntervalUsesSweptCells);
+
+    mutated = prepared;
+    mutated.vertexCorrespondence = "nonsense";
+    mutated.InternalPreparation.IntervalGeometryModel(:) = "nonsense";
+    mutated.InternalPreparation.IntervalCertificationReason(:) = "nonsense";
+
+    referenceCells = obstacleAvoidance.obstacles.createTimeCells(prepared, 0, 1);
+    mutatedCells   = obstacleAvoidance.obstacles.createTimeCells(mutated, 0, 1);
+    verifyEqual(testCase, mutatedCells, referenceCells);
+
+    [referenceShape, referenceGeometry] = ...
+        obstacleAvoidance.obstacles.preparedShapeAtTime(prepared, 0.5);
+    [mutatedShape, mutatedGeometry] = ...
+        obstacleAvoidance.obstacles.preparedShapeAtTime(mutated, 0.5);
+    verifyEqual(testCase, area(xor(mutatedShape, referenceShape)), 0);
+    reportedFields = {'GeometryModel'};
+    verifyEqual(testCase, rmfield(mutatedGeometry, reportedFields), ...
+        rmfield(referenceGeometry, reportedFields));
+    verifyEqual(testCase, mutatedGeometry.GeometryModel, "nonsense");
+
+    nodes_units = [
+        -1, 2
+         5, 2
+        -1, 5
+         5, 5
+    ];
+    edgeCost_units = hypot( ...
+        nodes_units(:, 1) - nodes_units(:, 1).', ...
+        nodes_units(:, 2) - nodes_units(:, 2).');
+    initialState  = struct('time_s', 0, 'position_units', nodes_units(1, :));
+    goalState     = struct('time_s', 1, 'position_units', nodes_units(2, :));
+    limits        = struct('maxVelocity_units_s', [20, 20]);
+    options       = struct('GoalTimeMode', "fixedArrival");
+    sampleTimes_s = (0:0.1:1).';
+    [referenceRoute_units, referenceRouteTime_s, referenceRecord] = ...
+        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+        nodes_units, edgeCost_units, prepared, initialState, goalState, ...
+        limits, sampleTimes_s, options);
+    [mutatedRoute_units, mutatedRouteTime_s, mutatedRecord] = ...
+        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+        nodes_units, edgeCost_units, mutated, initialState, goalState, ...
+        limits, sampleTimes_s, options);
+    verifyEqual(testCase, mutatedRoute_units, referenceRoute_units);
+    verifyEqual(testCase, mutatedRouteTime_s, referenceRouteTime_s);
+    verifyEqual(testCase, mutatedRecord, referenceRecord);
+    verifyGreaterThan(testCase, referenceRecord.RejectedTransitionCount, 0);
+    verifyTrue(testCase, any(all(referenceRoute_units == nodes_units(3, :), 2)));
+    verifyTrue(testCase, any(all(referenceRoute_units == nodes_units(4, :), 2)));
 end
 
 function testRedundantAffineKeyframesUseIdenticalCellsAndMotion(testCase)
@@ -376,6 +442,22 @@ function prepared=preparePair(lower,upper)
     source=obstacleAvoidance.obstacles.createObstacle('generic',[0;1], ...
         {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
+end
+
+function [lower_units, upper_units] = thinNotchFixture()
+    % Return the shared uncertifiable corresponding-ring regression fixture.
+    lower_units = [
+        0, 0
+        4, 0
+        4, 4
+        2, 4
+        2, 4 - 1e-13
+        1, 4
+        0, 4
+    ];
+    upper_units            = lower_units;
+    upper_units(5, 1)      = 2.2;
+    upper_units([2, 3], 1) = 4.2;
 end
 
 function shape=unionRegions(regions_units)

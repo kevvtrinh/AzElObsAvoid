@@ -59,7 +59,7 @@ for obstacleIndex = 1:numel(obstacles)
             shape                 = preparation.SampleShapes{firstIntervalIndex};
             intervalRegions_units = obstacleAvoidance.geometry.convexRegions(shape);
             intervalEndRegions_units = intervalRegions_units;
-        elseif preparation.IntervalGeometryModel(firstIntervalIndex) == "sweptCorrespondingConvexCells"
+        elseif preparation.IntervalUsesSweptCells(firstIntervalIndex)
             intervalRegions_units    = preparation.IntervalStartRegions_units{firstIntervalIndex};
             intervalEndRegions_units = intervalRegions_units;
         elseif preparation.MatchingTopology(firstIntervalIndex) && ...
@@ -70,7 +70,7 @@ for obstacleIndex = 1:numel(obstacles)
                 preparation.SampleShapes{firstIntervalIndex});
             intervalEndRegions_units = intervalRegions_units;
         elseif preparation.MatchingTopology(firstIntervalIndex) && ...
-                preparation.IntervalGeometryModel(firstIntervalIndex) == "linearCorrespondingConvexPartition"
+                preparation.IntervalHasExactPartition(firstIntervalIndex)
             % Each stored face is convex for the complete linear morph, and
             % the moving union equals the authoritative concave polygon.
             fraction = (activeInterval_s - sourceIntervals_s(firstIntervalIndex, 1)) / ...
@@ -98,10 +98,10 @@ for obstacleIndex = 1:numel(obstacles)
                 diff(sourceIntervals_s(firstIntervalIndex, :));
             intervalRegions_units    = {lower_units + fraction(1) * delta_units};
             intervalEndRegions_units = {lower_units + fraction(2) * delta_units};
-        elseif preparation.IntervalGeometryModel(firstIntervalIndex) == "unsupportedContinuousDeformation"
+        elseif preparation.IntervalIsUnsupported(firstIntervalIndex)
             error('createTimeCells:UnsupportedContinuousDeformation', ...
                 'The obstacle interval has no verified exact continuous geometry model.');
-        elseif preparation.IntervalGeometryModel(firstIntervalIndex) == "staticEquivalentSamples"
+        elseif preparation.IntervalIsStationary(firstIntervalIndex)
             shape                    = preparation.IntervalUnionShapes{firstIntervalIndex};
             intervalRegions_units    = obstacleAvoidance.geometry.convexRegions(shape);
             intervalEndRegions_units = intervalRegions_units;

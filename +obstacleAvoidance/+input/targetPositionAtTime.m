@@ -46,18 +46,22 @@ if any(time_s < sampleTime_s(1) | time_s > sampleTime_s(end))
     error('planner:TargetTimeOutsideHistory', 'Target evaluation cannot extrapolate beyond the supplied history.');
 end
 
-method = 'linear';
+methodName = "linear";
 if isfield(targetMotion, 'InterpolationMethod')
-    method = string(targetMotion.InterpolationMethod);
+    methodName = string(targetMotion.InterpolationMethod);
 end
-methodName = string(method);
 if ~isscalar(methodName) || ~any(methodName == ["linear", "pchip"])
     error('planner:InvalidTargetInterpolation', 'Target interpolation must be linear or pchip.');
 end
+usesPchip = methodName == "pchip";
 
 %% Section 2: Evaluate The Declared Interpolant
 
-position_units = interp1(sampleTime_s, double(targetMotion.position_units), time_s(:), method);
+if usesPchip
+    position_units = interp1(sampleTime_s, double(targetMotion.position_units), time_s(:), 'pchip');
+else
+    position_units = interp1(sampleTime_s, double(targetMotion.position_units), time_s(:), 'linear');
+end
 if nargout < 2
     return
 end
@@ -71,7 +75,7 @@ velocity_units_s     = zeros(numel(time_s), 2);
 acceleration_units_s2 = velocity_units_s;
 for axisIndex = 1:2
     axisPosition_units = double(targetMotion.position_units(:, axisIndex));
-    if methodName == "pchip"
+    if usesPchip
         positionPP = pchip(sampleTime_s, axisPosition_units);
     else
         slope_units_s = diff(axisPosition_units) ./ diff(sampleTime_s);
