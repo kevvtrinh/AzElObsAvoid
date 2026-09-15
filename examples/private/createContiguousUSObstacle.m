@@ -15,7 +15,9 @@ function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_u
 %**************************************************************************
 % INPUTS
 %   - time_s (nonempty increasing numeric vector)
+%       Sample times for the requested obstacle history.
 %   - safetyMargin_units (nonnegative scalar)
+%       Euclidean protection margin applied by obstacle construction.
 %   - options (scalar struct, optional)
 %       .MotionMode is static or movingDeforming (default static).
 %       .Verbose is logical (default false).
@@ -25,15 +27,18 @@ function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_u
 %        exactly and applies no further simplification.
 %**************************************************************************
 % OUTPUTS
-%   - obstacle (canonical protected moving obstacle)
-%   - history (generic slice history plus source outline metadata)
+%   - obstacle (scalar obstacle struct)
+%       Canonical protected moving obstacle.
+%   - history (scalar struct)
+%       Generic slice history plus source outline metadata. Invalid input
+%       throws an error.
 %**************************************************************************
 % UNITS
 %   - Longitude/latitude are treated as x/y coordinate units; time_s
 %     is seconds and safetyMargin_units is coordinate units.
 %**************************************************************************
 
-%% Section 1: Validate Inputs & Apply Defaults
+%% Section 1: Validate Inputs And Apply Defaults
 
 % Check the time history, margin, and motion mode before map data is loaded.
 % Static mode repeats one outline. Moving mode applies a known transform at each
@@ -45,24 +50,31 @@ end
 if ~isstruct(options) || ~isscalar(options)
     error("createContiguousUSObstacle:InvalidOptions", "options must be a scalar struct.");
 end
-defaultOptions = struct();
-defaultOptions.MotionMode = "static";
-defaultOptions.Verbose    = false;
+defaultOptions                        = struct();
+defaultOptions.MotionMode             = "static";
+defaultOptions.Verbose                = false;
 defaultOptions.MaximumOutlineVertices = Inf;
 [resolvedOptions, unknownOptionFields] = obstacleAvoidance.input.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
-    warning("createContiguousUSObstacle:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
+    warning("createContiguousUSObstacle:UnknownOptions", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
+        strjoin(unknownOptionFields, ", "));
 end
 motionMode = lower(string(resolvedOptions.MotionMode));
 if ~isscalar(motionMode) || ~any(motionMode == ["static" "movingdeforming"])
     error("createContiguousUSObstacle:InvalidMotionMode", "MotionMode must be static or movingDeforming.");
 end
-verbose = obstacleAvoidance.input.normalizeLogicalScalar(resolvedOptions.Verbose, "Verbose", "createContiguousUSObstacle:InvalidVerbose");
+verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
+    resolvedOptions.Verbose, "Verbose", ...
+    "createContiguousUSObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
-maximumOutlineVertices = double(resolvedOptions.MaximumOutlineVertices);
-if ~isscalar(maximumOutlineVertices) || ~isreal(maximumOutlineVertices) || isnan(maximumOutlineVertices) || maximumOutlineVertices < 3 || ...
-        (isfinite(maximumOutlineVertices) && maximumOutlineVertices ~= floor(maximumOutlineVertices))
-    error("createContiguousUSObstacle:InvalidMaximumOutlineVertices", "MaximumOutlineVertices must be Inf or an integer of at least 3.");
+maximumOutlineVertices  = double(resolvedOptions.MaximumOutlineVertices);
+if ~isscalar(maximumOutlineVertices) || ~isreal(maximumOutlineVertices) || ...
+        isnan(maximumOutlineVertices) || maximumOutlineVertices < 3 || ...
+        (isfinite(maximumOutlineVertices) && ...
+        maximumOutlineVertices ~= floor(maximumOutlineVertices))
+    error("createContiguousUSObstacle:InvalidMaximumOutlineVertices", ...
+        "MaximumOutlineVertices must be Inf or an integer of at least 3.");
 end
 resolvedOptions.MaximumOutlineVertices = maximumOutlineVertices;
 
@@ -74,22 +86,26 @@ resolvedOptions.MaximumOutlineVertices = maximumOutlineVertices;
 
 boundaryFile = which("usastatehi.shp");
 if isempty(boundaryFile)
-    error("createContiguousUSObstacle:MappingToolboxRequired", "Mapping Toolbox file usastatehi.shp was not found.");
+    error("createContiguousUSObstacle:MappingToolboxRequired", ...
+        "Mapping Toolbox file usastatehi.shp was not found.");
 end
 if verbose
     fprintf("[U.S. obstacle] loading and unioning mainland boundaries...\n");
 end
 stateBoundary = shaperead(boundaryFile, "UseGeoCoords", true);
-stateName     = string({stateBoundary.Name});
-stateBoundary = stateBoundary(~ismember(stateName, ["Alaska" "Hawaii"]));
+stateNames    = string({stateBoundary.Name});
+stateBoundary = stateBoundary(~ismember(stateNames, ["Alaska" "Hawaii"]));
 if isempty(stateBoundary)
     error("createContiguousUSObstacle:NoMainlandStates", "No contiguous-U.S. state boundaries were found.");
 end
-mainlandUS = polyshape(stateBoundary(1).Lon, stateBoundary(1).Lat, "Simplify", false, "KeepCollinearPoints", true);
+mainlandUS = polyshape(stateBoundary(1).Lon, stateBoundary(1).Lat, ...
+    "Simplify", false, "KeepCollinearPoints", true);
 
 % Join each remaining state polygon to the mainland polygon.
 for stateIndex = 2:numel(stateBoundary)
-    statePolygon = polyshape(stateBoundary(stateIndex).Lon, stateBoundary(stateIndex).Lat, "Simplify", false, "KeepCollinearPoints", true);
+    statePolygon = polyshape( ...
+        stateBoundary(stateIndex).Lon, stateBoundary(stateIndex).Lat, ...
+        "Simplify", false, "KeepCollinearPoints", true);
     mainlandUS   = union(mainlandUS, statePolygon);
     if verbose && (mod(stateIndex, 10) == 0 || stateIndex == numel(stateBoundary))
         fprintf("[U.S. obstacle] state union %d/%d complete.\n", stateIndex, numel(stateBoundary));
@@ -99,11 +115,13 @@ end
 [baseLongitude_units, baseLatitude_units] = largestFiniteRing(allLongitude_units, allLatitude_units);
 fullOutlineVertexCount = numel(baseLongitude_units);
 if isfinite(maximumOutlineVertices) && fullOutlineVertexCount > maximumOutlineVertices
-    reduced_units = reduceClosedRing([baseLongitude_units, baseLatitude_units], maximumOutlineVertices);
+    reduced_units      = reduceClosedRing( ...
+        [baseLongitude_units, baseLatitude_units], maximumOutlineVertices);
     baseLongitude_units = reduced_units(:, 1);
     baseLatitude_units  = reduced_units(:, 2);
     if verbose
-        fprintf("[U.S. obstacle] outline reduced from %d to %d vertices.\n", fullOutlineVertexCount, numel(baseLongitude_units));
+        fprintf("[U.S. obstacle] outline reduced from %d to %d vertices.\n", ...
+            fullOutlineVertexCount, numel(baseLongitude_units));
     end
 end
 
@@ -115,41 +133,56 @@ end
 time_s             = double(time_s(:));
 missionStartTime_s = time_s(1);
 missionDuration_s  = time_s(end) - missionStartTime_s;
-baseCenter_units     = [mean(baseLongitude_units), mean(baseLatitude_units)];
-basePosition_units   = [baseLongitude_units, baseLatitude_units];
-localRange_units     = max(basePosition_units - baseCenter_units, [], 1) - min(basePosition_units - baseCenter_units, [], 1);
-sliceTransform     = @(sourcePosition_units, sampleTime_s, sampleIndex) transformUSSlice(sourcePosition_units, sampleTime_s, sampleIndex, motionMode, missionStartTime_s, missionDuration_s, baseCenter_units, localRange_units);
-[obstacle, history] = obstacleAvoidance.obstacles.createMovingObstacle("Growing and rotating contiguous United States", time_s, baseLongitude_units, baseLatitude_units, sliceTransform, safetyMargin_units, struct("Verbose", verbose));
+baseCenter_units   = [mean(baseLongitude_units), mean(baseLatitude_units)];
+basePosition_units = [baseLongitude_units, baseLatitude_units];
+localRange_units   = max(basePosition_units - baseCenter_units, [], 1) - ...
+    min(basePosition_units - baseCenter_units, [], 1);
+sliceTransform = @(sourcePosition_units, sampleTime_s, sampleIndex) ...
+    transformUSSlice(sourcePosition_units, sampleTime_s, sampleIndex, ...
+    motionMode, missionStartTime_s, missionDuration_s, baseCenter_units, ...
+    localRange_units);
+[obstacle, history] = obstacleAvoidance.obstacles.createMovingObstacle( ...
+    "Growing and rotating contiguous United States", time_s, ...
+    baseLongitude_units, baseLatitude_units, sliceTransform, ...
+    safetyMargin_units, struct("Verbose", verbose));
 profile = extremeUSProfile(time_s, missionStartTime_s, missionDuration_s);
-history.motionMode               = motionMode;
-history.sourceFile               = string(boundaryFile);
-history.sourceOutlineLatLon_units  = [baseLatitude_units, baseLongitude_units];
-history.sourceOutlineVertexCount = numel(baseLongitude_units);
-history.fullOutlineVertexCount   = fullOutlineVertexCount;
-history.scaleFactor              = profile.ScaleFactor(:);
-history.rotation_deg             = profile.Rotation_deg(:);
-history.translation_units          = profile.Translation_units;
-history.deformationWeight        = profile.DeformationWeight(:);
-history.ExampleOptions           = resolvedOptions;
+history.motionMode                = motionMode;
+history.sourceFile                = string(boundaryFile);
+history.sourceOutlineLatLon_units = [baseLatitude_units, baseLongitude_units];
+history.sourceOutlineVertexCount  = numel(baseLongitude_units);
+history.fullOutlineVertexCount    = fullOutlineVertexCount;
+history.scaleFactor               = profile.ScaleFactor(:);
+history.rotation_deg              = profile.Rotation_deg(:);
+history.translation_units         = profile.Translation_units;
+history.deformationWeight         = profile.DeformationWeight(:);
+history.ExampleOptions            = resolvedOptions;
 end
 
+%% Section 4: Local Functions
 
-function transformed_units = transformUSSlice(sourcePosition_units, sampleTime_s, ~, motionMode, missionStartTime_s, missionDuration_s, baseCenter_units, localRange_units)
+function transformed_units = transformUSSlice(sourcePosition_units, sampleTime_s, ~, ...
+        motionMode, missionStartTime_s, missionDuration_s, baseCenter_units, ...
+        localRange_units)
     % Return one U.S. slice. The generic constructor owns the time loop.
     if motionMode == "static" || missionDuration_s <= 0
         transformed_units = sourcePosition_units;
-        return;
+        return
     end
     missionProgress   = (sampleTime_s - missionStartTime_s) / missionDuration_s;
     profile           = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDuration_s);
     phase_rad         = 2 * pi * missionProgress;
     baseLocal_units     = sourcePosition_units - baseCenter_units;
     deformedLocal_units = baseLocal_units;
-    deformedLocal_units(:, 1) = deformedLocal_units(:, 1) + profile.DeformationWeight * 0.80 * sin(2 * pi * baseLocal_units(:, 2) / localRange_units(2) + phase_rad);
-    deformedLocal_units(:, 2) = deformedLocal_units(:, 2) + profile.DeformationWeight * 0.55 * sin(2 * pi * baseLocal_units(:, 1) / localRange_units(1) - 0.7 * phase_rad);
-    rotation_rad    = deg2rad(profile.Rotation_deg);
-    rotationMatrix  = [cos(rotation_rad) -sin(rotation_rad); sin(rotation_rad) cos(rotation_rad)];
-    transformed_units = profile.ScaleFactor * deformedLocal_units * rotationMatrix.' + baseCenter_units + profile.Translation_units;
+    deformedLocal_units(:, 1) = deformedLocal_units(:, 1) + ...
+        profile.DeformationWeight * 0.80 * ...
+        sin(2 * pi * baseLocal_units(:, 2) / localRange_units(2) + phase_rad);
+    deformedLocal_units(:, 2) = deformedLocal_units(:, 2) + ...
+        profile.DeformationWeight * 0.55 * ...
+        sin(2 * pi * baseLocal_units(:, 1) / localRange_units(1) - 0.7 * phase_rad);
+    rotation_rad   = deg2rad(profile.Rotation_deg);
+    rotationMatrix = [cos(rotation_rad) -sin(rotation_rad); sin(rotation_rad) cos(rotation_rad)];
+    transformed_units = profile.ScaleFactor * deformedLocal_units * ...
+        rotationMatrix.' + baseCenter_units + profile.Translation_units;
 end
 
 function profile = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDuration_s)
@@ -170,26 +203,23 @@ function profile = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDur
 end
 
 function reduced_units = reduceClosedRing(ring_units, maximumVertexCount)
-    % Reduce a simple closed ring to at most maximumVertexCount vertices with
-    % the Douglas-Peucker rule, choosing the smallest distance tolerance that
-    % meets the cap by bisection. The ring is split at its first vertex and
-    % the vertex farthest from it so both halves are open polylines whose
-    % endpoints are always retained. Douglas-Peucker alone can fold an
-    % outline (a chord across a bay can cross the far shore), so every
-    % candidate that fits the cap is uncrossed by splitting each crossing
-    % chord at the source vertex farthest from it; the uncrossed candidate
-    % must still fit the cap. The result must be one simple ring; anything
-    % else is an error, not a repair.
-    vertexCount = size(ring_units, 1);
-    [~, anchorIndex] = max(vecnorm(ring_units - ring_units(1, :), 2, 2));
+    % Reduce a closed ring with Douglas-Peucker and a bisection tolerance.
+    % Split at the vertex farthest from the first so both open polylines keep
+    % their endpoints. Uncross every fitting candidate at source vertices.
+    % The final candidate must remain one simple ring within the vertex cap.
+    vertexCount         = size(ring_units, 1);
+    [~, anchorIndex]    = max(vecnorm(ring_units - ring_units(1, :), 2, 2));
     lowerTolerance_units = 0;
     upperTolerance_units = max(max(ring_units, [], 1) - min(ring_units, [], 1));
-    keptIndex = zeros(0, 1);
+    keptIndex            = zeros(0, 1);
     for iteration = 1:64
         tolerance_units = (lowerTolerance_units + upperTolerance_units) / 2;
-        keep = false(vertexCount, 1);
-        keep(1:anchorIndex) = douglasPeuckerKeep(ring_units(1:anchorIndex, :), tolerance_units);
-        keepSecond = douglasPeuckerKeep(ring_units([anchorIndex:vertexCount, 1], :), tolerance_units);
+        keep                = false(vertexCount, 1);
+        keep(1:anchorIndex) = douglasPeuckerKeep( ...
+            ring_units(1:anchorIndex, :), tolerance_units);
+        secondSegmentIndex = [anchorIndex:vertexCount, 1];
+        keepSecond         = douglasPeuckerKeep( ...
+            ring_units(secondSegmentIndex, :), tolerance_units);
         keep(anchorIndex:vertexCount) = keep(anchorIndex:vertexCount) | keepSecond(1:end - 1);
         candidateIndex = find(keep);
         if numel(candidateIndex) <= maximumVertexCount
@@ -203,100 +233,118 @@ function reduced_units = reduceClosedRing(ring_units, maximumVertexCount)
         end
     end
     if numel(keptIndex) < 3
-        error("createContiguousUSObstacle:OutlineReductionFailed", "The outline could not be reduced to %d vertices.", maximumVertexCount);
+        error("createContiguousUSObstacle:OutlineReductionFailed", ...
+            "The outline could not be reduced to %d vertices.", maximumVertexCount);
     end
     reduced_units = ring_units(keptIndex, :);
-    checkShape = polyshape(reduced_units(:, 1), reduced_units(:, 2), "Simplify", true, "KeepCollinearPoints", true);
-    if checkShape.NumRegions ~= 1 || checkShape.NumHoles ~= 0 || size(checkShape.Vertices, 1) ~= size(reduced_units, 1) || ...
+    checkShape = polyshape(reduced_units(:, 1), reduced_units(:, 2), ...
+        "Simplify", true, "KeepCollinearPoints", true);
+    if checkShape.NumRegions ~= 1 || checkShape.NumHoles ~= 0 || ...
+            size(checkShape.Vertices, 1) ~= size(reduced_units, 1) || ...
             ~all(ismember(checkShape.Vertices, reduced_units, "rows"))
         error("createContiguousUSObstacle:OutlineReductionFolded", "The reduced outline is not one simple ring.");
     end
 end
 
 function keptIndex = uncrossReducedRing(ring_units, keptIndex)
-    % Split every reduced edge that properly crosses another reduced edge at
-    % the source vertex farthest from its chord, until no proper crossing
-    % remains. keptIndex is an ascending list of source indices starting at
-    % 1, so reduced edge k runs over source vertices keptIndex(k) to
-    % keptIndex(k+1), and the last edge wraps to vertex 1. The source ring is
-    % simple, so at least one edge of every crossing pair has interior source
-    % vertices, and the loop ends at the source ring at worst.
+    % Split crossing reduced edges at the source vertex farthest from each
+    % chord until no proper crossing remains. keptIndex is ascending and
+    % begins at 1; its last reduced edge wraps to the first source vertex.
+    % The simple source ring guarantees an available split and termination.
     vertexCount = size(ring_units, 1);
     while true
-        crossing = properEdgeCrossings(ring_units(keptIndex, :));
-        if isempty(crossing)
-            return;
+        crossingPairs = properEdgeCrossings(ring_units(keptIndex, :));
+        if isempty(crossingPairs)
+            return
         end
-        added = zeros(0, 1);
-        for edge = unique(crossing(:)).'
-            firstSource = keptIndex(edge);
-            if edge < numel(keptIndex)
-                lastSource = keptIndex(edge + 1);
+        addedIndex = zeros(0, 1);
+        for edgeIndex = unique(crossingPairs(:)).'
+            firstSourceIndex = keptIndex(edgeIndex);
+            if edgeIndex < numel(keptIndex)
+                lastSourceIndex = keptIndex(edgeIndex + 1);
             else
-                lastSource = vertexCount + 1;
+                lastSourceIndex = vertexCount + 1;
             end
-            interior = (firstSource + 1:lastSource - 1).';
-            if isempty(interior)
-                continue;
+            interiorIndex = (firstSourceIndex + 1:lastSourceIndex - 1).';
+            if isempty(interiorIndex)
+                continue
             end
-            chordEnd_units = ring_units(mod(lastSource - 1, vertexCount) + 1, :);
-            chord_units    = chordEnd_units - ring_units(firstSource, :);
-            offset_units   = ring_units(interior, :) - ring_units(firstSource, :);
+            chordEnd_units    = ring_units(mod(lastSourceIndex - 1, vertexCount) + 1, :);
+            chord_units       = chordEnd_units - ring_units(firstSourceIndex, :);
+            offset_units      = ring_units(interiorIndex, :) - ring_units(firstSourceIndex, :);
             chordLength_units = norm(chord_units);
             if chordLength_units > 0
-                distance_units = abs(offset_units(:, 1) * chord_units(2) - offset_units(:, 2) * chord_units(1)) / chordLength_units;
+                distance_units = abs(offset_units(:, 1) * chord_units(2) - ...
+                    offset_units(:, 2) * chord_units(1)) / chordLength_units;
             else
                 distance_units = vecnorm(offset_units, 2, 2);
             end
-            [~, farthestOffset] = max(distance_units);
-            added(end + 1, 1) = interior(farthestOffset); %#ok<AGROW>
+            [~, farthestOffsetIndex] = max(distance_units);
+            addedIndex(end + 1, 1) = interiorIndex(farthestOffsetIndex); %#ok<AGROW>
         end
-        if isempty(added)
-            error("createContiguousUSObstacle:OutlineReductionFolded", "The reduced outline is not one simple ring.");
+        if isempty(addedIndex)
+            error("createContiguousUSObstacle:OutlineReductionFolded", ...
+                "The reduced outline is not one simple ring.");
         end
-        keptIndex = sort([keptIndex; added]);
+        keptIndex = sort([keptIndex; addedIndex]);
     end
 end
 
-function pairs = properEdgeCrossings(ring_units)
+function crossingPairs = properEdgeCrossings(ring_units)
     % Index pairs (i, j), i < j, of non-adjacent ring edges that cross at
     % one interior point of both (strict orientation test on both sides).
-    edgeCount = size(ring_units, 1);
+    edgeCount    = size(ring_units, 1);
     start_units  = ring_units;
     finish_units = ring_units([2:edgeCount, 1], :);
-    [i, j] = find(triu(true(edgeCount), 2));
-    adjacent = i == 1 & j == edgeCount;
-    i(adjacent) = []; j(adjacent) = [];
-    orientation = @(p, q, r) (q(:, 1) - p(:, 1)) .* (r(:, 2) - p(:, 2)) - (q(:, 2) - p(:, 2)) .* (r(:, 1) - p(:, 1));
-    a = start_units(i, :); b = finish_units(i, :); c = start_units(j, :); d = finish_units(j, :);
-    crosses = orientation(a, b, c) .* orientation(a, b, d) < 0 & orientation(c, d, a) .* orientation(c, d, b) < 0;
-    pairs = [i(crosses), j(crosses)];
+    [firstEdgeIndex, secondEdgeIndex] = find(triu(true(edgeCount), 2));
+    edgesAreAdjacent = firstEdgeIndex == 1 & secondEdgeIndex == edgeCount;
+    firstEdgeIndex(edgesAreAdjacent)  = [];
+    secondEdgeIndex(edgesAreAdjacent) = [];
+    orientation = @(firstPoint, secondPoint, thirdPoint) ...
+        (secondPoint(:, 1) - firstPoint(:, 1)) .* ...
+        (thirdPoint(:, 2) - firstPoint(:, 2)) - ...
+        (secondPoint(:, 2) - firstPoint(:, 2)) .* ...
+        (thirdPoint(:, 1) - firstPoint(:, 1));
+    firstStart_units  = start_units(firstEdgeIndex, :);
+    firstFinish_units = finish_units(firstEdgeIndex, :);
+    secondStart_units  = start_units(secondEdgeIndex, :);
+    secondFinish_units = finish_units(secondEdgeIndex, :);
+    edgesCross = orientation(firstStart_units, firstFinish_units, secondStart_units) .* ...
+        orientation(firstStart_units, firstFinish_units, secondFinish_units) < 0 & ...
+        orientation(secondStart_units, secondFinish_units, firstStart_units) .* ...
+        orientation(secondStart_units, secondFinish_units, firstFinish_units) < 0;
+    crossingPairs = [firstEdgeIndex(edgesCross), secondEdgeIndex(edgesCross)];
 end
 
 function keep = douglasPeuckerKeep(points_units, tolerance_units)
     % Iterative Douglas-Peucker on an open polyline: retain endpoints and every
     % vertex whose distance from the current chord exceeds the tolerance.
-    count = size(points_units, 1);
-    keep  = false(count, 1);
-    keep([1, count]) = true;
-    stack = [1, count];
+    pointCount            = size(points_units, 1);
+    keep                  = false(pointCount, 1);
+    keep([1, pointCount]) = true;
+    stack                 = [1, pointCount];
     while ~isempty(stack)
-        first = stack(end, 1); last = stack(end, 2); stack(end, :) = [];
-        if last - first < 2, continue; end
-        chord_units = points_units(last, :) - points_units(first, :);
-        interior = (first + 1:last - 1).';
-        offset_units = points_units(interior, :) - points_units(first, :);
+        firstIndex    = stack(end, 1);
+        lastIndex     = stack(end, 2);
+        stack(end, :) = [];
+        if lastIndex - firstIndex < 2
+            continue
+        end
+        chord_units       = points_units(lastIndex, :) - points_units(firstIndex, :);
+        interiorIndex     = (firstIndex + 1:lastIndex - 1).';
+        offset_units      = points_units(interiorIndex, :) - points_units(firstIndex, :);
         chordLength_units = norm(chord_units);
         if chordLength_units > 0
-            distance_units = abs(offset_units(:, 1) * chord_units(2) - offset_units(:, 2) * chord_units(1)) / chordLength_units;
+            distance_units = abs(offset_units(:, 1) * chord_units(2) - ...
+                offset_units(:, 2) * chord_units(1)) / chordLength_units;
         else
             distance_units = vecnorm(offset_units, 2, 2);
         end
-        [farthest_units, farthestOffset] = max(distance_units);
+        [farthest_units, farthestOffsetIndex] = max(distance_units);
         if farthest_units > tolerance_units
-            split = interior(farthestOffset);
-            keep(split) = true;
-            stack = [stack; first, split; split, last]; %#ok<AGROW>
+            splitIndex      = interiorIndex(farthestOffsetIndex);
+            keep(splitIndex) = true;
+            stack = [stack; firstIndex, splitIndex; splitIndex, lastIndex]; %#ok<AGROW>
         end
     end
 end
@@ -310,7 +358,8 @@ function [largestX, largestY] = largestFiniteRing(x, y)
     ringStart  = find(changes == 1);
     ringStop   = find(changes == -1) - 1;
     if isempty(ringStart)
-        error("createContiguousUSObstacle:EmptyOutline", "The state union did not produce a finite exterior boundary.");
+        error("createContiguousUSObstacle:EmptyOutline", ...
+            "The state union did not produce a finite exterior boundary.");
     end
     ringArea = zeros(numel(ringStart), 1);
 

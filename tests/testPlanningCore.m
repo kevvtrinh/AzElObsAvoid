@@ -85,7 +85,18 @@ function testJerkChordPreservesShortPhysicalRampsBesideLongCruise(testCase)
 end
 
 function testDetourAndTampering(testCase)
-    r = planner();
+    options = planner();
+    verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
+    verifyFalse(testCase, isfield(options, "Success"));
+    obstacle = struct("Name", "center block", ...
+        "Vertices_units", [-1 -1; 1 -1; 1 1; -1 1], ...
+        "SafetyMargin_units", 0.25);
+    initial = struct("time_s", 0, "position_units", [-4 0]);
+    goal = struct("time_s", 12, "position_units", [4 0]);
+    limits = struct("xInterval_units", [-180 180], "yInterval_units", [-90 90], ...
+        "maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [2 2], ...
+        "maxJerk_units_s3", [4 4]);
+    r = planner(obstacle, initial, goal, limits, options);
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");

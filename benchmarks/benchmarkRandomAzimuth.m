@@ -1,24 +1,32 @@
 function [runs, results] = benchmarkRandomAzimuth(caseIndices, outputFolder)
 %% Section 0: Header & Readme
 % SYNTAX
+%   [runs, results] = benchmarkRandomAzimuth()
+%   [runs, results] = benchmarkRandomAzimuth(caseIndices)
 %   [runs, results] = benchmarkRandomAzimuth(caseIndices, outputFolder)
-%
+%**************************************************************************
 % PURPOSE
 %   - Measure the unified fixed-arrival planner on paired moving-rectangle
 %     slews with and without a static obstacle.
 %   - Preserve failures and independently validate every successful motion.
-%
+%**************************************************************************
 % INPUTS
-%   - caseIndices (positive integer vector; default 1:80)
-%   - outputFolder (optional checkpoint folder; default writes nothing)
-%
+%   - caseIndices (positive integer vector, optional; default 1:80)
+%       Selects deterministic scenarios to measure.
+%   - outputFolder (string scalar, optional; default "")
+%       Checkpoint folder; empty text disables file output.
+%**************************************************************************
 % OUTPUTS
-%   - runs: per-case timing, selected guide, and motion-quality table.
-%   - results: complete public planner results.
-%     Planner wall time excludes generation, extra validation, and file I/O.
-%
+%   - runs (table)
+%       Per-case timing, selected guide, and motion-quality data. Planner
+%       wall time excludes generation, extra validation, and file I/O.
+%   - results (N-by-1 cell array)
+%       Complete public planner results. Ordinary planning failures remain
+%       Success = false; invalid input throws.
+%**************************************************************************
 % UNITS
 %   - Coordinates and path lengths are degrees; time is seconds.
+%**************************************************************************
 
 %% Section 1: Validate Controls And Warm The Planner
 
@@ -32,16 +40,18 @@ validateattributes(caseIndices, {'numeric'}, ...
     {'vector', 'integer', 'positive', 'finite', 'nonempty'});
 outputFolder = string(outputFolder);
 assert(isscalar(outputFolder));
-root = fileparts(fileparts(mfilename('fullpath')));
-addpath(root, fullfile(root, 'trajectory'), fullfile(root, 'examples'));
+repositoryRoot = fileparts(fileparts(mfilename('fullpath')));
+addpath(repositoryRoot, fullfile(repositoryRoot, 'trajectory'), ...
+    fullfile(repositoryRoot, 'examples'));
 if strlength(outputFolder) > 0 && ~isfolder(outputFolder)
     mkdir(outputFolder);
 end
-warm = createRandomAzimuthScenario(1, false);
-planner([], warm.InitialState, warm.GoalState, warm.Limits, warm.Options);
-count = numel(caseIndices) * 2;
-results = cell(count, 1);
-rows = cell(count, 1);
+warmScenario = createRandomAzimuthScenario(1, false);
+planner([], warmScenario.InitialState, warmScenario.GoalState, ...
+    warmScenario.Limits, warmScenario.Options);
+runCount = numel(caseIndices) * 2;
+results  = cell(runCount, 1);
+rows     = cell(runCount, 1);
 rowIndex = 0;
 
 %% Section 2: Measure Both Obstacle Variants
@@ -50,20 +60,20 @@ for caseIndex = reshape(caseIndices, 1, [])
     for includeStaticObstacle = [false, true]
         scenario = createRandomAzimuthScenario(caseIndex, includeStaticObstacle);
         rowIndex = rowIndex + 1;
-        timer = tic;
+        timer  = tic;
         result = planner(scenario.Obstacles, scenario.InitialState, ...
             scenario.GoalState, scenario.Limits, scenario.Options);
-        wallTime_s = toc(timer);
+        wallTime_s       = toc(timer);
         validationPassed = false;
         if result.Success
             validation = obstacleAvoidance.validateTrajectory(result);
             validationPassed = validation.Passed;
         end
         length_deg = NaN;
-        arrival_s = NaN;
+        arrival_s  = NaN;
         if result.Success && validationPassed
             length_deg = result.MotionLength_units;
-            arrival_s = result.ArrivalTime_s;
+            arrival_s  = result.ArrivalTime_s;
         end
         lowerBound_deg = scenario.EndpointDistance_deg;
         if includeStaticObstacle
@@ -75,8 +85,8 @@ for caseIndex = reshape(caseIndices, 1, [])
             lowerBound_deg = staticGraph.RouteLength_units;
         end
         searchTime_s = NaN;
-        solveTime_s = NaN;
-        conicCount = NaN;
+        solveTime_s  = NaN;
+        conicCount   = NaN;
         if isfield(result.VisibilityGraph, 'TimedSearch')
             searchTime_s = result.VisibilityGraph.TimedSearch.ElapsedTime_s;
         end

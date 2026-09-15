@@ -1,133 +1,166 @@
 function [result, diagnostics] = solveTimedAlternatingTrajectory( ...
-        request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units)
+    request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
-% SYNTAX: [result,diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory(
-%   request,warmStart,diagnostics,obstacleTarget,reserve)
-% PURPOSE: Minimize arrival while rebuilding every moving-cell constraint on
-%   the current physical clock and the exact timed visibility-guide homotopy.
-% INPUTS: Checked solve request, timed warm start, diagnostics, and separation
-%   targets in coordinate units.
-% OUTPUTS: Earliest exactly time-scoped BMTP candidate and solver diagnostics.
-% UNITS: Position is coordinate units and time is seconds.
+% SYNTAX
+%   [result, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( ...
+%       request, warmStart, diagnostics, obstacleTarget_units, ...
+%       roundoffReserve_units)
+%**************************************************************************
+% PURPOSE
+%   - Minimize arrival while rebuilding every moving-cell constraint on the
+%     current physical clock and the exact timed visibility-guide homotopy.
+%**************************************************************************
+% INPUTS
+%   - request (scalar struct)
+%       Checked solve request with regions, coverage, limits, and options.
+%   - warmStart (scalar struct)
+%       Timed warm start supplying controls, span durations, and ratios.
+%   - diagnostics (scalar struct)
+%       Solver diagnostics accumulated so far in this solve.
+%   - obstacleTarget_units (finite scalar)
+%       Required obstacle-side separation target.
+%   - roundoffReserve_units (finite scalar)
+%       Numerical separation reserve.
+%**************************************************************************
+% OUTPUTS
+%   - result (scalar struct)
+%       Earliest exactly time-scoped candidate. An expected infeasible solve
+%       returns Success = false with empty controls. Invalid input throws.
+%   - diagnostics (scalar struct)
+%       Solver counts, residual pair counts, and termination data.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units and time is seconds.
+%**************************************************************************
 
 %% Section 1: Initialize The Variable-Clock Formulation
-segmentCount=warmStart.SegmentCount;
-segmentRatio=warmStart.SegmentRatio(:);
-emptyPlane=bmtpEngine.createEmptyPlane();
-planes=repmat(emptyPlane,segmentCount,numel(request.Regions_units));
-selectedControl_units=zeros(0,request.Degree+1,2);
-selectedSegmentTime_s=NaN;
-selectedPlanes=planes;
-selectedPairs=false(size(planes));
-previousFailedPairs=false(size(planes));
-solverMessage="The time-scoped alternating iteration limit was reached.";
-trajectoryOptions=optimoptions("coneprog","Display","none", ...
-    "MaxIterations",300);
-diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics();
+segmentCount = warmStart.SegmentCount;
+segmentRatio = warmStart.SegmentRatio(:);
+emptyPlane   = bmtpEngine.createEmptyPlane();
+planes       = repmat(emptyPlane, segmentCount, numel(request.Regions_units));
+
+selectedControl_units = zeros(0, request.Degree + 1, 2);
+selectedSegmentTime_s = NaN;
+selectedPlanes        = planes;
+selectedPairs         = false(size(planes));
+previousFailedPairs   = false(size(planes));
+solverMessage         = "The time-scoped alternating iteration limit was reached.";
+
+trajectoryOptions = optimoptions("coneprog", "Display", "none", ...
+    "MaxIterations", 300);
+diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
+
 % Establish the exact moving corridor at the timed guide's physical clock.
 % An unconstrained first solve would collapse to a straight collision path
 % before the alternating method had any obstacle planes to retain.
-[planes,activePairs,complete,planeStatistics]= ...
+[planes, activePairs, complete, planeStatistics] = ...
     bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
-    warmStart.SegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
-diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
+    warmStart.SegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
+diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
 if ~complete
-    diagnostics.TaggedPairCount=0;
-    diagnostics.SolverMessage="The timed visibility guide could not initialize its exact corridor.";
-    result=struct('Success',false,'SolverMessage',diagnostics.SolverMessage, ...
-        'ControlPoint_units',selectedControl_units, ...
-        'SegmentTime_s',selectedSegmentTime_s,'Planes',selectedPlanes, ...
-        'TaggedPairs',selectedPairs);
+    diagnostics.TaggedPairCount = 0;
+    diagnostics.SolverMessage   = "The timed visibility guide could not initialize its exact corridor.";
+    result = struct('Success', false, 'SolverMessage', diagnostics.SolverMessage, ...
+        'ControlPoint_units', selectedControl_units, ...
+        'SegmentTime_s',      selectedSegmentTime_s, ...
+        'Planes',             selectedPlanes, ...
+        'TaggedPairs',        selectedPairs);
     return
 end
-selectedPairs=activePairs;
-previousDuration_s=warmStart.Duration_s;
+selectedPairs      = activePairs;
+previousDuration_s = warmStart.Duration_s;
 
 %% Section 2: Solve And Rebuild Constraints On Every Returned Clock
-for iterationIndex=1:35
-    diagnostics.IterationCount=iterationIndex;
-    trajectoryGoalTimeMode=request.Options.GoalTimeMode;
-    [trialControl_units,trialSegmentTime_s,exitFlag,output]= ...
-        bmtpEngine.solveTimedTrajectoryStep(segmentCount,request.Degree, ...
-        request.InitialState.position_units,request.GoalState.position_units, ...
-        request.Limits,planes,roundoffReserve_units,request.MotionHorizon_s, ...
-        trajectoryGoalTimeMode,trajectoryOptions,request.MinimumMotionDuration_s, ...
+for iterationIndex = 1:35
+    diagnostics.IterationCount = iterationIndex;
+    trajectoryGoalTimeMode     = request.Options.GoalTimeMode;
+    [trialControl_units, trialSegmentTime_s, exitFlag, output] = ...
+        bmtpEngine.solveTimedTrajectoryStep(segmentCount, request.Degree, ...
+        request.InitialState.position_units, request.GoalState.position_units, ...
+        request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, ...
+        trajectoryGoalTimeMode, trajectoryOptions, request.MinimumMotionDuration_s, ...
         segmentRatio);
-    diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+1;
-    diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics( ...
-        diagnostics.ConicSolver,output);
-    if ~bmtpEngine.hasUsableConicIterate(trialControl_units,exitFlag)
-        solverMessage="Trajectory SOCP failed: "+string(output.message);
+    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
+    diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics( ...
+        diagnostics.ConicSolver, output);
+    if ~bmtpEngine.hasUsableConicIterate(trialControl_units, exitFlag)
+        solverMessage = "Trajectory SOCP failed: " + string(output.message);
         break
     end
-    duration_s=sum(trialSegmentTime_s);
-    trialMotion=struct('CertifiedControlPoint_units',trialControl_units, ...
-        'ControlPoint_units',trialControl_units, ...
-        'SegmentTime_s',trialSegmentTime_s(:), ...
-        'PrescribedPower_units',[]);
-    trialCertificate=bmtpEngine.checkFinalMotion(request,trialMotion, ...
-        roundoffReserve_units,obstacleTarget_units);
-    failedPairs=~reshape([trialCertificate.Planes.Verified], ...
+
+    duration_s = sum(trialSegmentTime_s);
+    trialMotion = struct('CertifiedControlPoint_units', trialControl_units, ...
+        'ControlPoint_units',    trialControl_units, ...
+        'SegmentTime_s',         trialSegmentTime_s(:), ...
+        'PrescribedPower_units', []);
+    trialCertificate = bmtpEngine.checkFinalMotion(request, trialMotion, ...
+        roundoffReserve_units, obstacleTarget_units);
+    failedPairs = ~reshape([trialCertificate.Planes.Verified], ...
         size(trialCertificate.Planes)) & trialCertificate.RegionActiveBySegment;
-    collisionFree=~any(failedPairs,'all');
-    diagnostics.FinalCollisionPairCount=nnz(failedPairs);
-    if collisionFree && trialCertificate.WorkspacePassed && ...
-            trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed
-        [selectedPlanes,selectedPairs,complete,planeStatistics]= ...
+    collisionFree = ~any(failedPairs, 'all');
+    diagnostics.FinalCollisionPairCount = nnz(failedPairs);
+
+    trialIsFullyCertified = collisionFree && trialCertificate.WorkspacePassed && ...
+        trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed;
+    if trialIsFullyCertified
+        [selectedPlanes, selectedPairs, complete, planeStatistics] = ...
             bmtpEngine.createTimeScopedPlanes(trialControl_units, ...
-            trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
-        diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
+            trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
+        diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
         if ~complete
-            solverMessage="The feasible timed motion did not produce a complete exact plane set.";
+            solverMessage = "The feasible timed motion did not produce a complete exact plane set.";
             break
         end
-        previousFeasibleDuration_s=Inf;
+        previousFeasibleDuration_s = Inf;
         if ~isempty(selectedControl_units)
-            previousFeasibleDuration_s=sum(selectedSegmentTime_s);
+            previousFeasibleDuration_s = sum(selectedSegmentTime_s);
         end
-        if duration_s<previousFeasibleDuration_s
-            selectedControl_units=trialControl_units;
-            selectedSegmentTime_s=trialSegmentTime_s;
-            diagnostics.BestDuration_s=duration_s;
+        if duration_s < previousFeasibleDuration_s
+            selectedControl_units       = trialControl_units;
+            selectedSegmentTime_s       = trialSegmentTime_s;
+            diagnostics.BestDuration_s = duration_s;
         end
-        diagnostics.Converged=output.OptimizationConverged;
-        if previousFeasibleDuration_s-duration_s<= ...
-                request.Options.ArrivalTimeTolerance_s
-            solverMessage="The feasible arrival improvement reached tolerance.";
+        diagnostics.Converged = output.OptimizationConverged;
+        arrivalImprovementReachedTolerance = ...
+            previousFeasibleDuration_s - duration_s <= request.Options.ArrivalTimeTolerance_s;
+        if arrivalImprovementReachedTolerance
+            solverMessage = "The feasible arrival improvement reached tolerance.";
             break
         end
-        planes=selectedPlanes;
-        selectedPairs=activePairs;
-        previousDuration_s=duration_s;
-        previousFailedPairs=false(size(failedPairs));
-        solverMessage="A complete time-scoped feasible iterate was retained.";
+        planes              = selectedPlanes;
+        selectedPairs       = activePairs;
+        previousDuration_s  = duration_s;
+        previousFailedPairs = false(size(failedPairs));
+        solverMessage       = "A complete time-scoped feasible iterate was retained.";
         continue
     end
-    [planes,activePairs,complete,planeStatistics]= ...
+
+    [planes, activePairs, complete, planeStatistics] = ...
         bmtpEngine.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
-        trialSegmentTime_s,request,obstacleTarget_units,roundoffReserve_units);
-    diagnostics.ApplicablePairCount=planeStatistics.ActivePairCount;
+        trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
+    diagnostics.ApplicablePairCount = planeStatistics.ActivePairCount;
     if ~complete
-        solverMessage="The timed visibility guide could not initialize every exact clock pair.";
+        solverMessage = "The timed visibility guide could not initialize every exact clock pair.";
         break
     end
-    unchangedClock=abs(duration_s-previousDuration_s)<= ...
+    unchangedClock = abs(duration_s - previousDuration_s) <= ...
         request.Options.ArrivalTimeTolerance_s;
-    if unchangedClock && isequal(failedPairs,previousFailedPairs)
-        solverMessage="The exact timed pair set stopped changing before feasibility.";
+    if unchangedClock && isequal(failedPairs, previousFailedPairs)
+        solverMessage = "The exact timed pair set stopped changing before feasibility.";
         break
     end
-    previousDuration_s=duration_s;
-    previousFailedPairs=failedPairs;
-    selectedPairs=activePairs;
+    previousDuration_s  = duration_s;
+    previousFailedPairs = failedPairs;
+    selectedPairs       = activePairs;
 end
 
 %% Section 3: Return Only A Clock-Consistent Feasible Iterate
-diagnostics.TaggedPairCount=nnz(selectedPairs);
-diagnostics.SolverMessage=solverMessage;
-result=struct('Success',~isempty(selectedControl_units), ...
-    'SolverMessage',solverMessage, ...
-    'ControlPoint_units',selectedControl_units, ...
-    'SegmentTime_s',selectedSegmentTime_s, ...
-    'Planes',selectedPlanes,'TaggedPairs',selectedPairs);
+diagnostics.TaggedPairCount = nnz(selectedPairs);
+diagnostics.SolverMessage   = solverMessage;
+result = struct('Success', ~isempty(selectedControl_units), ...
+    'SolverMessage',      solverMessage, ...
+    'ControlPoint_units', selectedControl_units, ...
+    'SegmentTime_s',      selectedSegmentTime_s, ...
+    'Planes',             selectedPlanes, ...
+    'TaggedPairs',        selectedPairs);
 end

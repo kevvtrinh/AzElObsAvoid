@@ -3,23 +3,24 @@ function result = exampleVietnamKeepoutSlew(exampleOverrides)
 % SYNTAX
 %   result = exampleVietnamKeepoutSlew()
 %   result = exampleVietnamKeepoutSlew(exampleOverrides)
-%
+%**************************************************************************
 % PURPOSE
 %   - Plan a fixed-arrival slew through eight time-varying protected regions.
 %   - Exercise the maintained timed-visibility and timed-cell BMTP path.
-%
+%**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%
+%**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Unmodified public planner result.
-%
+%       Unmodified public planner result. Ordinary planning failure returns
+%       Success = false; invalid input throws.
+%**************************************************************************
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
 %     units/s^2, and units/s^3.
-%
+%**************************************************************************
 
 %% Section 1: Resolve Example Controls
 
@@ -29,9 +30,9 @@ function result = exampleVietnamKeepoutSlew(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-exampleRoot = fileparts(mfilename("fullpath"));
-source = load(fullfile(exampleRoot, "data", "vietnamKeepoutSlewInput.mat"));
-scenarioDefaults = source.options;
+exampleRoot            = fileparts(mfilename("fullpath"));
+source                 = load(fullfile(exampleRoot, "data", "vietnamKeepoutSlewInput.mat"));
+scenarioDefaults       = source.options;
 scenarioDefaults.Title = "Vietnam keep-out slew";
 [options, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults, source.limits.maxJerk_units_s3);
 

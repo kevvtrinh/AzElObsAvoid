@@ -1,77 +1,118 @@
-function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly, classifyBoundary)
+function [shape, geometry] = preparedShapeAtTime( ...
+    obstacle, queryTime_s, geometryOnly, classifyBoundary)
 %% Section 0: Header & Readme
-% SYNTAX: [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly,
-%   classifyBoundary)
-% PURPOSE: Evaluate one prepared obstacle at a physical time.
-% INPUTS: obstacle: prepared history; queryTime_s: scalar seconds; geometryOnly: optional flag.
-%   classifyBoundary: optional logical, default true; false leaves classification flags false.
-% OUTPUTS: shape and geometry: the interpolated protected boundary and its cached interval model.
-% UNITS: Positions are coordinate units; time is seconds; derivatives retain physical units.
+% SYNTAX
+%   [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+%       obstacle, queryTime_s)
+%   [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+%       obstacle, queryTime_s, geometryOnly, classifyBoundary)
+%**************************************************************************
+% PURPOSE
+%   - Evaluate one prepared obstacle at a physical time.
+%**************************************************************************
+% INPUTS
+%   - obstacle (prepared scalar obstacle)
+%       Obstacle history with source-checked InternalPreparation data.
+%   - queryTime_s (numeric scalar)
+%       Physical time to evaluate.
+%   - geometryOnly (logical scalar, optional; default false)
+%       Whether to omit polyshape construction when possible.
+%   - classifyBoundary (logical scalar, optional; default true)
+%       Whether to classify single-ring order and convexity.
+%**************************************************************************
+% OUTPUTS
+%   - shape (polyshape)
+%       Protected shape, or empty when geometryOnly omits construction.
+%   - geometry (scalar struct)
+%       Protected boundary and its prepared interval model. An unprepared,
+%       unsupported, or unknown interval throws an error.
+%**************************************************************************
+% UNITS
+%   - Position uses coordinate units; time uses seconds.
+%**************************************************************************
 
 %% Section 1: Evaluate Prepared Inputs
-if nargin < 3, geometryOnly = false; end
-if nargin < 4, classifyBoundary = true; end
+
+if nargin < 3
+    geometryOnly = false;
+end
+if nargin < 4
+    classifyBoundary = true;
+end
 preparation = obstacle.InternalPreparation;
 time_s      = double(obstacle.time_s(:));
 shape       = [];
-if isempty(time_s) || (numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end)))
+queryOutsideHistory = numel(time_s) > 1 && ...
+    (queryTime_s < time_s(1) || queryTime_s > time_s(end));
+if isempty(time_s) || queryOutsideHistory
     geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, "inactive", classifyBoundary);
     if ~geometryOnly
         shape = polyshape();
     end
     return;
 end
-lowerIndex = find(time_s <= queryTime_s, 1, "last");
-upperIndex = find(time_s >= queryTime_s, 1, "first");
+lowerSampleIndex = find(time_s <= queryTime_s, 1, "last");
+upperSampleIndex = find(time_s >= queryTime_s, 1, "first");
 if isscalar(time_s)
-    lowerIndex = 1;
-    upperIndex = 1;
+    lowerSampleIndex = 1;
+    upperSampleIndex = 1;
 end
-if isfield(preparation,'SamplePrepared')
-    covered=preparation.SamplePrepared(lowerIndex) && preparation.SamplePrepared(upperIndex);
-    if lowerIndex~=upperIndex, covered=covered && preparation.IntervalPrepared(lowerIndex); end
-    assert(covered,'preparedShapeAtTime:UnpreparedTime','Prepare the requested time before querying internal geometry.');
+if isfield(preparation, 'SamplePrepared')
+    covered = preparation.SamplePrepared(lowerSampleIndex) && preparation.SamplePrepared(upperSampleIndex);
+    if lowerSampleIndex ~= upperSampleIndex
+        covered = covered && preparation.IntervalPrepared(lowerSampleIndex);
+    end
+    assert(covered, 'preparedShapeAtTime:UnpreparedTime', ...
+        'Prepare the requested time before querying internal geometry.');
 end
 fraction = 0;
-if lowerIndex ~= upperIndex
-    fraction = (queryTime_s - time_s(lowerIndex)) / (time_s(upperIndex) - time_s(lowerIndex));
+if lowerSampleIndex ~= upperSampleIndex
+    fraction = (queryTime_s - time_s(lowerSampleIndex)) / ...
+        (time_s(upperSampleIndex) - time_s(lowerSampleIndex));
 end
+
 %% Section 2: Evaluate The Protected Boundary
-x_units            = double(obstacle.x_units{lowerIndex}(:));
-y_units          = double(obstacle.y_units{lowerIndex}(:));
+
+x_units                = double(obstacle.x_units{lowerSampleIndex}(:));
+y_units                = double(obstacle.y_units{lowerSampleIndex}(:));
 topologyIsInterpolated = true;
-if lowerIndex == upperIndex
-    speed_units_s   = preparation.SampleSpeedBound_units_s(lowerIndex);
+if lowerSampleIndex == upperSampleIndex
+    speed_units_s = preparation.SampleSpeedBound_units_s(lowerSampleIndex);
     geometryModel = "authoritativeSample";
     if ~geometryOnly
-        shape = preparation.SampleShapes{lowerIndex};
+        shape = preparation.SampleShapes{lowerSampleIndex};
     end
-elseif preparation.MatchingTopology(lowerIndex)
-    if preparation.SpanEndSampleIndex(lowerIndex)>preparation.SpanStartSampleIndex(lowerIndex)+1
-        firstSample = preparation.SpanStartSampleIndex(lowerIndex);
-        lastSample = preparation.SpanEndSampleIndex(lowerIndex);
-        fraction = (queryTime_s-time_s(firstSample))/(time_s(lastSample)-time_s(firstSample));
-        x_units = (1-fraction)*obstacle.x_units{firstSample}+fraction*obstacle.x_units{lastSample};
-        y_units = (1-fraction)*obstacle.y_units{firstSample}+fraction*obstacle.y_units{lastSample};
+elseif preparation.MatchingTopology(lowerSampleIndex)
+    spanHasMultipleIntervals = preparation.SpanEndSampleIndex(lowerSampleIndex) > ...
+        preparation.SpanStartSampleIndex(lowerSampleIndex) + 1;
+    if spanHasMultipleIntervals
+        firstSampleIndex = preparation.SpanStartSampleIndex(lowerSampleIndex);
+        lastSampleIndex  = preparation.SpanEndSampleIndex(lowerSampleIndex);
+        fraction = (queryTime_s - time_s(firstSampleIndex)) / ...
+            (time_s(lastSampleIndex) - time_s(firstSampleIndex));
+        x_units = (1 - fraction) * obstacle.x_units{firstSampleIndex} + ...
+            fraction * obstacle.x_units{lastSampleIndex};
+        y_units = (1 - fraction) * obstacle.y_units{firstSampleIndex} + ...
+            fraction * obstacle.y_units{lastSampleIndex};
     else
-    x_units   = x_units + fraction * preparation.DeltaX_units{lowerIndex};
-    y_units = y_units + fraction * preparation.DeltaY_units{lowerIndex};
+        x_units = x_units + fraction * preparation.DeltaX_units{lowerSampleIndex};
+        y_units = y_units + fraction * preparation.DeltaY_units{lowerSampleIndex};
     end
-    speed_units_s   = preparation.IntervalSpeedBound_units_s(lowerIndex);
-    geometryModel = preparation.IntervalGeometryModel(lowerIndex);
+    speed_units_s = preparation.IntervalSpeedBound_units_s(lowerSampleIndex);
+    geometryModel = preparation.IntervalGeometryModel(lowerSampleIndex);
     if ~geometryOnly && speed_units_s == 0
-        shape = preparation.SampleShapes{lowerIndex};
+        shape = preparation.SampleShapes{lowerSampleIndex};
     end
-elseif preparation.IntervalGeometryModel(lowerIndex)=="unsupportedContinuousDeformation"
+elseif preparation.IntervalGeometryModel(lowerSampleIndex) == "unsupportedContinuousDeformation"
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
-elseif any(preparation.IntervalGeometryModel(lowerIndex)== ...
-        ["staticEquivalentSamples","sweptCorrespondingConvexCells"])
-    shape = preparation.IntervalUnionShapes{lowerIndex};
+elseif any(preparation.IntervalGeometryModel(lowerSampleIndex) == ...
+        ["staticEquivalentSamples", "sweptCorrespondingConvexCells"])
+    shape = preparation.IntervalUnionShapes{lowerSampleIndex};
     [x_units, y_units] = boundary(shape);
-    speed_units_s            = 0;
+    speed_units_s          = 0;
     topologyIsInterpolated = false;
-    geometryModel          = preparation.IntervalGeometryModel(lowerIndex);
+    geometryModel          = preparation.IntervalGeometryModel(lowerSampleIndex);
 else
     error('preparedShapeAtTime:UnknownGeometryModel', ...
         'The prepared obstacle interval has an unknown geometry model.');
@@ -81,11 +122,18 @@ y_units(~isfinite(y_units)) = NaN;
 if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units);
 end
-if nargout<2, return; end
-geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, geometryModel, classifyBoundary);
+if nargout < 2
+    return;
+end
+geometry = boundaryGeometry( ...
+    x_units, y_units, speed_units_s, topologyIsInterpolated, ...
+    lowerSampleIndex, geometryModel, classifyBoundary);
 end
 
-function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, geometryModel, classifyBoundary)
+%% Section 3: Local Functions
+
+function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
+        topologyIsInterpolated, lowerSampleIndex, geometryModel, classifyBoundary)
     % Classify one ordered boundary without changing its vertices or ring order.
     finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
@@ -98,20 +146,25 @@ function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIs
         areaTerms_units2        = vertices_units(:, 1) .* nextVertices_units(:, 2) - vertices_units(:, 2) .* nextVertices_units(:, 1);
         signedDoubleArea_units2 = sum(areaTerms_units2);
         areaTolerance_units2    = 64 * eps * max(1, sum(abs(areaTerms_units2)));
-        hasOneRing            = abs(signedDoubleArea_units2) > areaTolerance_units2;
+        hasOneRing = abs(signedDoubleArea_units2) > areaTolerance_units2;
         if hasOneRing
             edges_units          = nextVertices_units - vertices_units;
             nextEdges_units      = circshift(edges_units, -1, 1);
             turns_units2         = edges_units(:, 1) .* nextEdges_units(:, 2) - edges_units(:, 2) .* nextEdges_units(:, 1);
             turnTolerance_units2 = 64 * eps * max(1, max(abs(turns_units2)));
-            isConvex           = all(turns_units2 >= -turnTolerance_units2) || all(turns_units2 <= turnTolerance_units2);
-            outwardSign        = -sign(signedDoubleArea_units2);
+            isConvex    = all(turns_units2 >= -turnTolerance_units2) || all(turns_units2 <= turnTolerance_units2);
+            outwardSign = -sign(signedDoubleArea_units2);
         end
     end
-    geometry = struct("Active", active, "x_units", double(x_units(:)), ...
-        "y_units", double(y_units(:)), "VertexSpeedBound_units_s", speed_units_s, ...
-        "HasOrderedSingleRegion", hasOneRing, "IsConvex", isConvex, "OutwardSign", outwardSign, ...
-        "TopologyIsInterpolated", topologyIsInterpolated, ...
-        "GeometryModel", string(geometryModel), ...
-        "LowerSampleIndex", lowerIndex);
+    geometry = struct( ...
+        "Active",                    active, ...
+        "x_units",                   double(x_units(:)), ...
+        "y_units",                   double(y_units(:)), ...
+        "VertexSpeedBound_units_s",  speed_units_s, ...
+        "HasOrderedSingleRegion",    hasOneRing, ...
+        "IsConvex",                  isConvex, ...
+        "OutwardSign",               outwardSign, ...
+        "TopologyIsInterpolated",    topologyIsInterpolated, ...
+        "GeometryModel",             string(geometryModel), ...
+        "LowerSampleIndex",          lowerSampleIndex);
 end

@@ -1,59 +1,99 @@
-function [position_units,velocity_units_s,acceleration_units_s2] = targetPositionAtTime(targetMotion, time_s)
+function [position_units, velocity_units_s, acceleration_units_s2] = targetPositionAtTime(targetMotion, time_s)
 %% Section 0: Header & Readme
-% SYNTAX: position = obstacleAvoidance.input.targetPositionAtTime(target,time)
-% PURPOSE: Validate and evaluate an explicitly sampled target without extrapolation.
-% INPUTS: Target time_s, N-by-2 position_units, optional linear/pchip interpolation.
-% OUTPUTS: Interpolated position rows at the requested physical times.
-% UNITS: Coordinate units and seconds.
+% SYNTAX
+%   position_units = obstacleAvoidance.input.targetPositionAtTime(targetMotion, time_s)
+%   [position_units, velocity_units_s, acceleration_units_s2] = ...
+%       obstacleAvoidance.input.targetPositionAtTime(targetMotion, time_s)
+%**************************************************************************
+% PURPOSE
+%   - Validate and evaluate an explicitly sampled target without extrapolation.
+%**************************************************************************
+% INPUTS
+%   - targetMotion (scalar struct)
+%       Sample times, positions, and an optional interpolation method.
+%   - time_s (numeric vector)
+%       Physical query times within the supplied history.
+%**************************************************************************
+% OUTPUTS
+%   - position_units (N-by-2 numeric array)
+%       Interpolated target position at each query time.
+%   - velocity_units_s (N-by-2 numeric array)
+%       Interpolated target velocity at each query time.
+%   - acceleration_units_s2 (N-by-2 numeric array)
+%       Interpolated target acceleration at each query time. An invalid
+%       target, an out-of-history query, or an undefined derivative throws.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units and time is seconds.
+%**************************************************************************
 
 %% Section 1: Validate The Target And Query Domain
-if ~isstruct(targetMotion) || ~isscalar(targetMotion) || ~all(isfield(targetMotion,{'time_s','position_units'}))
-    error('planner:InvalidTarget','targetMotion requires time_s and position_units.');
+
+requiredFields = {'time_s', 'position_units'};
+if ~isstruct(targetMotion) || ~isscalar(targetMotion) || ~all(isfield(targetMotion, requiredFields))
+    error('planner:InvalidTarget', 'targetMotion requires time_s and position_units.');
 end
-validateattributes(targetMotion.time_s,{'numeric'},{'real','finite','vector','nonempty'});
+validateattributes(targetMotion.time_s, {'numeric'}, {'real', 'finite', 'vector', 'nonempty'});
 sampleTime_s = double(targetMotion.time_s(:));
-validateattributes(targetMotion.position_units,{'numeric'},{'real','finite','size',[numel(sampleTime_s),2]});
-if numel(sampleTime_s)<2 || any(diff(sampleTime_s)<=0)
-    error('planner:InvalidTargetTime','Target sample times must strictly increase.');
+validateattributes(targetMotion.position_units, {'numeric'}, ...
+    {'real', 'finite', 'size', [numel(sampleTime_s), 2]});
+if numel(sampleTime_s) < 2 || any(diff(sampleTime_s) <= 0)
+    error('planner:InvalidTargetTime', 'Target sample times must strictly increase.');
 end
-validateattributes(time_s,{'numeric'},{'real','finite','vector'});
+
+validateattributes(time_s, {'numeric'}, {'real', 'finite', 'vector'});
 if any(time_s < sampleTime_s(1) | time_s > sampleTime_s(end))
-    error('planner:TargetTimeOutsideHistory','Target evaluation cannot extrapolate beyond the supplied history.');
+    error('planner:TargetTimeOutsideHistory', 'Target evaluation cannot extrapolate beyond the supplied history.');
 end
+
 method = 'linear';
-if isfield(targetMotion,'InterpolationMethod'), method = string(targetMotion.InterpolationMethod); end
-if ~isscalar(string(method)) || ~any(string(method)==["linear","pchip"])
-    error('planner:InvalidTargetInterpolation','Target interpolation must be linear or pchip.');
+if isfield(targetMotion, 'InterpolationMethod')
+    method = string(targetMotion.InterpolationMethod);
+end
+methodName = string(method);
+if ~isscalar(methodName) || ~any(methodName == ["linear", "pchip"])
+    error('planner:InvalidTargetInterpolation', 'Target interpolation must be linear or pchip.');
 end
 
 %% Section 2: Evaluate The Declared Interpolant
-position_units = interp1(sampleTime_s,double(targetMotion.position_units),time_s(:),method);
-if nargout<2, return; end
-% Differentiate the declared piecewise polynomial. Interior knots use the
-% right-hand piece; the final knot uses the left-hand piece. A linear corner
-% has no velocity or acceleration and cannot supply a matched state.
-velocity_units_s = zeros(numel(time_s),2);
+
+position_units = interp1(sampleTime_s, double(targetMotion.position_units), time_s(:), method);
+if nargout < 2
+    return
+end
+
+%% Section 3: Differentiate The Declared Piecewise Polynomial
+
+% Interior knots use the right-hand piece; the final knot uses the left-hand
+% piece. A linear corner has no velocity or acceleration and therefore cannot
+% supply a matched state.
+velocity_units_s     = zeros(numel(time_s), 2);
 acceleration_units_s2 = velocity_units_s;
-for axis = 1:2
-    values = double(targetMotion.position_units(:,axis));
-    if string(method)=="pchip"
-        pp = pchip(sampleTime_s,values);
+for axisIndex = 1:2
+    axisPosition_units = double(targetMotion.position_units(:, axisIndex));
+    if methodName == "pchip"
+        positionPP = pchip(sampleTime_s, axisPosition_units);
     else
-        slopes = diff(values)./diff(sampleTime_s);
-        for k = 2:numel(sampleTime_s)-1
-            if any(time_s==sampleTime_s(k)) && slopes(k)~=slopes(k-1)
-                error('planner:UndefinedTargetDerivative','A linear target corner has no defined matched derivative.');
+        slope_units_s = diff(axisPosition_units) ./ diff(sampleTime_s);
+        for sampleIndex = 2:numel(sampleTime_s) - 1
+            queryHitsKnot = any(time_s == sampleTime_s(sampleIndex));
+            if queryHitsKnot
+                slopeChangesAtKnot = slope_units_s(sampleIndex) ~= slope_units_s(sampleIndex - 1);
+                if slopeChangesAtKnot
+                    error('planner:UndefinedTargetDerivative', ...
+                        'A linear target corner has no defined matched derivative.');
+                end
             end
         end
-        pp = mkpp(sampleTime_s,[slopes,values(1:end-1)]);
+        positionPP = mkpp(sampleTime_s, [slope_units_s, axisPosition_units(1:end - 1)]);
     end
-    order = pp.order;
-    if order>1
-        velocityPP = mkpp(pp.breaks,pp.coefs(:,1:end-1).*(order-1:-1:1));
-        velocity_units_s(:,axis) = ppval(velocityPP,time_s(:));
-        if order>2
-            accelerationPP = mkpp(pp.breaks,velocityPP.coefs(:,1:end-1).*(order-2:-1:1));
-            acceleration_units_s2(:,axis) = ppval(accelerationPP,time_s(:));
+    polynomialOrder = positionPP.order;
+    if polynomialOrder > 1
+        velocityPP = mkpp(positionPP.breaks, positionPP.coefs(:, 1:end - 1) .* (polynomialOrder - 1:-1:1));
+        velocity_units_s(:, axisIndex) = ppval(velocityPP, time_s(:));
+        if polynomialOrder > 2
+            accelerationPP = mkpp(positionPP.breaks, velocityPP.coefs(:, 1:end - 1) .* (polynomialOrder - 2:-1:1));
+            acceleration_units_s2(:, axisIndex) = ppval(accelerationPP, time_s(:));
         end
     end
 end

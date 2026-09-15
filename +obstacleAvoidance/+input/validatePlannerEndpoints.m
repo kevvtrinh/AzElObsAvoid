@@ -1,109 +1,160 @@
-function [feasible,message,reason] = validatePlannerEndpoints(obstacles,initialState,goalState,limits,options)
+function [feasible, message, reason] = validatePlannerEndpoints(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX: [ok,message,reason] = obstacleAvoidance.input.validatePlannerEndpoints(obstacles,initial,goal,limits,options)
-% PURPOSE: Reject physical endpoint violations at their actual physical times.
-% INPUTS: Prepared geometry, normalized full states, limits, and arrival policy.
-% OUTPUTS: Feasibility and stable expected-failure description.
-% UNITS: Coordinate units, seconds, and physical derivatives.
+% SYNTAX
+%   [feasible, message, reason] = ...
+%       obstacleAvoidance.input.validatePlannerEndpoints(obstacles, initialState, goalState, limits, options)
+%**************************************************************************
+% PURPOSE
+%   - Reject physical endpoint violations at their actual times.
+%**************************************************************************
+% INPUTS
+%   - obstacles (prepared obstacle array)
+%       Protected geometry over the request horizon.
+%   - initialState (scalar struct)
+%       Normalized initial endpoint state.
+%   - goalState (scalar struct)
+%       Normalized goal endpoint state.
+%   - limits (scalar struct)
+%       Normalized workspace and derivative limits.
+%   - options (scalar struct)
+%       Normalized arrival and wrapping policy.
+%**************************************************************************
+% OUTPUTS
+%   - feasible (logical scalar)
+%       True when all endpoint checks pass; expected physical failures
+%       return false and invalid input throws an error.
+%   - message (string scalar)
+%       Stable expected-failure description.
+%   - reason (string scalar)
+%       Stable expected-failure identifier.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units and time is seconds.
+%**************************************************************************
 
 %% Section 1: Check Occupancy At The Requested Endpoint Times
-feasible = false; message = ""; reason = "";
-positions = initialState.position_units;
-times = initialState.time_s;
-if options.GoalTimeMode=="fixedArrival"
-    positions(2,:) = goalState.position_units; times(2,1) = goalState.time_s;
+
+feasible                = false;
+message                 = "";
+reason                  = "";
+endpointPositions_units = initialState.position_units;
+endpointTimes_s           = initialState.time_s;
+arrivalIsFixed            = options.GoalTimeMode == "fixedArrival";
+if arrivalIsFixed
+    endpointPositions_units(2, :) = goalState.position_units;
+    endpointTimes_s(2, 1)         = goalState.time_s;
 end
-if any(obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles,positions(:,1),positions(:,2),times))
+endpointIsOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    obstacles, endpointPositions_units(:, 1), endpointPositions_units(:, 2), endpointTimes_s);
+if any(endpointIsOccupied)
     message = "A protected obstacle occupies the initial or fixed terminal state.";
-    reason = "endpointBlocked"; return;
+    reason  = "endpointBlocked";
+    return
 end
-if options.GoalTimeMode=="fixedArrival" && ~options.WrapX && ~options.WrapY && ...
-        terminalReachabilityIsBlocked(obstacles,initialState,goalState,limits)
+reachabilityShouldBeChecked = arrivalIsFixed && ~options.WrapX && ~options.WrapY;
+if reachabilityShouldBeChecked && terminalReachabilityIsBlocked(obstacles, initialState, goalState, limits)
     message = "Every jerk-limited approach to the fixed terminal state intersects a protected obstacle.";
-    reason = "terminalReachabilityBlocked"; return;
+    reason  = "terminalReachabilityBlocked";
+    return
 end
 
 %% Section 2: Check Physical States And Necessary Travel Time
-checkGoal = options.GoalTimeMode=="fixedArrival" || isempty(goalState.targetMotion);
-states = initialState;
-if checkGoal
-    states(2).position_units = goalState.position_units;
-    states(2).velocity_units_s = goalState.velocity_units_s;
-    states(2).acceleration_units_s2 = goalState.acceleration_units_s2;
+
+goalShouldBeChecked = arrivalIsFixed || isempty(goalState.targetMotion);
+endpointStates      = initialState;
+if goalShouldBeChecked
+    endpointStates(2).position_units        = goalState.position_units;
+    endpointStates(2).velocity_units_s      = goalState.velocity_units_s;
+    endpointStates(2).acceleration_units_s2 = goalState.acceleration_units_s2;
 end
-intervals = [limits.xInterval_units;limits.yInterval_units];
-for k = 1:numel(states)
-    if any(abs(states(k).velocity_units_s)>limits.maxVelocity_units_s) || ...
-            any(abs(states(k).acceleration_units_s2)>limits.maxAcceleration_units_s2)
+intervals = [limits.xInterval_units; limits.yInterval_units];
+for stateIndex = 1:numel(endpointStates)
+    velocityExceedsLimit = any(abs(endpointStates(stateIndex).velocity_units_s) > limits.maxVelocity_units_s);
+    derivativeExceedsLimit = velocityExceedsLimit;
+    if ~derivativeExceedsLimit
+        accelerationExceedsLimit = any( ...
+            abs(endpointStates(stateIndex).acceleration_units_s2) > limits.maxAcceleration_units_s2);
+        derivativeExceedsLimit = accelerationExceedsLimit;
+    end
+    if derivativeExceedsLimit
         message = "An endpoint derivative exceeds its physical limit.";
-        reason = "dynamicEndpointInfeasible"; return;
+        reason  = "dynamicEndpointInfeasible";
+        return
     end
-    p = states(k).position_units;
-    if any(p<intervals(:,1).' | p>intervals(:,2).')
+    position_units             = endpointStates(stateIndex).position_units;
+    positionIsOutsideWorkspace = position_units < intervals(:, 1).' | position_units > intervals(:, 2).';
+    if any(positionIsOutsideWorkspace)
         message = "An endpoint lies outside the workspace.";
-        reason = "endpointOutsideWorkspace"; return;
+        reason  = "endpointOutsideWorkspace";
+        return
     end
-    localVelocity_units_s=states(k).velocity_units_s;
-    if k>1
+    localVelocity_units_s = endpointStates(stateIndex).velocity_units_s;
+    if stateIndex > 1
         % At a terminal state, inspect the trajectory backward from arrival.
-        localVelocity_units_s=-localVelocity_units_s;
+        localVelocity_units_s = -localVelocity_units_s;
     end
-    onLower=p==intervals(:,1).';
-    onUpper=p==intervals(:,2).';
-    velocityLeaves=(onLower & localVelocity_units_s<0) | ...
-        (onUpper & localVelocity_units_s>0);
-    zeroBoundaryVelocity=localVelocity_units_s==0;
-    accelerationLeaves=zeroBoundaryVelocity & ...
-        ((onLower & states(k).acceleration_units_s2<0) | ...
-        (onUpper & states(k).acceleration_units_s2>0));
-    if any(velocityLeaves | accelerationLeaves)
+    positionIsOnLowerBound   = position_units == intervals(:, 1).';
+    positionIsOnUpperBound   = position_units == intervals(:, 2).';
+    velocityLeavesWorkspace  = (positionIsOnLowerBound & localVelocity_units_s < 0) | ...
+        (positionIsOnUpperBound & localVelocity_units_s > 0);
+    boundaryVelocityIsZero   = localVelocity_units_s == 0;
+    acceleration_units_s2    = endpointStates(stateIndex).acceleration_units_s2;
+    accelerationLeavesWorkspace = boundaryVelocityIsZero & ...
+        ((positionIsOnLowerBound & acceleration_units_s2 < 0) | ...
+        (positionIsOnUpperBound & acceleration_units_s2 > 0));
+    if any(velocityLeavesWorkspace | accelerationLeavesWorkspace)
         message = "An endpoint derivative points outside the workspace.";
-        reason = "dynamicEndpointInfeasible"; return;
+        reason  = "dynamicEndpointInfeasible";
+        return
     end
 end
-if checkGoal && obstacleAvoidance.input.minimumTravelTime(initialState,goalState,limits)> ...
-        goalState.time_s-initialState.time_s+options.ArrivalTimeTolerance_s
-    message = "The horizon is below a necessary travel-time bound.";
-    reason = "timeWindowInfeasible"; return;
+if goalShouldBeChecked
+    minimumDuration_s   = obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
+    availableDuration_s = goalState.time_s - initialState.time_s + options.ArrivalTimeTolerance_s;
+    if minimumDuration_s > availableDuration_s
+        message = "The horizon is below a necessary travel-time bound.";
+        reason  = "timeWindowInfeasible";
+        return
+    end
 end
 feasible = true;
 end
 
 %% Section 3: Local Functions
-function blocked = terminalReachabilityIsBlocked(obstacles,initialState,goalState,limits)
+
+function reachabilityIsBlocked = terminalReachabilityIsBlocked(obstacles, initialState, goalState, limits)
     % A convex obstacle containing the complete backward-reachable box proves infeasibility.
-    blocked = false;
-    finalTime_s = goalState.time_s;
+    reachabilityIsBlocked = false;
+    finalTime_s         = goalState.time_s;
     previousEventTime_s = initialState.time_s;
     for obstacleIndex = 1:numel(obstacles)
         priorTimes_s = obstacles(obstacleIndex).time_s( ...
-            obstacles(obstacleIndex).time_s<finalTime_s);
+            obstacles(obstacleIndex).time_s < finalTime_s);
         if ~isempty(priorTimes_s)
-            previousEventTime_s = max(previousEventTime_s,max(priorTimes_s));
+            previousEventTime_s = max(previousEventTime_s, max(priorTimes_s));
         end
     end
-    localDuration_s = finalTime_s-previousEventTime_s;
-    if localDuration_s<=0
+    localDuration_s = finalTime_s - previousEventTime_s;
+    if localDuration_s <= 0
         return
     end
-    candidateDuration_s = unique([localDuration_s*2.^-(0:16), ...
-        linspace(localDuration_s/256,localDuration_s,256)]);
-    for duration_s = reshape(candidateDuration_s,1,[])
-        center_units = goalState.position_units-goalState.velocity_units_s*duration_s+ ...
-            0.5*goalState.acceleration_units_s2*duration_s^2;
-        radius_units = backwardPositionRadius(duration_s,goalState.acceleration_units_s2, ...
-            limits.maxAcceleration_units_s2,limits.maxJerk_units_s3);
-        corners_units = center_units+[-radius_units(1),-radius_units(2); ...
-            -radius_units(1),radius_units(2);radius_units(1),-radius_units(2); ...
-            radius_units(1),radius_units(2)];
-        scene = obstacleAvoidance.obstacles.snapshot(obstacles,finalTime_s-duration_s);
+    candidateDurations_s = unique([localDuration_s * 2.^-(0:16), ...
+        linspace(localDuration_s / 256, localDuration_s, 256)]);
+    for duration_s = reshape(candidateDurations_s, 1, [])
+        center_units = goalState.position_units - goalState.velocity_units_s * duration_s + ...
+            0.5 * goalState.acceleration_units_s2 * duration_s^2;
+        radius_units = backwardPositionRadius(duration_s, goalState.acceleration_units_s2, ...
+            limits.maxAcceleration_units_s2, limits.maxJerk_units_s3);
+        corners_units = center_units + [-radius_units(1), -radius_units(2); -radius_units(1), radius_units(2); ...
+            radius_units(1), -radius_units(2); radius_units(1), radius_units(2)];
+        scene = obstacleAvoidance.obstacles.snapshot(obstacles, finalTime_s - duration_s);
         for sceneIndex = 1:numel(scene)
             for regionIndex = 1:numel(scene(sceneIndex).Regions_units)
                 region_units = scene(sceneIndex).Regions_units{regionIndex};
-                [inside,onBoundary] = inpolygon(corners_units(:,1),corners_units(:,2), ...
-                    region_units(:,1),region_units(:,2));
+                [inside, onBoundary] = inpolygon(corners_units(:, 1), corners_units(:, 2), ...
+                    region_units(:, 1), region_units(:, 2));
                 if all(inside | onBoundary)
-                    blocked = true;
+                    reachabilityIsBlocked = true;
                     return
                 end
             end
@@ -111,13 +162,14 @@ function blocked = terminalReachabilityIsBlocked(obstacles,initialState,goalStat
     end
 end
 
-function radius_units = backwardPositionRadius(duration_s,finalAcceleration_units_s2,accelerationLimit_units_s2,jerkLimit_units_s3)
+function radius_units = backwardPositionRadius(duration_s, finalAcceleration_units_s2, accelerationLimit_units_s2, jerkLimit_units_s3)
     % Ignore velocity limits to retain a sound outer bound; acceleration tightens long intervals.
-    rampDuration_s = accelerationLimit_units_s2./jerkLimit_units_s3;
-    radius_units = jerkLimit_units_s3*duration_s^3/6;
-    accelerationLimited = finalAcceleration_units_s2==0 & duration_s>rampDuration_s;
-    acceleration = accelerationLimit_units_s2(accelerationLimited);
-    jerk = jerkLimit_units_s3(accelerationLimited);
-    radius_units(accelerationLimited) = 0.5*acceleration*duration_s^2- ...
-        acceleration.^2*duration_s./(2*jerk)+acceleration.^3./(6*jerk.^2);
+    rampDuration_s         = accelerationLimit_units_s2 ./ jerkLimit_units_s3;
+    radius_units           = jerkLimit_units_s3 * duration_s^3 / 6;
+    accelerationIsLimited  = finalAcceleration_units_s2 == 0 & duration_s > rampDuration_s;
+    limitedAcceleration_units_s2 = accelerationLimit_units_s2(accelerationIsLimited);
+    limitedJerk_units_s3          = jerkLimit_units_s3(accelerationIsLimited);
+    radius_units(accelerationIsLimited) = 0.5 * limitedAcceleration_units_s2 * duration_s^2 - ...
+        limitedAcceleration_units_s2.^2 * duration_s ./ (2 * limitedJerk_units_s3) + ...
+        limitedAcceleration_units_s2.^3 ./ (6 * limitedJerk_units_s3.^2);
 end

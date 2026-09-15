@@ -1,29 +1,51 @@
-function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = evaluatePolynomial(polynomial, time_s, segmentIndex)
+function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = ...
+        evaluatePolynomial(polynomial, time_s, segmentIndex)
 %% Section 0: Header & Readme
-% SYNTAX: [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] =
-%   bmtpEngine.evaluatePolynomial(polynomial, time_s)
-%   [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] =
-%   bmtpEngine.evaluatePolynomial( polynomial, time_s, segmentIndex)
-% PURPOSE: Evaluate shared ascending-power segment records at absolute times.
-% INPUTS: polynomial (scalar normalized trajectory polynomial struct) Coefficient arrays use
-%   N-by-D-by-P shape and ascending powers. time_s (numeric vector) Absolute evaluation times. The
-%   output uses a numeric column. segmentIndex (numeric scalar or vector, optional; default [])
-%   Select an exact segment for each time. Empty values select segments from polynomial start-time
-%   records. A scalar applies to all times.
-% OUTPUTS: time_s (N-by-1 numeric column) Normalized requested times. position_units through
-%   jerk_units_s3 (N-by-D numeric arrays) Evaluated motion histories for every modeled coordinate.
-% UNITS: Position is coordinate units; time is seconds; derivatives use units/s powers.
+% SYNTAX
+%   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
+%       jerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, time_s)
+%   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
+%       jerk_units_s3] = bmtpEngine.evaluatePolynomial( ...
+%       polynomial, time_s, segmentIndex)
+%**************************************************************************
+% PURPOSE
+%   - Evaluate ascending-power segment records at absolute times.
+%**************************************************************************
+% INPUTS
+%   - polynomial (scalar struct)
+%       Trajectory polynomial with per-segment ascending-power records.
+%   - time_s (numeric vector)
+%       Absolute evaluation times.
+%   - segmentIndex (numeric scalar or vector, optional; default [])
+%       Explicit segment selection; empty selects from segment start times.
+%**************************************************************************
+% OUTPUTS
+%   - time_s (numeric column)
+%       Normalized requested times.
+%   - position_units (N-by-C numeric array)
+%       Evaluated positions for every coordinate.
+%   - velocity_units_s (N-by-C numeric array)
+%       Evaluated velocities for every coordinate.
+%   - acceleration_units_s2 (N-by-C numeric array)
+%       Evaluated accelerations for every coordinate.
+%   - jerk_units_s3 (N-by-C numeric array)
+%       Evaluated jerks for every coordinate. Nonfinite or empty requested
+%       times return NaN histories rather than throwing.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units and time is seconds.
+%**************************************************************************
 
 %% Section 1: Select Polynomial Segments
-time_s              = double(time_s(:));
-sampleCount         = numel(time_s);
-dimensionCount      = size(polynomial.positionPower_units, 2);
+time_s                = double(time_s(:));
+sampleCount           = numel(time_s);
+dimensionCount        = size(polynomial.positionPower_units, 2);
 position_units        = NaN(sampleCount, dimensionCount);
 velocity_units_s      = position_units;
 acceleration_units_s2 = position_units;
 jerk_units_s3         = position_units;
 if nargout < 2 || isempty(time_s) || any(~isfinite(time_s))
-    return;
+    return
 end
 if nargin < 3 || isempty(segmentIndex)
     segmentStarts_s = double(polynomial.SegmentStartTime_s(:));
@@ -41,8 +63,9 @@ if isscalar(polynomial.SegmentDuration_s)
 else
     selectedDuration_s = polynomial.SegmentDuration_s(segmentIndex);
 end
-localTau     = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ selectedDuration_s;
-localTau     = min(1, max(0, localTau));
+localTau = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ selectedDuration_s;
+localTau = min(1, max(0, localTau));
+
 position_units = evaluateRecords(polynomial.positionPower_units, segmentIndex, localTau);
 if nargout >= 3
     velocity_units_s = evaluateRecords(polynomial.velocityPower_units_s, segmentIndex, localTau);
@@ -56,9 +79,9 @@ end
 end
 
 %% Section 3: Local Functions
-function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
+function values = evaluateRecords(coefficientArray, segmentIndex, localTau)
     % Evaluate the selected polynomial segments in local time.
     coefficientCount = size(coefficientArray, 3);
-    power            = reshape(localTau .^ (0:coefficientCount - 1), [], 1, coefficientCount);
-    value            = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
+    powerTerms       = reshape(localTau .^ (0:coefficientCount - 1), [], 1, coefficientCount);
+    values           = sum(coefficientArray(segmentIndex, :, :) .* powerTerms, 3);
 end

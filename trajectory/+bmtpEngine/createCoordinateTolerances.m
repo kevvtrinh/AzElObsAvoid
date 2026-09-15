@@ -1,18 +1,27 @@
 function [coordinateScale_units, roundoffReserve_units] = createCoordinateTolerances(varargin)
 %% Section 0: Header & Readme
-% SYNTAX: coordinateScale_units = bmtpEngine.createCoordinateTolerances(values_units)
-%   [coordinateScale_units, roundoffReserve_units] =
-%   bmtpEngine.createCoordinateTolerances(values_units, ...)
-% PURPOSE: Derive one coordinate scale and the shared geometric tolerances used by motion
-%   construction and authoritative trajectory verification.
-% INPUTS: values_units (numeric arrays or cells of numeric arrays) Any number of coordinate
-%   collections. Nonfinite entries are ignored, and empty collections contribute no scale.
-% OUTPUTS: coordinateScale_units (finite numeric scalar) Maximum absolute finite coordinate, with a
-%   lower bound of one degree. roundoffReserve_units (finite numeric scalar)
-%   Conservative reserve, 2^20 times eps times coordinateScale_units. This matches the authoritative
-%   verifier and is never smaller than the alternative 2^20 times eps(coordinateScale_units) for
-%   scale at least one.
-% UNITS: Inputs, scale, tolerances, and reserve are coordinate units.
+% SYNTAX
+%   coordinateScale_units = bmtpEngine.createCoordinateTolerances(values_units)
+%   [coordinateScale_units, roundoffReserve_units] = ...
+%       bmtpEngine.createCoordinateTolerances(values_units, ...)
+%**************************************************************************
+% PURPOSE
+%   - Derive the coordinate scale and shared geometric roundoff reserve.
+%**************************************************************************
+% INPUTS
+%   - values_units (numeric arrays or cells of numeric arrays)
+%       Coordinate collections; nonfinite entries do not affect the scale.
+%**************************************************************************
+% OUTPUTS
+%   - coordinateScale_units (finite numeric scalar)
+%       Largest finite coordinate magnitude, never below one.
+%   - roundoffReserve_units (finite numeric scalar)
+%       Conservative geometric roundoff reserve at that scale.
+%   - A non-numeric coordinate collection throws.
+%**************************************************************************
+% UNITS
+%   - Inputs, scale, and reserve are coordinate units.
+%**************************************************************************
 
 %% Section 1: Accumulate The Finite Coordinate Scale
 coordinateScale_units = 1;
@@ -35,7 +44,8 @@ end
 function coordinateScale_units = updateScale(coordinateScale_units, values_units)
     % Ignore nonfinite ring separators when measuring coordinate scale.
     if ~isnumeric(values_units)
-        error("createCoordinateTolerances:InvalidCoordinates", "Each coordinate collection must be numeric or a cell of numeric arrays.");
+        error("createCoordinateTolerances:InvalidCoordinates", ...
+            "Each coordinate collection must be numeric or a cell of numeric arrays.");
     end
     finiteValues_units = abs(double(values_units(isfinite(values_units))));
     if ~isempty(finiteValues_units)

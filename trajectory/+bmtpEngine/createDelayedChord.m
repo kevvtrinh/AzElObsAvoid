@@ -1,142 +1,232 @@
-function [controls_units,durations_s,prescribedPower_units,diagnostics] = createDelayedChord(request)
+function [controls_units, durations_s, prescribedPower_units, diagnostics] = createDelayedChord(request)
 %% Section 0: Header & Readme
-% SYNTAX: [controls,times,powers,diagnostics] = bmtpEngine.createDelayedChord(request)
-% PURPOSE: Find the earliest safe departure of the C3 quintic chord.
-% INPUTS: Validated rest-to-rest request and authoritative convex time cells.
-% OUTPUTS: Waiting plus chord motion, or empty arrays when no delay is available.
-% UNITS: Coordinate units, seconds, and normalized polynomial coefficients.
+% SYNTAX
+%   [controls_units, durations_s, prescribedPower_units, diagnostics] = ...
+%       bmtpEngine.createDelayedChord(request)
+%**************************************************************************
+% PURPOSE
+%   - Find the earliest safe departure of the C3 quintic chord.
+%**************************************************************************
+% INPUTS
+%   - request (scalar struct)
+%       Validated rest-to-rest request and authoritative convex time cells.
+%**************************************************************************
+% OUTPUTS
+%   - controls_units (S-by-6-by-2 numeric array)
+%       Waiting-plus-chord Bezier controls, or empty when unavailable.
+%   - durations_s (numeric column)
+%       Waiting-plus-chord span durations, or empty when unavailable.
+%   - prescribedPower_units (S-by-2-by-6 numeric array)
+%       Matching analytic powers, or empty when unavailable.
+%   - diagnostics (scalar struct)
+%       Selected departure delay and availability state.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units and time is seconds.
+%**************************************************************************
 
 %% Section 1: Construct The Scalar Progress Clock
-[controls_units,durations_s,prescribedPower_units] = bmtpEngine.createC3Chord( ...
-    request.InitialState.position_units,request.GoalState.position_units,request.Limits);
-phases = struct('StartTime_s',[0;cumsum(durations_s(1:end-1))],'SegmentTime_s',durations_s);
-duration_s = sum(durations_s);
-maximumWait_s = request.MotionHorizon_s-duration_s;
-initial_units = request.InitialState.position_units;
-direction_units = request.GoalState.position_units-initial_units;
-directionNorm2_units2 = sum(direction_units.^2);
-normal = [-direction_units(2),direction_units(1)]/sqrt(directionNorm2_units2);
-relativePower = prescribedPower_units;
-relativePower(:,:,1) = relativePower(:,:,1)-initial_units;
-progressPower = reshape(sum(relativePower.*reshape(direction_units,1,2,1),2),[],6)/directionNorm2_units2;
+[controls_units, durations_s, prescribedPower_units] = bmtpEngine.createC3Chord( ...
+    request.InitialState.position_units, request.GoalState.position_units, request.Limits);
+phaseStartTime_s      = [0; cumsum(durations_s(1:end - 1))];
+phaseTiming           = struct('StartTime_s', phaseStartTime_s, 'SegmentTime_s', durations_s);
+duration_s            = sum(durations_s);
+maximumWait_s         = request.MotionHorizon_s - duration_s;
+initial_units         = request.InitialState.position_units;
+direction_units       = request.GoalState.position_units - initial_units;
+directionNorm2_units2 = sum(direction_units .^ 2);
+pathNormal             = [-direction_units(2), direction_units(1)] / sqrt(directionNorm2_units2);
+relativePower_units    = prescribedPower_units;
+relativePower_units(:, :, 1) = relativePower_units(:, :, 1) - initial_units;
+progressPower = reshape(sum(relativePower_units .* reshape(direction_units, 1, 2, 1), 2), [], 6) / ...
+    directionNorm2_units2;
 endRegions_units = {};
-if isfield(request.Coverage,'EndRegions_units'), endRegions_units = request.Coverage.EndRegions_units; end
-[~,reserve_units] = bmtpEngine.createCoordinateTolerances(initial_units,request.GoalState.position_units, ...
-    request.Limits.xInterval_units,request.Limits.yInterval_units,request.Regions_units,endRegions_units);
-clearance_units = (1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+3*reserve_units;
-forbidden_s = zeros(0,2);
+if isfield(request.Coverage, 'EndRegions_units')
+    endRegions_units = request.Coverage.EndRegions_units;
+end
+[~, reserve_units] = bmtpEngine.createCoordinateTolerances(initial_units, ...
+    request.GoalState.position_units, request.Limits.xInterval_units, ...
+    request.Limits.yInterval_units, request.Regions_units, endRegions_units);
+clearance_units = (1 + 2 ^ 20 * eps) * request.Options.CollisionClearanceTolerance_units + ...
+    3 * reserve_units;
+forbidden_s = zeros(0, 2);
 
 %% Section 2: Project Convex Space-Time Cells Onto Path Progress And Time
-for region = 1:numel(request.Regions_units)
-    interval_s = request.InitialState.time_s+[0,request.MotionHorizon_s];
-    if isfield(request.Coverage,'ActiveTimeInterval_s'), interval_s = request.Coverage.ActiveTimeInterval_s(region,:); end
-    vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{region},request.Coverage,region,interval_s);
-    first_units = clearanceEnvelope(vertices_units(:,:,1),clearance_units);
-    last_units = clearanceEnvelope(vertices_units(:,:,end),clearance_units);
-    points = [first_units,repmat(interval_s(1),size(first_units,1),1); ...
-        last_units,repmat(interval_s(2),size(last_units,1),1)];
-    residual = (points(:,1:2)-initial_units)*normal.';
-    [positive,negative] = ndgrid(find(residual>0),find(residual<0));
-    positive = positive(:); negative = negative(:);
-    fraction = residual(positive)./(residual(positive)-residual(negative));
-    section = [points(residual==0,:);points(positive,:)+fraction.*(points(negative,:)-points(positive,:))];
-    if isempty(section), continue; end
-    section = unique([(section(:,1:2)-initial_units)*direction_units.'/directionNorm2_units2,section(:,3)],'rows');
-    if size(section,1)>2 && rank(section-section(1,:))==2
-        hull = convhull(section(:,1),section(:,2));
-        section = section(hull(1:end-1),:);
-    elseif size(section,1)>2
-        delta = section(end,:)-section(1,:);
-        [~,order] = sort(section*delta.');
-        section = section(order([1,end]),:);
+for regionIndex = 1:numel(request.Regions_units)
+    interval_s = request.InitialState.time_s + [0, request.MotionHorizon_s];
+    if isfield(request.Coverage, 'ActiveTimeInterval_s')
+        interval_s = request.Coverage.ActiveTimeInterval_s(regionIndex, :);
     end
-    low_s = Inf; high_s = -Inf; firstStartOccupancy_s = Inf;
-    for edge = 1:size(section,1)
-        a = section(edge,:); b = section(mod(edge,size(section,1))+1,:);
-        range = [max(0,min(a(1),b(1))),min(1,max(a(1),b(1)))];
-        if range(1)>range(2), continue; end
-        if a(1)==b(1)
-            relative_s = inverseProgress(progressPower,phases,range(1));
-            low_s = min(low_s,min(a(2),b(2))-request.InitialState.time_s-relative_s);
-            high_s = max(high_s,max(a(2),b(2))-request.InitialState.time_s-relative_s);
-            if a(1)==0, firstStartOccupancy_s = min(firstStartOccupancy_s,min(a(2),b(2))); end
+    vertices_units = bmtpEngine.regionOnInterval( ...
+        request.Regions_units{regionIndex}, request.Coverage, regionIndex, interval_s);
+    first_units = clearanceEnvelope(vertices_units(:, :, 1), clearance_units);
+    last_units  = clearanceEnvelope(vertices_units(:, :, end), clearance_units);
+    spaceTimePoints = [first_units, repmat(interval_s(1), size(first_units, 1), 1); ...
+        last_units, repmat(interval_s(2), size(last_units, 1), 1)];
+    normalResidual_units = (spaceTimePoints(:, 1:2) - initial_units) * pathNormal.';
+    [positivePointIndices, negativePointIndices] = ndgrid( ...
+        find(normalResidual_units > 0), find(normalResidual_units < 0));
+    positivePointIndices = positivePointIndices(:);
+    negativePointIndices = negativePointIndices(:);
+    crossingFraction = normalResidual_units(positivePointIndices) ./ ...
+        (normalResidual_units(positivePointIndices) - normalResidual_units(negativePointIndices));
+    pathTimeSection = [spaceTimePoints(normalResidual_units == 0, :); ...
+        spaceTimePoints(positivePointIndices, :) + crossingFraction .* ...
+        (spaceTimePoints(negativePointIndices, :) - spaceTimePoints(positivePointIndices, :))];
+    if isempty(pathTimeSection)
+        continue;
+    end
+    pathTimeSection = unique([ ...
+        (pathTimeSection(:, 1:2) - initial_units) * direction_units.' / directionNorm2_units2, ...
+        pathTimeSection(:, 3)], 'rows');
+    if size(pathTimeSection, 1) > 2 && rank(pathTimeSection - pathTimeSection(1, :)) == 2
+        hullIndices     = convhull(pathTimeSection(:, 1), pathTimeSection(:, 2));
+        pathTimeSection = pathTimeSection(hullIndices(1:end - 1), :);
+    elseif size(pathTimeSection, 1) > 2
+        sectionDirection = pathTimeSection(end, :) - pathTimeSection(1, :);
+        [~, sortOrder]    = sort(pathTimeSection * sectionDirection.');
+        pathTimeSection   = pathTimeSection(sortOrder([1, end]), :);
+    end
+
+    low_s                 = Inf;
+    high_s                = -Inf;
+    firstStartOccupancy_s = Inf;
+    for edgeIndex = 1:size(pathTimeSection, 1)
+        firstPoint    = pathTimeSection(edgeIndex, :);
+        secondPoint   = pathTimeSection(mod(edgeIndex, size(pathTimeSection, 1)) + 1, :);
+        progressRange = [max(0, min(firstPoint(1), secondPoint(1))), ...
+            min(1, max(firstPoint(1), secondPoint(1)))];
+        if progressRange(1) > progressRange(2)
             continue;
         end
-        slope_s = (b(2)-a(2))/(b(1)-a(1));
-        intercept_s = a(2)-slope_s*a(1);
-        if range(1)==0, firstStartOccupancy_s = min(firstStartOccupancy_s,intercept_s); end
-        for phase = 1:numel(durations_s)
-            overlap = [max(range(1),progressPower(phase,1)),min(range(2),sum(progressPower(phase,:)))];
-            if overlap(1)>overlap(2), continue; end
-            u = [invertProgress(progressPower(phase,:),overlap(1)),invertProgress(progressPower(phase,:),overlap(2))];
-            delayPower_s = slope_s*progressPower(phase,:);
-            delayPower_s(1) = delayPower_s(1)+intercept_s-request.InitialState.time_s-phases.StartTime_s(phase);
-            delayPower_s(2) = delayPower_s(2)-durations_s(phase);
-            derivative = delayPower_s(2:end).*(1:5);
-            last = find(derivative~=0,1,'last');
-            stationary = [];
-            if ~isempty(last), stationary = roots(fliplr(derivative(1:last))); end
-            stationary = real(stationary(abs(imag(stationary))<=64*eps(max(1,abs(stationary)))));
-            u = [u,reshape(stationary(stationary>=u(1) & stationary<=u(2)),1,[])];
-            values_s = polyval(fliplr(delayPower_s),u);
-            low_s = min(low_s,min(values_s)); high_s = max(high_s,max(values_s));
+        if firstPoint(1) == secondPoint(1)
+            relative_s = inverseProgress(progressPower, phaseTiming, progressRange(1));
+            low_s      = min(low_s, min(firstPoint(2), secondPoint(2)) - ...
+                request.InitialState.time_s - relative_s);
+            high_s = max(high_s, max(firstPoint(2), secondPoint(2)) - ...
+                request.InitialState.time_s - relative_s);
+            if firstPoint(1) == 0
+                firstStartOccupancy_s = min(firstStartOccupancy_s, ...
+                    min(firstPoint(2), secondPoint(2)));
+            end
+            continue;
+        end
+        slope_s     = (secondPoint(2) - firstPoint(2)) / (secondPoint(1) - firstPoint(1));
+        intercept_s = firstPoint(2) - slope_s * firstPoint(1);
+        if progressRange(1) == 0
+            firstStartOccupancy_s = min(firstStartOccupancy_s, intercept_s);
+        end
+        for phaseIndex = 1:numel(durations_s)
+            progressOverlap = [max(progressRange(1), progressPower(phaseIndex, 1)), ...
+                min(progressRange(2), sum(progressPower(phaseIndex, :)))];
+            if progressOverlap(1) > progressOverlap(2)
+                continue;
+            end
+            localTau = [invertProgress(progressPower(phaseIndex, :), progressOverlap(1)), ...
+                invertProgress(progressPower(phaseIndex, :), progressOverlap(2))];
+            delayPower_s    = slope_s * progressPower(phaseIndex, :);
+            delayPower_s(1) = delayPower_s(1) + intercept_s - ...
+                request.InitialState.time_s - phaseTiming.StartTime_s(phaseIndex);
+            delayPower_s(2)     = delayPower_s(2) - durations_s(phaseIndex);
+            derivativePower_s   = delayPower_s(2:end) .* (1:5);
+            lastDerivativeIndex = find(derivativePower_s ~= 0, 1, 'last');
+            stationaryTau = [];
+            if ~isempty(lastDerivativeIndex)
+                stationaryTau = roots(fliplr(derivativePower_s(1:lastDerivativeIndex)));
+            end
+            stationaryTau = real(stationaryTau(abs(imag(stationaryTau)) <= ...
+                64 * eps(max(1, abs(stationaryTau)))));
+            stationaryTauIsInRange = stationaryTau >= localTau(1) & ...
+                stationaryTau <= localTau(2);
+            localTau = [localTau, reshape(stationaryTau(stationaryTauIsInRange), 1, [])];
+            values_s = polyval(fliplr(delayPower_s), localTau);
+            low_s    = min(low_s, min(values_s));
+            high_s   = max(high_s, max(values_s));
         end
     end
-    if low_s<=high_s, forbidden_s(end+1,:) = [low_s,high_s]; end %#ok<AGROW>
-    % Waiting occupies the initial point for the entire delay, not just at departure.
+    if low_s <= high_s
+        forbidden_s(end + 1, :) = [low_s, high_s]; %#ok<AGROW>
+    end
+    % Waiting occupies the initial point for the entire delay, not just at
+    % departure.
     if isfinite(firstStartOccupancy_s)
-        forbidden_s(end+1,:) = [firstStartOccupancy_s-request.InitialState.time_s,maximumWait_s]; %#ok<AGROW>
+        forbidden_s(end + 1, :) = [firstStartOccupancy_s - request.InitialState.time_s, maximumWait_s]; %#ok<AGROW>
     end
 end
 
 %% Section 3: Select The First Gap And Export The Complete Motion
-forbidden_s = sortrows(forbidden_s,1);
+forbidden_s = sortrows(forbidden_s, 1);
 wait_s = 0;
-for k = 1:size(forbidden_s,1)
-    if forbidden_s(k,1)>wait_s, break; end
-    if forbidden_s(k,2)>=wait_s
-        wait_s = forbidden_s(k,2)+64*eps(max(1,abs(forbidden_s(k,2))));
+for forbiddenIndex = 1:size(forbidden_s, 1)
+    if forbidden_s(forbiddenIndex, 1) > wait_s
+        break;
+    end
+    if forbidden_s(forbiddenIndex, 2) >= wait_s
+        wait_s = forbidden_s(forbiddenIndex, 2) + ...
+            64 * eps(max(1, abs(forbidden_s(forbiddenIndex, 2))));
     end
 end
-diagnostics = struct('DepartureDelay_s',wait_s, ...
-    'Available',wait_s<=maximumWait_s);
+diagnostics = struct('DepartureDelay_s', wait_s, 'Available', wait_s <= maximumWait_s);
 if ~diagnostics.Available
-    controls_units = zeros(0,request.Degree+1,2); durations_s = zeros(0,1); prescribedPower_units = [];
-    return;
+    controls_units        = zeros(0, request.Degree + 1, 2);
+    durations_s           = zeros(0, 1);
+    prescribedPower_units = [];
+    return
 end
-if wait_s>0
-    controls_units = cat(1,reshape(repmat(initial_units,request.Degree+1,1),1,request.Degree+1,2),controls_units);
-    durations_s = [wait_s;durations_s];
-    waitingPower = zeros(1,2,request.Degree+1); waitingPower(:,:,1) = initial_units;
-    prescribedPower_units = cat(1,waitingPower,prescribedPower_units);
+if wait_s > 0
+    controls_units  = cat(1, reshape(repmat(initial_units, request.Degree + 1, 1), ...
+        1, request.Degree + 1, 2), controls_units);
+    durations_s     = [wait_s; durations_s];
+    waitingPower_units          = zeros(1, 2, request.Degree + 1);
+    waitingPower_units(:, :, 1) = initial_units;
+    prescribedPower_units       = cat(1, waitingPower_units, prescribedPower_units);
 end
 end
 
-function vertices_units = clearanceEnvelope(vertices_units,gap_units)
+%% Section 4: Local Functions
+function vertices_units = clearanceEnvelope(vertices_units, gap_units)
     % A square Minkowski envelope contains the required Euclidean clearance.
-    offsets_units = gap_units*[-1,-1;1,-1;1,1;-1,1];
-    vertices_units = reshape(permute(vertices_units+reshape(offsets_units.',1,2,4),[1,3,2]),[],2);
-    hull = convhull(vertices_units(:,1),vertices_units(:,2));
-    vertices_units = vertices_units(hull(1:end-1),:);
+    offsets_units = gap_units * [-1, -1; 1, -1; 1, 1; -1, 1];
+    vertices_units = reshape(permute(vertices_units + ...
+        reshape(offsets_units.', 1, 2, 4), [1, 3, 2]), [], 2);
+    hullIndices   = convhull(vertices_units(:, 1), vertices_units(:, 2));
+    vertices_units = vertices_units(hullIndices(1:end - 1), :);
 end
 
-function relative_s = inverseProgress(progressPower,phases,position)
-    phase = find(sum(progressPower,2)>=position,1);
-    if isempty(phase), phase = size(progressPower,1); end
-    relative_s = phases.StartTime_s(phase)+phases.SegmentTime_s(phase)*invertProgress(progressPower(phase,:),position);
+function relative_s = inverseProgress(progressPower, phaseTiming, position)
+    % Map one scalar path position back to relative motion time.
+    phaseIndex = find(sum(progressPower, 2) >= position, 1);
+    if isempty(phaseIndex)
+        phaseIndex = size(progressPower, 1);
+    end
+    relative_s = phaseTiming.StartTime_s(phaseIndex) + ...
+        phaseTiming.SegmentTime_s(phaseIndex) * ...
+        invertProgress(progressPower(phaseIndex, :), position);
 end
 
-function u = invertProgress(coefficients,position)
+function localTau = invertProgress(coefficients, position)
     % Most overlap endpoints are exact phase boundaries; their inverse is
     % known. Avoid repeatedly bisecting these same endpoint values.
-    if position<=coefficients(1), u=0; return; end
-    if position>=sum(coefficients), u=1; return; end
-    low = 0; high = 1;
-    for iteration = 1:48
-        middle = (low+high)/2;
-        value = coefficients(1)+middle*(coefficients(2)+middle*(coefficients(3)+ ...
-            middle*(coefficients(4)+middle*(coefficients(5)+middle*coefficients(6)))));
-        if value<position, low=middle; else, high=middle; end
+    if position <= coefficients(1)
+        localTau = 0;
+        return
     end
-    u = (low+high)/2;
+    if position >= sum(coefficients)
+        localTau = 1;
+        return
+    end
+    low  = 0;
+    high = 1;
+    for iteration = 1:48
+        middle = (low + high) / 2;
+        value  = coefficients(1) + middle * (coefficients(2) + ...
+            middle * (coefficients(3) + middle * (coefficients(4) + ...
+            middle * (coefficients(5) + middle * coefficients(6)))));
+        if value < position
+            low = middle;
+        else
+            high = middle;
+        end
+    end
+    localTau = (low + high) / 2;
 end

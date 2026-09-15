@@ -1,42 +1,69 @@
-function [obstacleData, history] = createMovingObstacle(obstacleName, time_s, sourceX_units, sourceY_units, sliceTransform, safetyMargin_units, options)
+function [obstacleData, history] = createMovingObstacle(obstacleName, time_s, ...
+    sourceX_units, sourceY_units, sliceTransform, safetyMargin_units, options)
 %% Section 0: Header & Readme
-% SYNTAX: [obstacleData, history] = obstacleAvoidance.obstacles.createMovingObstacle( obstacleName,
-%   time_s, sourceX_units, sourceY_units, sliceTransform, safetyMargin_units)
-%   [obstacleData, history] = obstacleAvoidance.obstacles.createMovingObstacle( obstacleName,
-%   time_s, sourceX_units, sourceY_units, sliceTransform, safetyMargin_units, options)
-% PURPOSE: Create and protect an arbitrary moving or deforming obstacle history. Evaluate
-%   independent time slices deterministically in caller order.
-% INPUTS: obstacleName (scalar text) time_s (nonempty increasing numeric vector) sourceX_units,
-%   sourceY_units (matching vectors) Paired nonfinite rows may separate rings. sliceTransform
-%   (function handle) position_units = sliceTransform(sourcePosition_units,time_s,index). Output
-%   slices use the obstacle history contract: direct motion is linear between corresponding
-%   vertices, not rigid arc motion. Because every slice is one source ring under the transform,
-%   the returned obstacle declares `vertexCorrespondence` as `sourceIndex`. safetyMargin_units (nonnegative scalar) options (scalar struct,
-%   optional; default struct()) Verbose prints bounded progress updates (default false).
-% OUTPUTS: obstacleData (canonical protected moving obstacle) history (scalar struct) Source slice
-%   boundaries, geometry metrics, and resolved options.
-% UNITS: Position is coordinate units, time is seconds, and area is square coordinate units. See
-%   obstacle_history_contract.md for ring and fallback semantics.
+% SYNTAX
+%   [obstacleData, history] = obstacleAvoidance.obstacles.createMovingObstacle( ...
+%       obstacleName, time_s, sourceX_units, sourceY_units, ...
+%       sliceTransform, safetyMargin_units)
+%   [obstacleData, history] = obstacleAvoidance.obstacles.createMovingObstacle( ...
+%       obstacleName, time_s, sourceX_units, sourceY_units, ...
+%       sliceTransform, safetyMargin_units, options)
+%**************************************************************************
+% PURPOSE
+%   - Create and protect a moving or deforming obstacle history.
+%   - Evaluate independent time slices deterministically in caller order.
+%**************************************************************************
+% INPUTS
+%   - obstacleName (scalar text)
+%       Nonempty obstacle name.
+%   - time_s (increasing numeric vector)
+%       Times at which source slices are evaluated.
+%   - sourceX_units (numeric vector)
+%       Source boundary x-coordinates.
+%   - sourceY_units (numeric vector)
+%       Source boundary y-coordinates matching sourceX_units.
+%   - sliceTransform (function handle)
+%       Function evaluated once for each time sample in caller order.
+%   - safetyMargin_units (nonnegative numeric scalar)
+%       Protection margin applied to every source slice.
+%   - options (scalar struct, optional; default struct())
+%       Verbose defaults to false.
+%**************************************************************************
+% OUTPUTS
+%   - obstacleData (scalar struct)
+%       Canonical protected obstacle history.
+%   - history (scalar struct)
+%       Source slices, geometry metrics, and resolved options. Invalid input
+%       throws an error.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units, time is seconds, and area is units^2.
+%**************************************************************************
 
-%% Section 1: Validate Inputs & Apply Defaults
+%% Section 1: Validate Inputs And Apply Defaults
+
 if nargin < 7 || isempty(options)
     options = struct();
 end
 if ~isstruct(options) || ~isscalar(options)
     error("createMovingObstacle:InvalidOptions", "options must be a scalar struct.");
 end
-[resolvedOptions, unknownNames] = obstacleAvoidance.input.resolveOptions(struct("Verbose", false), options);
+[resolvedOptions, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
+    struct("Verbose", false), options);
 if ~isempty(unknownNames)
-    warning("createMovingObstacle:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
+    warning("createMovingObstacle:UnknownOptions", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
+        strjoin(unknownNames, ", "));
 end
-verbose = obstacleAvoidance.input.normalizeLogicalScalar(resolvedOptions.Verbose, "Verbose", "createMovingObstacle:InvalidVerbose");
+verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
+    resolvedOptions.Verbose, "Verbose", "createMovingObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
 if ~isa(sliceTransform, "function_handle")
     error("createMovingObstacle:InvalidTransform", "sliceTransform must be a function handle.");
 end
 time_s = double(time_s(:));
 validateattributes(time_s, {'numeric'}, {'real', 'finite', 'nonempty', 'increasing'});
-sourceX_units   = double(sourceX_units(:));
+sourceX_units = double(sourceX_units(:));
 sourceY_units = double(sourceY_units(:));
 if numel(sourceX_units) ~= numel(sourceY_units)
     error("createMovingObstacle:BoundarySizeMismatch", "sourceX_units and sourceY_units must have equal size.");
@@ -47,15 +74,16 @@ end
 validateattributes(safetyMargin_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 
 %% Section 2: Create Independent Source Slices
-sourcePosition_units   = [sourceX_units, sourceY_units];
+
+sourcePosition_units = [sourceX_units, sourceY_units];
 sliceCount           = numel(time_s);
-xBySlice_units   = cell(sliceCount, 1);
-yBySlice_units = cell(sliceCount, 1);
-vertexCount          = zeros(sliceCount, 1);
-area_units2            = zeros(sliceCount, 1);
-aspectRatio          = zeros(sliceCount, 1);
-centroid_units         = zeros(sliceCount, 2);
-bounds_units           = zeros(sliceCount, 4);
+xBySlice_units       = cell(sliceCount, 1);
+yBySlice_units       = cell(sliceCount, 1);
+vertexCounts         = zeros(sliceCount, 1);
+areas_units2         = zeros(sliceCount, 1);
+aspectRatios         = zeros(sliceCount, 1);
+centroid_units       = zeros(sliceCount, 2);
+bounds_units         = zeros(sliceCount, 4);
 for sampleIndex = 1:sliceCount
     position_units = sliceTransform(sourcePosition_units, time_s(sampleIndex), sampleIndex);
     validateattributes(position_units, {'numeric'}, {'real', '2d', 'ncols', 2, 'nonempty'});
@@ -71,30 +99,38 @@ for sampleIndex = 1:sliceCount
     minimum_units        = min(finitePosition_units, [], 1);
     maximum_units        = max(finitePosition_units, [], 1);
     size_units           = maximum_units - minimum_units;
-    xBySlice_units{sampleIndex} = position_units(:, 1);
-    yBySlice_units{sampleIndex} = position_units(:, 2);
-    vertexCount(sampleIndex) = nnz(finiteRows);
+    xBySlice_units{sampleIndex}     = position_units(:, 1);
+    yBySlice_units{sampleIndex}     = position_units(:, 2);
+    vertexCounts(sampleIndex)       = nnz(finiteRows);
     centroid_units(sampleIndex, :) = mean(finitePosition_units, 1);
-    bounds_units(sampleIndex, :) = [minimum_units, maximum_units];
-    aspectRatio(sampleIndex) = size_units(1) / size_units(2);
+    bounds_units(sampleIndex, :)   = [minimum_units, maximum_units];
+    aspectRatios(sampleIndex)      = size_units(1) / size_units(2);
     if size_units(2) == 0
-        aspectRatio(sampleIndex) = Inf;
+        aspectRatios(sampleIndex) = Inf;
     end
     boundary_units = position_units;
     boundary_units(~isfinite(boundary_units)) = NaN;
     sliceShape = polyshape(boundary_units(:, 1), boundary_units(:, 2), "Simplify", false);
-    area_units2(sampleIndex) = area(sliceShape);
+    areas_units2(sampleIndex) = area(sliceShape);
 end
 
 %% Section 3: Construct The Protected History
-obstacleData = obstacleAvoidance.obstacles.createObstacle(obstacleName, time_s, xBySlice_units, yBySlice_units, safetyMargin_units, struct("Verbose", verbose));
+
+obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
+    obstacleName, time_s, xBySlice_units, yBySlice_units, ...
+    safetyMargin_units, struct("Verbose", verbose));
 % Every slice is one source ring under the caller's transform, so vertex
 % correspondence between samples is by source index; declare it so the
 % continuous model does not recover a different cyclic alignment.
 obstacleData.vertexCorrespondence = "sourceIndex";
-history      = struct("time_s", time_s, "xBySlice_units", {xBySlice_units}, ...
+history = struct( ...
+    "time_s",         time_s, ...
+    "xBySlice_units", {xBySlice_units}, ...
     "yBySlice_units", {yBySlice_units}, ...
-    "vertexCount", vertexCount, "area_units2", area_units2, ...
-    "aspectRatio", aspectRatio, "centroid_units", centroid_units, ...
-    "bounds_units", bounds_units, "Options", resolvedOptions);
+    "vertexCount",    vertexCounts, ...
+    "area_units2",    areas_units2, ...
+    "aspectRatio",    aspectRatios, ...
+    "centroid_units", centroid_units, ...
+    "bounds_units",   bounds_units, ...
+    "Options",        resolvedOptions);
 end
