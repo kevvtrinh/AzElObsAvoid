@@ -22,7 +22,10 @@ function result = planner(obstacles, initialState, goalState, limits, options, o
 %   - limits (scalar struct)
 %       Workspace intervals and scalar or per-axis motion limits.
 %   - options (scalar struct, optional; default struct())
-%       Arrival, sampling, validation, wrapping, matching, and search controls.
+%       ArrivalTimeTolerance_s bounds every comparison in seconds and
+%       ConstraintTolerance bounds coordinates, derivatives, and algebraic
+%       residuals; the other options control the arrival mode, sampling,
+%       wrapping, endpoint matching, and search.
 %       A wrapped axis is planned in the unwrapped frame inside the reach
 %       band: obstacle images that meet the band, a target lifted by
 %       continuity, and every goal image in the band planned and accepted
