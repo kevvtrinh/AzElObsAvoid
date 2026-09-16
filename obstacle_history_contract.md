@@ -91,14 +91,44 @@ rule as exact intervals), so point queries and cells agree exactly and the
 cell count follows the enclosure's shape rather than the grid.
 
 Preparation still independently checks both authoritative protected sample
-shapes against the enclosure, using the existing endpoint area-certificate
-roundoff tolerance. Failure discards the candidate geometry and records
-`sweptEnvelopeExcludesProtectedSample`, along with
-`IntervalSweptUncoveredProtectedArea_units2`. Such intervals remain
-`unsupportedContinuousDeformation`; the planner returns the existing stable
-`unsupportedObstacleInterpolation`. It does not enlarge the prescribed cells,
-shrink protection, or replace the samples. Unequal original counts or an
-unavailable single-ring source map also remain unsupported.
+shapes against the swept enclosure, using the existing endpoint area-certificate
+roundoff tolerance. Failure discards that candidate geometry and records the
+uncovered areas in `IntervalSweptUncoveredProtectedArea_units2`. It does not
+enlarge the prescribed swept cells, shrink protection, or replace the samples.
+Failed swept coverage, unequal original counts, and an unavailable single-ring
+source map proceed to the endpoint-hull model below.
+
+As a final resort after both the exact partition and corresponding swept-cell
+models are unavailable, an interval with at least one nonempty endpoint uses
+`endpointConvexHull`: one convex hull of every finite vertex of both protected
+samples. No ring identity or overlap-based correspondence is assumed. For any
+lower vertex `a` and any upper vertex `b`, every linear interpolant
+`(1-tau)*a+tau*b` lies in this hull, whatever the correspondence. Convex
+combinations of those interpolated vertices also remain inside it. This model
+assumes linear vertex interpolation; it does not bound arbitrary excursions
+between samples. An empty sample contributes no vertices, so the nonempty
+sample's hull occupies the complete interval. Thus emptiness never clears a
+neighboring interval. The endpoint-hull fallback requires each nonempty ring
+to have at least three distinct vertices and a positive-area hull. In
+particular, when both endpoints are degenerate and an earlier model is
+unavailable, this fallback rejects the interval with
+`IntervalCertificationReason` equal to `degenerateEndpointGeometry` and the
+stable planner outcome `unsupportedObstacleInterpolation`. Earlier models keep
+their existing acceptance rules. Both-empty intervals retain the existing
+empty stationary model.
+
+The hull is identical at both interval ends, but authoritative sample geometry
+is unchanged at sample times. `IntervalUsesEndpointHull` is the typed behavior
+flag; `MatchingTopology`, `IntervalHasExactPartition`, `IntervalUsesSweptCells`,
+`IntervalIsStationary`, and `IntervalIsUnsupported` are all false for this
+model. A successful enclosure leaves `IntervalCertificationReason` empty.
+`createTimeCells` consumes the typed flag and emits the same single convex
+region at both cell endpoints.
+Preparation records `IntervalEndpointHullAddedArea_units2`, hull area minus
+the union area of the two protected end shapes, computed by polygon subtraction.
+`createTimeCells` reads it and rejects a nonfinite or negative diagnostic.
+The enclosure can fill gaps between disconnected rings and concavities; this
+added area is the reported cost of unknown correspondence.
 
 Vertex correspondence between samples is reported per obstacle in
 `vertexCorrespondence`. The generic constructor normalizes that declaration
@@ -138,9 +168,10 @@ sample geometry remains authoritative at each retained sample time.
 
 `IntervalGeometryModel` retains the reported model name. Preparation also emits
 `IntervalHasExactPartition`, `IntervalIsStationary`, `IntervalUsesSweptCells`,
-and `IntervalIsUnsupported`; geometry, search, and planner branches consume
-those logical facts rather than the reported name. Exact partition consumers
-read `IntervalStartRegions_units` and `IntervalEndRegions_units`.
+`IntervalUsesEndpointHull`, and `IntervalIsUnsupported`; geometry, search,
+and planner branches consume those logical facts rather than the reported name.
+Exact partition and conservative enclosure consumers read
+`IntervalStartRegions_units` and `IntervalEndRegions_units`.
 
 `MergedSpanTime_s` and `MergedIntervalCount` expose the preparation-only
 reduction. `RejectedMergeSpanSampleIndex` records spans

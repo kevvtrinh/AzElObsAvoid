@@ -109,7 +109,8 @@ elseif preparation.IntervalIsUnsupported(lowerSampleIndex)
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
 elseif preparation.IntervalIsStationary(lowerSampleIndex) || ...
-        preparation.IntervalUsesSweptCells(lowerSampleIndex)
+        preparation.IntervalUsesSweptCells(lowerSampleIndex) || ...
+        preparation.IntervalUsesEndpointHull(lowerSampleIndex)
     shape = preparation.IntervalUnionShapes{lowerSampleIndex};
     [x_units, y_units] = boundary(shape);
     speed_units_s          = 0;

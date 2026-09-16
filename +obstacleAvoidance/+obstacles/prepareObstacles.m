@@ -45,7 +45,7 @@ obstacles = obstacleAvoidance.obstacles.canonicalizeObstacles(obstacles);
 if isempty(obstacles)
     return;
 end
-preparationVersion = 11;
+preparationVersion = 13;
 
 %% Section 2: Extend Only The Requested Entries
 
