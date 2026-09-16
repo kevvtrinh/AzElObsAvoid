@@ -4,7 +4,8 @@ function [result, accepted] = tryTimedArrival(previous)
 %   [result, accepted] = obstacleAvoidance.input.tryTimedArrival(previous)
 %**************************************************************************
 % PURPOSE
-%   - Use timed visibility and BMTP for a fixed-position goal.
+%   - Use timed visibility and BMTP for a fixed-arrival endpoint or a
+%     fixed-position free-arrival goal.
 %**************************************************************************
 % INPUTS
 %   - previous (scalar struct)
@@ -34,9 +35,11 @@ endpointDerivatives = [initialState.velocity_units_s(:); initialState.accelerati
     goalState.velocity_units_s(:); goalState.acceleration_units_s2(:)];
 endpointsAreAtRest = all(endpointDerivatives == 0);
 arrivalIsFixed     = previous.Options.GoalTimeMode == "fixedArrival";
-if ~isempty(goalState.targetMotion) || (~arrivalIsFixed && ~endpointsAreAtRest)
-    result.Message = "Timed visibility requires a fixed-position goal; " + ...
-        "earliest-arrival mode also requires zero endpoint velocity and acceleration.";
+freeClockIsUnsupported = ~arrivalIsFixed && ...
+    (~isempty(goalState.targetMotion) || ~endpointsAreAtRest);
+if freeClockIsUnsupported
+    result.Message = "Free-arrival timed visibility requires a fixed-position goal " + ...
+        "with zero endpoint velocity and acceleration.";
     result.TerminationReason = "unsupportedTimedRequest";
     result.ElapsedTime_s     = previous.ElapsedTime_s + toc(totalTimer);
     return

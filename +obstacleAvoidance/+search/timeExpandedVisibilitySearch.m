@@ -69,9 +69,15 @@ if hasEndpointDerivatives && hasDerivativeLimits
     minimumGoalArrivalTime_s = initialState.time_s + minimumDuration_s;
 end
 timeTolerance_s     = 256 * eps(max(1, max(abs(layerTimes_s))));
-goalLayerIsEligible = true(layerCount, 1);
-if options.GoalTimeMode == "earliestArrival"
-    goalLayerIsEligible = layerTimes_s >= minimumGoalArrivalTime_s - timeTolerance_s;
+goalLayerIsEligible = layerTimes_s >= minimumGoalArrivalTime_s - timeTolerance_s;
+hasGoalDerivatives = all(isfield(goalState, ...
+    {'velocity_units_s', 'acceleration_units_s2'}));
+if options.GoalTimeMode == "fixedArrival" && hasGoalDerivatives && ...
+        any([goalState.velocity_units_s, goalState.acceleration_units_s2] ~= 0)
+    % A nonrest endpoint cannot arrive early and remain at the goal until
+    % the prescribed intercept. The final layer is its only truthful state.
+    goalLayerIsEligible(:)   = false;
+    goalLayerIsEligible(end) = true;
 end
 % The local obstacle snapshot stays unchanged throughout this search.
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles, [initialState.time_s, goalState.time_s]);
@@ -147,7 +153,8 @@ for layerIndex = 1:layerCount
 end
 waitIsClear = false(max(0, layerCount - 1), nodeCount);
 for layerIndex = 1:layerCount - 1
-    candidateNodeIndices = find(nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
+    candidateNodeIndices = find( ...
+        nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
     % Test stationary waits only at nodes free in both adjacent layers.
     if ~isempty(candidateNodeIndices)
         waitIsClear(layerIndex, candidateNodeIndices) = edgeIsClear( ...
@@ -178,7 +185,20 @@ for sourceNodeIndex = 1:nodeCount
     end
 end
 distanceToGoal_units = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
-goalCanWaitToFinal = nodeIsFree(:, 2) & double(waitComponentFinalLayerIndex(:, 2)) == layerCount;
+isEarliestArrival           = options.GoalTimeMode == "earliestArrival";
+goalCanTerminateAtLayer     = false(layerCount, 1);
+nextGoalTerminalLayerIndex = zeros(layerCount, 1);
+if ~isEarliestArrival
+    goalCanTerminateAtLayer = goalLayerIsEligible & nodeIsFree(:, 2) & ...
+        double(waitComponentFinalLayerIndex(:, 2)) == layerCount;
+    nextTerminalLayerIndex = 0;
+    for layerIndex = layerCount:-1:1
+        if goalCanTerminateAtLayer(layerIndex)
+            nextTerminalLayerIndex = layerIndex;
+        end
+        nextGoalTerminalLayerIndex(layerIndex) = nextTerminalLayerIndex;
+    end
+end
 reachable               = false(layerCount, nodeCount);
 spatialCost_units       = Inf(layerCount, nodeCount);
 parentLayerIndex        = zeros(layerCount, nodeCount, "uint32");
@@ -186,8 +206,10 @@ parentNodeIndex         = zeros(layerCount, nodeCount, "uint32");
 reachable(1, 1)         = nodeIsFree(1, 1);
 spatialCost_units(1, 1) = 0;
 [rejectedCount, expandedCount, certifiedSkipCount] = deal(0);
-goalCostBound_units = Inf;
-isEarliestArrival   = options.GoalTimeMode == "earliestArrival";
+goalCostBound_units             = Inf;
+terminalSourceLayerIndex        = 0;
+terminalSourceNodeIndex         = 0;
+terminalArrivalLayerIndex       = 0;
 if isEarliestArrival
     % Earliest search is a directed acyclic graph in physical time. Schedule
     % each motion check at its target layer instead of eagerly walking that
@@ -321,7 +343,6 @@ else
                 rejectedCount = rejectedCount + 1;
             end
         end
-        goalCostBound_units = min([goalCostBound_units; spatialCost_units(goalCanWaitToFinal, 2)]);
         [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
             currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
             minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
@@ -339,6 +360,12 @@ else
                 storedCost_units = reshape( ...
                     spatialCost_units(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
                 isDominated = trialCost_units > storedCost_units + 1e-12;
+                candidateTerminalLayerIndices = ...
+                    nextGoalTerminalLayerIndex(motionCandidates(queryIndices, 3));
+                retainsTerminalProvenance = motionCandidates(queryIndices, 2) == 2 & ...
+                    candidateTerminalLayerIndices > 0 & ...
+                    candidateTerminalLayerIndices <= motionCandidates(queryIndices, 4);
+                isDominated(retainsTerminalProvenance) = false;
                 motionIsPending(queryIndices(isDominated)) = false;
                 rejectedCount = rejectedCount + nnz(isDominated);
                 queryIndices = queryIndices(~isDominated);
@@ -362,13 +389,21 @@ else
                         motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), ...
                         motionCandidates(motionIndex, 5));
                 end
-                reachesGoal = motionCandidates(clearIndices, 2) == 2;
-                canWaitAtGoal = goalCanWaitToFinal(motionCandidates(clearIndices, 3));
-                clearGoalIndices = clearIndices(reachesGoal & canWaitAtGoal);
-                if ~isempty(clearGoalIndices)
-                    clearGoalLayerIndices = motionCandidates(clearGoalIndices, 3);
-                    goalCostBound_units = min( ...
-                        [goalCostBound_units; spatialCost_units(clearGoalLayerIndices, 2)]);
+                canTerminate = motionCandidates(clearIndices, 2) == 2 & ...
+                    goalCanTerminateAtLayer(motionCandidates(clearIndices, 3));
+                terminalIndices = clearIndices(canTerminate);
+                if ~isempty(terminalIndices)
+                    terminalCosts_units = reshape( ...
+                        spatialCost_units(layerIndex, motionCandidates(terminalIndices, 1)), [], 1) + ...
+                        motionCandidates(terminalIndices, 5);
+                    [trialTerminalCost_units, terminalOffset] = min(terminalCosts_units);
+                    if trialTerminalCost_units < goalCostBound_units - 1e-12
+                        terminalIndex                  = terminalIndices(terminalOffset);
+                        goalCostBound_units             = trialTerminalCost_units;
+                        terminalSourceLayerIndex        = layerIndex;
+                        terminalSourceNodeIndex         = motionCandidates(terminalIndex, 1);
+                        terminalArrivalLayerIndex       = motionCandidates(terminalIndex, 3);
+                    end
                 end
                 rejectedCount = rejectedCount + nnz(~queryIsClear);
                 motionIsPending(queryIndices) = false;
@@ -376,6 +411,22 @@ else
                     ~queryIsClear & motionCandidates(queryIndices, 3) < motionCandidates(queryIndices, 4));
                 motionCandidates(advanceIndices, 3) = motionCandidates(advanceIndices, 3) + 1;
                 motionIsPending(advanceIndices) = true;
+                clearTransitGoalIndices = queryIndices( ...
+                    queryIsClear & motionCandidates(queryIndices, 2) == 2 & ...
+                    ~goalCanTerminateAtLayer(motionCandidates(queryIndices, 3)));
+                for motionIndex = reshape(clearTransitGoalIndices, 1, [])
+                    currentTargetLayerIndex = motionCandidates(motionIndex, 3);
+                    if currentTargetLayerIndex == layerCount
+                        continue
+                    end
+                    futureTerminalLayerIndex = ...
+                        nextGoalTerminalLayerIndex(currentTargetLayerIndex + 1);
+                    if futureTerminalLayerIndex > 0 && ...
+                            futureTerminalLayerIndex <= motionCandidates(motionIndex, 4)
+                        motionCandidates(motionIndex, 3) = futureTerminalLayerIndex;
+                        motionIsPending(motionIndex)     = true;
+                    end
+                end
             end
         end
     end
@@ -395,18 +446,34 @@ if isEarliestArrival
             waitSeedGoalLayerIndex = firstGoalLayerIndex;
         end
     end
+    [route_units, routeTime_s] = reconstructTimedRoute( ...
+        nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
+    [waitRoute_units, waitRouteTime_s] = reconstructTimedRoute( ...
+        nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, waitSeedGoalLayerIndex, 2);
 else
-    goalLayerIndex = find(reachable(:, 2) & (1:layerCount).' == layerCount, 1, "first");
-    waitSeedGoalLayerIndex = goalLayerIndex;
+    goalLayerIndex      = zeros(0, 1);
+    route_units         = zeros(0, 2);
+    routeTime_s         = zeros(0, 1);
+    if terminalArrivalLayerIndex > 0
+        [route_units, routeTime_s] = reconstructTimedRoute( ...
+            nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, ...
+            terminalSourceLayerIndex, terminalSourceNodeIndex);
+        route_units(end + 1, :) = nodePosition_units(2, :);
+        routeTime_s(end + 1, 1) = layerTimes_s(terminalArrivalLayerIndex);
+        if terminalArrivalLayerIndex < layerCount
+            route_units(end + 1, :) = nodePosition_units(2, :);
+            routeTime_s(end + 1, 1) = layerTimes_s(end);
+        end
+        goalLayerIndex = layerCount;
+    end
+    waitRoute_units  = route_units;
+    waitRouteTime_s = routeTime_s;
 end
-[route_units, routeTime_s] = reconstructTimedRoute( ...
-    nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
-[waitRoute_units, waitRouteTime_s] = reconstructTimedRoute( ...
-    nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, waitSeedGoalLayerIndex, 2);
 selectedGoalWindowStartTime_s = NaN;
 selectedGoalWindowEndTime_s   = NaN;
 if ~isempty(goalLayerIndex)
-    goalWindowStartLayerIndices = find(isWaitComponentStart(:, 2) & nodeIsFree(:, 2));
+    goalWindowStartLayerIndices = find( ...
+        isWaitComponentStart(:, 2) & nodeIsFree(:, 2));
     selectedGoalWindowIndex           = nnz(goalWindowStartLayerIndices <= goalLayerIndex);
     selectedGoalWindowStartLayerIndex = goalWindowStartLayerIndices(selectedGoalWindowIndex);
     selectedGoalWindowEndLayerIndex   = double( ...

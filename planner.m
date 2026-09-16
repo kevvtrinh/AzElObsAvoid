@@ -347,13 +347,13 @@ end
 
 motionGoalState           = goalState;
 route_units               = [initialState.position_units; goalState.position_units];
-fixedPositionDynamic      = isDynamic && options.GoalTimeMode == "fixedArrival" && isempty(goalState.targetMotion);
+fixedArrivalDynamic       = isDynamic && options.GoalTimeMode == "fixedArrival";
 initialSpatialAttempted   = false;
 initialSpatialRoute_units = zeros(0, 2);
 initialSpatialCandidate   = struct();
 initialSpatialDiagnostics = struct();
 
-if fixedPositionDynamic
+if fixedArrivalDynamic
     initialVisibilityGraph = getVisibilityGraph( ...
         scene, initialState.position_units, goalState.position_units, ...
         limits, options, "initialSpatialSnapshot");
@@ -382,20 +382,11 @@ if fixedPositionDynamic
 end
 
 % Choose the snapshot that seeds the guide route.
-futureGoalBlocked = false;
-if isDynamic && ~fixedPositionDynamic
-    futureGoalBlocked = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-        preparedObstacles, goalState.position_units(1), goalState.position_units(2), initialState.time_s);
-end
-if fixedPositionDynamic
+if fixedArrivalDynamic
     guideScene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, motionGoalState.time_s, false);
     visibilityGraph = getVisibilityGraph( ...
         guideScene, initialState.position_units, goalState.position_units, ...
         limits, options, "arrivalSpatialSnapshot");
-elseif futureGoalBlocked
-    visibilityGraph.Route_units       = route_units;
-    visibilityGraph.RouteLength_units = norm(diff(route_units));
-    visibilityGraph.SearchKind        = "temporalDirectSeed";
 else
     visibilityGraph = getVisibilityGraph( ...
         scene, initialState.position_units, goalState.position_units, ...
@@ -407,13 +398,12 @@ if isDynamic && ~visibilityGraph.IsConnected
     visibilityGraph.Route_units       = route_units;
     visibilityGraph.RouteLength_units = norm(diff(route_units));
     visibilityGraph.SearchKind        = "temporalDirectSeed";
-    futureGoalBlocked                 = true;
 end
 result.VisibilityGraph = visibilityGraph;
 if initialSpatialAttempted
     result.VisibilityGraph.InitialSpatialSeedDiagnostics = initialSpatialDiagnostics;
 end
-if ~futureGoalBlocked && ~visibilityGraph.IsConnected
+if ~isDynamic && ~visibilityGraph.IsConnected
     result.Message           = "The initial visibility graph contains no start-to-goal route.";
     result.TerminationReason = "noVisibilityRoute";
     result.ElapsedTime_s     = toc(totalTimer);
@@ -425,14 +415,15 @@ edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
 seed             = struct('position_units', route_units, ...
     'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
     'Source', visibilityGraph.SearchKind);
-if isDynamic && options.GoalTimeMode == "fixedArrival"
+if fixedArrivalDynamic
     % Give the exact spatial route its initial BMTP pass and one pass on the
     % resulting refined mesh. If neither pass certifies complete motion,
     % construct the exact timed route instead of repeatedly optimizing the
     % same failed homotopy.
     seed.MaximumAlternatingIterations = 2;
 end
-sameFailedSpatialRoute = fixedPositionDynamic && initialSpatialAttempted && isequaln(route_units, initialSpatialRoute_units);
+sameFailedSpatialRoute = fixedArrivalDynamic && initialSpatialAttempted && ...
+    isequaln(route_units, initialSpatialRoute_units);
 if sameFailedSpatialRoute
     candidate         = initialSpatialCandidate;
     solverDiagnostics = initialSpatialDiagnostics;
@@ -447,7 +438,7 @@ result = obstacleAvoidance.input.finalizeCandidate(result, candidate, route_unit
 % Only solver-level infeasibility of the spatial guide admits the timed guide.
 % A motion the public validator rejects terminates here as a defect.
 spatialFailureCanUseTimedGuide = ~candidate.Success && candidate.OptimizerIterateUnavailable;
-if fixedPositionDynamic && spatialFailureCanUseTimedGuide
+if fixedArrivalDynamic && spatialFailureCanUseTimedGuide
     result.VisibilityGraph.SpatialSeedDiagnostics = solverDiagnostics;
     result.ElapsedTime_s                          = toc(totalTimer);
     [result, ~] = obstacleAvoidance.input.tryTimedArrival(result);
