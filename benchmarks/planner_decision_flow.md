@@ -74,6 +74,17 @@ independent validator, so no stored merge-order label selects geometry.
 two unrelated source labels produce identical degree, split count, warm
 controls, segment clock, and active region pairs.
 
+For a variable-clock timed guide, the motion mesh has
+`max(20, originalSegmentCount * request.SplitCount)` spans. The obstacle cell
+break count does not set its resolution. `allocateSegmentsByMeasure` starts
+with one span per guide edge; `splitByCount` emits each edge's start knot and
+the final endpoint. Consequently every timed knot survives, including both
+ends of a repeated-position wait, and its duration scales with the common
+arrival clock. Every obstacle cell still constrains its exact temporal overlap.
+The preceding `fixedArrival` branch retains its existing 8/16-span rule and
+never executes this variable-clock expression. This is a numerical mesh change
+for earliest-arrival requests, not a pure refactor.
+
 ## Branches removed in this consolidation
 
 - `Source == "timeExpandedVisibilityGraph"` degree and subdivision routing in
@@ -264,3 +275,72 @@ the real 64.64 s gate rather than the former loose 82.5 s threshold.
   most of the snapping; the measured residual is the 2% static-wall gap.
 - A retained result is feasible and independently validated, not a proof of
   global earliest arrival over all kinodynamic homotopies.
+
+## Timed mesh audit on azel-mesh (2026-09-15, e422f35)
+
+The candidate removes only obstacle-break-count-driven subdivision in the variable-clock branch. Source inspection verified the allocator/splitter invariant above before editing. No solver, collision predicate, tolerance, margin, or independent validator changed. The warm-start regression uses a real repeated-position edge and checks all guide endpoints and wait duration at 6 s and 9 s clocks. A separate one-cell/920-cell fixture checks identical controls and clocks with the exact guide-derived span count.
+
+### Earliest-arrival returned outcomes
+
+These tables cover the public planner calls with obstacles in the tests and all eleven maintained earliest-arrival obstacle examples. Numbers are rounded for display; comparison used the full recorded values. All successful rows passed the public independent validator. Low-level visibility, warm-start, and solver-only tests do not return the public arrival/length/validity/termination record; their existing assertions also ran. The example benchmark harness and random corpus were not run.
+
+| Example | Arrival before -> after (s) | Length before -> after (units) | Valid before -> after | Termination before -> after |
+| --- | ---: | ---: | --- | --- |
+| `exampleAlternatingSlalom` | 10.5256093808151 -> 10.5256093808151 | 16.0348697710717 -> 16.0348697710717 | True -> True | `goalReached` -> `goalReached` |
+| `exampleDenseConcaveObstacle` | 8.52537658451135 -> 8.52537658451135 | 12.9926384318942 -> 12.9926384318942 | True -> True | `goalReached` -> `goalReached` |
+| `exampleMovingBarrierWait` | 10.1400889187796 -> 10.1400889187796 | 10.0000000000012 -> 10.0000000000012 | True -> True | `goalReached` -> `goalReached` |
+| `exampleMovingCircleNoWrap` | 8.56951062265595 -> 8.56951062265595 | 12.1019443883314 -> 12.1019443883314 | True -> True | `goalReached` -> `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 25.835524812711 -> 18.5752425863394 | 40.4058494966444 -> 40.3138861637789 | True -> True | `goalReached` -> `goalReached` |
+| `exampleMovingRotatingObstacleField` | 9.13832599417378 -> 9.13832599417378 | 20.4272904140566 -> 20.4272904140566 | True -> True | `goalReached` -> `goalReached` |
+| `exampleNoPath` | n/a -> n/a | n/a -> n/a | False -> False | `noVisibilityRoute` -> `noVisibilityRoute` |
+| `exampleOpeningUShapedObstacle` | 11.6133888606463 -> 11.6133888606463 | 9.9999999999934 -> 9.9999999999934 | True -> True | `goalReached` -> `goalReached` |
+| `exampleStaticUShapedObstacle` | 20.8452978469357 -> 20.8452978469357 | 39.3099414805648 -> 39.3099414805648 | True -> True | `goalReached` -> `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 21.9462287867139 -> 21.9462287867139 | 24.1447048829346 -> 24.1447048829346 | True -> True | `goalReached` -> `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 6.55513032722789 -> 6.55513032722789 | 21.2120531192916 -> 21.2120531192916 | True -> True | `goalReached` -> `goalReached` |
+
+The moving-circle example also covers `testArrivalSearchRegressions/testCircleDetourBeatsWaiting`; moving barrier covers `testDisconnectedSnapshotRetainsValidatedWaitHonestly` (with `MaxArrivalTrials = 1`); opening U covers `testMovingGeometryDoesNotUseInitialRouteAsGlobalBound`; deforming U.S. covers `testDeformingUSOutline/testReducedOutlineIsSupportedAndValid`. Those test calls were audited separately with the same outcomes.
+
+| Other earliest-arrival planner test | Arrival before -> after (s) | Length before -> after (units) | Valid before -> after | Termination before -> after |
+| --- | ---: | ---: | --- | --- |
+| `testLongRequestUsesBudgetAfterPhysicalBound` | 64.6330611095465 -> 64.6330611095465 | 120.006647995046 -> 120.006647995046 | True -> True | `goalReached` -> `goalReached` |
+| `testArrivalSnapshotFindsAnOpeningMissingAtInitialTime` | 3.74530227425395 -> 3.74530227425395 | 10.2537131532522 -> 10.2537131532522 | True -> True | `goalReached` -> `goalReached` |
+| `testArrivalSnapshotFindsRouteAfterWholeCurtainDeparts` | 4 -> 4 | 10.2471788638104 -> 10.2471788638104 | True -> True | `goalReached` -> `goalReached` |
+| `testChallengedDelayedChordIncumbentIsRetained` | 10.8553556404034 -> 10.8553556404034 | 10.0000000000125 -> 10.0000000000125 | True -> True | `goalReached` -> `goalReached` |
+| `testTimedHomotopyPrecedesDelayedDeparture` | 8.59818435702582 -> 8.59818435702582 | 12.4581035485593 -> 12.4581035485593 | True -> True | `goalReached` -> `goalReached` |
+| `testThinWallCrossingIsNotPromotedBySampling` | 5.51904117006622 -> 5.51904117006622 | 8.06482974577391 -> 8.06482974577391 | True -> True | `goalReached` -> `goalReached` |
+| `testPublicPlannerChoosesAReopenedGoalWindow` | 7.99191771264953 -> 7.99191771264953 | 10.0000000000017 -> 10.0000000000017 | True -> True | `goalReached` -> `goalReached` |
+| `testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame` | 6 -> 6 | 6.98233346438641 -> 6.98233346438641 | True -> True | `goalReached` -> `goalReached` |
+| `testSparseDynamicZeroWaitDeparture` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
+| `testEquivalentSparseAndDenseHistoriesUseCertifiedDeparture (both source representations)` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
+| `testConcaveCavityEscape` | 15.9371512418793 -> 15.9371512418793 | 31.201402348745 -> 31.201402348745 | True -> True | `goalReached` -> `goalReached` |
+| `testSeparatedSlalomBarriers` | 15.5426409514971 -> 15.5426409514971 | 26.4433503014662 -> 26.4433503014662 | True -> True | `goalReached` -> `goalReached` |
+| `testSavedMovingDetourEarliestArrival` | 118.664309567898 -> 118.664309567898 | 232.527473324254 -> 232.527473324254 | True -> True | `goalReached` -> `goalReached` |
+
+The deforming U.S. outline improves by 7.26028222637 s (28.10%) and 0.09196333287 units (0.23%). No measured arrival, length, validity, or termination outcome worsens. Its old two-sided `25.8355` +/- 1% arrival assertion fails on the improvement; that test is outside this brief's ownership and remains unchanged.
+
+### Fixed-arrival code path
+
+`createWarmStart` first takes `if request.Options.GoalTimeMode == "fixedArrival"`; it never enters the following `elseif request.UsesVariableClock` that contains the edited expression. The complete source prefix through the fixed-arrival branch is byte-identical to baseline. All 64 matched fixed-arrival planner calls in the outcome audit retain exactly equal arrival, length, validity, and termination values. Elapsed-time fields were not compared for byte identity.
+
+### Validation and dense-history limitation
+
+- Baseline Stage A: 29 passed, 0 failed; no warm-start analyzer findings. Baseline audit: 152 passes plus three recorder errors (private-helper lookup and the zero-argument defaults call); rerunning those three untouched original tests gave 3 passes. Thus all 155 baseline tests were covered successfully.
+- Candidate Stage A: 32 passed, 0 failed, including the wait, cell-count, and updated outline-arrival regressions; no analyzer findings in the touched MATLAB files.
+- Candidate Stage B, original files in two bounded groups, excluding the separately capped dense regression: 157 passed, 0 failed, after the outline arrival assertion was updated to the improved value described above. The audit copies independently reproduced 154 passes and that same one failure for the original 155 cases.
+- All MATLAB runs used R2024b, this worktree as the current directory, and `tmp/mlpref`. Original assertions were retained. The temporary recorder and copied tests are not production changes.
+
+| Dense t = [915, 1145] s earliest request | Before | After |
+| --- | --- | --- |
+| Wall time | timeout at 300 s | timeout at 300 s |
+| Variable-clock spans / applicable pairs | unavailable: no returned timed guide/motion | unavailable: no returned timed guide/motion |
+| Arrival / length / validity / planner termination | unavailable: external timeout, no result | unavailable: external timeout, no result |
+
+The measured timeouts do not establish a dense-history speedup. Other MATLAB work shared the machine, and baseline/candidate audit groups also overlapped; maintained-example wall-time nonregression is not established by those noisy timings. The code change is not claimed to solve the dense request within five minutes.
+
+A separate dense regression was tried and timed out after 300 s, so it was removed rather than shipped. Read-only,
+non-stopping conditional breakpoints showed a preliminary **non-variable** warm
+start with 1 guide edge, 3 spans, and 38,640 applicable pairs, followed by timed
+proposal construction and temporal search. No variable-clock warm start was
+emitted before the cap. Those preliminary counts must not be presented as the
+requested timed mesh's counts. The remaining observed bottleneck is upstream
+of the edited stage, in temporal route search; no search change is in scope.

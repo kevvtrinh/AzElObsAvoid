@@ -78,13 +78,11 @@ if request.Options.GoalTimeMode == "fixedArrival"
     warmRouteResampled    = true;
 elseif request.UsesVariableClock
     if isfield(request.Coverage, 'BreakTime_s')
-        sourceBreaks_s = request.Coverage.BreakTime_s;
-        % The timed guide's knots are physical events. Preserve every knot and
-        % subdivide its normalized intervals so changing the arrival clock scales
-        % the complete guide instead of deleting its waits.
+        % The motion mesh follows the guide, not the obstacle sampling frequency.
+        % Every guide edge receives at least one span, preserving its endpoints
+        % and waits as the arrival clock scales. Cells constrain exact overlaps.
         routeTau            = double(request.Seed.tau(:));
-        minimumSegmentCount = max([20, numel(sourceBreaks_s) - 1, ...
-            originalSegmentCount * request.SplitCount]);
+        minimumSegmentCount = max(20, originalSegmentCount * request.SplitCount);
         segmentCountByEdge  = allocateSegmentsByMeasure(diff(routeTau), ...
             minimumSegmentCount);
         meshTau               = splitByCount(routeTau, segmentCountByEdge);

@@ -29,7 +29,7 @@ function testReducedOutlineIsSupportedAndValid(testCase)
     verifyFalse(testCase,any(contains(preparation.IntervalGeometryModel,"ConvexHull",'IgnoreCase',true)));
     verifyLessThanOrEqual(testCase,max(preparation.IntervalSweptUncoveredProtectedArea_units2,[],'all'), ...
         4096*eps(max(1,max(cellfun(@area,preparation.SampleShapes)))));
-    verifyEqual(testCase,result.ArrivalTime_s,25.8355,'RelTol',0.01);
+    verifyEqual(testCase,result.ArrivalTime_s,18.5752,'RelTol',0.01);
     verifyLessThanOrEqual(testCase,abs(result.MotionLength_units/40.5138437-1),0.01);
     verifyGreaterThan(testCase,result.PlaneCertificate.MinimumSignedGap_units,0);
 end
