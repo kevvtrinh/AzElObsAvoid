@@ -11,8 +11,11 @@ evidence, generates C3 motion with BMTP, and accepts a result only after the
 public independent validator passes it. Expected no-path and infeasible outcomes
 return `Success=false` with stable `Message` and `TerminationReason` fields.
 
-MATLAB R2024b and Optimization Toolbox are the behavioral reference. Add only
-the root and BMTP package parent to the path:
+MATLAB R2024b and Optimization Toolbox are the behavioral reference. Parallel
+Computing Toolbox is optional: large obstacle interval preparations use at most four
+available background workers when the pool is idle. The serial path remains
+the reference for geometry, certificates, and cache semantics. Add only the
+root and BMTP package parent to the path:
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
