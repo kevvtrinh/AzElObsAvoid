@@ -349,23 +349,6 @@ function [retained, changedArea_units2] = removeCrossingZigzags(points_units)
     retained = (1:size(points_units, 1)).';
     changedArea_units2 = [0, 0];
     before = [];
-    % Fast exit for rings that need no repair. A proper crossing always
-    % introduces its intersection point into the simplified boundary, so a
-    % single-region simplified ring whose vertices are exactly the supplied
-    % ones (same count, all rows present) contains no proper crossing. This
-    % filter only skips the scan; the scan below remains the authority.
-    if size(points_units, 1) >= 3
-        warningState = warning('off', 'MATLAB:polyshape:repairedBySimplify');
-        restoreWarning = onCleanup(@()warning(warningState));
-        simplified = polyshape(points_units, 'Simplify', true, 'KeepCollinearPoints', true);
-        clear restoreWarning;
-        if simplified.NumRegions == 1 && simplified.NumHoles == 0 && ...
-                size(simplified.Vertices, 1) == size(points_units, 1) && ...
-                all(ismember(simplified.Vertices, points_units, 'rows'))
-            return;
-        end
-        before = simplified;
-    end
     while numel(retained) >= 3
         vertices_units = points_units(retained, :);
         count          = size(vertices_units, 1);
@@ -419,6 +402,16 @@ function [retained, changedArea_units2] = removeCrossingZigzags(points_units)
         pairs = [firstIndices(crossing), secondIndices(crossing)];
         if isempty(pairs)
             break;
+        end
+        if isempty(before)
+            % Area diagnostics need MATLAB's simplified fill only for a ring
+            % that the exact scan will repair. Valid rings avoid shape
+            % construction entirely.
+            warningState = warning('off', 'MATLAB:polyshape:repairedBySimplify');
+            restoreWarning = onCleanup(@()warning(warningState));
+            before = polyshape(points_units, ...
+                'Simplify', true, 'KeepCollinearPoints', true);
+            clear restoreWarning;
         end
         [~, order] = sortrows([diff(pairs, 1, 2), pairs(:, 1)], [1, 2]);
         best = pairs(order(1), :);
