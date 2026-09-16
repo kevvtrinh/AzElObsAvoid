@@ -169,11 +169,10 @@ summary = runExampleBenchmarks();
 assert(all(summary.Valid));
 ```
 
-The current decision-flow audit, hand reproductions, removed branches, and
-identical-input quality/runtime measurements are recorded in
+The maintained decision-flow audit is recorded in
 [`benchmarks/planner_decision_flow.md`](benchmarks/planner_decision_flow.md).
-The concise completion record is [`plan.md`](plan.md). Dense-input and geometry
-contracts are documented in the remaining focused benchmark reports and
+Dynamic-obstacle behavior and geometry contracts are documented in the focused
+benchmark reports and
 [`obstacle_history_contract.md`](obstacle_history_contract.md).
 
 Generated benchmark, profiling, plot, and scratch outputs are ignored and must
