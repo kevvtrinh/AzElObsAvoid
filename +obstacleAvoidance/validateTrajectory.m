@@ -485,26 +485,35 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         end
         segmentControl_units = squeeze(controlPoint_units(segmentIndex, :, :));
         segmentSpan_s        = ends_s(segmentIndex) - starts_s(segmentIndex);
-        priorInterval        = [NaN, NaN];
-        restricted_units     = zeros(size(segmentControl_units));
-        for regionIndex = 1:size(activePairs, 2)
-            if ~activePairs(segmentIndex, regionIndex)
-                continue
+        activeRegionIndices = find(activePairs(segmentIndex, :));
+        if isempty(activeRegionIndices)
+            continue
+        end
+        activeIntervals_s   = cells.ActiveTimeInterval_s(activeRegionIndices, :);
+        intervalGroupStarts = [true; any(diff(activeIntervals_s, 1, 1) ~= 0, 2)];
+        intervalGroup       = cumsum(intervalGroupStarts);
+        for groupIndex = 1:intervalGroup(end)
+            groupRegionIndices = activeRegionIndices(intervalGroup == groupIndex);
+            activeInterval_s   = cells.ActiveTimeInterval_s(groupRegionIndices(1), :);
+            interval = max(0, min(1, ...
+                (activeInterval_s - starts_s(segmentIndex)) / segmentSpan_s));
+            restricted_units = bmtpEngine.restrictBezier(segmentControl_units, interval);
+            interval_s = [max(starts_s(segmentIndex), activeInterval_s(1)), ...
+                min(ends_s(segmentIndex), activeInterval_s(2))];
+            firstRegions_units = cell(numel(groupRegionIndices), 1);
+            lastRegions_units  = cell(numel(groupRegionIndices), 1);
+            for localRegionIndex = 1:numel(groupRegionIndices)
+                regionIndex = groupRegionIndices(localRegionIndex);
+                vertices_units = bmtpEngine.regionOnInterval( ...
+                    regions_units{regionIndex}, cells, regionIndex, interval_s);
+                firstRegions_units{localRegionIndex} = vertices_units(:, :, 1);
+                lastRegions_units{localRegionIndex}  = vertices_units(:, :, end);
             end
-            % Only the moving branch reaches this loop; the static branch
-            % rechecked its whole span in one batch and continued above.
-            interval         = (cells.ActiveTimeInterval_s(regionIndex, :) - starts_s(segmentIndex)) / segmentSpan_s;
-            interval         = max(0, min(1, interval));
-            if ~isequal(interval, priorInterval)
-                restricted_units = bmtpEngine.restrictBezier(segmentControl_units, interval);
-                priorInterval    = interval;
-            end
-            interval_s = [max(starts_s(segmentIndex), cells.ActiveTimeInterval_s(regionIndex, 1)), ...
-                min(ends_s(segmentIndex), cells.ActiveTimeInterval_s(regionIndex, 2))];
-            vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex}, cells, regionIndex, interval_s);
-            verifiedPlane = bmtpEngine.verifySeparatingLine(certificate.Planes(segmentIndex, regionIndex), ...
-                restricted_units, vertices_units, reserve_units, target_units);
-            if ~verifiedPlane.Verified
+            verifiedPlanes = bmtpEngine.verifyMovingSeparatingLines( ...
+                certificate.Planes(segmentIndex, groupRegionIndices), ...
+                restricted_units, firstRegions_units, lastRegions_units, ...
+                reserve_units, target_units);
+            if ~all([verifiedPlanes.Verified])
                 certificateIsValid = false;
                 return
             end

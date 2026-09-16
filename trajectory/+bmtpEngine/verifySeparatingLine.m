@@ -51,8 +51,14 @@ end
 degree = size(controlPoint_units, 1) - 1;
 
 % Exact degree-N by degree-one Bernstein product weights.
-beta  = (0:degree + 1).' / (degree + 1);
-alpha = 1 - beta;
+persistent cachedDegree cachedBeta cachedAlpha
+if isempty(cachedDegree) || cachedDegree ~= degree
+    cachedDegree = degree;
+    cachedBeta   = (0:degree + 1).' / (degree + 1);
+    cachedAlpha  = 1 - cachedBeta;
+end
+beta  = cachedBeta;
+alpha = cachedAlpha;
 product_units = alpha .* [sum(controlPoint_units .* plane.Normal(1, :), 2); 0] + ...
     beta .* [0; sum(controlPoint_units .* plane.Normal(2, :), 2)] + ...
     alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
@@ -65,8 +71,9 @@ product_units = alpha .* [sum(controlPoint_units .* plane.Normal(1, :), 2); 0] +
 % so measure it only where an offset correction can actually be applied.
 roundoff_units = 0;
 if target_units - minimumObstacleSide_units <= -reserve_units - maximumTrajectorySide_units
-    scale_units    = bmtpEngine.createCoordinateTolerances( ...
-        plane.Offset_units, vertices_units, controlPoint_units);
+    finiteCoordinates_units = [plane.Offset_units(:); vertices_units(:); controlPoint_units(:)];
+    finiteCoordinates_units = abs(finiteCoordinates_units(isfinite(finiteCoordinates_units)));
+    scale_units             = max([1; finiteCoordinates_units]);
     roundoff_units = 16 * eps(scale_units);
 end
 [plane.Offset_units, plane.SignedGap_units, plane.Verified] = bmtpEngine.certifySeparation( ...

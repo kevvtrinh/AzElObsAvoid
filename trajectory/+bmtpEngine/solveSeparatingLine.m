@@ -42,7 +42,27 @@ function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, ver
 
 first_units = vertices_units(:, :, 1);
 last_units  = vertices_units(:, :, end);
-fraction    = (0:size(controlPoint_units, 1) - 1)' / (size(controlPoint_units, 1) - 1);
+controlCount = size(controlPoint_units, 1);
+persistent cachedControlCount cachedFraction cachedBeta ...
+    cachedSecondControlIndex cachedFirstControlIndex cachedEmptyPlane cachedOutput
+if isempty(cachedControlCount) || cachedControlCount ~= controlCount
+    cachedControlCount = controlCount;
+    cachedFraction     = (0:controlCount - 1)' / (controlCount - 1);
+    cachedBeta         = (0:controlCount)' / controlCount;
+    [cachedSecondControlIndex, cachedFirstControlIndex] = ...
+        find(tril(true(controlCount), -1));
+end
+if isempty(cachedEmptyPlane)
+    cachedEmptyPlane = bmtpEngine.createEmptyPlane();
+    cachedOutput = struct( ...
+        'TotalTime_s', 0, ...
+        'IsAnalytic',  true, ...
+        'message',     'Convex supporting-axis subproblem.');
+end
+fraction           = cachedFraction;
+beta               = cachedBeta;
+secondControlIndex = cachedSecondControlIndex;
+firstControlIndex  = cachedFirstControlIndex;
 relativeControl_units = controlPoint_units - ...
     fraction .* (mean(last_units, 1) - mean(first_units, 1));
 if nargin < 5 || isempty(obstacleGeometry)
@@ -50,7 +70,6 @@ if nargin < 5 || isempty(obstacleGeometry)
     if size(vertices_units, 3) > 1
         edges_units = [edges_units; diff([last_units; last_units(1, :)], 1, 1)];
     end
-    [secondControlIndex, firstControlIndex] = find(tril(true(size(controlPoint_units, 1)), -1));
     edges_units = [edges_units; ...
         relativeControl_units(secondControlIndex, :) - relativeControl_units(firstControlIndex, :)];
     length_units = vecnorm(edges_units, 2, 2);
@@ -66,7 +85,6 @@ else
     lastObstaclePositive_units    = obstacleGeometry.LastPositiveSupport_units;
     firstObstacleNegative_units   = obstacleGeometry.FirstNegativeSupport_units;
     lastObstacleNegative_units    = obstacleGeometry.LastNegativeSupport_units;
-    [secondControlIndex, firstControlIndex] = find(tril(true(size(controlPoint_units, 1)), -1));
     controlEdges_units = relativeControl_units(secondControlIndex, :) - ...
         relativeControl_units(firstControlIndex, :);
     controlLength_units     = vecnorm(controlEdges_units, 2, 2);
@@ -93,7 +111,6 @@ gaps_units = -max(supportDifference_units, [], 1);
 
 % Rank supporting directions by the original hull, but retain every direction
 % certified by the exact degree-D by degree-one product used by the verifier.
-beta = (0:size(controlPoint_units, 1))' / size(controlPoint_units, 1);
 productGaps_units = -max((1 - beta) .* ...
     [supportDifference_units; zeros(1, size(normals, 1))] + ...
     beta .* [zeros(1, size(normals, 1)); supportDifference_units], [], 1);
@@ -103,13 +120,10 @@ if any(directionIsCertifiable)
 end
 [gap_units, directionIndex] = max(gaps_units);
 
-plane          = bmtpEngine.createEmptyPlane();
+plane          = cachedEmptyPlane;
 plane.ExitFlag = -2;
 exitFlag       = -2;
-output = struct( ...
-    'TotalTime_s', 0, ...
-    'IsAnalytic',  true, ...
-    'message',     'Convex supporting-axis subproblem.');
+output         = cachedOutput;
 if isempty(gap_units)
     return
 end

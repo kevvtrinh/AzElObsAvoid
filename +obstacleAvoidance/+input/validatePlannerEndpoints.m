@@ -147,6 +147,24 @@ function reachabilityIsBlocked = terminalReachabilityIsBlocked(obstacles, initia
             limits.maxAcceleration_units_s2, limits.maxJerk_units_s3);
         corners_units = center_units + [-radius_units(1), -radius_units(2); -radius_units(1), radius_units(2); ...
             radius_units(1), -radius_units(2); radius_units(1), radius_units(2)];
+        reachableMinimum_units = min(corners_units, [], 1);
+        reachableMaximum_units = max(corners_units, [], 1);
+        obstacleCanContainReachableBox = false;
+        for obstacleIndex = 1:numel(obstacles)
+            shape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacles(obstacleIndex), finalTime_s - duration_s);
+            vertices_units = shape.Vertices;
+            vertices_units = vertices_units(all(isfinite(vertices_units), 2), :);
+            if ~isempty(vertices_units) && ...
+                    all(min(vertices_units, [], 1) <= reachableMinimum_units) && ...
+                    all(max(vertices_units, [], 1) >= reachableMaximum_units)
+                obstacleCanContainReachableBox = true;
+                break
+            end
+        end
+        if ~obstacleCanContainReachableBox
+            continue
+        end
         scene = obstacleAvoidance.obstacles.snapshot(obstacles, finalTime_s - duration_s);
         for sceneIndex = 1:numel(scene)
             for regionIndex = 1:numel(scene(sceneIndex).Regions_units)
