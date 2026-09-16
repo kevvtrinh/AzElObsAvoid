@@ -74,12 +74,12 @@ function testThinWallCrossingIsNotPromotedBySampling(testCase)
 end
 
 function testGalleryPlotsPartiallyPreparedFailureResult(testCase)
-    triangle_units = [0 0; 1 0; 0.5 1];
-    smallSquare    = [0 0; 1 0; 1 1; 0 1];
-    largeSquare    = [0 0; 2 0; 2 2; 0 2];
+    collinear_units = [0 0; 0.5 0; 1 0];
+    smallSquare     = [0 0; 1 0; 1 1; 0 1];
+    largeSquare     = [0 0; 2 0; 2 2; 0 2];
     obstacle = obstacleAvoidance.obstacles.createObstacle('deforming', [0; 1; 2], ...
-        {triangle_units(:, 1); smallSquare(:, 1); largeSquare(:, 1)}, ...
-        {triangle_units(:, 2); smallSquare(:, 2); largeSquare(:, 2)}, 0);
+        {collinear_units(:, 1); smallSquare(:, 1); largeSquare(:, 1)}, ...
+        {collinear_units(:, 2); smallSquare(:, 2); largeSquare(:, 2)}, 0);
     initial = struct('time_s', 0, 'position_units', [-4 0]);
     goal    = struct('time_s', 2, 'position_units', [4 0]);
     result  = planner(obstacle, initial, goal, testCase.TestData.Limits, struct('GoalTimeMode', 'fixedArrival'));

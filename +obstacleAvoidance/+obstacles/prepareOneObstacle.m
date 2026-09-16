@@ -72,11 +72,13 @@ if isempty(previous)
         'IntervalHasExactPartition',                  false(intervalCount, 1), ...
         'IntervalIsStationary',                       false(intervalCount, 1), ...
         'IntervalUsesSweptCells',                     false(intervalCount, 1), ...
+        'IntervalUsesEndpointHull',                   false(intervalCount, 1), ...
         'IntervalIsUnsupported',                      false(intervalCount, 1), ...
         'IntervalPartitionReused',                    false(intervalCount, 1), ...
         'IntervalSweptCellCount',                     zeros(intervalCount, 2), ...
         'IntervalSweptTiming_s',                      zeros(intervalCount, 4), ...
         'IntervalSweptUncoveredProtectedArea_units2', zeros(intervalCount, 2), ...
+        'IntervalEndpointHullAddedArea_units2',       zeros(intervalCount, 1), ...
         'IntervalCertificationReason',                strings(intervalCount, 1), ...
         'SpanStartSampleIndex',                       (1:intervalCount).', ...
         'SpanEndSampleIndex',                         (2:sampleCount).', ...
@@ -166,9 +168,11 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
             preparation.SampleShapes{finalSampleIndex}, ...
             reusableStartRegions_units, protectedKeepsIndex, translationOnly);
     end
-    intervalIsStationary   = false;
-    intervalUsesSweptCells = false;
-    intervalIsUnsupported  = false;
+    intervalIsStationary        = false;
+    intervalUsesSweptCells      = false;
+    intervalUsesEndpointHull    = false;
+    intervalIsUnsupported       = false;
+    intervalCertificationReason = "";
     preparation.MatchingTopology(intervalIndex) = matched;
     preparation.IntervalPartitionReused(intervalIndex) = partitionReused;
     if matched
@@ -195,35 +199,46 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
                 obstacle.originalY_units{intervalIndex}];
             upperOriginal_units = [obstacle.originalX_units{finalSampleIndex}, ...
                 obstacle.originalY_units{finalSampleIndex}];
-            [supported, shape, regions_units, counts, timing_s] = ...
+            [sweptSupported, sweptShape, sweptRegions_units, counts, timing_s] = ...
                 obstacleAvoidance.obstacles.createSweptCorrespondingCells( ...
                 lowerOriginal_units, upperOriginal_units, ...
                 obstacle.safetyMargin_units, usesSourceIndex);
-            if supported
-                % The sqrt(2)-margin squares contain the constructor's
-                % square-join protection, but both authoritative protected
-                % samples are still certified explicitly against the
-                % enclosure before it is used; they are never replaced.
-                uncoveredArea_units2 = [area(subtract(firstShape, shape)), ...
-                    area(subtract(lastShape, shape))];
+            if sweptSupported
+                % Certify both authoritative protected samples against the
+                % prescribed swept enclosure without replacing either sample.
+                uncoveredArea_units2 = [area(subtract(firstShape, sweptShape)), ...
+                    area(subtract(lastShape, sweptShape))];
                 preparation.IntervalSweptUncoveredProtectedArea_units2(intervalIndex, :) = ...
                     uncoveredArea_units2;
                 areaTolerance_units2 = 4096 * eps(max([1, area(firstShape), area(lastShape)]));
-                supported = all(uncoveredArea_units2 <= areaTolerance_units2);
-                if ~supported
-                    preparation.IntervalCertificationReason(intervalIndex) = "sweptEnvelopeExcludesProtectedSample";
-                    shape = polyshape();
+                sweptSupported = all(uncoveredArea_units2 <= areaTolerance_units2);
+            end
+            if sweptSupported
+                shape         = sweptShape;
+                geometryModel = "sweptCorrespondingConvexCells";
+                preparation.IntervalStartRegions_units{intervalIndex} = sweptRegions_units;
+                preparation.IntervalEndRegions_units{intervalIndex}   = sweptRegions_units;
+                intervalUsesSweptCells = true;
+            else
+                lowerProtected_units = [lowerX_units, lowerY_units];
+                upperProtected_units = [upperX_units, upperY_units];
+                [hullSupported, endpointHullShape, endpointHullRegions_units, addedArea_units2] = ...
+                    obstacleAvoidance.obstacles.buildEndpointHullCell( ...
+                    lowerProtected_units, upperProtected_units, firstShape, lastShape);
+                if hullSupported
+                    shape         = endpointHullShape;
+                    geometryModel = "endpointConvexHull";
+                    preparation.IntervalStartRegions_units{intervalIndex} = endpointHullRegions_units;
+                    preparation.IntervalEndRegions_units{intervalIndex}   = endpointHullRegions_units;
+                    preparation.IntervalEndpointHullAddedArea_units2(intervalIndex) = addedArea_units2;
+                    intervalUsesEndpointHull = true;
+                else
+                    shape                       = polyshape();
+                    geometryModel               = "unsupportedContinuousDeformation";
+                    intervalCertificationReason = "degenerateEndpointGeometry";
+                    intervalIsUnsupported       = true;
                 end
             end
-            if supported
-                geometryModel = "sweptCorrespondingConvexCells";
-                preparation.IntervalStartRegions_units{intervalIndex} = regions_units;
-                preparation.IntervalEndRegions_units{intervalIndex}   = regions_units;
-            else
-                geometryModel = "unsupportedContinuousDeformation";
-            end
-            intervalUsesSweptCells = supported;
-            intervalIsUnsupported  = ~supported;
             preparation.IntervalSweptCellCount(intervalIndex, :) = counts;
             preparation.IntervalSweptTiming_s(intervalIndex, :)  = timing_s;
         end
@@ -268,7 +283,10 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
     preparation.IntervalHasExactPartition(classifiedIntervalIndices) = hasExactPartition;
     preparation.IntervalIsStationary(classifiedIntervalIndices)      = intervalIsStationary;
     preparation.IntervalUsesSweptCells(classifiedIntervalIndices)    = intervalUsesSweptCells;
+    preparation.IntervalUsesEndpointHull(classifiedIntervalIndices)  = intervalUsesEndpointHull;
     preparation.IntervalIsUnsupported(classifiedIntervalIndices)     = intervalIsUnsupported;
+    preparation.IntervalCertificationReason(classifiedIntervalIndices) = ...
+        intervalCertificationReason;
     preparation.IntervalPrepared(intervalIndex) = true;
     if stopAtUnsupported && preparation.IntervalIsUnsupported(intervalIndex)
         break;
@@ -283,8 +301,10 @@ end
 
 preparation.SampleSpeedBound_units_s = max([0; preparation.IntervalSpeedBound_units_s], ...
     [preparation.IntervalSpeedBound_units_s; 0]);
-sweptIntervalIndices = find(preparation.IntervalUsesSweptCells);
-preparation.SampleSpeedBound_units_s(unique([sweptIntervalIndices; sweptIntervalIndices + 1])) = Inf;
+enclosureIntervalIndices = find(preparation.IntervalUsesSweptCells | ...
+    preparation.IntervalUsesEndpointHull);
+preparation.SampleSpeedBound_units_s(unique( ...
+    [enclosureIntervalIndices; enclosureIntervalIndices + 1])) = Inf;
 staticIntervals = preparation.IntervalIsStationary | ...
     (preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s == 0);
 preparation.IsTimeInvariant = preparation.IsTimeInvariant || ...

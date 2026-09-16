@@ -139,67 +139,107 @@ end
 function testContainmentClassificationMatchesBooleanReference(testCase)
     % Unequal ring lengths bypass correspondence. Cover shrinking, growing,
     % equal-area shifted, disconnected and holed shapes, in both orders.
-    lower=[0,0;4,0;4,1;1,1;1,4;0,4];
-    candidates={0.8*lower+[0.1,0.1],1.3*lower-[0.1,0.1], ...
-        lower+[0.1,0.2],lower+[8,0], ...
-        [lower;NaN,NaN;8,0;9,0;9,1;8,1], ...
-        [-1,-1;6,-1;6,6;-1,6;NaN,NaN;2,2;2,3;3,3;3,2]};
-    for index=1:numel(candidates)
-        upper=candidates{index};
-        upper=[upper(1,:);mean(upper(1:2,:),1);upper(2:end,:)];
-        for reversed=[false,true]
-            first=lower; last=upper;
-            if reversed, first=upper; last=lower; end
-            prepared=preparePair(first,last);
-            firstShape=polyshape(first,'Simplify',false);
-            lastShape=polyshape(last,'Simplify',false);
-            tolerance=512*eps(max([1,area(firstShape),area(lastShape)]));
-            equivalent=area(xor(firstShape,lastShape))<=tolerance;
-            if equivalent, expected="staticEquivalentSamples";
-            else, expected="unsupportedContinuousDeformation"; end
-            verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel,expected);
-            verifyEqual(testCase,prepared.InternalPreparation.IntervalIsStationary,equivalent);
-            verifyEqual(testCase,prepared.InternalPreparation.IntervalIsUnsupported,~equivalent);
+    lower = [0, 0; 4, 0; 4, 1; 1, 1; 1, 4; 0, 4];
+    candidates = {0.8 * lower + [0.1, 0.1], 1.3 * lower - [0.1, 0.1], ...
+        lower + [0.1, 0.2], lower + [8, 0], ...
+        [lower; NaN, NaN; 8, 0; 9, 0; 9, 1; 8, 1], ...
+        [-1, -1; 6, -1; 6, 6; -1, 6; NaN, NaN; 2, 2; 2, 3; 3, 3; 3, 2]};
+    for index = 1:numel(candidates)
+        upper = candidates{index};
+        upper = [upper(1, :); mean(upper(1:2, :), 1); upper(2:end, :)];
+        for reversed = [false, true]
+            first = lower;
+            last  = upper;
+            if reversed
+                first = upper;
+                last  = lower;
+            end
+            prepared   = preparePair(first, last);
+            firstShape = polyshape(first, 'Simplify', false);
+            lastShape  = polyshape(last, 'Simplify', false);
+            tolerance  = 512 * eps(max([1, area(firstShape), area(lastShape)]));
+            equivalent = area(xor(firstShape, lastShape)) <= tolerance;
+            if equivalent
+                expected = "staticEquivalentSamples";
+            else
+                expected = "endpointConvexHull";
+            end
+            preparation = prepared.InternalPreparation;
+            verifyEqual(testCase, preparation.IntervalGeometryModel, expected);
+            verifyEqual(testCase, preparation.IntervalIsStationary, equivalent);
+            verifyEqual(testCase, preparation.IntervalUsesEndpointHull, ~equivalent);
+            verifyFalse(testCase, preparation.IntervalIsUnsupported);
+            verifyFalse(testCase, preparation.MatchingTopology);
+            verifyFalse(testCase, preparation.IntervalHasExactPartition);
+            verifyFalse(testCase, preparation.IntervalUsesSweptCells);
         end
     end
 end
 
-function testUnsupportedGeometryReturnsStablePlannerOutcome(testCase)
-    lower=[0,0;2,0;2,2;0,2];
-    upper=[0,0;2,0;2,2;1,3;0,2];
-    obstacle=obstacleAvoidance.obstacles.createObstacle('changing count',[0;1], ...
-        {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0);
-    initial=struct('time_s',0,'position_units',[-2,0], ...
-        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
-    goal=struct('time_s',1,'position_units',[4,0], ...
-        'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
-    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-5,5], ...
-        'maxVelocity_units_s',[10,10],'maxAcceleration_units_s2',[10,10], ...
-        'maxJerk_units_s3',[20,20]);
-    result=planner(obstacle,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
-    verifyFalse(testCase,result.Success);
-    verifyEqual(testCase,result.TerminationReason,"unsupportedObstacleInterpolation");
+function testChangingVertexCountPreservesTimingAndPlansValidMotion(testCase)
+    lower = [0, 0; 2, 0; 2, 2; 0, 2];
+    upper = [0, 0; 2, 0; 2, 2; 1, 3; 0, 2];
+    obstacle = obstacleAvoidance.obstacles.createObstacle('changing count', [0; 1], ...
+        {lower(:, 1); upper(:, 1)}, {lower(:, 2); upper(:, 2)}, 0);
+    initial = struct('time_s', 0, 'position_units', [-2, 0], ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    goal = struct('time_s', 1, 'position_units', [4, 0], ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    limits = struct( ...
+        'xInterval_units',          [-5, 5], ...
+        'yInterval_units',          [-5, 5], ...
+        'maxVelocity_units_s',      [10, 10], ...
+        'maxAcceleration_units_s2', [10, 10], ...
+        'maxJerk_units_s3',         [20, 20]);
+    options = struct('GoalTimeMode', 'fixedArrival');
+    % The original one-second request is kinematically infeasible even with
+    % no obstacle: rest-to-rest acceleration alone bounds travel by a*T^2/4.
+    verifyLessThan(testCase, limits.maxAcceleration_units_s2(1) * goal.time_s^2 / 4, ...
+        goal.position_units(1) - initial.position_units(1));
+    tooShort = planner(obstacle, initial, goal, limits, options);
+    verifyFalse(testCase, tooShort.Success);
+    verifyEqual(testCase, tooShort.TerminationReason, "timeWindowInfeasible");
+
+    % Stretch the fixture to ten seconds while keeping its endpoint geometry
+    % and physical limits, so the hull is active throughout a feasible detour.
+    goal.time_s        = 10;
+    obstacle.time_s(2) = goal.time_s;
+    result     = planner(obstacle, initial, goal, limits, options);
+    validation = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyEqual(testCase, result.TerminationReason, "goalReached");
+    verifyTrue(testCase, validation.Passed, validation.Message);
+    verifyTrue(testCase, result.PreparedObstacles.InternalPreparation.IntervalUsesEndpointHull);
 end
 
-function testCachedUnsupportedFutureDoesNotRejectEarlierHorizon(testCase)
-    first=[10,10;12,10;12,12;10,12];
-    second=first+[0.2,0];
-    third=[10.4,10;12.4,10;12.4,12;11.4,13;10.4,12];
-    source=obstacleAvoidance.obstacles.createObstacle('later unsupported',[0;1;2], ...
-        {first(:,1);second(:,1);third(:,1)}, ...
-        {first(:,2);second(:,2);third(:,2)},0);
-    prepared=obstacleAvoidance.obstacles.prepareObstacles(source,[0,2]);
-    initial=struct('time_s',0,'position_units',[-2,0]);
-    goal=struct('time_s',0.5,'position_units',[-1,0]);
-    limits=struct('xInterval_units',[-5,15],'yInterval_units',[-5,15], ...
-        'maxVelocity_units_s',[10,10],'maxAcceleration_units_s2',[100,100], ...
-        'maxJerk_units_s3',[1000,1000]);
-    options=struct('GoalTimeMode','fixedArrival');
-    early=planner(prepared,initial,goal,limits,options);
-    verifyNotEqual(testCase,early.TerminationReason,"unsupportedObstacleInterpolation");
-    goal.time_s=1.5;
-    overlapping=planner(prepared,initial,goal,limits,options);
-    verifyEqual(testCase,overlapping.TerminationReason,"unsupportedObstacleInterpolation");
+function testCachedEndpointHullPlansEarlierAndOverlappingHorizons(testCase)
+    first  = [10, 10; 12, 10; 12, 12; 10, 12];
+    second = first + [0.2, 0];
+    third  = [10.4, 10; 12.4, 10; 12.4, 12; 11.4, 13; 10.4, 12];
+    source = obstacleAvoidance.obstacles.createObstacle('later endpoint hull', [0; 1; 2], ...
+        {first(:, 1); second(:, 1); third(:, 1)}, ...
+        {first(:, 2); second(:, 2); third(:, 2)}, 0);
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(source, [0, 2]);
+    initial  = struct('time_s', 0, 'position_units', [-2, 0]);
+    goal     = struct('time_s', 0.5, 'position_units', [-1, 0]);
+    limits = struct( ...
+        'xInterval_units',          [-5, 15], ...
+        'yInterval_units',          [-5, 15], ...
+        'maxVelocity_units_s',      [10, 10], ...
+        'maxAcceleration_units_s2', [100, 100], ...
+        'maxJerk_units_s3',         [1000, 1000]);
+    options = struct('GoalTimeMode', 'fixedArrival');
+    early   = planner(prepared, initial, goal, limits, options);
+    verifyNotEqual(testCase, early.TerminationReason, "unsupportedObstacleInterpolation");
+    verifyTrue(testCase, early.Success, early.Message);
+    earlyValidation = obstacleAvoidance.validateTrajectory(early);
+    verifyTrue(testCase, earlyValidation.Passed, earlyValidation.Message);
+    goal.time_s = 1.5;
+    overlapping = planner(prepared, initial, goal, limits, options);
+    verifyTrue(testCase, overlapping.Success, overlapping.Message);
+    verifyEqual(testCase, overlapping.TerminationReason, "goalReached");
+    overlapValidation = obstacleAvoidance.validateTrajectory(overlapping);
+    verifyTrue(testCase, overlapValidation.Passed, overlapValidation.Message);
 end
 
 function testProperCrossingZigzagHasDeclaredRepair(testCase)

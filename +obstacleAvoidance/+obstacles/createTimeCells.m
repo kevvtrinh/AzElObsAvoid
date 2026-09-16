@@ -62,6 +62,14 @@ for obstacleIndex = 1:numel(obstacles)
         elseif preparation.IntervalUsesSweptCells(firstIntervalIndex)
             intervalRegions_units    = preparation.IntervalStartRegions_units{firstIntervalIndex};
             intervalEndRegions_units = intervalRegions_units;
+        elseif preparation.IntervalUsesEndpointHull(firstIntervalIndex)
+            intervalRegions_units    = preparation.IntervalStartRegions_units{firstIntervalIndex};
+            intervalEndRegions_units = intervalRegions_units;
+            addedArea_units2         = preparation.IntervalEndpointHullAddedArea_units2(firstIntervalIndex);
+            if ~isfinite(addedArea_units2) || addedArea_units2 < 0
+                error('createTimeCells:InvalidEndpointHullDiagnostic', ...
+                    'The endpoint hull added-area diagnostic must be finite and nonnegative.');
+            end
         elseif preparation.MatchingTopology(firstIntervalIndex) && ...
                 preparation.IntervalSpeedBound_units_s(firstIntervalIndex) == 0
             % A history can change elsewhere while this interval remains
