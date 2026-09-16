@@ -408,13 +408,9 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         return
     end
 
-    scene         = obstacleAvoidance.obstacles.snapshot(authoritativeObstacles, result.Inputs.initialState.time_s);
-    regions_units = cell(0, 1);
-    for obstacleIndex = 1:numel(scene)
-        regions_units = [regions_units; scene(obstacleIndex).Regions_units]; %#ok<AGROW>
-    end
-    expectedActive = true(size(positionPower_units, 1), numel(regions_units));
-    if isfield(certificate, 'Coverage') && isfield(certificate.Coverage, 'ActiveTimeInterval_s')
+    usesDynamicCells = isfield(certificate, 'Coverage') && ...
+        isfield(certificate.Coverage, 'ActiveTimeInterval_s');
+    if usesDynamicCells
         cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
             result.Inputs.initialState.time_s, coverageEnd_s);
         regions_units  = cells.Regions_units;
@@ -429,6 +425,14 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
             return
         end
     else
+        scene         = obstacleAvoidance.obstacles.snapshot( ...
+            authoritativeObstacles, result.Inputs.initialState.time_s);
+        regions_units = cell(0, 1);
+        for obstacleIndex = 1:numel(scene)
+            regions_units = [regions_units; scene(obstacleIndex).Regions_units]; %#ok<AGROW>
+        end
+        expectedActive = true(size(positionPower_units, 1), numel(regions_units));
+
         % Static certificates cannot certify changing geometry or activity.
         for obstacleIndex = 1:numel(authoritativeObstacles)
             obstacle = authoritativeObstacles(obstacleIndex);
@@ -453,7 +457,7 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
 
     controlPoint_units = powerToBernstein(positionPower_units);
     endRegions_units   = cell(0, 1);
-    if exist('cells', 'var')
+    if usesDynamicCells
         endRegions_units = cells.EndRegions_units;
     end
     [~, reserve_units] = bmtpEngine.createCoordinateTolerances(result.Route_units, ...
@@ -467,7 +471,7 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
     end
 
     for segmentIndex = 1:size(activePairs, 1)
-        if ~exist('cells', 'var')
+        if ~usesDynamicCells
             % Recheck every independently rebuilt static cell in one batch.
             % The coefficient products, gap, and roundoff conditions match
             % the scalar verifier used for affine time-dependent geometry.
