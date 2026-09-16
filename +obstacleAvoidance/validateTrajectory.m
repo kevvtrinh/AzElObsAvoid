@@ -483,16 +483,22 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
             end
             continue
         end
+        segmentControl_units = squeeze(controlPoint_units(segmentIndex, :, :));
+        segmentSpan_s        = ends_s(segmentIndex) - starts_s(segmentIndex);
+        priorInterval        = [NaN, NaN];
+        restricted_units     = zeros(size(segmentControl_units));
         for regionIndex = 1:size(activePairs, 2)
             if ~activePairs(segmentIndex, regionIndex)
                 continue
             end
             % Only the moving branch reaches this loop; the static branch
             % rechecked its whole span in one batch and continued above.
-            restricted_units = squeeze(controlPoint_units(segmentIndex, :, :));
-            segmentSpan_s    = ends_s(segmentIndex) - starts_s(segmentIndex);
             interval         = (cells.ActiveTimeInterval_s(regionIndex, :) - starts_s(segmentIndex)) / segmentSpan_s;
-            restricted_units = bmtpEngine.restrictBezier(restricted_units, max(0, min(1, interval)));
+            interval         = max(0, min(1, interval));
+            if ~isequal(interval, priorInterval)
+                restricted_units = bmtpEngine.restrictBezier(segmentControl_units, interval);
+                priorInterval    = interval;
+            end
             interval_s = [max(starts_s(segmentIndex), cells.ActiveTimeInterval_s(regionIndex, 1)), ...
                 min(ends_s(segmentIndex), cells.ActiveTimeInterval_s(regionIndex, 2))];
             vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex}, cells, regionIndex, interval_s);

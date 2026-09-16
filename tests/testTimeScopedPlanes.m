@@ -291,6 +291,7 @@ function testTimedSolverRetainsAtomicRecordAfterLaterRejectedTrial(testCase)
         retainedDiagnostics.TaggedPairCount);
     verifyEqual(testCase, diagnostics.FinalCollisionPairCount, ...
         retainedDiagnostics.FinalCollisionPairCount);
+    verifyRetainedTimedDiagnostics(testCase, diagnostics, retainedDiagnostics);
     verifyGreaterThan(testCase, diagnostics.TaggedPairCount, 0);
 end
 
@@ -333,8 +334,28 @@ function testTimedSolverRetainsAtomicRecordAfterLaterFailedTrial(testCase)
         retainedDiagnostics.ApplicablePairCount);
     verifyEqual(testCase, diagnostics.FinalCollisionPairCount, ...
         retainedDiagnostics.FinalCollisionPairCount);
+    verifyRetainedTimedDiagnostics(testCase, diagnostics, retainedDiagnostics);
     verifyGreaterThan(testCase, diagnostics.TaggedPairCount, 0);
     verifyEqual(testCase, diagnostics.FinalCollisionPairCount, 0);
+end
+
+function verifyRetainedTimedDiagnostics(testCase, actual, expected)
+    % Every selected-candidate diagnostic remains atomic with its motion.
+    verifyEqual(testCase, actual.Converged, expected.Converged);
+    fieldNames = [ ...
+        "LoadedPlanePairCount", ...
+        "ConstraintGenerationRoundCount", ...
+        "ConstraintGenerationComplete", ...
+        "MaximumPlaneConstraintResidual", ...
+        "ConstraintGenerationReturnedSolveIndex", ...
+        "ConstraintGenerationLastAttemptExitFlag", ...
+        "ConstraintGenerationTerminatedAfterRetainedIterate"];
+    for fieldName = fieldNames
+        verifyEqual(testCase, isfield(actual, fieldName), isfield(expected, fieldName));
+        if isfield(expected, fieldName)
+            verifyEqual(testCase, actual.(fieldName), expected.(fieldName));
+        end
+    end
 end
 
 function testTimedProfileDoesNotDependOnSeedSource(testCase)

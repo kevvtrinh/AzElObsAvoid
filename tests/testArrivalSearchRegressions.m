@@ -215,7 +215,7 @@ function testArrivalSnapshotFindsAnOpeningMissingAtInitialTime(testCase)
         DynamicEdgeCheckKind,"exactAffineConvexCells");
 end
 
-function testArrivalSnapshotFindsRouteAfterWholeCurtainDeparts(testCase)
+function testTimedSearchFindsRouteAfterWholeCurtainDeparts(testCase)
     curtainX = [-0.3;0.3;0.3;-0.3];
     curtainY = [-130;-130;130;130];
     curtain = obstacleAvoidance.obstacles.createObstacle('departing curtain', ...
@@ -233,8 +233,10 @@ function testArrivalSnapshotFindsRouteAfterWholeCurtainDeparts(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyLessThanOrEqual(testCase,result.ArrivalTime_s,4+1e-8);
+    % The timed node set retains the stationary blocker's exact boundary even
+    % while the departing curtain hides it inside the all-time swept union.
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
-        "arrivalSpatialSnapshot");
+        "timeExpandedVisibilityGraph");
 end
 
 function testChallengedDelayedChordIncumbentIsRetained(testCase)

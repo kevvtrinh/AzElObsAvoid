@@ -165,6 +165,8 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     pairWasRejected = false;
     for segmentIndex = 1:segmentCount
         trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
+        lastTimeFraction = [NaN, NaN];
+        lastRestricted_units = zeros(0, 2);
         cachedSpanIndex   = cachedSpanIndexBySegment(segmentIndex);
         cachedSpanMatches = cachedSpanIndex > 0 && isequal( ...
             regionActiveBySegment(segmentIndex, :), ...
@@ -221,7 +223,13 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
                     spanBreaks_s(segmentIndex)) / ...
                     diff(spanBreaks_s(segmentIndex:segmentIndex + 1));
                 timeFraction     = max(0, min(1, activeInterval_s));
-                restricted_units = bmtpEngine.restrictBezier(trajectory_units, timeFraction);
+                if isequal(timeFraction, lastTimeFraction)
+                    restricted_units = lastRestricted_units;
+                else
+                    restricted_units       = bmtpEngine.restrictBezier(trajectory_units, timeFraction);
+                    lastTimeFraction       = timeFraction;
+                    lastRestricted_units   = restricted_units;
+                end
                 interval_s       = [max(interval_s(1), coverage.ActiveTimeInterval_s(regionIndex, 1)), ...
                     min(interval_s(2), coverage.ActiveTimeInterval_s(regionIndex, 2))];
             end

@@ -128,6 +128,8 @@ isolatedIntervals    = preparation.CandidateSpanEndSampleIndex == (2:sampleCount
 independentIndices   = newIntervalIndices(isolatedIntervals(newIntervalIndices));
 sampleProducts       = cell(sampleCount, 1);
 intervalProducts     = cell(intervalCount, 1);
+protectedKeepsIndex  = obstacle.UsesSourceIndex && obstacle.safetyMargin_units == 0;
+translationOnly      = obstacle.UsesSourceIndex && obstacle.safetyMargin_units > 0;
 useBackgroundWorkers = false;
 % At 32 dense intervals, three paired R2024b runs measured median preparation
 % of 0.884 s serial versus 0.491 s with four batches, including both barriers.
@@ -142,40 +144,36 @@ end
 if useBackgroundWorkers
     workerCount   = min(maximumWorkerCount, workerPool.NumWorkers);
     sampleIndices = find(neededSamples & ~preparation.SamplePrepared);
-    sampleFutures(1, workerCount) = parallel.FevalFuture;
+    intervalSampleIndices  = unique([independentIndices; independentIndices + 1]);
+    remainingSampleIndices = setdiff(sampleIndices, intervalSampleIndices, 'stable');
+    combinedFutures(1, workerCount) = parallel.FevalFuture;
+    batchSampleIndices = cell(workerCount, 1);
+    batchIntervalIndices = cell(workerCount, 1);
     for workerIndex = 1:workerCount
-        batchIndices = sampleIndices(workerIndex:workerCount:end);
-        sampleFutures(workerIndex) = parfeval(workerPool, @prepareSampleBatch, 1, ...
-            obstacle.x_units(batchIndices), obstacle.y_units(batchIndices));
+        firstBatchIndex = floor((workerIndex - 1) * numel(independentIndices) / workerCount) + 1;
+        finalBatchIndex = floor(workerIndex * numel(independentIndices) / workerCount);
+        batchIntervalIndices{workerIndex} = independentIndices(firstBatchIndex:finalBatchIndex);
+        extraSampleIndices = remainingSampleIndices(workerIndex:workerCount:end);
+        batchSampleIndices{workerIndex} = unique([ ...
+            batchIntervalIndices{workerIndex}; ...
+            batchIntervalIndices{workerIndex} + 1; ...
+            extraSampleIndices]);
+        [~, lowerSampleIndex] = ismember( ...
+            batchIntervalIndices{workerIndex}, batchSampleIndices{workerIndex});
+        [~, upperSampleIndex] = ismember( ...
+            batchIntervalIndices{workerIndex} + 1, batchSampleIndices{workerIndex});
+        combinedFutures(workerIndex) = parfeval(workerPool, @prepareCombinedBatch, 2, ...
+            obstacle.x_units(batchSampleIndices{workerIndex}), ...
+            obstacle.y_units(batchSampleIndices{workerIndex}), ...
+            lowerSampleIndex, upperSampleIndex, protectedKeepsIndex, translationOnly);
     end
-    sampleCleanup = onCleanup(@() cancel(sampleFutures));
+    combinedCleanup = onCleanup(@() cancel(combinedFutures));
     for workerIndex = 1:workerCount
-        batchIndices = sampleIndices(workerIndex:workerCount:end);
-        sampleProducts(batchIndices) = fetchOutputs(sampleFutures(workerIndex));
+        [batchSamples, batchIntervals] = fetchOutputs(combinedFutures(workerIndex));
+        sampleProducts(batchSampleIndices{workerIndex}) = batchSamples;
+        intervalProducts(batchIntervalIndices{workerIndex}) = batchIntervals;
     end
-    clear sampleCleanup;
-    % Workers read shared sample products. Publishing them remains sequential
-    % so early termination leaves exactly the reference cache coverage.
-    sampleShapes = preparation.SampleShapes;
-    for sampleIndex = reshape(sampleIndices, 1, [])
-        if isa(sampleProducts{sampleIndex}, 'MException')
-            sampleShapes{sampleIndex} = [];
-        else
-            sampleShapes{sampleIndex} = sampleProducts{sampleIndex}{1};
-        end
-    end
-    intervalFutures(1, workerCount) = parallel.FevalFuture;
-    for workerIndex = 1:workerCount
-        batchIndices = independentIndices(workerIndex:workerCount:end);
-        intervalFutures(workerIndex) = parfeval(workerPool, @prepareIntervalBatch, 1, ...
-            obstacle, sampleShapes, batchIndices);
-    end
-    intervalCleanup = onCleanup(@() cancel(intervalFutures));
-    for workerIndex = 1:workerCount
-        batchIndices = independentIndices(workerIndex:workerCount:end);
-        intervalProducts(batchIndices) = fetchOutputs(intervalFutures(workerIndex));
-    end
-    clear intervalCleanup;
+    clear combinedCleanup;
 end
 
 for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared), 1, [])
@@ -200,10 +198,8 @@ for intervalIndex = reshape(find(neededIntervals & ~preparation.IntervalPrepared
     % Protected rings are only those rings when no margin was applied;
     % buffered rings carry no index correspondence, so they admit only the
     % translation certificate, and every other motion uses the original rings.
-    usesSourceIndex     = obstacle.UsesSourceIndex;
-    protectedKeepsIndex = usesSourceIndex && obstacle.safetyMargin_units == 0;
-    translationOnly     = usesSourceIndex && obstacle.safetyMargin_units > 0;
-    preserveAlignment   = protectedKeepsIndex || finalSampleIndex > intervalIndex + 1;
+    usesSourceIndex   = obstacle.UsesSourceIndex;
+    preserveAlignment = protectedKeepsIndex || finalSampleIndex > intervalIndex + 1;
     product = intervalProducts{intervalIndex};
     if isa(product, 'MException')
         rethrow(product);
@@ -403,22 +399,37 @@ function products = prepareSampleBatch(x_units, y_units)
     end
 end
 
-function products = prepareIntervalBatch(obstacle, sampleShapes, intervalIndices)
+function [sampleProducts, intervalProducts] = prepareCombinedBatch( ...
+        x_units, y_units, lowerSampleIndex, upperSampleIndex, ...
+        protectedKeepsIndex, translationOnly)
+    sampleProducts = prepareSampleBatch(x_units, y_units);
+    sampleShapes   = cell(numel(sampleProducts), 1);
+    for sampleIndex = 1:numel(sampleProducts)
+        if ~isa(sampleProducts{sampleIndex}, 'MException')
+            sampleShapes{sampleIndex} = sampleProducts{sampleIndex}{1};
+        end
+    end
+    intervalProducts = prepareIntervalBatch( ...
+        x_units(lowerSampleIndex), y_units(lowerSampleIndex), ...
+        x_units(upperSampleIndex), y_units(upperSampleIndex), ...
+        sampleShapes(lowerSampleIndex), sampleShapes(upperSampleIndex), ...
+        protectedKeepsIndex, translationOnly);
+end
+
+function products = prepareIntervalBatch(lowerX_units, lowerY_units, upperX_units, upperY_units, ...
+        lowerShapes, upperShapes, protectedKeepsIndex, translationOnly)
     % Translation returns no product: only the sequential pass owns reuse.
-    products            = cell(numel(intervalIndices), 1);
-    protectedKeepsIndex = obstacle.UsesSourceIndex && obstacle.safetyMargin_units == 0;
-    translationOnly     = obstacle.UsesSourceIndex && obstacle.safetyMargin_units > 0;
-    for batchIndex = 1:numel(intervalIndices)
-        intervalIndex = intervalIndices(batchIndex);
-        if isempty(sampleShapes{intervalIndex}) || isempty(sampleShapes{intervalIndex + 1})
+    products = cell(numel(lowerX_units), 1);
+    for batchIndex = 1:numel(lowerX_units)
+        if isempty(lowerShapes{batchIndex}) || isempty(upperShapes{batchIndex})
             continue;
         end
         try
             product = cell(1, 7);
             [product{:}, dependsOnPrevious] = alignVerifiedSingleRing( ...
-                obstacle.x_units{intervalIndex}, obstacle.y_units{intervalIndex}, ...
-                obstacle.x_units{intervalIndex + 1}, obstacle.y_units{intervalIndex + 1}, ...
-                sampleShapes{intervalIndex}, sampleShapes{intervalIndex + 1}, ...
+                lowerX_units{batchIndex}, lowerY_units{batchIndex}, ...
+                upperX_units{batchIndex}, upperY_units{batchIndex}, ...
+                lowerShapes{batchIndex}, upperShapes{batchIndex}, ...
                 cell(0, 1), protectedKeepsIndex, translationOnly, true);
             if ~dependsOnPrevious
                 products{batchIndex} = product;
@@ -552,13 +563,18 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
         geometryModel = "linearCorrespondingVertices";
         return;
     end
-    globalAffineVerified = verifiedGlobalAffineMap( ...
+    [globalAffineVerified, exactGlobalAffineVerified] = verifiedGlobalAffineMap( ...
         lower_units, alignedUpper_units, coordinateScale_units);
+    topologyMotionVerified = exactGlobalAffineVerified;
+    if ~topologyMotionVerified
+        topologyMotionVerified = movingBoundaryRemainsSimple( ...
+            lower_units, alignedUpper_units, coordinateScale_units);
+    end
     [partitionVerified, startRegions_units, endRegions_units] = ...
         createVerifiedMovingPartition( ...
-        lower_units, alignedUpper_units, lowerShape, upperShape, coordinateScale_units);
-    verified = partitionVerified && (globalAffineVerified || movingBoundaryRemainsSimple( ...
-        lower_units, alignedUpper_units, coordinateScale_units));
+        lower_units, alignedUpper_units, lowerShape, upperShape, ...
+        coordinateScale_units, topologyMotionVerified);
+    verified = partitionVerified && (globalAffineVerified || topologyMotionVerified);
     if verified
         geometryModel = "linearCorrespondingConvexPartition";
         hasExactPartition = true;
@@ -570,7 +586,8 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
     endRegions_units   = cell(0, 1);
 end
 
-function verified = verifiedGlobalAffineMap(lower_units, upper_units, coordinateScale_units)
+function [verified, exactVerified] = verifiedGlobalAffineMap( ...
+        lower_units, upper_units, coordinateScale_units)
     % A single affine map preserves every edge and face. Its linear blend
     % with identity is valid when the determinant stays strictly positive.
     source = [lower_units, ones(size(lower_units, 1), 1)];
@@ -579,6 +596,7 @@ function verified = verifiedGlobalAffineMap(lower_units, upper_units, coordinate
     residualTolerance_units = 4096 * eps(coordinateScale_units);
     if max(abs(residual_units), [], 'all') > residualTolerance_units
         verified = false;
+        exactVerified = false;
         return;
     end
     linearMap = transformation(1:2, :);
@@ -595,15 +613,18 @@ function verified = verifiedGlobalAffineMap(lower_units, upper_units, coordinate
     determinants = polyval(determinantCoefficients, candidateTau);
     determinantTolerance = 4096 * eps(max(1, norm(linearMap, 'fro') ^ 2));
     verified = all(determinants > determinantTolerance);
+    exactVerified = verified && all(residual_units == 0, 'all');
 end
 
 function [verified, startRegions_units, endRegions_units] = createVerifiedMovingPartition( ...
-        lower_units, upper_units, lowerShape, upperShape, coordinateScale_units)
+        lower_units, upper_units, lowerShape, upperShape, coordinateScale_units, ...
+        topologyMotionVerified)
     % Carry one exact lower-sample partition through the supplied vertex
     % correspondence. Every face must remain convex for the whole interval.
     verified = false;
     startRegions_units = obstacleAvoidance.geometry.convexRegions(lowerShape);
     endRegions_units = cell(size(startRegions_units));
+    sourceIndexRegions = cell(size(startRegions_units));
     for regionIndex = 1:numel(startRegions_units)
         [isSourceVertex, sourceIndex] = ismember( ...
             startRegions_units{regionIndex}, lower_units, 'rows');
@@ -612,20 +633,24 @@ function [verified, startRegions_units, endRegions_units] = createVerifiedMoving
             endRegions_units = cell(0, 1);
             return;
         end
+        sourceIndexRegions{regionIndex} = sourceIndex;
         endRegions_units{regionIndex} = upper_units(sourceIndex, :);
         if ~remainsStrictlyConvex(startRegions_units{regionIndex}, ...
                 endRegions_units{regionIndex}, coordinateScale_units)
             [verified, startRegions_units, endRegions_units] = createVerifiedMovingTriangles( ...
-                lower_units, upper_units, lowerShape, upperShape, coordinateScale_units);
+                lower_units, upper_units, lowerShape, upperShape, ...
+                coordinateScale_units, topologyMotionVerified);
             return;
         end
     end
     verified = partitionMatchesEndpointShapes( ...
-        startRegions_units, endRegions_units, lowerShape, upperShape);
+        startRegions_units, endRegions_units, sourceIndexRegions, ...
+        lower_units, upper_units, lowerShape, upperShape, topologyMotionVerified);
 end
 
 function [verified, startRegions_units, endRegions_units] = createVerifiedMovingTriangles( ...
-        lower_units, upper_units, lowerShape, upperShape, coordinateScale_units)
+        lower_units, upper_units, lowerShape, upperShape, coordinateScale_units, ...
+        topologyMotionVerified)
     % A triangle mesh is the non-heuristic fallback partition. It is
     % accepted only when every mesh point is an original corresponding vertex.
     verified = false;
@@ -639,10 +664,12 @@ function [verified, startRegions_units, endRegions_units] = createVerifiedMoving
     faceCount = size(mesh.ConnectivityList, 1);
     startRegions_units = cell(faceCount, 1);
     endRegions_units   = cell(faceCount, 1);
+    sourceIndexRegions = cell(faceCount, 1);
     for faceIndex = 1:faceCount
         pointIndex = mesh.ConnectivityList(faceIndex, :);
+        sourceIndexRegions{faceIndex} = sourceIndex(pointIndex);
         startRegions_units{faceIndex} = mesh.Points(pointIndex, :);
-        endRegions_units{faceIndex} = upper_units(sourceIndex(pointIndex), :);
+        endRegions_units{faceIndex} = upper_units(sourceIndexRegions{faceIndex}, :);
         if ~remainsStrictlyConvex(startRegions_units{faceIndex}, ...
                 endRegions_units{faceIndex}, coordinateScale_units)
             startRegions_units = cell(0, 1);
@@ -651,19 +678,104 @@ function [verified, startRegions_units, endRegions_units] = createVerifiedMoving
         end
     end
     verified = partitionMatchesEndpointShapes( ...
-        startRegions_units, endRegions_units, lowerShape, upperShape);
+        startRegions_units, endRegions_units, sourceIndexRegions, ...
+        lower_units, upper_units, lowerShape, upperShape, topologyMotionVerified);
 end
 
 function verified = partitionMatchesEndpointShapes( ...
-        startRegions_units, endRegions_units, lowerShape, upperShape)
+        startRegions_units, endRegions_units, sourceIndexRegions, ...
+        lower_units, upper_units, lowerShape, upperShape, topologyMotionVerified)
     % Endpoint Boolean equality catches mapping or triangulation changes
     % before the continuous face certificates are trusted.
+    if topologyMotionVerified && partitionHasExactRingTopology( ...
+            sourceIndexRegions, lower_units, upper_units, lowerShape, upperShape)
+        verified = true;
+        return;
+    end
     startUnion = unionRegions(startRegions_units);
     endUnion = unionRegions(endRegions_units);
     areaScale_units2 = max([1, area(lowerShape), area(upperShape)]);
     areaTolerance_units2 = 4096 * eps(areaScale_units2);
     verified = area(xor(startUnion, lowerShape)) <= areaTolerance_units2 && ...
         area(xor(endUnion, upperShape)) <= areaTolerance_units2;
+end
+
+function verified = partitionHasExactRingTopology( ...
+        sourceIndexRegions, lower_units, upper_units, lowerShape, upperShape)
+    % For an unsimplified simple ring, a partition is carried exactly when
+    % every outer edge is one source edge and every interior edge is shared
+    % once in each direction. Strict face-motion and boundary certificates
+    % are applied by the caller after this endpoint topology check.
+    vertexCount = size(lower_units, 1);
+    verified = isequal(size(lower_units), size(upper_units)) && ...
+        size(unique(lower_units, 'rows'), 1) == vertexCount && ...
+        size(unique(upper_units, 'rows'), 1) == vertexCount && ...
+        shapeHasExactRingBoundary(lowerShape, lower_units) && ...
+        shapeHasExactRingBoundary(upperShape, upper_units) && ...
+        all(cellfun(@numel, sourceIndexRegions) >= 3);
+    if ~verified || isempty(sourceIndexRegions)
+        return;
+    end
+
+    edgeCount = sum(cellfun(@numel, sourceIndexRegions));
+    edgeStart = zeros(edgeCount, 1);
+    edgeEnd   = zeros(edgeCount, 1);
+    firstEdge = 1;
+    for regionIndex = 1:numel(sourceIndexRegions)
+        sourceIndex = sourceIndexRegions{regionIndex}(:);
+        finalEdge = firstEdge + numel(sourceIndex) - 1;
+        edgeStart(firstEdge:finalEdge) = sourceIndex;
+        edgeEnd(firstEdge:finalEdge)   = circshift(sourceIndex, -1);
+        firstEdge = finalEdge + 1;
+    end
+    undirectedEdges = [min(edgeStart, edgeEnd), max(edgeStart, edgeEnd)];
+    [uniqueEdges, ~, edgeGroup] = unique(undirectedEdges, 'rows');
+    multiplicity = accumarray(edgeGroup, 1);
+    forwardCount = accumarray(edgeGroup, edgeStart < edgeEnd);
+    if any(multiplicity > 2) || ...
+            any(forwardCount(multiplicity == 2) ~= 1) || ...
+            vertexCount - size(uniqueEdges, 1) + numel(sourceIndexRegions) ~= 1
+        verified = false;
+        return;
+    end
+
+    nextSourceIndex = [2:vertexCount, 1].';
+    expectedBoundaryEdges = sortrows([ ...
+        min((1:vertexCount).', nextSourceIndex), ...
+        max((1:vertexCount).', nextSourceIndex)]);
+    actualBoundaryEdges = sortrows(uniqueEdges(multiplicity == 1, :));
+    boundaryOccurrence = multiplicity(edgeGroup) == 1;
+    directedBoundaryEdges = sortrows([ ...
+        edgeStart(boundaryOccurrence), edgeEnd(boundaryOccurrence)]);
+    forwardBoundaryEdges = sortrows([(1:vertexCount).', nextSourceIndex]);
+    reverseBoundaryEdges = sortrows([nextSourceIndex, (1:vertexCount).']);
+    verified = isequal(actualBoundaryEdges, expectedBoundaryEdges) && ...
+        (isequal(directedBoundaryEdges, forwardBoundaryEdges) || ...
+        isequal(directedBoundaryEdges, reverseBoundaryEdges));
+end
+
+function verified = shapeHasExactRingBoundary(shape, vertices_units)
+    components = regions(shape);
+    if numel(components) ~= 1 || components.NumHoles ~= 0
+        verified = false;
+        return;
+    end
+    shapeVertices_units = components.Vertices;
+    [shapeVertexIsSource, shapeSourceIndex] = ismember( ...
+        shapeVertices_units, vertices_units, 'rows');
+    if ~isequal(size(shapeVertices_units), size(vertices_units)) || ...
+            ~all(shapeVertexIsSource) || numel(unique(shapeSourceIndex)) ~= numel(shapeSourceIndex)
+        verified = false;
+        return;
+    end
+    nextShapeIndex = circshift(shapeSourceIndex, -1);
+    shapeEdges = sortrows([ ...
+        min(shapeSourceIndex, nextShapeIndex), max(shapeSourceIndex, nextShapeIndex)]);
+    vertexCount = size(vertices_units, 1);
+    nextSourceIndex = [2:vertexCount, 1].';
+    sourceEdges = sortrows([ ...
+        min((1:vertexCount).', nextSourceIndex), max((1:vertexCount).', nextSourceIndex)]);
+    verified = isequal(shapeEdges, sourceEdges);
 end
 
 function shape = unionRegions(regions_units)

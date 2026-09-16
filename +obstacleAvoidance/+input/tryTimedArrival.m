@@ -53,9 +53,10 @@ if isempty(routeTime_s)
     result.ElapsedTime_s               = previous.ElapsedTime_s + toc(totalTimer);
     return
 end
-if arrivalIsFixed && size(route_units, 1) > 2
+if size(route_units, 1) > 2
     % A constant-position run needs only its first and last times. Removing
-    % interior wait knots preserves the complete piecewise-linear timed guide.
+    % interior wait knots preserves the complete piecewise-linear timed guide
+    % and keeps the BMTP mesh independent of temporal-layer density.
     segmentMoves        = any(diff(route_units, 1, 1) ~= 0, 2);
     routeKnotIsRetained = [true; segmentMoves(1:end - 1) | segmentMoves(2:end); true];
     route_units         = route_units(routeKnotIsRetained, :);

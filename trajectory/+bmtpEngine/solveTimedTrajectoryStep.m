@@ -101,7 +101,14 @@ lb(travelBoundIndex) = 0;
 %% Section 2: Add Separating-Line Bounds
 baseInequalityCount = 4 * segmentCount * (3 * degree - 3);
 initialPlanePairs   = planeActiveBySegment;
-if goalTimeMode == "fixedArrival"
+% Keep the full formulation for moderate earliest-arrival systems, where its
+% single solve is both compact and better conditioned. Beyond this exact row
+% count, exhaustive row generation avoids constructing the dominant dense
+% plane block while still scanning every omitted pair after each solve.
+maximumDirectPlanePairCount = 2048;
+useConstraintGeneration = goalTimeMode == "fixedArrival" || ...
+    nnz(planeActiveBySegment) > maximumDirectPlanePairCount;
+if useConstraintGeneration
     initialPlanePairs(:) = false;
 end
 slackColumnByPair = zeros(size(planeActiveBySegment));
@@ -132,44 +139,85 @@ end
 solverTimer        = tic;
 retainedPlanePairs = initialPlanePairs;
 solveCount         = 0;
-constraintGenerationComplete   = goalTimeMode ~= "fixedArrival";
-maximumPlaneConstraintResidual = NaN;
+returnedX                              = [];
+returnedExitFlag                       = NaN;
+returnedOutput                         = struct();
+returnedPlanePairs                     = false(size(planeActiveBySegment));
+returnedMaximumPlaneConstraintResidual = NaN;
+returnedConstraintGenerationComplete   = false;
+returnedSolveIndex                     = 0;
 while true
-    [x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
+    attemptedPlanePairs = retainedPlanePairs;
+    [attemptX, ~, attemptExitFlag, attemptOutput] = ...
+        coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
     solveCount = solveCount + 1;
-    if goalTimeMode ~= "fixedArrival" || ...
-            ~bmtpEngine.hasUsableConicIterate(x, exitFlag)
+    lastAttemptExitFlag = attemptExitFlag;
+    lastAttemptMessage  = string(attemptOutput.message);
+    if ~bmtpEngine.hasUsableConicIterate(attemptX, attemptExitFlag)
         break
     end
-    [violatedPairs, maximumOmittedResidual] = ...
-        bmtpEngine.findViolatedPlanePairs(x, planes, planeActiveBySegment, ...
-        retainedPlanePairs, degree, slackColumnByPair, reserve_units, ...
-        options.ConstraintTolerance);
-    if ~any(violatedPairs, 'all')
+
+    violatedPairs         = false(size(planeActiveBySegment));
+    attemptMaximumResidual = NaN;
+    attemptIsComplete      = ~useConstraintGeneration;
+    if useConstraintGeneration
+        [violatedPairs, maximumOmittedResidual] = ...
+            bmtpEngine.findViolatedPlanePairs(attemptX, planes, planeActiveBySegment, ...
+            attemptedPlanePairs, degree, slackColumnByPair, reserve_units, ...
+            options.ConstraintTolerance);
         loadedResidual = -Inf;
         if size(A, 1) > baseInequalityCount
-            loadedResidual = max(A(baseInequalityCount + 1:end, :) * x - ...
+            loadedResidual = max(A(baseInequalityCount + 1:end, :) * attemptX - ...
                 b(baseInequalityCount + 1:end));
         end
-        maximumPlaneConstraintResidual = max(loadedResidual, maximumOmittedResidual);
-        constraintGenerationComplete = ...
-            maximumPlaneConstraintResidual <= options.ConstraintTolerance;
+        attemptMaximumResidual = max(loadedResidual, maximumOmittedResidual);
+        attemptIsComplete = ~any(violatedPairs, 'all') && ...
+            attemptMaximumResidual <= options.ConstraintTolerance;
+    end
+
+    % Snapshot the last usable proposal before adding rows it has never
+    % solved. A later numerical failure cannot erase this truthful record;
+    % the caller still independently certifies it before any retention.
+    returnedX                              = attemptX;
+    returnedExitFlag                       = attemptExitFlag;
+    returnedOutput                         = attemptOutput;
+    returnedPlanePairs                     = attemptedPlanePairs;
+    returnedMaximumPlaneConstraintResidual = attemptMaximumResidual;
+    returnedConstraintGenerationComplete   = attemptIsComplete;
+    returnedSolveIndex                     = solveCount;
+    if ~useConstraintGeneration || ~any(violatedPairs, 'all')
         break
     end
-    retainedPlanePairs = retainedPlanePairs | violatedPairs;
+    retainedPlanePairs = attemptedPlanePairs | violatedPairs;
     [newRows, newBounds] = bmtpEngine.createSelectedPlaneRows(planes, ...
         violatedPairs, degree, variableCount, slackColumnByPair, reserve_units);
     A = [A; newRows]; %#ok<AGROW>
     b = [b; newBounds]; %#ok<AGROW>
 end
+if isempty(returnedX)
+    x        = attemptX;
+    exitFlag = attemptExitFlag;
+    output   = attemptOutput;
+    returnedPlanePairs = attemptedPlanePairs;
+else
+    x        = returnedX;
+    exitFlag = returnedExitFlag;
+    output   = returnedOutput;
+end
 output.TotalTime_s                    = toc(solverTimer);
 output.OptimizationConverged          = exitFlag > 0;
 output.SolveCount                     = solveCount;
-output.ConstraintGenerationApplied    = goalTimeMode == "fixedArrival";
+output.ConstraintGenerationApplied    = useConstraintGeneration;
 output.ConstraintGenerationRoundCount = max(0, solveCount - 1);
-output.ConstraintGenerationComplete   = constraintGenerationComplete;
-output.MaximumPlaneConstraintResidual = maximumPlaneConstraintResidual;
-output.LoadedPlanePairCount           = nnz(retainedPlanePairs);
+output.ConstraintGenerationComplete   = returnedConstraintGenerationComplete;
+output.MaximumPlaneConstraintResidual = returnedMaximumPlaneConstraintResidual;
+output.LoadedPlanePairCount           = nnz(returnedPlanePairs);
+output.ReturnedSolveIndex             = returnedSolveIndex;
+output.LastAttemptExitFlag            = lastAttemptExitFlag;
+output.LastAttemptMessage             = lastAttemptMessage;
+output.TerminatedAfterRetainedIterate = returnedSolveIndex > 0 && ...
+    returnedSolveIndex < solveCount;
+output.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);
 % An optimality stall does not establish physical infeasibility. Every finite
 % retained iterate remains only a proposal for independent certification.
 if ~bmtpEngine.hasUsableConicIterate(x, exitFlag)

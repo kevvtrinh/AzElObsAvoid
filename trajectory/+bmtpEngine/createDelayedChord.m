@@ -40,6 +40,10 @@ relativePower_units    = prescribedPower_units;
 relativePower_units(:, :, 1) = relativePower_units(:, :, 1) - initial_units;
 progressPower = reshape(sum(relativePower_units .* reshape(direction_units, 1, 2, 1), 2), [], 6) / ...
     directionNorm2_units2;
+progressDerivativePower = progressPower(:, 2:end) .* (1:5);
+progressDerivativeControl = bmtpEngine.powerToBernstein(progressDerivativePower.');
+minimumProgressDerivative = min(progressDerivativeControl, [], 1).';
+maximumProgressDerivative = max(progressDerivativeControl, [], 1).';
 endRegions_units = {};
 if isfield(request.Coverage, 'EndRegions_units')
     endRegions_units = request.Coverage.EndRegions_units;
@@ -50,6 +54,10 @@ end
 clearance_units = (1 + 2 ^ 20 * eps) * request.Options.CollisionClearanceTolerance_units + ...
     3 * reserve_units;
 forbidden_s = zeros(0, 2);
+pathMinimum_units = min(initial_units, request.GoalState.position_units);
+pathMaximum_units = max(initial_units, request.GoalState.position_units);
+squareNormalRadius_units = clearance_units * sum(abs(pathNormal));
+squareProgressRadius = clearance_units * sum(abs(direction_units)) / directionNorm2_units2;
 
 %% Section 2: Project Convex Space-Time Cells Onto Path Progress And Time
 for regionIndex = 1:numel(request.Regions_units)
@@ -59,6 +67,30 @@ for regionIndex = 1:numel(request.Regions_units)
     end
     vertices_units = bmtpEngine.regionOnInterval( ...
         request.Regions_units{regionIndex}, request.Coverage, regionIndex, interval_s);
+    endpointVertices_units = [vertices_units(:, :, 1); vertices_units(:, :, end)];
+    coordinateScale_units = max([1; abs(endpointVertices_units(:)); ...
+        abs(initial_units(:)); abs(request.GoalState.position_units(:)); clearance_units]);
+    coordinateGuard_units = 4096 * eps(coordinateScale_units);
+    cellMinimum_units = min(endpointVertices_units, [], 1) - ...
+        clearance_units - coordinateGuard_units;
+    cellMaximum_units = max(endpointVertices_units, [], 1) + ...
+        clearance_units + coordinateGuard_units;
+    boxesAreDisjoint = any( ...
+        cellMaximum_units < pathMinimum_units - coordinateGuard_units | ...
+        cellMinimum_units > pathMaximum_units + coordinateGuard_units);
+    normalResidual_units = (endpointVertices_units - initial_units) * pathNormal.';
+    normalGuard_units = 4096 * eps(max([ ...
+        1; abs(normalResidual_units); squareNormalRadius_units]));
+    missesPathLine = min(normalResidual_units) > ...
+        squareNormalRadius_units + normalGuard_units || ...
+        max(normalResidual_units) < -squareNormalRadius_units - normalGuard_units;
+    progress = (endpointVertices_units - initial_units) * direction_units.' / directionNorm2_units2;
+    progressGuard = 4096 * eps(max([1; abs(progress); squareProgressRadius]));
+    missesPathExtent = max(progress) < -squareProgressRadius - progressGuard || ...
+        min(progress) > 1 + squareProgressRadius + progressGuard;
+    if boxesAreDisjoint || missesPathLine || missesPathExtent
+        continue
+    end
     first_units = clearanceEnvelope(vertices_units(:, :, 1), clearance_units);
     last_units  = clearanceEnvelope(vertices_units(:, :, end), clearance_units);
     spaceTimePoints = [first_units, repmat(interval_s(1), size(first_units, 1), 1); ...
@@ -87,7 +119,6 @@ for regionIndex = 1:numel(request.Regions_units)
         [~, sortOrder]    = sort(pathTimeSection * sectionDirection.');
         pathTimeSection   = pathTimeSection(sortOrder([1, end]), :);
     end
-
     low_s                 = Inf;
     high_s                = -Inf;
     firstStartOccupancy_s = Inf;
@@ -132,14 +163,36 @@ for regionIndex = 1:numel(request.Regions_units)
             lastDerivativeIndex = find(derivativePower_s ~= 0, 1, 'last');
             stationaryTau = [];
             if ~isempty(lastDerivativeIndex)
-                stationaryTau = roots(fliplr(derivativePower_s(1:lastDerivativeIndex)));
+                if slope_s >= 0
+                    derivativeLower_s = slope_s * minimumProgressDerivative(phaseIndex) - ...
+                        durations_s(phaseIndex);
+                    derivativeUpper_s = slope_s * maximumProgressDerivative(phaseIndex) - ...
+                        durations_s(phaseIndex);
+                else
+                    derivativeLower_s = slope_s * maximumProgressDerivative(phaseIndex) - ...
+                        durations_s(phaseIndex);
+                    derivativeUpper_s = slope_s * minimumProgressDerivative(phaseIndex) - ...
+                        durations_s(phaseIndex);
+                end
+                derivativeGuard_s = 4096 * eps(max([ ...
+                    1; abs(derivativeLower_s); abs(derivativeUpper_s); ...
+                    abs(durations_s(phaseIndex))]));
+                derivativeIsOneSided = derivativeLower_s > derivativeGuard_s || ...
+                    derivativeUpper_s < -derivativeGuard_s;
+                if ~derivativeIsOneSided
+                    stationaryTau = roots( ...
+                        derivativePower_s(lastDerivativeIndex:-1:1));
+                end
             end
             stationaryTau = real(stationaryTau(abs(imag(stationaryTau)) <= ...
                 64 * eps(max(1, abs(stationaryTau)))));
             stationaryTauIsInRange = stationaryTau >= localTau(1) & ...
                 stationaryTau <= localTau(2);
-            localTau = [localTau, reshape(stationaryTau(stationaryTauIsInRange), 1, [])];
-            values_s = polyval(fliplr(delayPower_s), localTau);
+            localTau = [localTau, ...
+                reshape(stationaryTau(stationaryTauIsInRange), 1, [])]; %#ok<AGROW>
+            values_s = delayPower_s(1) + localTau .* (delayPower_s(2) + ...
+                localTau .* (delayPower_s(3) + localTau .* (delayPower_s(4) + ...
+                localTau .* (delayPower_s(5) + localTau .* delayPower_s(6)))));
             low_s    = min(low_s, min(values_s));
             high_s   = max(high_s, max(values_s));
         end
@@ -152,20 +205,20 @@ for regionIndex = 1:numel(request.Regions_units)
     if isfinite(firstStartOccupancy_s)
         forbidden_s(end + 1, :) = [firstStartOccupancy_s - request.InitialState.time_s, maximumWait_s]; %#ok<AGROW>
     end
+    if mod(regionIndex, 128) == 0
+        provenDelay_s = firstGapAfterForbiddenIntervals(forbidden_s);
+        if provenDelay_s > maximumWait_s
+            diagnostics = struct('DepartureDelay_s', provenDelay_s, 'Available', false);
+            controls_units        = zeros(0, request.Degree + 1, 2);
+            durations_s           = zeros(0, 1);
+            prescribedPower_units = [];
+            return
+        end
+    end
 end
 
 %% Section 3: Select The First Gap And Export The Complete Motion
-forbidden_s = sortrows(forbidden_s, 1);
-wait_s = 0;
-for forbiddenIndex = 1:size(forbidden_s, 1)
-    if forbidden_s(forbiddenIndex, 1) > wait_s
-        break;
-    end
-    if forbidden_s(forbiddenIndex, 2) >= wait_s
-        wait_s = forbidden_s(forbiddenIndex, 2) + ...
-            64 * eps(max(1, abs(forbidden_s(forbiddenIndex, 2))));
-    end
-end
+wait_s = firstGapAfterForbiddenIntervals(forbidden_s);
 diagnostics = struct('DepartureDelay_s', wait_s, 'Available', wait_s <= maximumWait_s);
 if ~diagnostics.Available
     controls_units        = zeros(0, request.Degree + 1, 2);
@@ -184,6 +237,21 @@ end
 end
 
 %% Section 4: Local Functions
+function wait_s = firstGapAfterForbiddenIntervals(forbidden_s)
+    % Return the first nonnegative wait outside the supplied closed intervals.
+    forbidden_s = sortrows(forbidden_s, 1);
+    wait_s = 0;
+    for forbiddenIndex = 1:size(forbidden_s, 1)
+        if forbidden_s(forbiddenIndex, 1) > wait_s
+            break;
+        end
+        if forbidden_s(forbiddenIndex, 2) >= wait_s
+            wait_s = forbidden_s(forbiddenIndex, 2) + ...
+                64 * eps(max(1, abs(forbidden_s(forbiddenIndex, 2))));
+        end
+    end
+end
+
 function vertices_units = clearanceEnvelope(vertices_units, gap_units)
     % A square Minkowski envelope contains the required Euclidean clearance.
     offsets_units = gap_units * [-1, -1; 1, -1; 1, 1; -1, 1];

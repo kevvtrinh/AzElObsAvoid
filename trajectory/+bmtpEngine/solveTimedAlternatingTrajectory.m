@@ -37,16 +37,17 @@ function [result, diagnostics] = solveTimedAlternatingTrajectory( ...
 segmentCount = warmStart.SegmentCount;
 segmentRatio = warmStart.SegmentRatio(:);
 emptyPlane   = bmtpEngine.createEmptyPlane();
-planes       = repmat(emptyPlane, segmentCount, numel(request.Regions_units));
 
 selectedControl_units      = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s      = NaN;
-selectedPlanes             = planes;
-selectedPairs              = false(size(planes));
+selectedPlanes             = repmat(emptyPlane, 0, 0);
+selectedPairs              = [];
 selectedPairCount          = 0;
 selectedCollisionPairCount = 0;
 selectedSolverMessage      = "";
-previousFailedPairs        = false(size(planes));
+selectedStepOutput         = struct();
+lastStepOutput             = struct();
+previousFailedPairs        = false(segmentCount, numel(request.Regions_units));
 lastAttemptMessage         = "The time-scoped alternating iteration limit was reached.";
 diagnostics.ConicSolver    = bmtpEngine.accumulateConicDiagnostics();
 
@@ -81,9 +82,10 @@ for iterationIndex = 1:request.MaximumAlternatingIterations
         request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, ...
         trajectoryGoalTimeMode, request.TimedTrajectoryOptions, request.MinimumMotionDuration_s, ...
         segmentRatio);
-    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
+    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver, output);
+    lastStepOutput = output;
     if ~bmtpEngine.hasUsableConicIterate(trialControl_units, exitFlag)
         lastAttemptMessage = "Trajectory SOCP failed: " + string(output.message);
         break
@@ -125,8 +127,8 @@ for iterationIndex = 1:request.MaximumAlternatingIterations
             selectedPairCount          = nnz(trialPairs);
             selectedCollisionPairCount = nnz(failedPairs);
             selectedSolverMessage      = "A complete time-scoped feasible iterate was retained.";
+            selectedStepOutput         = output;
         end
-        diagnostics.Converged = output.OptimizationConverged;
         arrivalImprovementReachedTolerance = ...
             previousFeasibleDuration_s - duration_s <= request.Options.ArrivalTimeTolerance_s;
         if arrivalImprovementReachedTolerance
@@ -168,11 +170,30 @@ end
 if ~isempty(selectedControl_units)
     diagnostics.ApplicablePairCount     = selectedPairCount;
     diagnostics.FinalCollisionPairCount = selectedCollisionPairCount;
+    diagnostics.Converged               = selectedStepOutput.OptimizationConverged;
     solverMessage                       = selectedSolverMessage;
+    diagnosticStepOutput                = selectedStepOutput;
 else
     diagnostics.ApplicablePairCount     = 0;
     diagnostics.FinalCollisionPairCount = 0;
     solverMessage                       = lastAttemptMessage;
+    diagnosticStepOutput                = lastStepOutput;
+end
+if ~isempty(fieldnames(diagnosticStepOutput)) && ...
+        diagnosticStepOutput.ConstraintGenerationApplied
+    diagnostics.LoadedPlanePairCount = diagnosticStepOutput.LoadedPlanePairCount;
+    diagnostics.ConstraintGenerationRoundCount = ...
+        diagnosticStepOutput.ConstraintGenerationRoundCount;
+    diagnostics.ConstraintGenerationComplete = ...
+        diagnosticStepOutput.ConstraintGenerationComplete;
+    diagnostics.MaximumPlaneConstraintResidual = ...
+        diagnosticStepOutput.MaximumPlaneConstraintResidual;
+    diagnostics.ConstraintGenerationReturnedSolveIndex = ...
+        diagnosticStepOutput.ReturnedSolveIndex;
+    diagnostics.ConstraintGenerationLastAttemptExitFlag = ...
+        diagnosticStepOutput.LastAttemptExitFlag;
+    diagnostics.ConstraintGenerationTerminatedAfterRetainedIterate = ...
+        diagnosticStepOutput.TerminatedAfterRetainedIterate;
 end
 diagnostics.TaggedPairCount    = nnz(selectedPairs);
 diagnostics.SolverMessage      = solverMessage;
