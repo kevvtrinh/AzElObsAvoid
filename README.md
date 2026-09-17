@@ -98,7 +98,9 @@ Public planner options are:
 - `WrapX`, `WrapY`
 - `MatchTargetVelocity`, `MatchTargetAcceleration`
 - `TemporalResolution_s`
-- `MaxArrivalTrials`
+- `MaxArrivalTrials`: maximum fixed-clock planner solves
+- `MaxArrivalCandidates`: maximum regular-grid clocks screened; exact declared
+  obstacle, target, and horizon boundaries inside that grid window are retained
 
 Unknown options issue one warning and do not change planner behavior. A
 wrapped axis is planned in the unwrapped frame inside the reach band of the

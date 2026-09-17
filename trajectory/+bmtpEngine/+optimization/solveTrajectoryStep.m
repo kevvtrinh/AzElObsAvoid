@@ -1,6 +1,7 @@
 function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep( ...
     segmentCount, degree, initialState, goalState, limits, planes, ...
-    reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock)
+    reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, ...
+    intrinsicVariationEnabled)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
@@ -11,6 +12,9 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %       bmtpEngine.optimization.solveTrajectoryStep(segmentCount, degree, initialState, ...
 %       goalState, limits, planes, reserve_units, maximumMotionDuration_s, ...
 %       options, segmentRatio, fixedClock)
+%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
+%       bmtpEngine.optimization.solveTrajectoryStep(..., segmentRatio, ...
+%       fixedClock, intrinsicVariationEnabled)
 %**************************************************************************
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
@@ -40,6 +44,9 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %       Relative segment durations; omitted input defaults to all ones.
 %   - fixedClock (logical scalar)
 %       Whether to prescribe the segment clock; omitted input defaults false.
+%   - intrinsicVariationEnabled (logical scalar)
+%       Whether surplus fixed-clock spans use the equivalent integrated-snap
+%       tie-break; omitted input defaults true.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -64,6 +71,9 @@ end
 if nargin < 11
     fixedClock = false;
 end
+if nargin < 12
+    intrinsicVariationEnabled = true;
+end
 originalPlaneCount = nnz([planes.Active]);
 partialPlanes      = false;
 if ~isempty(planes)
@@ -84,7 +94,8 @@ if fixedClock && ~partialPlanes && originalPlaneCount > segmentCount * degree
 end
 % Larger clocks have surplus phases that can oscillate under length alone.
 % Preserve the compact eight-span steering solve used on sparse clocks.
-intrinsicVariation = fixedClock && degree == 5 && segmentCount > 8;
+intrinsicVariation = intrinsicVariationEnabled && fixedClock && ...
+    degree == 5 && segmentCount > 8;
 start_units        = initialState.position_units;
 goal_units         = goalState.position_units;
 endpointDerivatives = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
@@ -109,7 +120,7 @@ if sharedSlack
     slackCount = nnz(planeCountBySegment);
 end
 variableCount = controlCount + 4 + lengthCount + slackCount + ...
-    intrinsicVariation * segmentCount;
+    intrinsicVariation;
 slackColumnByPair = zeros(size(planeActiveBySegment));
 if fixedClock && sharedSlack
     segmentSlackColumn = controlCount + 4 + lengthCount + cumsum(planeCountBySegment > 0);
@@ -211,11 +222,11 @@ end
 if fixedClock
     cones = lengthCones;
     if intrinsicVariation
-        smoothIndices = variableCount - segmentCount + (1:segmentCount);
+        smoothIndex = variableCount;
         cones = [cones; bmtpEngine.optimization.createVariationCone( ...
-            jerkMap, physicalTimes_s, limits, smoothIndices)];
-        lb(smoothIndices) = 0;
-        f(smoothIndices)  = 0.005 * norm(goal_units - start_units);
+            jerkMap, physicalTimes_s, limits, smoothIndex)];
+        lb(smoothIndex) = 0;
+        f(smoothIndex)  = 0.005 * norm(goal_units - start_units);
     end
 end
 solverTimer = tic;
@@ -330,8 +341,8 @@ function [x, exitFlag, output] = solveConic( ...
                 cone.A * transform, cone.b - cone.A * center, ...
                 transform.' * cone.d, cone.gamma - cone.d.' * center);
         end
-        cones(end - phaseCount + 1:end) = bmtpEngine.optimization.createVariationCone( ...
-            jerkMap, phaseTimes_s, limits, variableCount - phaseCount + (1:phaseCount));
+        cones(end) = bmtpEngine.optimization.createVariationCone( ...
+            jerkMap, phaseTimes_s, limits, variableCount);
         f = transform.' * f;
         fixedIndices    = find(lb == ub);
         upperRowIndices = find(isfinite(ub) & lb ~= ub);

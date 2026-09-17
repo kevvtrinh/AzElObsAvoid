@@ -13,12 +13,12 @@ function cones = createVariationCone(jerkMap, times_s, limits, objectiveIndex)
 %       Physical phase durations, one per span.
 %   - limits (scalar struct)
 %       Per-axis jerk limits used to normalize the measure.
-%   - objectiveIndex (numeric column)
-%       One epigraph variable index per phase.
+%   - objectiveIndex (numeric scalar)
+%       Epigraph variable for the complete integrated variation.
 %**************************************************************************
 % OUTPUTS
 %   - cones (secondordercone array)
-%       Local cones bounding normalized integrated squared snap.
+%       Cone bounding normalized integrated squared snap.
 %**************************************************************************
 % UNITS
 %   - Time is seconds; the objective measure is dimensionless.
@@ -36,22 +36,18 @@ for spanIndex = 1:spanCount
         kron(localSnapWeights, diag(1 ./ limits.maxJerk_units_s3));
 end
 
-%% Section 2: Bound Each Span's Normalized Snap With A Local Cone
+%% Section 2: Bound The Complete Normalized Snap With One Cone
 % For three jerk controls in [-1,1], the maximum integrated squared
-% normalized snap is 16/(3*h) per axis. This gives a bounded tie-break.
+% normalized snap is 16/(3*h) per axis. One quadratic epigraph for the
+% concatenated samples is exactly equivalent to summing one epigraph per
+% span, while avoiding redundant auxiliary variables and cone blocks.
 normalizer    = sqrt((32 / 3) * sum(1 ./ times_s));
 snapMap       = snapQuadratureMap * jerkMap / normalizer;
 variableCount = size(jerkMap, 2);
-emptyCone     = secondordercone(sparse(5, variableCount), zeros(5, 1), ...
-    sparse(variableCount, 1), 0);
-cones         = repmat(emptyCone, spanCount, 1);
-for spanIndex = 1:spanCount
-    coneLinearMap = [2 * snapMap((spanIndex - 1) * 4 + (1:4), :); ...
-        sparse(1, variableCount)];
-    coneLinearMap(end, objectiveIndex(spanIndex)) = 1;
-    coneBoundVector = sparse(variableCount, 1);
-    coneBoundVector(objectiveIndex(spanIndex)) = 1;
-    cones(spanIndex) = secondordercone( ...
-        coneLinearMap, [zeros(4, 1); 1], coneBoundVector, -1);
-end
+coneLinearMap = [2 * snapMap; sparse(1, variableCount)] + ...
+    sparse(4 * spanCount + 1, objectiveIndex, 1, ...
+    4 * spanCount + 1, variableCount);
+coneBoundVector = sparse(objectiveIndex, 1, 1, variableCount, 1);
+cones = secondordercone( ...
+    coneLinearMap, [zeros(4 * spanCount, 1); 1], coneBoundVector, -1);
 end

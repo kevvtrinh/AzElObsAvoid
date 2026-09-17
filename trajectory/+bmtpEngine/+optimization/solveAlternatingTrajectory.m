@@ -61,17 +61,24 @@ selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 solverMessage         = "The all-pair alternating iteration limit was reached.";
 meshRefinementCount   = 0;
+useIntrinsicVariation = false;
+stageIterationCount = zeros(1, 2);
 
 %% Section 2: Alternate The Complete Formulation
 if allPlanesActive
-    for iterationIndex = 1:request.MaximumAlternatingIterations
-        diagnostics.IterationCount = iterationIndex;
+    while stageIterationCount(1 + useIntrinsicVariation) < ...
+            request.MaximumAlternatingIterations
+        stageIndex = 1 + useIntrinsicVariation;
+        stageIterationCount(stageIndex) = stageIterationCount(stageIndex) + 1;
+        diagnostics.IterationCount = sum(stageIterationCount);
         [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.optimization.solveTrajectoryStep( ...
             segmentCount, request.Degree, request.InitialState, request.GoalState, ...
             request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, ...
-            request.TrajectoryOptions, warmStart.SegmentRatio, true);
+            request.TrajectoryOptions, warmStart.SegmentRatio, true, ...
+            useIntrinsicVariation);
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
+        diagnostics.IntrinsicJerkVariation = output.IntrinsicJerkVariation;
         if isfield(output, 'ConstraintGenerationApplied') && ...
                 output.ConstraintGenerationApplied
             diagnostics.LoadedPlanePairCount           = output.LoadedPlanePairCount;
@@ -145,6 +152,7 @@ if allPlanesActive
                         breaks_s(2:end) > intervals_s(:, 1).';
                 end
                 diagnostics.ApplicablePairCount = nnz(request.RegionActiveBySegment);
+                useIntrinsicVariation = false;
                 planes = repmat(emptyPlane, segmentCount, regionCount);
                 [planes, allPlanesActive, ~, diagnostics] = updatePlanes(refinedControl_units, ...
                     refinedTime_s, planes, request, diagnostics, ...
@@ -154,6 +162,16 @@ if allPlanesActive
                     break
                 end
             end
+            continue;
+        end
+
+        % Collision feasibility chooses the earliest clock. Only after a
+        % complete corridor is established does the unchanged integrated-snap
+        % objective refine that clock's motion. Earlier infeasible clocks
+        % cannot benefit from paying for this tie-break.
+        variationStageIsRequired = request.Degree == 5 && segmentCount > 8;
+        if variationStageIsRequired && ~useIntrinsicVariation
+            useIntrinsicVariation = true;
             continue;
         end
 

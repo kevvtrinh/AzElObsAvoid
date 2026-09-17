@@ -496,7 +496,8 @@ function [initialState, goalState, limits, options] = createDefaults()
         "MatchTargetVelocity",               false, ...
         "MatchTargetAcceleration",           false, ...
         "TemporalResolution_s",              0.5, ...
-        "MaxArrivalTrials",                  100);
+        "MaxArrivalTrials",                  100, ...
+        "MaxArrivalCandidates",              4096);
 end
 
 function state = normalizeState(state, defaults, argumentName)
@@ -609,7 +610,12 @@ function options = resolveOptions(options, defaults)
             options.(optionName), optionName, "planner:InvalidLogicalOption");
     end
 
-    validateattributes(options.MaxArrivalTrials, {'numeric'}, {'scalar', 'finite', 'integer', 'positive'});
+    integerOptionNames = ["MaxArrivalTrials", "MaxArrivalCandidates"];
+    for optionName = integerOptionNames
+        validateattributes(options.(optionName), {'numeric'}, ...
+            {'scalar', 'finite', 'integer', 'positive'});
+        options.(optionName) = double(options.(optionName));
+    end
 end
 
 function result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph)

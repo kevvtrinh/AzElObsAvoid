@@ -60,6 +60,12 @@ function testRejectInvalidInputs(testCase)
         'MATLAB:invalidType');
 end
 
+function testExampleResolverForwardsCandidateBudget(testCase)
+    [options,~] = resolveExampleOptions( ...
+        struct('MaxArrivalCandidates',17),struct());
+    verifyEqual(testCase,options.MaxArrivalCandidates,17);
+end
+
 function testSuiteReturnsValidatedCoreResults(testCase)
     results = exampleRandomAzimuthSuite([2,53],struct('PlotOutputs',false));
     verifySize(testCase,results,[2,2]);

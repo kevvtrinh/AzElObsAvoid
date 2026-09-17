@@ -393,7 +393,10 @@ function testArrivalSearchExhausted(testCase)
         struct('GoalTimeMode','earliestArrival','TemporalResolution_s',0.5));
     verifyFailure(testCase,result,"arrivalSearchExhausted");
     verifyTrue(testCase,isfield(result,'TemporalSearch'));
-    verifyGreaterThan(testCase,numel(result.TemporalSearch.TrialTime_s),0);
+    verifyEmpty(testCase,result.TemporalSearch.TrialTime_s);
+    verifyGreaterThan(testCase, ...
+        result.TemporalSearch.PrescreenedCandidateCount,0);
+    verifyEqual(testCase,result.TemporalSearch.SolverTrialCount,0);
 end
 
 function testStateValidationDecisions(testCase)
@@ -456,6 +459,10 @@ function testOptionValidationDecisions(testCase)
         struct('MaxArrivalTrials',0)),'MATLAB:expectedPositive');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('MaxArrivalTrials',1.5)),'MATLAB:expectedInteger');
+    verifyError(testCase,@()planner([],initial,goal,limits, ...
+        struct('MaxArrivalCandidates',0)),'MATLAB:expectedPositive');
+    verifyError(testCase,@()planner([],initial,goal,limits, ...
+        struct('MaxArrivalCandidates',1.5)),'MATLAB:expectedInteger');
     defaulted=planner([],initial,goal,limits,struct('SampleTime_s',[]));
     verifyTrue(testCase,defaulted.Success,defaulted.Message);
     verifyEqual(testCase,defaulted.Options.SampleTime_s,0.05);

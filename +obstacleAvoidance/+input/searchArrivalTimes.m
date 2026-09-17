@@ -33,8 +33,6 @@ startTime_s   = initialState.time_s;
 horizonTime_s = previous.Inputs.goalState.time_s;
 resolution_s  = trialOptions.TemporalResolution_s;
 
-% Every declared obstacle and target sample time is a candidate arrival,
-% independent of the grid, because the scene can only change there.
 boundaryTimes_s = horizonTime_s;
 for obstacleIndex = 1:numel(previous.PreparedObstacles)
     boundaryTimes_s = [boundaryTimes_s; previous.PreparedObstacles(obstacleIndex).time_s(:)]; %#ok<AGROW>
@@ -56,27 +54,42 @@ end
 incumbentArrivalTime_s = NaN;
 if previous.Success
     incumbentArrivalTime_s = previous.ArrivalTime_s;
-    horizonTime_s = min(horizonTime_s, incumbentArrivalTime_s - trialOptions.ArrivalTimeTolerance_s);
+    horizonTime_s = min(horizonTime_s, incumbentArrivalTime_s - ...
+        trialOptions.ArrivalTimeTolerance_s);
 end
 
-%% Section 3: Declare The Chronological Trial Times And Outer Request
+%% Section 3: Declare The Bounded Chronological Candidate Array
 
-% Keep the declared grid origin, but apply the physical bound before the
-% trial budget. Impossible early times must not exclude later feasible ones.
-firstStepIndex = max(1, ceil((earliestTime_s - startTime_s - trialOptions.ArrivalTimeTolerance_s) / resolution_s));
-lastStepIndex  = min(firstStepIndex + trialOptions.MaxArrivalTrials - 1, ...
-    floor((horizonTime_s - startTime_s) / resolution_s));
+firstStepIndex = max(1, ceil((earliestTime_s - startTime_s - ...
+    trialOptions.ArrivalTimeTolerance_s) / resolution_s));
+naturalLastStepIndex = floor((horizonTime_s - startTime_s) / resolution_s);
+if ~isfinite(firstStepIndex)
+    error('planner:UnrepresentableTemporalResolution', ...
+        'TemporalResolution_s cannot form a finite arrival grid.');
+end
+lastStepIndex = min(naturalLastStepIndex, firstStepIndex + ...
+    trialOptions.MaxArrivalCandidates - 1);
+gridTimes_s = startTime_s + (firstStepIndex:lastStepIndex).' * resolution_s;
+if ~isempty(gridTimes_s) && (gridTimes_s(1) <= startTime_s || ...
+        any(~isfinite(gridTimes_s)) || any(diff(gridTimes_s) <= 0))
+    error('planner:UnrepresentableTemporalResolution', ...
+        'TemporalResolution_s does not advance time at this absolute time scale.');
+end
+gridWasTruncated = lastStepIndex < naturalLastStepIndex;
+if gridWasTruncated
+    horizonTime_s = min(horizonTime_s, gridTimes_s(end));
+end
 
-trialTimes_s = unique([startTime_s + (firstStepIndex:lastStepIndex)' * resolution_s; boundaryTimes_s]);
-timeIsAfterStart  = trialTimes_s > initialState.time_s;
-timeMeetsBound    = trialTimes_s >= earliestTime_s - trialOptions.ArrivalTimeTolerance_s;
-timeWithinHorizon = trialTimes_s <= horizonTime_s;
-trialTimes_s = trialTimes_s(timeIsAfterStart & timeMeetsBound & timeWithinHorizon);
-trialTimes_s = trialTimes_s(1:min(numel(trialTimes_s), trialOptions.MaxArrivalTrials));
+% Exact scene boundaries remain candidates inside the bounded grid window.
+boundaryTimes_s      = unique(boundaryTimes_s);
+boundaryTimes_s      = boundaryTimes_s( ...
+    boundaryTimes_s > initialState.time_s & ...
+    boundaryTimes_s >= earliestTime_s - trialOptions.ArrivalTimeTolerance_s & ...
+    boundaryTimes_s <= horizonTime_s);
+candidateTimes_s     = unique([gridTimes_s; boundaryTimes_s]);
+candidateTimes_s     = candidateTimes_s(candidateTimes_s <= horizonTime_s);
 
 trialOptions.GoalTimeMode = "fixedArrival";
-% Trials are accepted against the public request: the periodic request when
-% this search runs inside the unwrapped frame, otherwise this one.
 if isfield(previous, 'OuterRequest')
     outerRequest = previous.OuterRequest;
 else
@@ -89,19 +102,68 @@ else
         'GoalTimeMode',       previous.Options.GoalTimeMode);
 end
 
-%% Section 4: Solve Each Candidate Independently On Its Actual Clock
+%% Section 4: Screen Endpoint Physics, Then Spend The Solver Budget
 
-trialTerminationReasons = strings(numel(trialTimes_s), 1);
+maximumTrialCount = trialOptions.MaxArrivalTrials;
+storageCount = min(maximumTrialCount, numel(candidateTimes_s));
+trialTimes_s            = NaN(storageCount, 1);
+trialTerminationReasons = strings(storageCount, 1);
 
-result           = previous;
-trialWasSelected = false;
-triedCount       = 0;
-for trialIndex = 1:numel(trialTimes_s)
-    trialGoalState        = suppliedGoalState;
-    trialGoalState.time_s = trialTimes_s(trialIndex);
-    trialRequest          = outerRequest;
-    trialRequest.FixedArrivalTrialTime_s = trialTimes_s(trialIndex);
-    triedCount            = trialIndex;
+result             = previous;
+trialWasSelected   = false;
+triedCount         = 0;
+prescreenCount     = 0;
+for candidateIndex = 1:numel(candidateTimes_s)
+    if triedCount >= maximumTrialCount
+        break
+    end
+    trialTime_s = candidateTimes_s(candidateIndex);
+    endpointGoalState = previous.Inputs.goalState;
+    endpointGoalState.time_s = trialTime_s;
+    endpointFeasible = false;
+    try
+        if ~isempty(endpointGoalState.targetMotion)
+            if trialOptions.MatchTargetVelocity || trialOptions.MatchTargetAcceleration
+                [targetPosition_units, targetVelocity_units_s, ...
+                    targetAcceleration_units_s2] = ...
+                    obstacleAvoidance.input.targetPositionAtTime( ...
+                    endpointGoalState.targetMotion, trialTime_s);
+            else
+                targetPosition_units = obstacleAvoidance.input.targetPositionAtTime( ...
+                    endpointGoalState.targetMotion, trialTime_s);
+            end
+            endpointGoalState.position_units = targetPosition_units;
+            if trialOptions.MatchTargetVelocity
+                endpointGoalState.velocity_units_s = targetVelocity_units_s;
+            end
+            if trialOptions.MatchTargetAcceleration
+                endpointGoalState.acceleration_units_s2 = targetAcceleration_units_s2;
+            end
+        end
+        [endpointFeasible, ~, ~] = ...
+            obstacleAvoidance.input.validatePlannerEndpoints( ...
+            previous.PreparedObstacles, initialState, endpointGoalState, ...
+            previous.Limits, trialOptions);
+    catch exception
+        if string(exception.identifier) ~= "planner:UndefinedTargetDerivative"
+            rethrow(exception);
+        end
+    end
+    if endpointFeasible && norm(endpointGoalState.position_units - ...
+            initialState.position_units) <= trialOptions.ConstraintTolerance
+        endpointFeasible = false;
+    end
+    if ~endpointFeasible
+        prescreenCount = prescreenCount + 1;
+        continue
+    end
+
+    triedCount                  = triedCount + 1;
+    trialTimes_s(triedCount, 1) = trialTime_s;
+    trialGoalState              = suppliedGoalState;
+    trialGoalState.time_s       = trialTime_s;
+    trialRequest                = outerRequest;
+    trialRequest.FixedArrivalTrialTime_s = trialTime_s;
     try
         candidate = planner(previous.PreparedObstacles, initialState, trialGoalState, ...
             previous.RequestedLimits, trialOptions, trialRequest);
@@ -109,31 +171,36 @@ for trialIndex = 1:numel(trialTimes_s)
         failureIsExpected = string(exception.identifier) == ...
             ["planner:UndefinedTargetDerivative", "planTrajectory:CoincidentEndpoints"];
         if any(failureIsExpected)
-            trialTerminationReasons(trialIndex) = string(exception.identifier);
-            continue;
+            trialTerminationReasons(triedCount) = string(exception.identifier);
+            continue
         end
         rethrow(exception);
     end
-    trialTerminationReasons(trialIndex) = candidate.TerminationReason;
+    trialTerminationReasons(triedCount) = candidate.TerminationReason;
     if candidate.Success
         result           = candidate;
         trialWasSelected = true;
-        break;
+        break
     end
 end
 
 %% Section 5: Record The Honest Chronological Search Outcome
 
 trialTimes_s = trialTimes_s(1:triedCount);
+candidateLimitReached = ~trialWasSelected && gridWasTruncated && ...
+    triedCount < maximumTrialCount;
 result.TemporalSearch = struct( ...
-    'Resolution_s',            resolution_s, ...
-    'TrialTime_s',             trialTimes_s, ...
-    'TrialTerminationReason',  trialTerminationReasons(1:triedCount), ...
-    'GlobalEarliestProven',    false, ...
-    'NecessaryArrivalBound_s', earliestTime_s, ...
-    'IncumbentArrival_s',      incumbentArrivalTime_s, ...
-    'RetainedIncumbent',       previous.Success && ~trialWasSelected, ...
-    'PriorTerminationReason',  previous.TerminationReason);
+    'Resolution_s',                  resolution_s, ...
+    'TrialTime_s',                   trialTimes_s, ...
+    'TrialTerminationReason',        trialTerminationReasons(1:triedCount), ...
+    'SolverTrialCount',              triedCount, ...
+    'PrescreenedCandidateCount',     prescreenCount, ...
+    'CandidateLimitReached',         candidateLimitReached, ...
+    'GlobalEarliestProven',          false, ...
+    'NecessaryArrivalBound_s',       earliestTime_s, ...
+    'IncumbentArrival_s',            incumbentArrivalTime_s, ...
+    'RetainedIncumbent',             previous.Success && ~trialWasSelected, ...
+    'PriorTerminationReason',        previous.TerminationReason);
 if trialWasSelected
     result.Message = "A chronological fixed-arrival trial passed independent validation; earlier gaps remain unsearched.";
 elseif ~result.Success

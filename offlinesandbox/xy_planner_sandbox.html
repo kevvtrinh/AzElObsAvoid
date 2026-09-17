@@ -1407,6 +1407,9 @@
               aria-pressed="true"><span class="tool-key">S</span>Set start</button>
             <button class="tool-button" type="button" data-mode="goal"
               aria-pressed="false"><span class="tool-key">G</span>Set goal</button>
+            <button id="goalMotionTool" class="tool-button" type="button"
+              data-mode="goalMotion" aria-pressed="false">
+              <span class="tool-key">M</span>Move goal</button>
             <button class="tool-button" type="button" data-mode="polygon"
               aria-pressed="false"><span class="tool-key">P</span>Polygon</button>
             <button class="tool-button" type="button" data-mode="rectangle"
@@ -1529,8 +1532,8 @@
           </div>
         </div>
         <p class="page-note">
-          Select an obstacle to copy, rotate, delete, or set motion. The final-pose
-          ghost can be moved, stretched, and rotated directly using its outline.
+          Select the goal to edit its deadline position, or select an obstacle to
+          copy, rotate, delete, or set motion. Final-pose ghosts can be dragged.
         </p>
 
         <div class="preview-actions">
@@ -1782,6 +1785,50 @@
           </div>
         </section>
 
+        <section id="goalEditorCard" class="panel card"
+          aria-label="Goal editor" hidden>
+          <div class="card-title-row">
+            <div>
+              <div class="eyebrow">Target</div>
+              <h2>Goal</h2>
+            </div>
+            <span id="goalMotionKind" class="obstacle-kind">static</span>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="selectedGoalX">Initial X (units)</label>
+              <input id="selectedGoalX" type="number" step="0.1">
+            </div>
+            <div class="field">
+              <label for="selectedGoalY">Initial Y (units)</label>
+              <input id="selectedGoalY" type="number" step="0.1">
+            </div>
+            <div class="field">
+              <label for="goalFinalX">Deadline X (units)</label>
+              <input id="goalFinalX" type="number" step="0.1">
+            </div>
+            <div class="field">
+              <label for="goalFinalY">Deadline Y (units)</label>
+              <input id="goalFinalY" type="number" step="0.1">
+            </div>
+            <button id="applyGoalSettingsButton"
+              class="compact-button field full" type="button">
+              Apply goal values
+            </button>
+          </div>
+          <p id="goalMotionReadout" class="page-note">
+            The goal is stationary.
+          </p>
+          <div class="editor-actions">
+            <button id="setGoalMotionButton" class="compact-button" type="button">
+              Set final on canvas
+            </button>
+            <button id="zeroGoalMotionButton" class="compact-button" type="button">
+              Make stationary
+            </button>
+          </div>
+        </section>
+
         <section class="panel card" aria-label="Obstacle editor">
           <div class="card-title-row">
             <div>
@@ -2012,6 +2059,7 @@
       const FREEHAND_MAXIMUM_VERTICES = 40;
       const HANDLE_RADIUS_PX = 10;
       const MAXIMUM_OBSTACLE_SPEED_UNITS_S = 10;
+      const MAXIMUM_GOAL_SPEED_UNITS_S = 1;
       const defaultControls = Object.freeze({
         xMin: -180,
         xMax: 180,
@@ -2036,6 +2084,8 @@
         previewReturnToMotion: false,
         start: null,
         goal: null,
+        goalFinal: null,
+        goalSelected: false,
         polygonDraft: [],
         freehandDraft: [],
         circlePreview: null,
@@ -2307,6 +2357,14 @@
         draw();
       }
 
+      function enforceGoalMotionBounds() {
+        if (!state.goal || !state.goalFinal) return;
+        state.goal = clampToWorkspace(state.goal);
+        state.goalFinal = limitGoalFinalPosition(state.goalFinal);
+        writeEndpointInputs();
+        renderGoalEditor();
+      }
+
       function invalidateResult(reason) {
         if (state.applyingResult) {
           return;
@@ -2346,6 +2404,19 @@
           );
           return;
         }
+        if (mode === "goalMotion" && !state.goal) {
+          setStatus("Place the goal before setting its motion.", "warning");
+          return;
+        }
+        if (mode === "goalMotion") {
+          stopPlayback();
+          state.currentTime_s = 0;
+          state.goalSelected = true;
+          state.selectedObstacleIndex = -1;
+          syncTimelineControl();
+          renderObstacleEditor();
+          renderGoalEditor();
+        }
         if (mode !== "polygon" && state.polygonDraft.length > 0) {
           state.polygonDraft = [];
         }
@@ -2362,10 +2433,11 @@
         });
         updateActionAvailability();
         const messages = {
-          select: "Select a polygon for its action menu; drag endpoints, " +
-            "polygons, vertices, or a velocity handle.",
+          select: "Select the goal or a polygon for its settings; drag endpoints, " +
+            "polygons, vertices, or motion handles.",
           start: "Click once in the workspace to place or replace the start.",
           goal: "Click once in the workspace to place or replace the goal.",
+          goalMotion: "Drag the deadline goal marker to its final position. Speed is derived from mission time.",
           polygon: "Left-click polygon vertices. Right-click or press Enter to finish. Nothing is draggable.",
           rectangle: "Drag between opposite corners to draw a rectangle. Press Escape to cancel.",
           circle: "Drag from the center to set a radius in coordinate units. Nothing is draggable.",
@@ -2379,6 +2451,10 @@
       function updateActionAvailability() {
         const editingDisabled = state.importedSceneIsReadOnly ||
           state.isPlanning;
+        element("goalMotionTool").disabled = editingDisabled || !state.goal;
+        element("setGoalMotionButton").disabled = editingDisabled || !state.goal;
+        element("zeroGoalMotionButton").disabled = editingDisabled ||
+          !state.goal || !goalHasMotion();
         element("undoVertexButton").disabled = editingDisabled ||
           state.polygonDraft.length === 0;
         element("finishPolygonButton").disabled =
@@ -2401,6 +2477,19 @@
         element("startY").value = state.start ? state.start[1] : "";
         element("goalX").value = state.goal ? state.goal[0] : "";
         element("goalY").value = state.goal ? state.goal[1] : "";
+        element("selectedGoalX").value = state.goal ? state.goal[0] : "";
+        element("selectedGoalY").value = state.goal ? state.goal[1] : "";
+        element("goalFinalX").value = state.goalFinal ? state.goalFinal[0] : "";
+        element("goalFinalY").value = state.goalFinal ? state.goalFinal[1] : "";
+        updateGoalMotionReadout();
+      }
+
+      function renderGoalEditor() {
+        element("goalEditorCard").hidden = !state.goal || !state.goalSelected;
+        if (!state.goal) return;
+        writeEndpointInputs();
+        element("goalMotionKind").textContent = goalHasMotion() ?
+          "moving · max 1 unit/s" : "static";
       }
 
       function applyEndpointInputs() {
@@ -2411,10 +2500,9 @@
           );
           return;
         }
-        const endpointIds = ["startX", "startY",
-          "goalX", "goalY"];
+        const endpointIds = ["startX", "startY", "goalX", "goalY"];
         if (endpointIds.some((id) => element(id).value.trim() === "")) {
-          setStatus("Enter X/Y values for both start and goal.", "error");
+          setStatus("Enter start and goal coordinate values.", "error");
           return;
         }
         const values = [
@@ -2424,22 +2512,75 @@
           numberFromInput("goalY")
         ];
         if (!values.every(Number.isFinite)) {
-          setStatus("Enter finite X/Y values for both start and goal.", "error");
+          setStatus("Endpoint positions must be finite.", "error");
           return;
         }
         const requestedStart = values.slice(0, 2);
         const requestedGoal = values.slice(2, 4);
         if (!pointInsideWorkspace(requestedStart) ||
             !pointInsideWorkspace(requestedGoal)) {
-          setStatus("Endpoint values must lie inside the workspace bounds.",
+          setStatus("Start and goal must lie inside the workspace.",
             "error");
           return;
         }
+        const previousGoal = state.goal ? state.goal.slice() : requestedGoal;
+        const previousFinal = goalFinalPosition() || requestedGoal;
+        const goalOffset = requestedGoal.map((value, axisIndex) =>
+          value - previousGoal[axisIndex]
+        );
         state.start = requestedStart;
         state.goal = requestedGoal;
+        state.goalFinal = limitGoalFinalPosition(previousFinal.map(
+          (value, axisIndex) => value + goalOffset[axisIndex]
+        ));
+        writeEndpointInputs();
         invalidateResult("Endpoint coordinates changed.");
         activateMode("select");
-        setStatus("Start and goal applied from the numeric coordinates.",
+        setStatus("Start and goal coordinates applied.", "success");
+        draw();
+      }
+
+      function applyGoalEditorInputs() {
+        if (!state.goal || state.isPlanning || state.importedSceneIsReadOnly) {
+          return;
+        }
+        const inputIds = ["selectedGoalX", "selectedGoalY",
+          "goalFinalX", "goalFinalY"];
+        if (inputIds.some((id) => element(id).value.trim() === "")) {
+          setStatus("Enter finite initial and deadline goal coordinates.",
+            "error");
+          return;
+        }
+        const requestedGoal = [numberFromInput("selectedGoalX"),
+          numberFromInput("selectedGoalY")];
+        const requestedFinal = [numberFromInput("goalFinalX"),
+          numberFromInput("goalFinalY")];
+        if (!requestedGoal.every(Number.isFinite) ||
+            !requestedFinal.every(Number.isFinite)) {
+          setStatus("Goal coordinates must be finite.", "error");
+          return;
+        }
+        if (!pointInsideWorkspace(requestedGoal) ||
+            !pointInsideWorkspace(requestedFinal)) {
+          setStatus("The initial and deadline goal must remain inside the workspace.",
+            "error");
+          return;
+        }
+        const requiredSpeed_units_s = Math.hypot(
+          requestedFinal[0] - requestedGoal[0],
+          requestedFinal[1] - requestedGoal[1]
+        ) / motionMissionTime();
+        if (requiredSpeed_units_s > MAXIMUM_GOAL_SPEED_UNITS_S + 1e-12) {
+          setStatus("That deadline position requires more than 1 unit/s. " +
+            "Choose a nearer position or increase mission time.", "error");
+          return;
+        }
+        state.goal = requestedGoal;
+        state.goalFinal = requestedFinal;
+        writeEndpointInputs();
+        invalidateResult("Goal settings changed.");
+        renderGoalEditor();
+        setStatus(`Goal settings applied · ${requiredSpeed_units_s.toFixed(3)} units/s.`,
           "success");
         draw();
       }
@@ -2448,7 +2589,10 @@
         controlIds.forEach((id) => {
           element(id).disabled = disabled;
         });
-        ["startX", "startY", "goalX", "goalY",
+        ["startX", "startY", "goalX", "goalY", "selectedGoalX",
+          "selectedGoalY", "goalFinalX", "goalFinalY",
+          "applyGoalSettingsButton", "setGoalMotionButton",
+          "zeroGoalMotionButton",
           "applyEndpointsButton", "downloadRequestButton", "selectedMargin",
           "motionProfile", "motionX", "motionY", "obstacleSpeedSlider",
           "rotationAngle", "copyObstacleButton", "rotateObstacleButton",
@@ -2528,7 +2672,26 @@
         return inside;
       }
 
-      function selectObstacleAt(point) {
+      function selectSceneObjectAt(point, screenPoint) {
+        const currentGoal = goalPositionAtTime(state.currentTime_s);
+        const deadlineGoal = goalFinalPosition();
+        const goalWasClicked = screenPoint &&
+          ((currentGoal &&
+            screenDistance(currentGoal, screenPoint) <= HANDLE_RADIUS_PX) ||
+           (deadlineGoal &&
+            screenDistance(deadlineGoal, screenPoint) <= HANDLE_RADIUS_PX));
+        if (goalWasClicked) {
+          state.goalSelected = true;
+          state.selectedObstacleIndex = -1;
+          renderObstacleEditor();
+          renderGoalEditor();
+          updateActionAvailability();
+          setStatus("Goal selected. Edit its initial and deadline positions in the Goal card.",
+            "info");
+          draw();
+          return;
+        }
+        state.goalSelected = false;
         state.selectedObstacleIndex = -1;
         for (let index = state.obstacles.length - 1; index >= 0; index -= 1) {
           if (pointInPolygon(point, obstacleVerticesAtCurrentTime(state.obstacles[index]))) {
@@ -2537,6 +2700,7 @@
           }
         }
         renderObstacleEditor();
+        renderGoalEditor();
         updateActionAvailability();
         if (state.selectedObstacleIndex < 0) {
           setStatus("No drawn polygon contains that position.", "warning");
@@ -2642,8 +2806,10 @@
             kind.textContent = changes.length ? changes.join(" · ") : "static";
             row.append(name, kind);
             row.addEventListener("click", () => {
+              state.goalSelected = false;
               state.selectedObstacleIndex = index;
               renderObstacleEditor();
+              renderGoalEditor();
               updateActionAvailability();
               draw();
             });
@@ -2711,6 +2877,72 @@
       function motionMissionTime() {
         return Math.max(Number.EPSILON,
           numberFromInput("missionTime") || defaultControls.missionTime);
+      }
+
+      function goalHasMotion() {
+        return Boolean(state.goal && state.goalFinal) &&
+          !pointsClose(state.goal, state.goalFinal);
+      }
+
+      function goalFinalPosition() {
+        return state.goalFinal ? state.goalFinal.slice() :
+          (state.goal ? state.goal.slice() : null);
+      }
+
+      function goalVelocityFromEndpoints() {
+        if (!state.goal) return [0, 0];
+        const finalGoal = goalFinalPosition();
+        const duration_s = motionMissionTime();
+        return finalGoal.map((value_units, axisIndex) =>
+          (value_units - state.goal[axisIndex]) / duration_s
+        );
+      }
+
+      function limitGoalFinalPosition(requestedFinal) {
+        if (!state.goal) return clampToWorkspace(requestedFinal);
+        const boundedFinal = clampToWorkspace(requestedFinal);
+        const delta_units = boundedFinal.map((value_units, axisIndex) =>
+          value_units - state.goal[axisIndex]
+        );
+        const distance_units = Math.hypot(...delta_units);
+        const maximumDistance_units = motionMissionTime() *
+          MAXIMUM_GOAL_SPEED_UNITS_S;
+        if (distance_units <= maximumDistance_units ||
+            distance_units <= Number.EPSILON) {
+          return boundedFinal;
+        }
+        const scale = maximumDistance_units / distance_units;
+        return state.goal.map((value_units, axisIndex) =>
+          value_units + scale * delta_units[axisIndex]
+        );
+      }
+
+      function goalPositionAtTime(time_s) {
+        if (!state.goal) return null;
+        const phase = Math.max(0, Math.min(1,
+          time_s / motionMissionTime()));
+        const finalGoal = goalFinalPosition();
+        return state.goal.map((value_units, axisIndex) => value_units +
+          phase * (finalGoal[axisIndex] - value_units));
+      }
+
+      function buildGoalTargetMotion(missionTime_s) {
+        if (!state.goal || !goalHasMotion()) return null;
+        return {
+          time_s: [0, missionTime_s],
+          position_units: [state.goal.slice(), goalPositionAtTime(missionTime_s)],
+          InterpolationMethod: "linear"
+        };
+      }
+
+      function updateGoalMotionReadout() {
+        const speed_units_s = Math.hypot(...goalVelocityFromEndpoints());
+        const finalGoal = goalFinalPosition();
+        element("goalMotionReadout").textContent = speed_units_s > 1e-12 ?
+          `Goal reaches (${finalGoal[0].toFixed(3)}, ` +
+            `${finalGoal[1].toFixed(3)}) at the deadline · ` +
+            `${speed_units_s.toFixed(3)} units/s.` :
+          "The goal is stationary.";
       }
 
       function syncFinalPoseControls() {
@@ -2942,7 +3174,16 @@
         if (!pointInsideWorkspace(state.start) || !pointInsideWorkspace(state.goal)) {
           throw new Error("Start and goal must lie inside the workspace bounds.");
         }
-        if ((controls.wrapX || controls.wrapY) && state.obstacles.length > 0) {
+        const finalGoal = goalFinalPosition();
+        if (!finalGoal || !pointInsideWorkspace(finalGoal)) {
+          throw new Error("The deadline goal must lie inside the workspace bounds.");
+        }
+        if (Math.hypot(...goalVelocityFromEndpoints()) >
+            MAXIMUM_GOAL_SPEED_UNITS_S + 1e-12) {
+          throw new Error("Goal motion must not exceed 1 unit/s.");
+        }
+        if ((controls.wrapX || controls.wrapY) &&
+            (state.obstacles.length > 0 || goalHasMotion())) {
           throw new Error(
             "The maintained planner supports wrapping only for " +
             "obstacle-free fixed-position goals."
@@ -2975,6 +3216,14 @@
         validateScene(controls);
         const requestId = "x-y-" + new Date().toISOString()
           .replace(/[-:.TZ]/g, "");
+        const targetMotion = buildGoalTargetMotion(controls.missionTime);
+        const goalState = {
+          time_s: controls.missionTime,
+          position_units: goalPositionAtTime(controls.missionTime),
+          velocity_units_s: [0, 0],
+          acceleration_units_s2: [0, 0]
+        };
+        if (targetMotion) goalState.targetMotion = targetMotion;
         const request = {
           schemaVersion: REQUEST_SCHEMA,
           requestId,
@@ -2989,12 +3238,7 @@
             velocity_units_s: [0, 0],
             acceleration_units_s2: [0, 0]
           },
-          goalState: {
-            time_s: controls.missionTime,
-            position_units: state.goal.slice(),
-            velocity_units_s: [0, 0],
-            acceleration_units_s2: [0, 0]
-          },
+          goalState,
           limits: {
             maxVelocity_units_s: [controls.velocityX, controls.velocityY],
             maxAcceleration_units_s2: [
@@ -3365,7 +3609,22 @@
             state.start = pairFrom(inputs.initialState.position_units, [0, 0]);
           }
           if (inputs.goalState) {
-            state.goal = pairFrom(inputs.goalState.position_units, [0, 0]);
+            const targetMotion = inputs.goalState.targetMotion;
+            const targetTime_s = targetMotion ?
+              numericArray(targetMotion.time_s) : [];
+            const targetPosition_units = targetMotion ?
+              matrix(targetMotion.position_units, 2) : [];
+            if (targetTime_s.length >= 2 &&
+                targetPosition_units.length === targetTime_s.length &&
+                targetTime_s[targetTime_s.length - 1] > targetTime_s[0]) {
+              state.goal = targetPosition_units[0].slice();
+              state.goalFinal = targetPosition_units[
+                targetPosition_units.length - 1
+              ].slice();
+            } else {
+              state.goal = pairFrom(inputs.goalState.position_units, [0, 0]);
+              state.goalFinal = state.goal.slice();
+            }
             if (finiteNumber(inputs.goalState.time_s)) {
               element("missionTime").value = inputs.goalState.time_s;
             }
@@ -4413,6 +4672,18 @@
         context.restore();
       }
 
+      function drawGoalMotionGuide() {
+        if (!state.goal || !goalHasMotion()) return;
+        const currentGoal = goalPositionAtTime(state.currentTime_s);
+        const deadlineGoal = goalPositionAtTime(motionMissionTime());
+        if (!pointsClose(currentGoal, deadlineGoal)) {
+          strokePath([currentGoal, deadlineGoal], {
+            stroke: "#d44359", width: 1.5, dash: [5, 5], alpha: 0.7
+          });
+          drawPoint(deadlineGoal, "#d44359", "Goal at deadline", "diamond");
+        }
+      }
+
       function drawMotionVector(obstacle, displayedVertices, isSelected) {
         const hasMotion = obstacle.motionProfile !== "stationary" &&
           Math.hypot(...obstacle.motionVelocity_units_s) > 1e-12;
@@ -5011,9 +5282,12 @@
         }
         const showRequestedLine = !state.walkthroughActive ||
           walkthroughViewIs("request", "protected");
+        const currentGoal = goalPositionAtTime(state.currentTime_s);
         if (!state.obstaclePreview && showRequestedLine &&
-            state.start && state.goal) {
-          wrappedSegments([state.start, nearestWrappedGoal(state.start, state.goal)]).forEach((segment) =>
+            state.start && currentGoal) {
+          drawGoalMotionGuide();
+          wrappedSegments([state.start,
+            nearestWrappedGoal(state.start, currentGoal)]).forEach((segment) =>
             strokePath(segment, {
               stroke: "#4279cc", width: 1.1, dash: [7, 6], alpha: 0.62
             })
@@ -5025,7 +5299,7 @@
           drawTransientDrafts();
           drawFinalPoseGhost();
           drawPoint(state.start, "#178453", "Start");
-          drawPoint(state.goal, "#d44359", "Goal");
+          drawPoint(currentGoal, "#d44359", goalHasMotion() ? "Moving goal" : "Goal");
         }
         drawCrosshair();
         context.restore();
@@ -5106,6 +5380,13 @@
         );
       }
 
+      function goalFinalHandle() {
+        if (!state.goal || !goalHasMotion() || state.currentTime_s !== 0) {
+          return null;
+        }
+        return goalFinalPosition();
+      }
+
       function selectedMotionCenter() {
         const selected = state.obstacles[state.selectedObstacleIndex];
         if (!selected) {
@@ -5151,6 +5432,17 @@
       }
 
       function selectDragTarget(point, screenPoint) {
+        const movingGoalHandle = goalFinalHandle();
+        if (movingGoalHandle &&
+            screenDistance(movingGoalHandle, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "goalFinal" };
+        }
+        if (state.goal && screenDistance(state.goal, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "goal" };
+        }
+        if (state.start && screenDistance(state.start, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "start" };
+        }
         const selected = state.obstacles[state.selectedObstacleIndex];
         if (selected) {
           const transform = originalTransformTargetAt(selected, screenPoint);
@@ -5168,12 +5460,6 @@
               return { type: "vertex", obstacleIndex, vertexIndex };
             }
           }
-        }
-        if (state.start && screenDistance(state.start, screenPoint) <= HANDLE_RADIUS_PX) {
-          return { type: "start" };
-        }
-        if (state.goal && screenDistance(state.goal, screenPoint) <= HANDLE_RADIUS_PX) {
-          return { type: "goal" };
         }
         for (let obstacleIndex = state.obstacles.length - 1;
           obstacleIndex >= 0; obstacleIndex -= 1) {
@@ -5211,12 +5497,28 @@
           drag.originalVelocity_units_s = obstacle.motionVelocity_units_s.slice();
           drag.originalProfile = obstacle.motionProfile;
           drag.origin_units = selectedMotionCenter();
+        } else if (target.type === "goalFinal") {
+          drag.originalGoalFinal = goalFinalPosition();
+        } else if (target.type === "goal") {
+          drag.originalGoal = state.goal.slice();
+          drag.originalGoalFinal = goalFinalPosition();
         }
         state.activeDrag = drag;
         if (target.obstacleIndex !== undefined) {
+          state.goalSelected = false;
           state.selectedObstacleIndex = target.obstacleIndex;
           renderObstacleEditor();
+          renderGoalEditor();
           updateActionAvailability();
+        } else if (target.type === "goal" || target.type === "goalFinal") {
+          state.goalSelected = true;
+          state.selectedObstacleIndex = -1;
+          renderObstacleEditor();
+          renderGoalEditor();
+          updateActionAvailability();
+        } else if (target.type === "start") {
+          state.goalSelected = false;
+          renderGoalEditor();
         }
       }
 
@@ -5232,6 +5534,13 @@
         element("motionX").value = vector[0].toFixed(3);
         element("motionY").value = vector[1].toFixed(3);
         updateMotionSpeedReadout(vector);
+      }
+
+      function updateGoalMotionInputs() {
+        const finalGoal = goalFinalPosition();
+        element("goalFinalX").value = finalGoal ? finalGoal[0].toFixed(3) : "";
+        element("goalFinalY").value = finalGoal ? finalGoal[1].toFixed(3) : "";
+        updateGoalMotionReadout();
       }
 
       function updateSpeedOverlay() {
@@ -5473,11 +5782,34 @@
           draw();
           return;
         }
+        if (drag.type === "goalFinal") {
+          markDragChanged(drag, point);
+          const requestedFinal = point.slice();
+          state.goalFinal = limitGoalFinalPosition(requestedFinal);
+          drag.wasClamped ||= !pointsClose(requestedFinal, state.goalFinal);
+          updateGoalMotionInputs();
+          const speed_units_s = Math.hypot(...goalVelocityFromEndpoints());
+          coordinateReadout.textContent =
+            `Goal speed ${speed_units_s.toFixed(3)} units/s`;
+          draw();
+          return;
+        }
         let clamped = clampToWorkspace(point);
         drag.wasClamped ||= !pointsClose(point, clamped);
         markDragChanged(drag, clamped);
-        if (drag.type === "start" || drag.type === "goal") {
-          state[drag.type] = clamped;
+        if (drag.type === "start") {
+          state.start = clamped;
+          writeEndpointInputs();
+        } else if (drag.type === "goal") {
+          const offset = clamped.map((value, axisIndex) =>
+            value - drag.originalGoal[axisIndex]
+          );
+          const requestedFinal = drag.originalGoalFinal.map(
+            (value, axisIndex) => value + offset[axisIndex]
+          );
+          state.goal = clamped;
+          state.goalFinal = limitGoalFinalPosition(requestedFinal);
+          drag.wasClamped ||= !pointsClose(state.goalFinal, requestedFinal);
           writeEndpointInputs();
         } else if (drag.type === "vertex") {
           state.obstacles[drag.obstacleIndex].vertices_units[drag.vertexIndex] = clamped;
@@ -5550,6 +5882,9 @@
           } else if (drag.wasClamped) {
             setStatus("Move stopped at the workspace boundary.", "warning");
           }
+        } else if (drag.type === "goal" && !drag.didChange) {
+          setStatus("Goal selected. Edit its initial and deadline positions in the Goal card.",
+            "info");
         } else if ((drag.type === "start" || drag.type === "goal") && drag.wasClamped) {
           setStatus("Endpoint move stopped at the workspace boundary.", "warning");
         } else if (drag.type === "obstacle" && drag.wasClamped) {
@@ -5573,8 +5908,17 @@
           if (drag.startedBySetMotion) {
             activateMode("select");
           }
+        } else if (drag.type === "goalFinal") {
+          const speed_units_s = Math.hypot(...goalVelocityFromEndpoints());
+          setStatus(drag.wasClamped ?
+            "Final goal stopped at the workspace or 1 unit/s boundary." :
+            `Final goal placed · ${speed_units_s.toFixed(3)} units/s.`,
+          drag.wasClamped ? "warning" : "success");
+          updateGoalMotionInputs();
+          activateMode("select");
         }
         renderObstacleEditor();
+        renderGoalEditor();
         updateActionAvailability();
         draw();
       }
@@ -5613,12 +5957,12 @@
           }
           if (state.currentTime_s > 0 || state.playing) {
             stopPlayback();
-            selectObstacleAt(point);
+            selectSceneObjectAt(point, screenPoint);
             return;
           }
           const target = selectDragTarget(point, screenPoint);
           if (!target) {
-            selectObstacleAt(point);
+            selectSceneObjectAt(point, screenPoint);
             return;
           }
           beginSceneDrag(target, point, event.pointerId);
@@ -5632,13 +5976,26 @@
           setStatus("Start set. Click once to place the goal.", "success");
         } else if (state.mode === "goal") {
           state.goal = point;
+          state.goalFinal = point.slice();
+          state.goalSelected = true;
+          state.selectedObstacleIndex = -1;
           writeEndpointInputs();
+          renderObstacleEditor();
+          renderGoalEditor();
           invalidateResult("Goal position changed.");
           activateMode("polygon");
           setStatus(
             "Goal set. Draw polygon vertices, or download an obstacle-free request.",
             "success"
           );
+        } else if (state.mode === "goalMotion") {
+          const finalGoal = goalFinalPosition();
+          if (screenDistance(finalGoal, screenPoint) > HANDLE_RADIUS_PX * 1.5) {
+            setStatus("Begin the drag on the deadline-goal marker.", "warning");
+            return;
+          }
+          beginSceneDrag({ type: "goalFinal" }, point, event.pointerId);
+          canvas.setPointerCapture(event.pointerId);
         } else if (state.mode === "polygon") {
           const previous = state.polygonDraft[state.polygonDraft.length - 1];
           if (previous && Math.hypot(point[0] - previous[0],
@@ -5710,6 +6067,8 @@
         stopPlayback();
         state.start = null;
         state.goal = null;
+        state.goalFinal = null;
+        state.goalSelected = false;
         state.polygonDraft = [];
         state.freehandDraft = [];
         state.circlePreview = null;
@@ -5750,6 +6109,7 @@
         };
         updatePlanningControls();
         writeEndpointInputs();
+        renderGoalEditor();
         renderObstacleEditor();
         renderResult();
         configureTimeline();
@@ -5818,6 +6178,20 @@
       element("finishPolygonButton").addEventListener("click", finishPolygon);
       element("applyEndpointsButton").addEventListener("click",
         applyEndpointInputs);
+      element("applyGoalSettingsButton").addEventListener("click",
+        applyGoalEditorInputs);
+      element("setGoalMotionButton").addEventListener("click", () =>
+        activateMode("goalMotion"));
+      element("zeroGoalMotionButton").addEventListener("click", () => {
+        if (state.isPlanning || state.importedSceneIsReadOnly) return;
+        state.goalFinal = state.goal ? state.goal.slice() : null;
+        writeEndpointInputs();
+        invalidateResult("Goal motion changed.");
+        activateMode("select");
+        renderGoalEditor();
+        setStatus("The goal is stationary.", "success");
+        draw();
+      });
       element("undoVertexButton").addEventListener("click", () => {
         state.polygonDraft.pop();
         updateActionAvailability();
@@ -5858,6 +6232,7 @@
         const input = element(id);
         input.addEventListener("change", () => {
           syncValidControls();
+          enforceGoalMotionBounds();
           invalidateResult("Planner inputs changed.");
         });
         if (input.type === "number") {
@@ -6003,6 +6378,8 @@
           activateMode("start");
         } else if (key === "g") {
           activateMode("goal");
+        } else if (key === "m") {
+          activateMode("goalMotion");
         } else if (key === "p") {
           activateMode("polygon");
         } else if (key === "r") {
@@ -6017,7 +6394,8 @@
           state.activeDrag = null;
           state.rectanglePreview = null;
           activateMode("select");
-        } else if (event.key === "Escape" && state.mode === "motion") {
+        } else if (event.key === "Escape" &&
+            (state.mode === "motion" || state.mode === "goalMotion")) {
           activateMode("select");
         } else if (event.key === "Escape" && state.polygonDraft.length > 0) {
           state.polygonDraft = [];
@@ -6037,6 +6415,7 @@
       resizeObserver.observe(canvasWrap);
       element("matlabCommand").textContent = matlabCommandText();
       writeEndpointInputs();
+      renderGoalEditor();
       renderObstacleEditor();
       renderResult();
       configureTimeline();
