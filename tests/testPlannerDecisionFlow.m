@@ -409,6 +409,41 @@ function testDisconnectedInitialSnapshotUsesArrivalSnapshot(testCase)
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
 end
 
+function testWrappedResultCarriesOuterProvenance(testCase)
+    % A wrapped request is planned as plain requests in the unwrapped frame,
+    % so the returned record has to declare the outer request it was accepted
+    % against. Pin every provenance field, because only the requested goal was
+    % covered before and the rest is what the acceptance gate reads.
+    limits=standardLimits();
+    limits.xInterval_units=[-180,180];
+    result=planner([],state(0,[179,0]),state(10,[-179,0]),limits, ...
+        struct('GoalTimeMode','fixedArrival','WrapX',true));
+    verifyTrue(testCase,result.Success,result.Message);
+
+    % Supplied provenance is the request exactly as handed in.
+    verifyEqual(testCase,result.SuppliedLimits,limits);
+    verifyEqual(testCase,result.SuppliedGoalState.position_units,[-179,0]);
+    verifyEqual(testCase,result.SuppliedGoalState.time_s,10);
+
+    % Requested limits are normalized but still the periodic workspace, while
+    % the effective limits are the unwrapped reach band the images live in.
+    verifyEqual(testCase,result.RequestedLimits.xInterval_units,[-180,180]);
+    verifyEqual(testCase,result.Limits.xInterval_units,[159,199]);
+    verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
+
+    % The effective goal is the selected image, but its clock is the outer
+    % horizon. Position and time on this one struct have different owners.
+    verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
+    verifyEqual(testCase,result.Inputs.goalState.time_s,10);
+
+    % Wrapping and arrival mode are declared as the outer request, not as the
+    % plain unwrapped request each image was actually planned as.
+    verifyTrue(testCase,result.Options.WrapX);
+    verifyFalse(testCase,result.Options.WrapY);
+    verifyEqual(testCase,string(result.Options.GoalTimeMode),"fixedArrival");
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+end
+
 function testCoverageFieldsMatchTheScenePath(testCase)
     % The planner builds coverage in three shapes: static, dynamic
     % earliest-arrival, and dynamic fixed-arrival. Downstream code branches on
