@@ -53,7 +53,7 @@ function testThinWallCrossingIsNotPromotedBySampling(testCase)
     straightControls_units       = zeros(1, 9, 2);
     straightControls_units(1, :, 1) = (0:8) / 8;
     wall_units = [0.0004 -0.1; 0.0005 -0.1; 0.0005 0.1; 0.0004 0.1];
-    sampledPairs = bmtpEngine.findSampledObstacleOverlaps(straightControls_units, {wall_units}, ...
+    sampledPairs = bmtpEngine.separation.findSampledObstacleOverlaps(straightControls_units, {wall_units}, ...
         min(wall_units, [], 1), max(wall_units, [], 1), true);
     verifyFalse(testCase, any(sampledPairs, 'all'));
 

@@ -110,8 +110,8 @@ function decision = classifyBernsteinRange(control, lowerBound, upperBound, rema
     end
 
     % One de Casteljau restriction serves both halves of the midpoint split.
-    leftControl  = bmtpEngine.restrictBezier(control, [0, 0.5]);
-    rightControl = bmtpEngine.restrictBezier(control, [0.5, 1]);
+    leftControl  = bmtpEngine.motion.restrictBezier(control, [0, 0.5]);
+    rightControl = bmtpEngine.motion.restrictBezier(control, [0.5, 1]);
     leftDecision = classifyBernsteinRange(leftControl, lowerBound, upperBound, remainingDepth - 1);
     if leftDecision < 0
         decision = -1;

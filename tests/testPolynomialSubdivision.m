@@ -20,10 +20,10 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
     base=planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
     seed=struct('position_units',[initial.position_units;goal.position_units], ...
         'tau',[0;1],'Source',"visibilityGraph");
-    request=bmtpEngine.createSolveRequest(seed,cell(0,1),struct('Passed',true), ...
+    request=bmtpEngine.pipeline.createSolveRequest(seed,cell(0,1),struct('Passed',true), ...
         base.Inputs.initialState,base.Inputs.goalState,base.Limits,base.Options);
     durations_s=[1.3;0.7;2]; breaks=[0;cumsum(durations_s)]/4;
-    [~,reserve_units]=bmtpEngine.createCoordinateTolerances(base.Route_units, ...
+    [~,reserve_units]=bmtpEngine.validation.createCoordinateTolerances(base.Route_units, ...
         limits.xInterval_units,limits.yInterval_units);
     target_units=(1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+reserve_units;
     for degree=[5,8]
@@ -36,28 +36,28 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         whole=initial.position_units+fraction.*(goal.position_units-initial.position_units);
         controls_units=zeros(3,degree+1,2);
         for span=1:3
-            controls_units(span,:,:)=bmtpEngine.restrictBezier(whole,breaks(span:span+1).');
+            controls_units(span,:,:)=bmtpEngine.motion.restrictBezier(whole,breaks(span:span+1).');
         end
         % The quintic export repairs this residual. Later certification must
         % preserve that repaired curve instead of projecting these controls again.
         if degree==5, controls_units(2,1,1)=controls_units(2,1,1)+1e-6; end
-        source=bmtpEngine.prepareFinalMotion(request,controls_units,durations_s);
-        sourcePolynomial=bmtpEngine.createPowerPolynomial(source.ControlPoint_units, ...
+        source=bmtpEngine.pipeline.prepareFinalMotion(request,controls_units,durations_s);
+        sourcePolynomial=bmtpEngine.motion.createPowerPolynomial(source.ControlPoint_units, ...
             source.SegmentTime_s,0,source.PrescribedPower_units);
-        original=bmtpEngine.createMotionOutput(base,request,source);
-        original.PlaneCertificate=bmtpEngine.checkFinalMotion(request,source,reserve_units,target_units);
+        original=bmtpEngine.pipeline.createMotionOutput(base,request,source);
+        original.PlaneCertificate=bmtpEngine.validation.checkFinalMotion(request,source,reserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
-        changed=bmtpEngine.prepareFinalMotion(request,source.CertifiedControlPoint_units, ...
+        changed=bmtpEngine.pipeline.prepareFinalMotion(request,source.CertifiedControlPoint_units, ...
             source.SegmentTime_s,sourcePolynomial.positionPower_units, ...
             repelem([true;false;true],2),repelem([0.31;0.5;0.73],2));
-        changedPolynomial=bmtpEngine.createPowerPolynomial(changed.ControlPoint_units, ...
+        changedPolynomial=bmtpEngine.motion.createPowerPolynomial(changed.ControlPoint_units, ...
             changed.SegmentTime_s,0,changed.PrescribedPower_units);
-        output=bmtpEngine.createMotionOutput(base,request,changed);
-        output.PlaneCertificate=bmtpEngine.checkFinalMotion(request,changed,reserve_units,target_units);
+        output=bmtpEngine.pipeline.createMotionOutput(base,request,changed);
+        output.PlaneCertificate=bmtpEngine.validation.checkFinalMotion(request,changed,reserve_units,target_units);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(output).Passed);
         sampleTime_s=linspace(initial.time_s,goal.time_s,401).';
-        [~,p,v,a,j]=bmtpEngine.evaluatePolynomial(sourcePolynomial,sampleTime_s);
-        [~,splitP,splitV,splitA,splitJ]=bmtpEngine.evaluatePolynomial(changedPolynomial,sampleTime_s);
+        [~,p,v,a,j]=bmtpEngine.motion.evaluatePolynomial(sourcePolynomial,sampleTime_s);
+        [~,splitP,splitV,splitA,splitJ]=bmtpEngine.motion.evaluatePolynomial(changedPolynomial,sampleTime_s);
         verifyEqual(testCase,[splitP,splitV,splitA,splitJ],[p,v,a,j],'AbsTol',1e-9);
     end
 end

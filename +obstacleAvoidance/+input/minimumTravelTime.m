@@ -49,7 +49,7 @@ for axisIndex = 1:2
         'maxJerk_units_s3',         repmat(limits.maxJerk_units_s3(axisIndex), 1, 2));
     initialAxisState = [initialState.position_units(axisIndex), 0];
     goalAxisState    = [goalState.position_units(axisIndex), 0];
-    [~, times_s]     = bmtpEngine.createJerkLimitedChord(initialAxisState, goalAxisState, axisLimits, 3);
+    [~, times_s]     = bmtpEngine.motion.createJerkLimitedChord(initialAxisState, goalAxisState, axisLimits, 3);
     duration_s       = max(duration_s, sum(times_s));
 end
 end

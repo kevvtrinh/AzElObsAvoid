@@ -49,7 +49,7 @@ boundary_units   = edgeEnd_units - edgeStart_units;
 offsetX_units    = edgeStart_units(:, 1).' - first_units(:, 1);
 offsetY_units    = edgeStart_units(:, 2).' - first_units(:, 2);
 denominator      = segment_units(:, 1) .* boundary_units(:, 2).' - segment_units(:, 2) .* boundary_units(:, 1).';
-scale_units      = bmtpEngine.createCoordinateTolerances(first_units, second_units, edgeStart_units, edgeEnd_units);
+scale_units      = bmtpEngine.validation.createCoordinateTolerances(first_units, second_units, edgeStart_units, edgeEnd_units);
 tolerance_units2 = 512 * eps(scale_units^2);
 pairIsNonparallel = abs(denominator) > tolerance_units2;
 

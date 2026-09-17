@@ -41,12 +41,12 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %% Section 1: Validate And Create The Exclusion Representation
 totalTimer = tic;
 % Validate the request and resolve shared solver settings.
-request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
+request = bmtpEngine.pipeline.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
 initialState = request.InitialState;
 goalState    = request.GoalState;
 
 % Create a kinematically feasible starting curve from the seed.
-warmStart             = bmtpEngine.createWarmStart(request);
+warmStart             = bmtpEngine.pipeline.createWarmStart(request);
 degree                = request.Degree;
 route_units           = warmStart.Route_units;
 segmentCount          = warmStart.SegmentCount;
@@ -66,7 +66,7 @@ endRegions_units = cell(0, 1);
 if isfield(coverage, 'EndRegions_units')
     endRegions_units = coverage.EndRegions_units;
 end
-[~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances( ...
+[~, roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances( ...
     route_units, limits.xInterval_units, limits.yInterval_units, ...
     regions_units, endRegions_units);
 normalNormLimit     = 1 + 2 ^ 20 * eps;
@@ -81,11 +81,11 @@ certificateCache       = [];
 analyticIdentifier     = "minimumJerkQuintic";
 analyticRepresentation = "analyticQuinticClock";
 if size(route_units, 1) == 2 && options.GoalTimeMode == "earliestArrival" && request.IsRest
-    [controls_units, times_s, powers_units] = bmtpEngine.createC3Chord( ...
+    [controls_units, times_s, powers_units] = bmtpEngine.motion.createC3Chord( ...
         initialState.position_units, goalState.position_units, limits);
-    preparedMotion = bmtpEngine.prepareFinalMotion(request, controls_units, times_s, powers_units);
+    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, times_s, powers_units);
     if preparedMotion.Success
-        [certificate, certificateCache] = bmtpEngine.checkFinalMotion(request, ...
+        [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion(request, ...
             preparedMotion, roundoffReserve_units, ...
             obstacleTarget_units, certificateCache, true);
     end
@@ -107,15 +107,15 @@ usesDepartureSchedule = size(route_units, 1) == 2 && ...
     options.GoalTimeMode == "earliestArrival" && request.IsRest && ...
     ~request.UsesTimeScopedSolver && isfield(coverage, 'ActiveTimeInterval_s');
 if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
-    [controls_units, times_s, powers_units, departure] = bmtpEngine.createDelayedChord(request);
+    [controls_units, times_s, powers_units, departure] = bmtpEngine.motion.createDelayedChord(request);
     diagnostics.DepartureSchedule = departure;
     if isempty(times_s)
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
             "No C3 chord departure fits the horizon.", "noDepartureWindow", false);
         return;
     end
-    preparedMotion = bmtpEngine.prepareFinalMotion(request, controls_units, times_s, powers_units);
-    [certificate, certificateCache] = bmtpEngine.checkFinalMotion( ...
+    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, times_s, powers_units);
+    [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, roundoffReserve_units, obstacleTarget_units, certificateCache);
     if ~preparedMotion.Success || ~certificate.Passed
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
@@ -132,7 +132,7 @@ if preparedMotion.Success && certificate.Passed
     diagnostics.SegmentCount             = numel(preparedMotion.SegmentTime_s);
 else
     if options.GoalTimeMode == "earliestArrival" && ~isfield(coverage, 'ActiveTimeInterval_s')
-        [alternatingResult, diagnostics] = bmtpEngine.solveActivePairTrajectory( ...
+        [alternatingResult, diagnostics] = bmtpEngine.optimization.solveActivePairTrajectory( ...
             request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
     else
         % Only a variable clock needs the dedicated solver that rebuilds
@@ -141,16 +141,16 @@ else
         % intervals are already exact and do not move between iterations.
         usesTimedSolver = request.UsesVariableClock;
         if usesTimedSolver
-            [alternatingResult, diagnostics] = bmtpEngine.solveTimedAlternatingTrajectory( ...
+            [alternatingResult, diagnostics] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
                 request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
             if alternatingResult.Success
-                [timedMotion, diagnostics] = bmtpEngine.refineTimedTravel( ...
+                [timedMotion, diagnostics] = bmtpEngine.pipeline.refineTimedTravel( ...
                     request, alternatingResult, diagnostics, ...
                     obstacleTarget_units, roundoffReserve_units);
                 alternatingResult = timedMotion;
             end
         else
-            [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
+            [alternatingResult, diagnostics] = bmtpEngine.optimization.solveAlternatingTrajectory( ...
                 request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
         end
     end
@@ -170,7 +170,7 @@ else
         certificate    = alternatingResult.Certificate;
     else
         % Endpoint correction and export can increase the derivative bounds.
-        preparedMotion   = bmtpEngine.prepareFinalMotion( ...
+        preparedMotion   = bmtpEngine.pipeline.prepareFinalMotion( ...
             request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s);
         certificate      = struct('Passed', false);
         certificateCache = [];
@@ -188,7 +188,7 @@ end
 
 % Certify every final curve-region pair; sampled clearance alone is insufficient.
 if ~certificate.Passed
-    [certificate, certificateCache] = bmtpEngine.checkFinalMotion( ...
+    [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, roundoffReserve_units, obstacleTarget_units, certificateCache);
 end
 % A safe curved span need not admit one affine separator. Exact subdivision
@@ -205,10 +205,10 @@ for refinementIndex = 1:10
     if ~any(splitMask)
         break
     end
-    preparedMotion = bmtpEngine.prepareFinalMotion(request, ...
+    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, ...
         preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, ...
         preparedMotion.PrescribedPower_units, splitMask, splitFraction);
-    [certificate, certificateCache] = bmtpEngine.checkFinalMotion( ...
+    [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, roundoffReserve_units, obstacleTarget_units, certificateCache);
 end
 diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
@@ -219,7 +219,7 @@ diagnostics.PlaneCertificate  = certificate;
 candidate.PlaneCertificate    = certificate;
 
 % Convert the checked curve to the public motion format and sample it.
-candidate                     = bmtpEngine.createMotionOutput(candidate, request, preparedMotion);
+candidate                     = bmtpEngine.pipeline.createMotionOutput(candidate, request, preparedMotion);
 candidate.OptimizerFeasible   = true;
 % Reject optimizer output that fails the independent certificate even when the numerical solver reported success.
 if ~certificate.Passed
@@ -263,7 +263,7 @@ function [preparedMotion, certificate, cache] = directFixedArrivalMotion(request
     certificate = struct('Passed', false);
     cache       = [];
     % The rest-to-rest chord is the quintic smoothstep 10t^3-15t^4+6t^5.
-    fraction = bmtpEngine.powerToBernstein([0; 0; 0; 10; -15; 6], degree);
+    fraction = bmtpEngine.motion.powerToBernstein([0; 0; 0; 10; -15; 6], degree);
     controls_units = initialState.position_units + ...
         fraction .* (goalState.position_units - initialState.position_units);
     if ~request.IsRest
@@ -276,12 +276,12 @@ function [preparedMotion, certificate, cache] = directFixedArrivalMotion(request
             h * goalState.velocity_units_s - power(2, :) - 2 * power(3, :); ...
             h ^ 2 * goalState.acceleration_units_s2 - 2 * power(3, :)];
         power(4:6, :) = [1 1 1; 3 4 5; 6 12 20] \ residual;
-        controls_units = bmtpEngine.powerToBernstein(power, degree);
+        controls_units = bmtpEngine.motion.powerToBernstein(power, degree);
     end
-    preparedMotion = bmtpEngine.prepareFinalMotion(request, ...
+    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, ...
         reshape(controls_units, 1, degree + 1, 2), request.MotionHorizon_s);
     if preparedMotion.Success
-        [certificate, cache] = bmtpEngine.checkFinalMotion(request, ...
+        [certificate, cache] = bmtpEngine.validation.checkFinalMotion(request, ...
             preparedMotion, reserve_units, target_units, cache, true);
     end
     [previousRequest, previousMotion, previousCertificate, previousCache] = ...
@@ -345,7 +345,7 @@ function diagnostics = createEmptyDiagnostics(degree, segmentCount, regionCount)
         "SolverMessage",                      "", ...
         "LastAttemptMessage",                 "", ...
         "ElapsedTime_s",                      0, ...
-        "ConicSolver",                        bmtpEngine.accumulateConicDiagnostics());
+        "ConicSolver",                        bmtpEngine.optimization.accumulateConicDiagnostics());
 end
 
 function [candidate, diagnostics] = finishFailure( ...

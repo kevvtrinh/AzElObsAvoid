@@ -88,7 +88,7 @@ for earliest-arrival requests, not a pure refactor.
 ## Branches removed in this consolidation
 
 - `Source == "timeExpandedVisibilityGraph"` degree and subdivision routing in
-  `bmtpEngine.createSolveRequest`.
+  `bmtpEngine.pipeline.createSolveRequest`.
 - The earliest-arrival fixed-clock manufacture and refinement cascade; a free
   goal window now uses one variable-clock timed profile.
 - The `directVariableClock` challenge of a delayed chord as a separately

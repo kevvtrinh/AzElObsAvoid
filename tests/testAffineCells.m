@@ -32,10 +32,10 @@ function testMovingPlaneCertifiesTranslation(testCase)
     first = [1.5,-0.5;2.5,-0.5;2.5,0.5;1.5,0.5];
     vertices = cat(3,first,first+[10,0]);
     controls = [(0:8)'*10/8,zeros(9,1)];
-    plane = bmtpEngine.solveSeparatingLine(controls,vertices,1e-6,1e-8);
+    plane = bmtpEngine.separation.solveSeparatingLine(controls,vertices,1e-6,1e-8);
     verifyTrue(testCase,plane.Verified);
-    verifyTrue(testCase,bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
-    verifyFalse(testCase,bmtpEngine.verifySeparatingLine(plane,controls,[first;first+[10,0]],1e-8,1e-6).Verified);
+    verifyTrue(testCase,bmtpEngine.separation.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
+    verifyFalse(testCase,bmtpEngine.separation.verifySeparatingLine(plane,controls,[first;first+[10,0]],1e-8,1e-6).Verified);
 end
 
 function testStaticPlaneMatchesStationaryAffineRepresentation(testCase)
@@ -43,12 +43,12 @@ function testStaticPlaneMatchesStationaryAffineRepresentation(testCase)
     controls = [linspace(0,0.5,9).',zeros(9,1)];
     plane = struct('Normal',[1,0;0.75,0.5],'Offset_units',[-0.75,-0.75]);
     stationary = cat(3,vertices,vertices);
-    checked = bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6);
+    checked = bmtpEngine.separation.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6);
     verifyTrue(testCase,checked.Verified);
-    verifyEqual(testCase,checked,bmtpEngine.verifySeparatingLine(plane,controls,stationary,1e-8,1e-6));
+    verifyEqual(testCase,checked,bmtpEngine.separation.verifySeparatingLine(plane,controls,stationary,1e-8,1e-6));
     controls(end,:) = [3,0];
-    verifyFalse(testCase,bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
-    verifyFalse(testCase,bmtpEngine.verifySeparatingLine(plane,controls,stationary,1e-8,1e-6).Verified);
+    verifyFalse(testCase,bmtpEngine.separation.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
+    verifyFalse(testCase,bmtpEngine.separation.verifySeparatingLine(plane,controls,stationary,1e-8,1e-6).Verified);
 end
 
 function testClippedSourceInterval(testCase)
@@ -58,7 +58,7 @@ function testClippedSourceInterval(testCase)
     cells = obstacleAvoidance.obstacles.createTimeCells(prepared,3,8);
     verifyEqual(testCase,cells.ActiveTimeInterval_s,[3,8]);
     verifyEqual(testCase,cells.EndRegions_units{1}-cells.Regions_units{1},repmat([5,0],4,1),'AbsTol',1e-12);
-    restricted = bmtpEngine.regionOnInterval(cells.Regions_units{1},cells,1,[4,6]);
+    restricted = bmtpEngine.separation.regionOnInterval(cells.Regions_units{1},cells,1,[4,6]);
     verifyEqual(testCase,restricted(:,:,1),cells.Regions_units{1}+[1,0],'AbsTol',1e-12);
     verifyEqual(testCase,restricted(:,:,2),cells.Regions_units{1}+[3,0],'AbsTol',1e-12);
     % Full intervals preserve their stored endpoints, including cancellation
@@ -67,7 +67,7 @@ function testClippedSourceInterval(testCase)
     last = [1e-16,-2;1,-2;1,-1;1e-16,-1];
     coverage = struct('Passed',true,'EndRegions_units',{{last}}, ...
         'ActiveTimeInterval_s',[3,8]);
-    restricted = bmtpEngine.regionOnInterval(first,coverage,1,[3,8]);
+    restricted = bmtpEngine.separation.regionOnInterval(first,coverage,1,[3,8]);
     verifyTrue(testCase,isequal(restricted(:,:,1),first));
     verifyTrue(testCase,isequal(restricted(:,:,2),last));
 end
@@ -232,8 +232,8 @@ function testCachedMovingGeometryMatchesUncachedSearch(testCase)
     controls = [-5+12*parameter,2.8*sin(pi*parameter)-1.1*parameter];
     geometry = createTestGeometry(first,last);
     vertices = cat(3,first,last);
-    uncached = bmtpEngine.solveSeparatingLine(controls,vertices,1e-5,1e-8);
-    cached = bmtpEngine.solveSeparatingLine(controls,vertices,1e-5,1e-8,geometry);
+    uncached = bmtpEngine.separation.solveSeparatingLine(controls,vertices,1e-5,1e-8);
+    cached = bmtpEngine.separation.solveSeparatingLine(controls,vertices,1e-5,1e-8,geometry);
     verifyEqual(testCase,cached.Verified,uncached.Verified);
     verifyEqual(testCase,cached.Normal,uncached.Normal,'AbsTol',64*eps);
     verifyEqual(testCase,cached.Offset_units,uncached.Offset_units,'AbsTol',64*eps);
@@ -245,7 +245,7 @@ function testInteriorObstaclePlaneViolationRejected(testCase)
     vertices = cat(3,first,first-[2,0]);
     plane = struct('Normal',[1,0;-1,0],'Offset_units',[-0.2,-0.2]);
     verifyGreaterThan(testCase,min(first(:,1)-0.2),0.1);
-    checked = bmtpEngine.verifySeparatingLine(plane,zeros(9,2),vertices,1e-8,0.1);
+    checked = bmtpEngine.separation.verifySeparatingLine(plane,zeros(9,2),vertices,1e-8,0.1);
     verifyFalse(testCase,checked.Verified);
     verifyLessThan(testCase,checked.SignedGap_units,0);
 end
@@ -269,10 +269,10 @@ function testPlaneSearchUsesCertifiedProductHull(testCase)
     vertices = [0.5,1.3;10,1.3;10,3;0.5,3];
     % The original control hull penetrates more in y than x. Its degree-nine
     % product hull is separated in y, so choosing by the original hull fails.
-    plane = bmtpEngine.solveSeparatingLine(controls,vertices,1e-6,1e-8);
+    plane = bmtpEngine.separation.solveSeparatingLine(controls,vertices,1e-6,1e-8);
     verifyTrue(testCase,plane.Verified);
     verifyGreaterThan(testCase,plane.SignedGap_units,0.18);
-    verifyTrue(testCase,bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
+    verifyTrue(testCase,bmtpEngine.separation.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
 end
 
 function testFinalCertificateRechecksNeighborDirections(testCase)
@@ -282,14 +282,14 @@ function testFinalCertificateRechecksNeighborDirections(testCase)
     points = [-2,0;-2,0;2,0;0,0];
     prepared = struct('CertifiedControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
         'SegmentTime_s',ones(4,1));
-    certificate = bmtpEngine.checkFinalMotion(request,prepared,1e-8,1e-6);
+    certificate = bmtpEngine.validation.checkFinalMotion(request,prepared,1e-8,1e-6);
     verifyFalse(testCase,certificate.Passed);
     verifyEqual(testCase,certificate.VerifiedPairCount,3);
     verifyEqual(testCase,certificate.ReusedPairCount,1);
     verifyTrue(testCase,certificate.Planes(3).Verified);
     verifyFalse(testCase,certificate.Planes(4).Verified);
     for k = 1:3
-        checked = bmtpEngine.verifySeparatingLine(certificate.Planes(k), ...
+        checked = bmtpEngine.separation.verifySeparatingLine(certificate.Planes(k), ...
             squeeze(prepared.CertifiedControlPoint_units(k,:,:)),box,1e-8,1e-6);
         verifyTrue(testCase,checked.Verified);
     end

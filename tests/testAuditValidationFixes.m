@@ -58,14 +58,14 @@ function testContinuityProjectionMayOnlyAbsorbRoundoff(testCase)
 
     controls_units             = zeros(2, 6, 2);
     controls_units(2, :, 1)    = 10;
-    polynomial = bmtpEngine.createPowerPolynomial(controls_units, [1; 1], 0);
+    polynomial = bmtpEngine.motion.createPowerPolynomial(controls_units, [1; 1], 0);
     verifyGreaterThan(testCase, polynomial.ContinuityProjectionDisplacement_units, 1);
 
     route_units = [result.Inputs.initialState.position_units; result.Inputs.goalState.position_units];
     seed        = struct('position_units', route_units, 'tau', [0; 1], 'Source', "discontinuous");
-    request     = bmtpEngine.createSolveRequest(seed, cell(0, 1), struct('Passed', true), ...
+    request     = bmtpEngine.pipeline.createSolveRequest(seed, cell(0, 1), struct('Passed', true), ...
         result.Inputs.initialState, result.Inputs.goalState, result.Limits, result.Options);
-    prepared = bmtpEngine.prepareFinalMotion(request, controls_units, [5; 5]);
+    prepared = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, [5; 5]);
     verifyFalse(testCase, prepared.Success);
     verifyEqual(testCase, prepared.TerminationReason, "continuityProjectionExceedsTolerance");
 end

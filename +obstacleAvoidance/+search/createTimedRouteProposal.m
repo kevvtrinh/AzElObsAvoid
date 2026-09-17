@@ -57,7 +57,7 @@ end
 %% Section 2: Build The Exact-Boundary Node Set
 
 allPositions_units     = [initialState.position_units; goalState.position_units; proposalShape.Vertices];
-coordinateScale_units = bmtpEngine.createCoordinateTolerances(allPositions_units);
+coordinateScale_units = bmtpEngine.validation.createCoordinateTolerances(allPositions_units);
 % Nodes need room for a bounded-speed path to reverse velocity, but that
 % clearance cannot consume a material fraction of a small workspace. Use
 % one scale derived from both physical limits and the supplied domain.
