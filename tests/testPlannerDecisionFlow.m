@@ -511,6 +511,20 @@ function testStateValidationDecisions(testCase)
         standardLimits(),struct()),'planTrajectory:CoincidentEndpoints');
 end
 
+function testBackwardsTimePrecedesWrappedTargetEvaluation(testCase)
+    initial=state(5,[0,0]);
+    targetMotion=struct('time_s',[5;10], ...
+        'position_units',[1,0;2,0],'InterpolationMethod','linear');
+    goal=struct('time_s',0,'targetMotion',targetMotion);
+    verifyError(testCase,@()planner([],initial,goal,standardLimits(), ...
+        struct('WrapX',true)),'planTrajectory:InvalidTimeOrder');
+end
+
+function testBackwardsTimeOnUnwrappedFixedGoal(testCase)
+    verifyError(testCase,@()planner([],state(5,[0,0]),state(0,[2,0]), ...
+        standardLimits(),struct()),'planTrajectory:InvalidTimeOrder');
+end
+
 function testLimitValidationDecisions(testCase)
     initial=state(0,[0,0]); goal=state(10,[4,0]);
     verifyError(testCase,@()planner([],initial,goal,42,struct()), ...

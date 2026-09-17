@@ -102,8 +102,27 @@ if isempty(options)
 end
 suppliedLimits     = limits;
 suppliedGoalState  = goalState;
-initialState       = normalizeState(initialState, defaultInitialState, "initialState");
-goalState          = normalizeState(goalState, defaultGoalState, "goalState");
+initialState       = normalizeState(initialState, defaultInitialState, "initialState", true);
+goalState          = normalizeState(goalState, defaultGoalState, "goalState", false);
+requestTimeIsInvalid = goalState.time_s <= initialState.time_s;
+if ~isempty(goalState.targetMotion)
+    try
+        targetPosition_units = obstacleAvoidance.input.targetPositionAtTime( ...
+            goalState.targetMotion, goalState.time_s);
+    catch exception
+        historyErrorComesFromInvalidRequest = requestTimeIsInvalid && ...
+            exception.identifier == "planner:TargetTimeOutsideHistory";
+        if ~historyErrorComesFromInvalidRequest
+            rethrow(exception)
+        end
+    end
+end
+if requestTimeIsInvalid
+    error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
+end
+if ~isempty(goalState.targetMotion)
+    goalState.position_units = targetPosition_units;
+end
 limits             = normalizeLimits(limits, defaultLimits);
 options            = resolveOptions(options, defaultOptions);
 requestedLimits    = limits;
@@ -162,9 +181,6 @@ if any(wrapAxes)
     end
 end
 
-if goalState.time_s <= initialState.time_s
-    error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
-end
 % A moving target's deadline position only bounds the earliest-arrival
 % search; a fixed goal or a fixed-arrival intercept is a required endpoint.
 goalIsRequiredEndpoint = isempty(goalState.targetMotion) || options.GoalTimeMode == "fixedArrival";
@@ -1155,7 +1171,7 @@ function [initialState, goalState, limits, options] = createDefaults()
         "MaxArrivalCandidates",              4096);
 end
 
-function state = normalizeState(state, defaults, argumentName)
+function state = normalizeState(state, defaults, argumentName, evaluateTarget)
     % Resolve omitted rest-to-rest fields and reject unsupported state data.
     if ~isstruct(state) || ~isscalar(state)
         error("planTrajectory:InvalidState", "%s must be a scalar struct.", argumentName);
@@ -1172,10 +1188,14 @@ function state = normalizeState(state, defaults, argumentName)
         end
     end
     validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
-    if isfield(state, 'targetMotion') && ~isempty(state.targetMotion)
+    hasTargetMotion = isfield(state, 'targetMotion') && ~isempty(state.targetMotion);
+    if hasTargetMotion && evaluateTarget
         state.position_units = obstacleAvoidance.input.targetPositionAtTime(state.targetMotion, state.time_s);
     end
     for fieldName = ["position_units", "velocity_units_s", "acceleration_units_s2"]
+        if fieldName == "position_units" && hasTargetMotion && ~evaluateTarget
+            continue
+        end
         value = double(state.(fieldName));
         valueIsValid = isnumeric(state.(fieldName)) && isreal(value) && isvector(value) && ...
             numel(value) == 2 && all(isfinite(value));
