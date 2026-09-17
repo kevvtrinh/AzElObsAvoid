@@ -1,7 +1,7 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTimedTrajectoryStep( ...
+function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = solveTimedTrajectoryStep( ...
     segmentCount, degree, start_units, goal_units, limits, planes, ...
     reserve_units, maximumMotionDuration_s, goalTimeMode, options, ...
-    minimumMotionDuration_s, segmentRatio)
+    minimumMotionDuration_s, segmentRatio, constraintBase)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
@@ -13,6 +13,9 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTimedTraje
 %       start_units, goal_units, limits, planes, reserve_units, ...
 %       maximumMotionDuration_s, goalTimeMode, options, ...
 %       minimumMotionDuration_s, segmentRatio)
+%   [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
+%       bmtpEngine.optimization.solveTimedTrajectoryStep(..., ...
+%       minimumMotionDuration_s, segmentRatio, constraintBase)
 %**************************************************************************
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
@@ -43,6 +46,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTimedTraje
 %       Lower arrival bound, at most maximumMotionDuration_s.
 %   - segmentRatio (S-by-1 positive vector, optional; default all ones)
 %       Relative physical span durations.
+%   - constraintBase (scalar struct, optional)
+%       Reusable invariant constraint arrays for the unchanged formulation.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -56,6 +61,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTimedTraje
 %   - output (scalar struct)
 %       Solver status, diagnostics, and measured time. Finite fixed-clock -7
 %       iterates are proposals requiring final independent certification.
+%   - constraintBase (scalar struct)
+%       Invariant constraint arrays for reuse with the same formulation.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -68,6 +75,9 @@ end
 returnsCommonSegmentTime = nargin < 12 || isempty(segmentRatio);
 if returnsCommonSegmentTime
     segmentRatio = ones(segmentCount, 1);
+end
+if nargin < 13
+    constraintBase = struct();
 end
 segmentRatio = double(segmentRatio(:));
 validateattributes(segmentRatio, {'numeric'}, ...
@@ -87,8 +97,27 @@ maximumSegmentTime_s  = maximumMotionDuration_s / sum(segmentRatio);
 boundaryControls = zeros(segmentCount, degree + 1, 2);
 boundaryControls(1, 1:3, :)           = repmat(reshape(start_units, 1, 1, 2), 1, 3, 1);
 boundaryControls(end, end - 2:end, :) = repmat(reshape(goal_units, 1, 1, 2), 1, 3, 1);
-[A, Aeq, beq, lb, ub] = bmtpEngine.optimization.createTrajectoryConstraints( ...
-    segmentCount, degree, boundaryControls, limits, variableCount, segmentRatio, []);
+constraintKey = struct( ...
+    "SegmentCount",     segmentCount, ...
+    "Degree",           degree, ...
+    "BoundaryControls", boundaryControls, ...
+    "Limits",           limits, ...
+    "VariableCount",    variableCount, ...
+    "SegmentRatio",     segmentRatio);
+canReuseConstraintBase = isstruct(constraintBase) && isscalar(constraintBase) && ...
+    isfield(constraintBase, 'Key') && isequaln(constraintBase.Key, constraintKey);
+if ~canReuseConstraintBase
+    [A, Aeq, beq, lb, ub] = bmtpEngine.optimization.createTrajectoryConstraints( ...
+        segmentCount, degree, boundaryControls, limits, variableCount, segmentRatio, []);
+    constraintBase = struct("A", A, "Aeq", Aeq, "beq", beq, ...
+        "lb", lb, "ub", ub, "Key", constraintKey);
+else
+    A   = constraintBase.A;
+    Aeq = constraintBase.Aeq;
+    beq = constraintBase.beq;
+    lb  = constraintBase.lb;
+    ub  = constraintBase.ub;
+end
 % The clock cones need only relative powers. Scaling the three physical-time
 % columns to a unit upper bound avoids conditioning the SOCP with seconds,
 % seconds squared, and seconds cubed that differ by several orders.

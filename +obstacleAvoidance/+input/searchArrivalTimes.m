@@ -1,7 +1,7 @@
-function result = searchArrivalTimes(previous)
+function result = searchArrivalTimes(previous, plannerCore)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.input.searchArrivalTimes(previous)
+%   result = obstacleAvoidance.input.searchArrivalTimes(previous, plannerCore)
 %**************************************************************************
 % PURPOSE
 %   - Search declared chronological fixed-arrival trials.
@@ -10,6 +10,8 @@ function result = searchArrivalTimes(previous)
 % INPUTS
 %   - previous (scalar struct)
 %       Planner result containing the request and any valid incumbent.
+%   - plannerCore (function handle)
+%       Private planner implementation carrying the outer request context.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -165,7 +167,7 @@ for candidateIndex = 1:numel(candidateTimes_s)
     trialRequest                = outerRequest;
     trialRequest.FixedArrivalTrialTime_s = trialTime_s;
     try
-        candidate = planner(previous.PreparedObstacles, initialState, trialGoalState, ...
+        candidate = plannerCore(previous.PreparedObstacles, initialState, trialGoalState, ...
             previous.RequestedLimits, trialOptions, trialRequest);
     catch exception
         failureIsExpected = string(exception.identifier) == ...

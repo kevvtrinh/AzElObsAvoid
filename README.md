@@ -43,10 +43,12 @@ reduced to quadratic half-space residuals, whose real roots partition all
 possible contact intervals. Collision acceptance does not depend on sampling.
 
 Fixed-arrival requests use one deterministic policy. The planner evaluates the
-exact spatial guide appropriate to the request and constructs the timed guide
-only when solver-level evidence shows that the spatial proposal cannot produce
-a complete motion. A validator rejection terminates as a defect; it never
-starts a retry or repair profile.
+exact initial- and arrival-snapshot visibility guides as bounded runtime
+shortcuts, then constructs one time-expanded guide when neither shortcut
+returns a complete motion. A shortcut failure is not evidence of request
+infeasibility. Every stage is recorded in `result.Attempts`, including its
+declared iteration limit, trigger, typed failure, and validation outcome. A
+validator rejection terminates as a defect; it never starts another attempt.
 
 Earliest-arrival requests optimize arrival time. Static requests use the
 variable-clock BMTP formulation. Moving requests test the physical direct
@@ -55,9 +57,16 @@ chronological fixed-time trials are used only when neither supplies a certified
 motion. `TemporalSearch.GlobalEarliestProven` remains false when discrete time
 layers or a finite trial budget prevent a continuous-time global proof.
 
-There are no route-class heuristics, Delaunay-first graphs, boundary-offset
-retry schedules, connectivity-recovery passes, fixture-specific seeds, hidden
-waypoints, or silent motion fallbacks.
+There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
+repairs, connectivity-recovery passes, fixture-specific seeds, hidden
+waypoints, fabricated direct seeds, or silent motion fallbacks. The two
+snapshot shortcuts are deterministic, use exact exhaustive snapshot graphs,
+and cannot weaken the independent acceptance gate.
+
+BMTP checks that supplied coverage metadata is internally consistent before it
+solves. That check is not treated as proof of coverage completeness: the public
+validator reconstructs authoritative obstacle coverage from the original
+request before any motion is accepted.
 
 ## Inputs
 
@@ -98,6 +107,8 @@ Public planner options are:
 - `WrapX`, `WrapY`
 - `MatchTargetVelocity`, `MatchTargetAcceleration`
 - `TemporalResolution_s`
+- `SpatialProbeIterationLimit`: BMTP iteration budget for each fixed-arrival
+  snapshot shortcut (default `2`, maximum `35`)
 - `MaxArrivalTrials`: maximum fixed-clock planner solves
 - `MaxArrivalCandidates`: maximum regular-grid clocks screened; exact declared
   obstacle, target, and horizon boundaries inside that grid window are retained

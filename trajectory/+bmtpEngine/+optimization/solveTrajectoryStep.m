@@ -1,7 +1,7 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep( ...
+function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = solveTrajectoryStep( ...
     segmentCount, degree, initialState, goalState, limits, planes, ...
     reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, ...
-    intrinsicVariationEnabled)
+    intrinsicVariationEnabled, constraintBase)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
@@ -15,6 +15,9 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.optimization.solveTrajectoryStep(..., segmentRatio, ...
 %       fixedClock, intrinsicVariationEnabled)
+%   [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
+%       bmtpEngine.optimization.solveTrajectoryStep(..., segmentRatio, ...
+%       fixedClock, intrinsicVariationEnabled, constraintBase)
 %**************************************************************************
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
@@ -47,6 +50,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   - intrinsicVariationEnabled (logical scalar)
 %       Whether surplus fixed-clock spans use the equivalent integrated-snap
 %       tie-break; omitted input defaults true.
+%   - constraintBase (scalar struct, optional)
+%       Reusable invariant constraint arrays for the unchanged formulation.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -58,6 +63,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %       Original coneprog status.
 %   - output (scalar struct)
 %       Solver status, diagnostics, and measured solver time.
+%   - constraintBase (scalar struct)
+%       Invariant constraint arrays for reuse with the same formulation.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -73,6 +80,9 @@ if nargin < 11
 end
 if nargin < 12
     intrinsicVariationEnabled = true;
+end
+if nargin < 13
+    constraintBase = struct();
 end
 originalPlaneCount = nnz([planes.Active]);
 partialPlanes      = false;
@@ -154,9 +164,30 @@ initialPlanePairs = planeActiveBySegment;
 if fixedClock
     initialPlanePairs(:) = false;
 end
-[A, Aeq, beq, lb, ub, jerkMap] = bmtpEngine.optimization.createTrajectoryConstraints( ...
-    segmentCount, degree, boundaryControls, constraintLimits, variableCount, ...
-    segmentRatio, jerkTimes_s);
+constraintKey = struct( ...
+    "SegmentCount",     segmentCount, ...
+    "Degree",           degree, ...
+    "BoundaryControls", boundaryControls, ...
+    "Limits",           constraintLimits, ...
+    "VariableCount",    variableCount, ...
+    "SegmentRatio",     segmentRatio, ...
+    "JerkTimes_s",      jerkTimes_s);
+canReuseConstraintBase = isstruct(constraintBase) && isscalar(constraintBase) && ...
+    isfield(constraintBase, 'Key') && isequaln(constraintBase.Key, constraintKey);
+if ~canReuseConstraintBase
+    [A, Aeq, beq, lb, ub, jerkMap] = bmtpEngine.optimization.createTrajectoryConstraints( ...
+        segmentCount, degree, boundaryControls, constraintLimits, variableCount, ...
+        segmentRatio, jerkTimes_s);
+    constraintBase = struct("A", A, "Aeq", Aeq, "beq", beq, ...
+        "lb", lb, "ub", ub, "jerkMap", jerkMap, "Key", constraintKey);
+else
+    A       = constraintBase.A;
+    Aeq     = constraintBase.Aeq;
+    beq     = constraintBase.beq;
+    lb      = constraintBase.lb;
+    ub      = constraintBase.ub;
+    jerkMap = constraintBase.jerkMap;
+end
 % Fix endpoint position, velocity, and acceleration controls in the solver's
 % own variable space. Leaving them as approximate equality rows allows a
 % stalled finite iterate to satisfy derivative bounds before exact endpoint

@@ -1,4 +1,4 @@
-function result = planner(obstacles, initialState, goalState, limits, options, outerRequest)
+function result = planner(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = planner()
@@ -8,9 +8,10 @@ function result = planner(obstacles, initialState, goalState, limits, options, o
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
 %     then construct independently certified C3 quintic BMTP motion.
-%   - Fixed-arrival moving-obstacle requests try the initial exact spatial
-%     guide, a distinct arrival-snapshot guide, then one time-expanded guide.
-%     Every accepted motion passes independent validation.
+%   - Fixed-arrival moving-obstacle requests use bounded initial- and
+%     arrival-snapshot shortcuts, then one time-expanded fallback. Failed
+%     shortcuts never prove infeasibility, and every accepted motion passes
+%     independent validation.
 %**************************************************************************
 % INPUTS
 %   - obstacles (struct array)
@@ -25,7 +26,8 @@ function result = planner(obstacles, initialState, goalState, limits, options, o
 %       ArrivalTimeTolerance_s bounds every comparison in seconds and
 %       ConstraintTolerance bounds coordinates, derivatives, and algebraic
 %       residuals; the other options control the arrival mode, sampling,
-%       wrapping, endpoint matching, and search.
+%       wrapping, endpoint matching, and search. SpatialProbeIterationLimit
+%       is the explicit BMTP budget for each fixed-arrival snapshot shortcut.
 %       A wrapped axis is planned in the unwrapped frame inside the reach
 %       band: obstacle images that meet the band, a target lifted by
 %       continuity, and every goal image in the band planned and accepted
@@ -47,6 +49,29 @@ function result = planner(obstacles, initialState, goalState, limits, options, o
 
 %% Section 1: Resolve Inputs And Validate The Request
 
+[~, ~, ~, defaultOptions] = createDefaults();
+if nargin == 0
+    result = resolveOptions(struct(), defaultOptions);
+    return
+end
+if nargin < 2
+    initialState = [];
+end
+if nargin < 3
+    goalState = [];
+end
+if nargin < 4
+    limits = [];
+end
+if nargin < 5
+    options = struct();
+end
+result = plannerCore(obstacles, initialState, goalState, limits, options, []);
+end
+
+function result = plannerCore(obstacles, initialState, goalState, limits, options, outerRequest)
+    % Carry private recursion context without extending the public API.
+
 % Recursive user path setup can put archived benchmark packages ahead of this
 % checkout's engine. Keep planning and validation bound to the same checkout.
 plannerFolder  = fileparts(mfilename('fullpath'));
@@ -57,24 +82,17 @@ if ~startsWith(path, [productionPath pathsep])
 end
 
 [defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();
-if nargin == 0
-    result = resolveOptions(struct(), defaultOptions);
-    return
-end
-if nargin < 2 || isempty(initialState)
+if isempty(initialState)
     initialState = defaultInitialState;
 end
-if nargin < 3 || isempty(goalState)
+if isempty(goalState)
     goalState = defaultGoalState;
 end
-if nargin < 4 || isempty(limits)
+if isempty(limits)
     limits = defaultLimits;
 end
-if nargin < 5 || isempty(options)
+if isempty(options)
     options = struct();
-end
-if nargin < 6
-    outerRequest = [];
 end
 suppliedLimits     = limits;
 suppliedGoalState  = goalState;
@@ -158,7 +176,7 @@ if any(wrapAxes)
         'RequestedLimits',    requestedLimits, ...
         'RequestedGoalState', requestedGoalState);
     result = obstacleAvoidance.input.planPeriodicRequest( ...
-        obstacles, initialState, goalState, limits, options, periodicRequest);
+        obstacles, initialState, goalState, limits, options, periodicRequest, @plannerCore);
     return
 end
 
@@ -245,10 +263,12 @@ if ~isempty(unsupportedObstacleIndex)
 end
 
 scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s, ~isDynamic);
-[endpointFeasible, result.Message, result.TerminationReason] = obstacleAvoidance.input.validatePlannerEndpoints( ...
+[endpointFeasible, endpointMessage, endpointReason] = obstacleAvoidance.input.validatePlannerEndpoints( ...
     preparedObstacles, initialState, goalState, limits, options);
 if ~endpointFeasible
-    result.ElapsedTime_s = toc(totalTimer);
+    result.Message           = endpointMessage;
+    result.TerminationReason = endpointReason;
+    result.ElapsedTime_s     = toc(totalTimer);
     return
 end
 
@@ -267,7 +287,7 @@ else
         nextRegionIndex              = nextRegionIndex + obstacleRegionCount;
     end
 end
-coverage = struct("Passed", true, "ExactRegionCount", numel(regions_units));
+coverage = struct("ExactRegionCount", numel(regions_units));
 if isDynamic
     coverage.ActiveTimeInterval_s = cells.ActiveTimeInterval_s;
     coverage.EndRegions_units     = cells.EndRegions_units;
@@ -339,71 +359,25 @@ if options.GoalTimeMode == "earliestArrival" && needsTimedPlanning
     end
     result               = timedResult;
     result.ElapsedTime_s = toc(totalTimer);
-    result               = obstacleAvoidance.input.searchArrivalTimes(result);
+    result               = obstacleAvoidance.input.searchArrivalTimes(result, @plannerCore);
     return
 end
 
 %% Section 4: Construct A Spatial Guide And Solve C3 Quintic Motion
 
-motionGoalState           = goalState;
-route_units               = [initialState.position_units; goalState.position_units];
-fixedArrivalDynamic       = isDynamic && options.GoalTimeMode == "fixedArrival";
-initialSpatialAttempted   = false;
-initialSpatialRoute_units = zeros(0, 2);
-initialSpatialCandidate   = struct();
-initialSpatialDiagnostics = struct();
-
+motionGoalState     = goalState;
+fixedArrivalDynamic = isDynamic && options.GoalTimeMode == "fixedArrival";
 if fixedArrivalDynamic
-    initialVisibilityGraph = getVisibilityGraph( ...
-        scene, initialState.position_units, goalState.position_units, ...
-        limits, options, "initialSpatialSnapshot");
-    if initialVisibilityGraph.IsConnected
-        initialSpatialAttempted   = true;
-        initialSpatialRoute_units = initialVisibilityGraph.Route_units;
-        initialEdgeLength_units   = vecnorm(diff(initialSpatialRoute_units, 1, 1), 2, 2);
-        initialSeed               = struct('position_units', initialSpatialRoute_units, ...
-            'tau', [0; cumsum(initialEdgeLength_units)] / sum(initialEdgeLength_units), ...
-            'Source', "initialSpatialSnapshot", ...
-            'MaximumAlternatingIterations', 2);
-        [initialSpatialCandidate, initialSpatialDiagnostics] = bmtpEngine.solve( ...
-            initialSeed, regions_units, coverage, initialState, motionGoalState, ...
-            limits, options);
-        if initialSpatialCandidate.Success
-            % A solver success that the public validator rejects is a defect
-            % to diagnose upstream, not a reason to try another guide.
-            result.VisibilityGraph = initialVisibilityGraph;
-            result = obstacleAvoidance.input.finalizeCandidate( ...
-                result, initialSpatialCandidate, initialSpatialRoute_units, ...
-                initialSpatialDiagnostics);
-            result.ElapsedTime_s = toc(totalTimer);
-            return
-        end
-    end
+    result = planFixedArrivalDynamic(result, scene, regions_units, coverage, ...
+        initialState, motionGoalState, limits, options, totalTimer);
+    return
 end
 
-% Choose the snapshot that seeds the guide route.
-if fixedArrivalDynamic
-    guideScene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, motionGoalState.time_s, false);
-    visibilityGraph = getVisibilityGraph( ...
-        guideScene, initialState.position_units, goalState.position_units, ...
-        limits, options, "arrivalSpatialSnapshot");
-else
-    visibilityGraph = getVisibilityGraph( ...
-        scene, initialState.position_units, goalState.position_units, ...
-        limits, options, "initialSpatialSnapshot");
-end
-if isDynamic && ~visibilityGraph.IsConnected
-    % A disconnected spatial guide cannot rule out a later temporal opening.
-    % This chord is only a seed; all time-dependent exclusions remain active.
-    visibilityGraph.Route_units       = route_units;
-    visibilityGraph.RouteLength_units = norm(diff(route_units));
-    visibilityGraph.SearchKind        = "temporalDirectSeed";
-end
+visibilityGraph = getVisibilityGraph( ...
+    scene, initialState.position_units, goalState.position_units, ...
+    limits, options, "initialSpatialSnapshot");
 result.VisibilityGraph = visibilityGraph;
-if initialSpatialAttempted
-    result.VisibilityGraph.InitialSpatialSeedDiagnostics = initialSpatialDiagnostics;
-end
-if ~isDynamic && ~visibilityGraph.IsConnected
+if ~visibilityGraph.IsConnected
     result.Message           = "The initial visibility graph contains no start-to-goal route.";
     result.TerminationReason = "noVisibilityRoute";
     result.ElapsedTime_s     = toc(totalTimer);
@@ -415,35 +389,11 @@ edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
 seed             = struct('position_units', route_units, ...
     'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
     'Source', visibilityGraph.SearchKind);
-if fixedArrivalDynamic
-    % Give the exact spatial route its initial BMTP pass and one pass on the
-    % resulting refined mesh. If neither pass certifies complete motion,
-    % construct the exact timed route instead of repeatedly optimizing the
-    % same failed homotopy.
-    seed.MaximumAlternatingIterations = 2;
-end
-sameFailedSpatialRoute = fixedArrivalDynamic && initialSpatialAttempted && ...
-    isequaln(route_units, initialSpatialRoute_units);
-if sameFailedSpatialRoute
-    candidate         = initialSpatialCandidate;
-    solverDiagnostics = initialSpatialDiagnostics;
-else
-    [candidate, solverDiagnostics] = bmtpEngine.solve( ...
-        seed, regions_units, coverage, initialState, motionGoalState, ...
-        limits, options);
-end
+[candidate, solverDiagnostics] = bmtpEngine.solve( ...
+    seed, regions_units, coverage, initialState, motionGoalState, ...
+    limits, options);
 
 result = obstacleAvoidance.input.finalizeCandidate(result, candidate, route_units, solverDiagnostics);
-
-% Only solver-level infeasibility of the spatial guide admits the timed guide.
-% A motion the public validator rejects terminates here as a defect.
-spatialFailureCanUseTimedGuide = ~candidate.Success && candidate.OptimizerIterateUnavailable;
-if fixedArrivalDynamic && spatialFailureCanUseTimedGuide
-    result.VisibilityGraph.SpatialSeedDiagnostics = solverDiagnostics;
-    result.ElapsedTime_s                          = toc(totalTimer);
-    [result, ~] = obstacleAvoidance.input.tryTimedArrival(result);
-    return
-end
 result.ElapsedTime_s = toc(totalTimer);
 end
 
@@ -461,6 +411,250 @@ function graph = getVisibilityGraph(scene, start_units, goal_units, limits, opti
         previousGraph = graph;
     end
     graph.SearchKind = kind;
+end
+
+function result = planFixedArrivalDynamic(result, scene, regions_units, coverage, ...
+        initialState, goalState, limits, options, totalTimer)
+    % Two cheap exact-snapshot guides are deterministic shortcuts. Their
+    % bounded failures never prove infeasibility; eligible failures advance
+    % to the next guide and ultimately to one clean timed fallback.
+    snapshotProbeIterationLimit = options.SpatialProbeIterationLimit;
+    snapshotKinds = ["initialSpatialSnapshot", "arrivalSpatialSnapshot"];
+    snapshotTimes_s = [initialState.time_s, goalState.time_s];
+    attempts = repmat(createAttemptRecord(0, "", "", ""), 0, 1);
+    previousRoute_units = zeros(0, 2);
+    fallbackReason = "snapshotGuidesExhausted";
+
+    for snapshotIndex = 1:numel(snapshotKinds)
+        attemptTimer = tic;
+        trigger = "fixedArrivalPolicy";
+        if ~isempty(attempts)
+            trigger = attempts(end).FallbackReason;
+        end
+        attempt = createAttemptRecord(snapshotIndex, "spatialVisibility", ...
+            "heuristicShortcut", trigger);
+        attempt.IsHeuristic       = true;
+        attempt.IterationLimit    = snapshotProbeIterationLimit;
+        attempt.GraphSnapshotTime_s = snapshotTimes_s(snapshotIndex);
+
+        snapshotScene = scene;
+        if snapshotIndex == 2
+            snapshotScene = obstacleAvoidance.obstacles.snapshot( ...
+                result.PreparedObstacles, goalState.time_s, false);
+        end
+        graph = getVisibilityGraph(snapshotScene, initialState.position_units, ...
+            goalState.position_units, limits, options, snapshotKinds(snapshotIndex));
+        result.VisibilityGraph         = graph;
+        attempt.GraphConnected         = graph.IsConnected;
+        attempt.GraphIsFullyEnumerated = graph.GraphIsFullyEnumerated;
+        attempt.RouteNodeCount         = size(graph.Route_units, 1);
+        attempt.RouteLength_units      = graph.RouteLength_units;
+        attempt.ExpandedCount          = graph.ExpandedCount;
+
+        if ~graph.IsConnected
+            attempt.GuideStatus       = "noRoute";
+            attempt.MotionStatus      = "notRun";
+            attempt.FallbackEligible  = true;
+            attempt.FallbackReason    = "spatialGraphDisconnected";
+            attempt.Outcome           = "nextGuideAdmitted";
+            attempt.TerminationReason = "noSpatialRoute";
+            attempt.Message = "This exact snapshot graph has no route; it cannot rule out a route at another time.";
+        elseif ~isempty(previousRoute_units) && isequaln(graph.Route_units, previousRoute_units)
+            % Identical routes produce identical BMTP requests because the
+            % full time-cell coverage, not the snapshot label, is solved.
+            attempt.GuideStatus       = "duplicateRoute";
+            attempt.MotionStatus      = "notRun";
+            attempt.FallbackEligible  = true;
+            attempt.FallbackReason    = "duplicateSpatialGuide";
+            attempt.Outcome           = "nextGuideAdmitted";
+            attempt.TerminationReason = "duplicateSpatialGuide";
+            attempt.Message           = "The snapshot reproduced the preceding guide, so the duplicate solve was skipped.";
+        else
+            route_units      = graph.Route_units;
+            previousRoute_units = route_units;
+            edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
+            seed = struct( ...
+                'position_units', route_units, ...
+                'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
+                'Source', graph.SearchKind, ...
+                'MaximumAlternatingIterations', snapshotProbeIterationLimit);
+            attempt.GuideStatus     = "connected";
+            attempt.SolverAttempted = true;
+            [candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, ...
+                initialState, goalState, limits, options);
+            candidateResult = obstacleAvoidance.input.finalizeCandidate( ...
+                result, candidate, route_units, diagnostics);
+
+            attempt.IterationCount = readDiagnosticScalar( ...
+                diagnostics, "IterationCount", 0);
+            attempt.CandidateSuccess            = candidate.Success;
+            attempt.OptimizerFeasible           = candidate.OptimizerFeasible;
+            attempt.OptimizerIterateUnavailable = candidate.OptimizerIterateUnavailable;
+            attempt.AlternativeGuideEligible = readLogicalField( ...
+                candidate, "AlternativeGuideEligible");
+            attempt.FailureStage = readStringField(candidate, "FailureStage");
+            attempt.FailureKind  = readStringField(candidate, "FailureKind");
+            attempt.ValidationStatus = "notRun";
+            if candidate.Success
+                attempt.ValidationStatus = "failed";
+                if candidateResult.Validation.Passed
+                    attempt.ValidationStatus = "passed";
+                end
+            end
+            attempt.Success           = candidateResult.Success;
+            attempt.TerminationReason = candidateResult.TerminationReason;
+            attempt.Message           = candidateResult.Message;
+
+            if candidateResult.Success
+                attempt.MotionStatus = "accepted";
+                attempt.Outcome      = "accepted";
+                attempt.ElapsedTime_s = toc(attemptTimer);
+                candidateResult.Attempts = [attempts; attempt];
+                candidateResult.ElapsedTime_s = toc(totalTimer);
+                result = candidateResult;
+                return
+            elseif candidate.Success
+                % A public-validator rejection is a terminal defect, never a
+                % reason to conceal the candidate behind another guide.
+                attempt.MotionStatus = "validationFailure";
+                attempt.Outcome      = "terminalFailure";
+                attempt.ElapsedTime_s = toc(attemptTimer);
+                candidateResult.Attempts = [attempts; attempt];
+                candidateResult.ElapsedTime_s = toc(totalTimer);
+                result = candidateResult;
+                return
+            elseif attempt.AlternativeGuideEligible
+                attempt.MotionStatus     = attempt.FailureKind;
+                attempt.FallbackEligible = true;
+                attempt.FallbackReason   = attempt.FailureKind;
+                attempt.Outcome          = "nextGuideAdmitted";
+                result                   = candidateResult;
+            else
+                attempt.MotionStatus = attempt.FailureKind;
+                attempt.Outcome      = "terminalFailure";
+                attempt.ElapsedTime_s = toc(attemptTimer);
+                candidateResult.Attempts = [attempts; attempt];
+                candidateResult.ElapsedTime_s = toc(totalTimer);
+                result = candidateResult;
+                return
+            end
+        end
+        attempt.ElapsedTime_s = toc(attemptTimer);
+        attempts(end + 1, 1)  = attempt; %#ok<AGROW>
+        fallbackReason        = attempt.FallbackReason;
+    end
+
+    % The timed fallback starts from a clean motion and graph record. It is
+    % the only non-snapshot proposal and runs with the normal solver budget.
+    result.Attempts     = attempts;
+    result.ElapsedTime_s = toc(totalTimer);
+    priorElapsedTime_s = result.ElapsedTime_s;
+    [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
+    timedAttempt = createAttemptRecord(numel(attempts) + 1, ...
+        "timedVisibility", "fallback", fallbackReason);
+    timedAttempt.GraphIsFullyEnumerated = false;
+    timedAttempt.GraphConnected = timedResult.VisibilityGraph.IsConnected;
+    timedAttempt.GuideStatus = "noRoute";
+    if timedAttempt.GraphConnected
+        timedAttempt.GuideStatus = "connected";
+    end
+    timedAttempt.RouteNodeCount    = size(timedResult.Route_units, 1);
+    timedAttempt.RouteLength_units = timedResult.VisibilityGraph.RouteLength_units;
+    timedAttempt.ExpandedCount     = timedResult.VisibilityGraph.ExpandedCount;
+    timedAttempt.SolverAttempted   = timedAttempt.GraphConnected;
+    timedAttempt.IterationLimit = readDiagnosticScalar( ...
+        timedResult.SolverDiagnostics, "MaximumAlternatingIterations", NaN);
+    timedAttempt.IterationCount = readDiagnosticScalar( ...
+        timedResult.SolverDiagnostics, "IterationCount", 0);
+    timedAttempt.CandidateSuccess = readLogicalField( ...
+        timedResult.SolverDiagnostics, "Accepted");
+    timedAttempt.OptimizerFeasible = readLogicalField(timedResult, "OptimizerFeasible");
+    timedAttempt.OptimizerIterateUnavailable = readLogicalField( ...
+        timedResult, "OptimizerIterateUnavailable");
+    timedAttempt.AlternativeGuideEligible = readLogicalField( ...
+        timedResult, "AlternativeGuideEligible");
+    timedAttempt.FailureStage     = readStringField(timedResult, "FailureStage");
+    timedAttempt.FailureKind      = readStringField(timedResult, "FailureKind");
+    timedAttempt.ValidationStatus = "notRun";
+    if timedAttempt.CandidateSuccess
+        timedAttempt.ValidationStatus = "failed";
+        if timedResult.Validation.Passed
+            timedAttempt.ValidationStatus = "passed";
+        end
+    end
+    timedAttempt.Success           = timedAccepted;
+    timedAttempt.TerminationReason = timedResult.TerminationReason;
+    timedAttempt.Message           = timedResult.Message;
+    timedAttempt.Outcome           = "terminalFailure";
+    if timedAccepted
+        timedAttempt.MotionStatus = "accepted";
+        timedAttempt.Outcome      = "accepted";
+    elseif timedAttempt.GraphConnected
+        timedAttempt.MotionStatus = timedAttempt.FailureKind;
+    end
+    timedAttempt.ElapsedTime_s = max(0, timedResult.ElapsedTime_s - priorElapsedTime_s);
+    timedResult.Attempts       = [attempts; timedAttempt];
+    result                     = timedResult;
+end
+
+function attempt = createAttemptRecord(index, kind, role, trigger)
+    % Keep one compact, stable record for every guide proposal.
+    attempt = struct( ...
+        "Index",                        index, ...
+        "Kind",                         string(kind), ...
+        "Role",                         string(role), ...
+        "Trigger",                      string(trigger), ...
+        "IsHeuristic",                  false, ...
+        "IterationLimit",               NaN, ...
+        "GraphSnapshotTime_s",          NaN, ...
+        "GuideStatus",                  "notRun", ...
+        "GraphConnected",               false, ...
+        "GraphIsFullyEnumerated",       false, ...
+        "RouteNodeCount",               0, ...
+        "RouteLength_units",            Inf, ...
+        "ExpandedCount",                0, ...
+        "SolverAttempted",              false, ...
+        "MotionStatus",                 "notRun", ...
+        "IterationCount",               0, ...
+        "CandidateSuccess",             false, ...
+        "OptimizerFeasible",            false, ...
+        "OptimizerIterateUnavailable",  false, ...
+        "AlternativeGuideEligible",     false, ...
+        "FailureStage",                 "", ...
+        "FailureKind",                  "", ...
+        "ValidationStatus",             "notRun", ...
+        "FallbackEligible",             false, ...
+        "FallbackReason",               "", ...
+        "Success",                      false, ...
+        "Outcome",                      "notRun", ...
+        "TerminationReason",            "", ...
+        "Message",                      "", ...
+        "ElapsedTime_s",                0);
+end
+
+function value = readLogicalField(record, name)
+    % Read a diagnostic logical without letting diagnostics control planning.
+    value = false;
+    if isstruct(record) && isscalar(record) && isfield(record, name)
+        value = logical(record.(name));
+    end
+end
+
+function value = readStringField(record, name)
+    % Read an optional diagnostic string.
+    value = "";
+    if isstruct(record) && isscalar(record) && isfield(record, name)
+        value = string(record.(name));
+    end
+end
+
+function value = readDiagnosticScalar(record, name, defaultValue)
+    % Read one finite scalar diagnostic or keep its declared default.
+    value = defaultValue;
+    if isstruct(record) && isscalar(record) && isfield(record, name) && ...
+            isnumeric(record.(name)) && isscalar(record.(name)) && isfinite(record.(name))
+        value = double(record.(name));
+    end
 end
 
 function [initialState, goalState, limits, options] = createDefaults()
@@ -496,6 +690,7 @@ function [initialState, goalState, limits, options] = createDefaults()
         "MatchTargetVelocity",               false, ...
         "MatchTargetAcceleration",           false, ...
         "TemporalResolution_s",              0.5, ...
+        "SpatialProbeIterationLimit",        2, ...
         "MaxArrivalTrials",                  100, ...
         "MaxArrivalCandidates",              4096);
 end
@@ -610,11 +805,16 @@ function options = resolveOptions(options, defaults)
             options.(optionName), optionName, "planner:InvalidLogicalOption");
     end
 
-    integerOptionNames = ["MaxArrivalTrials", "MaxArrivalCandidates"];
+    integerOptionNames = ["SpatialProbeIterationLimit", ...
+        "MaxArrivalTrials", "MaxArrivalCandidates"];
     for optionName = integerOptionNames
         validateattributes(options.(optionName), {'numeric'}, ...
             {'scalar', 'finite', 'integer', 'positive'});
         options.(optionName) = double(options.(optionName));
+    end
+    if options.SpatialProbeIterationLimit > 35
+        error("planner:InvalidSpatialProbeIterationLimit", ...
+            "SpatialProbeIterationLimit must not exceed the full BMTP limit of 35.");
     end
 end
 
@@ -639,6 +839,8 @@ function result = createEmptyResult(obstacles, preparedObstacles, initialState, 
     result.Polynomial                   = struct();
     result.PlaneCertificate             = struct();
     result.SolverDiagnostics            = struct();
+    result.Attempts                     = repmat(createAttemptRecord( ...
+        0, "", "", ""), 0, 1);
     result.Validation                   = struct("Passed", false, "Message", "No motion is available.");
     result.ArrivalTime_s                = NaN;
     result.Intercept                    = struct('Time_s', NaN, 'TargetPosition_units', goalState.position_units, ...

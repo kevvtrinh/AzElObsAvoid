@@ -92,13 +92,18 @@ function testFixedArrivalCascadeRepairsSpatialSeedFailures(testCase)
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
             expectedSources(caseNumber));
-        if expectedSources(caseNumber)=="arrivalSpatialSnapshot"
-            verifyTrue(testCase,isfield(result.VisibilityGraph,'InitialSpatialSeedDiagnostics'));
-            verifyFalse(testCase,result.VisibilityGraph.InitialSpatialSeedDiagnostics.Accepted);
-        else
-            verifyTrue(testCase,isfield(result.VisibilityGraph,'SpatialSeedDiagnostics'));
+        verifyGreaterThanOrEqual(testCase,numel(result.Attempts),2);
+        verifyTrue(testCase,result.Attempts(1).IsHeuristic);
+        verifyTrue(testCase,result.Attempts(1).FallbackEligible);
+        verifyNotEmpty(testCase,result.Attempts(1).FallbackReason);
+        verifyEqual(testCase,result.Attempts(end).Outcome,"accepted");
+        snapshotAttempts=result.Attempts([result.Attempts.IsHeuristic]);
+        verifyEqual(testCase,[snapshotAttempts.IterationLimit], ...
+            2*ones(1,numel(snapshotAttempts)));
+        for attemptIndex=2:numel(result.Attempts)
+            verifyEqual(testCase,result.Attempts(attemptIndex).Trigger, ...
+                result.Attempts(attemptIndex-1).FallbackReason);
         end
         verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-10);
-        verifyLessThanOrEqual(testCase,result.SolverDiagnostics.IterationCount,2);
     end
 end

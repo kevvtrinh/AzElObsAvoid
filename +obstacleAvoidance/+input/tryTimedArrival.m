@@ -24,12 +24,11 @@ function [result, accepted] = tryTimedArrival(previous)
 
 %% Section 1: Check Eligibility And Create The Timed Route
 
-totalTimer     = tic;
-result         = previous;
-result.Success = false;
-accepted       = false;
-initialState   = previous.Inputs.initialState;
-goalState      = previous.Inputs.goalState;
+totalTimer   = tic;
+result       = resetTimedResult(previous);
+accepted     = false;
+initialState = previous.Inputs.initialState;
+goalState    = previous.Inputs.goalState;
 
 endpointDerivatives = [initialState.velocity_units_s(:); initialState.acceleration_units_s2(:); ...
     goalState.velocity_units_s(:); goalState.acceleration_units_s2(:)];
@@ -44,15 +43,18 @@ if freeClockIsUnsupported
     result.ElapsedTime_s     = previous.ElapsedTime_s + toc(totalTimer);
     return
 end
-result.VisibilityGraph.SearchKind = "timeExpandedVisibilityGraph";
 searchTimer = tic;
 [route_units, routeTime_s, searchRecord] = obstacleAvoidance.search.createTimedRouteProposal( ...
     previous.PreparedObstacles, initialState, goalState, previous.RequestedLimits, previous.Options);
 searchRecord.ElapsedTime_s = toc(searchTimer);
+result.VisibilityGraph.NodePosition_units = searchRecord.Nodes_units;
+result.VisibilityGraph.TimedSearch        = searchRecord;
+result.VisibilityGraph.ExpandedCount      = searchRecord.TimedSearch.ExpandedCount;
 if isempty(routeTime_s)
     result.Message                     = "No route reached the requested goal layer in the discrete timed graph.";
     result.TerminationReason           = "noTimedRoute";
-    result.VisibilityGraph.TimedSearch = searchRecord;
+    result.FailureStage                = "search";
+    result.FailureKind                 = "noTimedRoute";
     result.ElapsedTime_s               = previous.ElapsedTime_s + toc(totalTimer);
     return
 end
@@ -65,10 +67,10 @@ if size(route_units, 1) > 2
     route_units         = route_units(routeKnotIsRetained, :);
     routeTime_s         = routeTime_s(routeKnotIsRetained);
 end
-result.VisibilityGraph.TimedSearch       = searchRecord;
 result.VisibilityGraph.RouteTime_s       = routeTime_s;
 result.VisibilityGraph.Route_units       = route_units;
 result.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units), 2, 2));
+result.VisibilityGraph.IsConnected       = true;
 result.Route_units                        = route_units;
 
 %% Section 2: Solve The Timed Route On Its Supplied Physical Clock
@@ -113,10 +115,13 @@ end
 [candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, ...
     initialState, motionGoalState, previous.RequestedLimits, motionOptions);
 if ~candidate.Success
-    result.Message           = "The timed route did not produce a feasible BMTP motion: " + candidate.Message;
+    result = obstacleAvoidance.input.finalizeCandidate( ...
+        result, candidate, route_units, diagnostics);
+    result.UnderlyingTerminationReason = candidate.TerminationReason;
     result.TerminationReason = "timedMotionInfeasible";
-    result.SolverDiagnostics = diagnostics;
-    result.ElapsedTime_s     = previous.ElapsedTime_s + toc(totalTimer);
+    result.Message = "The timed route did not produce a feasible BMTP motion: " + ...
+        candidate.Message;
+    result.ElapsedTime_s = previous.ElapsedTime_s + toc(totalTimer);
     return
 end
 
@@ -167,9 +172,52 @@ function [regions_units, coverage] = createTimedCoverage(obstacles, startTime_s,
     cells         = obstacleAvoidance.obstacles.createTimeCells(obstacles, startTime_s, finishTime_s);
     regions_units = cells.Regions_units;
     coverage = struct( ...
-        'Passed',               true, ...
         'ExactRegionCount',     numel(regions_units), ...
         'ActiveTimeInterval_s', cells.ActiveTimeInterval_s, ...
         'EndRegions_units',     {cells.EndRegions_units}, ...
         'BreakTime_s',          cells.BreakTime_s);
+end
+
+function result = resetTimedResult(previous)
+    % Start the timed attempt with no motion, graph, or solver state from a
+    % failed spatial proposal. Request provenance and earlier attempts remain.
+    result                              = previous;
+    result.Success                      = false;
+    result.Message                      = "The timed fallback has not completed.";
+    result.TerminationReason            = "notStarted";
+    result.UnderlyingTerminationReason  = "";
+    result.Route_units                  = zeros(0, 2);
+    result.time_s                       = zeros(0, 1);
+    result.position_units               = zeros(0, 2);
+    result.velocity_units_s             = zeros(0, 2);
+    result.acceleration_units_s2        = zeros(0, 2);
+    result.jerk_units_s3                = zeros(0, 2);
+    result.Polynomial                   = struct();
+    result.PlaneCertificate             = struct();
+    result.SolverDiagnostics            = struct();
+    result.Validation                   = struct( ...
+        "Passed", false, "Message", "No timed motion is available.");
+    result.ArrivalTime_s                = NaN;
+    result.TrajectoryDuration_s         = NaN;
+    result.MotionLength_units           = Inf;
+    result.IntegratedSquaredJerk_units2_s5 = Inf;
+    result.MaximumConstraintViolation   = Inf;
+    result.SeedSource                   = "";
+    result.OptimizerFeasible            = false;
+    result.OptimizerIterateUnavailable  = false;
+    result.AlternativeGuideEligible     = false;
+    result.FailureStage                 = "notRun";
+    result.FailureKind                  = "notRun";
+    result.VisibilityGraph = struct( ...
+        'NodePosition_units',     zeros(0, 2), ...
+        'AcceptedNodeIndex',      zeros(0, 2), ...
+        'RejectedNodeIndex',      zeros(0, 2), ...
+        'Route_units',            zeros(0, 2), ...
+        'RouteTime_s',            zeros(0, 1), ...
+        'RouteLength_units',      Inf, ...
+        'IsConnected',            false, ...
+        'ExpandedCount',          0, ...
+        'GraphIsFullyEnumerated', false, ...
+        'SearchKind',             "timeExpandedVisibilityGraph", ...
+        'TimedSearch',            struct());
 end

@@ -63,7 +63,8 @@ function testContinuityProjectionMayOnlyAbsorbRoundoff(testCase)
 
     route_units = [result.Inputs.initialState.position_units; result.Inputs.goalState.position_units];
     seed        = struct('position_units', route_units, 'tau', [0; 1], 'Source', "discontinuous");
-    request     = bmtpEngine.pipeline.createSolveRequest(seed, cell(0, 1), struct('Passed', true), ...
+    request     = bmtpEngine.pipeline.createSolveRequest(seed, cell(0, 1), ...
+        struct('Passed', true, 'ExactRegionCount', 0), ...
         result.Inputs.initialState, result.Inputs.goalState, result.Limits, result.Options);
     prepared = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, [5; 5]);
     verifyFalse(testCase, prepared.Success);

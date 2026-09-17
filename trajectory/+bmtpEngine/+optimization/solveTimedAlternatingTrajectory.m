@@ -49,6 +49,8 @@ selectedStepOutput         = struct();
 lastStepOutput             = struct();
 previousFailedPairs        = false(segmentCount, numel(request.Regions_units));
 lastAttemptMessage         = "The time-scoped alternating iteration limit was reached.";
+failureStage               = "optimization";
+failureKind                = "iterationLimit";
 diagnostics.ConicSolver    = bmtpEngine.optimization.accumulateConicDiagnostics();
 
 % Establish the exact moving corridor at the timed guide's physical clock.
@@ -64,6 +66,9 @@ if ~complete
     diagnostics.SolverMessage           = "The timed visibility guide could not initialize its exact corridor.";
     diagnostics.LastAttemptMessage      = diagnostics.SolverMessage;
     result = struct('Success', false, 'SolverMessage', diagnostics.SolverMessage, ...
+        'FailureStage',      "proposal", ...
+        'FailureKind',       "timedCorridorInitializationUnavailable", ...
+        'AlternativeGuideEligible', false, ...
         'ControlPoint_units', selectedControl_units, ...
         'SegmentTime_s',      selectedSegmentTime_s, ...
         'Planes',             selectedPlanes, ...
@@ -71,23 +76,34 @@ if ~complete
     return
 end
 previousDuration_s = warmStart.Duration_s;
+constraintBase     = struct();
 
 %% Section 2: Solve And Rebuild Constraints On Every Returned Clock
 for iterationIndex = 1:request.MaximumAlternatingIterations
     diagnostics.IterationCount = iterationIndex;
     trajectoryGoalTimeMode     = request.Options.GoalTimeMode;
-    [trialControl_units, trialSegmentTime_s, exitFlag, output] = ...
+    [trialControl_units, trialSegmentTime_s, exitFlag, output, constraintBase] = ...
         bmtpEngine.optimization.solveTimedTrajectoryStep(segmentCount, request.Degree, ...
         request.InitialState.position_units, request.GoalState.position_units, ...
         request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, ...
         trajectoryGoalTimeMode, request.TimedTrajectoryOptions, request.MinimumMotionDuration_s, ...
-        segmentRatio);
+        segmentRatio, constraintBase);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver, output);
     lastStepOutput = output;
     if ~bmtpEngine.optimization.hasUsableConicIterate(trialControl_units, exitFlag)
         lastAttemptMessage = "Trajectory SOCP failed: " + string(output.message);
+        diagnostics.LastTrajectoryExitFlag = exitFlag;
+        failureStage = "numericalSolver";
+        failureKind  = "optimizerIterateUnavailable";
+        if exitFlag == 0
+            failureStage = "optimization";
+            failureKind  = "trajectorySolverIterationLimit";
+        elseif exitFlag == -2
+            failureStage = "proposal";
+            failureKind  = "trajectorySubproblemInfeasible";
+        end
         break
     end
 
@@ -113,6 +129,8 @@ for iterationIndex = 1:request.MaximumAlternatingIterations
             trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
         if ~complete
             lastAttemptMessage = "The feasible timed motion did not produce a complete exact plane set.";
+            failureStage = "certification";
+            failureKind  = "feasibleTimedPlaneSetUnavailable";
             break
         end
         previousFeasibleDuration_s = Inf;
@@ -152,12 +170,16 @@ for iterationIndex = 1:request.MaximumAlternatingIterations
         trialSegmentTime_s, request, obstacleTarget_units, roundoffReserve_units);
     if ~complete
         lastAttemptMessage = "The timed visibility guide could not initialize every exact clock pair.";
+        failureStage = "proposal";
+        failureKind  = "timedClockPairInitializationUnavailable";
         break
     end
     unchangedClock = abs(duration_s - previousDuration_s) <= ...
         request.Options.ArrivalTimeTolerance_s;
     if unchangedClock && isequal(failedPairs, previousFailedPairs)
         lastAttemptMessage = "The exact timed pair set stopped changing before feasibility.";
+        failureStage = "optimization";
+        failureKind  = "timedPairSetStalled";
         break
     end
     previousDuration_s  = duration_s;
@@ -173,6 +195,8 @@ if ~isempty(selectedControl_units)
     diagnostics.Converged               = selectedStepOutput.OptimizationConverged;
     solverMessage                       = selectedSolverMessage;
     diagnosticStepOutput                = selectedStepOutput;
+    failureStage                        = "";
+    failureKind                         = "";
 else
     diagnostics.ApplicablePairCount     = 0;
     diagnostics.FinalCollisionPairCount = 0;
@@ -200,6 +224,9 @@ diagnostics.SolverMessage      = solverMessage;
 diagnostics.LastAttemptMessage = lastAttemptMessage;
 result = struct('Success', ~isempty(selectedControl_units), ...
     'SolverMessage',      solverMessage, ...
+    'FailureStage',       failureStage, ...
+    'FailureKind',        failureKind, ...
+    'AlternativeGuideEligible', false, ...
     'ControlPoint_units', selectedControl_units, ...
     'SegmentTime_s',      selectedSegmentTime_s, ...
     'Planes',             selectedPlanes, ...

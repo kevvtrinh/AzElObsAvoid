@@ -60,9 +60,13 @@ planes     = repmat(emptyPlane, segmentCount, regionCount);
 selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
 solverMessage         = "The all-pair alternating iteration limit was reached.";
+failureStage          = "optimization";
+failureKind           = "iterationLimit";
+alternativeGuideEligible = true;
 meshRefinementCount   = 0;
 useIntrinsicVariation = false;
 stageIterationCount = zeros(1, 2);
+constraintBase      = struct();
 
 %% Section 2: Alternate The Complete Formulation
 if allPlanesActive
@@ -71,11 +75,12 @@ if allPlanesActive
         stageIndex = 1 + useIntrinsicVariation;
         stageIterationCount(stageIndex) = stageIterationCount(stageIndex) + 1;
         diagnostics.IterationCount = sum(stageIterationCount);
-        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.optimization.solveTrajectoryStep( ...
+        [trialControl_units, trialTime_s, exitFlag, output, constraintBase] = ...
+            bmtpEngine.optimization.solveTrajectoryStep( ...
             segmentCount, request.Degree, request.InitialState, request.GoalState, ...
             request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, ...
             request.TrajectoryOptions, warmStart.SegmentRatio, true, ...
-            useIntrinsicVariation);
+            useIntrinsicVariation, constraintBase);
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.IntrinsicJerkVariation = output.IntrinsicJerkVariation;
@@ -91,6 +96,20 @@ if allPlanesActive
         end
         if ~bmtpEngine.optimization.hasUsableConicIterate(trialControl_units, exitFlag)
             solverMessage = "Trajectory SOCP failed: " + string(output.message);
+            diagnostics.LastTrajectoryExitFlag = exitFlag;
+            if exitFlag == 0
+                failureStage  = "optimization";
+                failureKind   = "trajectorySolverIterationLimit";
+                alternativeGuideEligible = true;
+            elseif exitFlag == -2
+                failureStage  = "proposal";
+                failureKind   = "trajectorySubproblemInfeasible";
+                alternativeGuideEligible = true;
+            else
+                failureStage  = "numericalSolver";
+                failureKind   = "optimizerIterateUnavailable";
+                alternativeGuideEligible = false;
+            end
             break;
         end
 
@@ -132,6 +151,8 @@ if allPlanesActive
         diagnostics.FinalCollisionPairCount = unverifiedPairCount;
         if ~allPlanesActive
             solverMessage = "A complete separating-line update failed.";
+            failureStage  = "proposal";
+            failureKind   = "separatingLineUpdateUnavailable";
             break;
         end
 
@@ -153,12 +174,15 @@ if allPlanesActive
                 end
                 diagnostics.ApplicablePairCount = nnz(request.RegionActiveBySegment);
                 useIntrinsicVariation = false;
+                constraintBase        = struct();
                 planes = repmat(emptyPlane, segmentCount, regionCount);
                 [planes, allPlanesActive, ~, diagnostics] = updatePlanes(refinedControl_units, ...
                     refinedTime_s, planes, request, diagnostics, ...
                     obstacleTarget_units, roundoffReserve_units, false);
                 if ~allPlanesActive
                     solverMessage = "A refined separating-line initialization failed.";
+                    failureStage  = "proposal";
+                    failureKind   = "refinedSeparatingLineInitializationUnavailable";
                     break
                 end
             end
@@ -172,6 +196,7 @@ if allPlanesActive
         variationStageIsRequired = request.Degree == 5 && segmentCount > 8;
         if variationStageIsRequired && ~useIntrinsicVariation
             useIntrinsicVariation = true;
+            constraintBase        = struct();
             continue;
         end
 
@@ -179,10 +204,15 @@ if allPlanesActive
         selectedSegmentTime_s       = trialTime_s;
         diagnostics.Converged      = output.OptimizationConverged;
         solverMessage              = "A complete all-pair-verified iterate was found.";
+        failureStage               = "";
+        failureKind                = "";
+        alternativeGuideEligible  = false;
         break;
     end
 else
     solverMessage = "The visibility seed did not produce a complete separating-line initialization.";
+    failureStage  = "proposal";
+    failureKind   = "separatingLineInitializationUnavailable";
 end
 
 %% Section 3: Return The Best Fully Verified Iterate
@@ -190,6 +220,9 @@ diagnostics.SolverMessage = solverMessage;
 result = struct();
 result.Success            = ~isempty(selectedControl_units);
 result.SolverMessage      = solverMessage;
+result.FailureStage       = failureStage;
+result.FailureKind        = failureKind;
+result.AlternativeGuideEligible = alternativeGuideEligible;
 result.ControlPoint_units = selectedControl_units;
 result.SegmentTime_s      = selectedSegmentTime_s;
 result.Planes             = planes;

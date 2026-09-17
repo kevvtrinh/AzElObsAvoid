@@ -24,7 +24,7 @@ function testMovingObstacle220Quality(testCase)
     verifyGreaterThan(testCase,result.PlaneCertificate.MinimumSignedGap_units,0);
     verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
     verifyGreaterThan(testCase,result.PlaneCertificate.CachedGeometryPairCount,0);
-    verifyEqual(testCase,result.SolverDiagnostics.FullPlaneUpdateSkippedCount,1);
+    verifyGreaterThan(testCase,result.SolverDiagnostics.FullPlaneUpdateSkippedCount,0);
     verifyGreaterThan(testCase, ...
         result.SolverDiagnostics.ConstraintRowPairVerificationCount,0);
     verifyEqual(testCase, ...

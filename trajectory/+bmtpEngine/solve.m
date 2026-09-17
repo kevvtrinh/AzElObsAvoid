@@ -15,8 +15,11 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %   - regions_units (R-by-1 cell array)
 %       Each cell contains one finite convex N-by-2 exclusion polygon.
 %   - coverage (scalar struct)
-%       Requires Passed. Optional ActiveTimeInterval_s limits each region to
-%       an absolute physical motion-time interval.
+%       Geometry provenance. ExactRegionCount and timed end-region metadata
+%       must be internally consistent. Optional ActiveTimeInterval_s limits
+%       each region to an absolute physical motion-time interval. The public
+%       validator, not this metadata check, establishes authoritative
+%       obstacle-coverage completeness.
 %   - initialState (scalar struct)
 %       Normalized initial position, velocity, and acceleration.
 %   - goalState (scalar struct)
@@ -56,6 +59,7 @@ diagnostics           = createEmptyDiagnostics(degree, segmentCount, numel(regio
 diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
 diagnostics.WarmRouteResampled       = warmStart.WarmRouteResampled;
 diagnostics.ApplicablePairCount      = nnz(regionActiveBySegment);
+diagnostics.MaximumAlternatingIterations = request.MaximumAlternatingIterations;
 if isfield(coverage, 'BreakTime_s')
     diagnostics.Identifier = "bmtpTimeCellsDegree" + string(degree);
 end
@@ -111,7 +115,8 @@ if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
     diagnostics.DepartureSchedule = departure;
     if isempty(times_s)
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
-            "No C3 chord departure fits the horizon.", "noDepartureWindow", false);
+            "No C3 chord departure fits the horizon.", "noDepartureWindow", false, ...
+            "timing", "noDepartureWindow", false);
         return;
     end
     preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, times_s, powers_units);
@@ -119,7 +124,8 @@ if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
         request, preparedMotion, roundoffReserve_units, obstacleTarget_units, certificateCache);
     if ~preparedMotion.Success || ~certificate.Passed
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
-            "The C3 departure proposal did not pass certification.", "departureUncertified", false);
+            "The C3 departure proposal did not pass certification.", "departureUncertified", false, ...
+            "certification", "departureUncertified", false);
         return;
     end
     analyticIdentifier = "c3DepartureSchedule";
@@ -160,7 +166,10 @@ else
         candidate.OptimizerIterateUnavailable = true;
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
             "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, ...
-            "noOptimizedFeasibleIterate", false);
+            "noOptimizedFeasibleIterate", false, ...
+            string(optionalField(alternatingResult, "FailureStage", "optimization")), ...
+            string(optionalField(alternatingResult, "FailureKind", "optimizerIterateUnavailable")), ...
+            logical(optionalField(alternatingResult, "AlternativeGuideEligible", false)));
         return;
     end
     if isfield(alternatingResult, 'PreparedMotion') && alternatingResult.PreparedMotion.Success && ...
@@ -182,7 +191,8 @@ diagnostics.DilationScale = preparedMotion.DilationScale;
 % Return reconstruction failure without certification because no complete motion exists to certify.
 if ~preparedMotion.Success
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
-        preparedMotion.Message, preparedMotion.TerminationReason, true);
+        preparedMotion.Message, preparedMotion.TerminationReason, true, ...
+        "reconstruction", string(preparedMotion.TerminationReason), false);
     return;
 end
 
@@ -225,7 +235,8 @@ candidate.OptimizerFeasible   = true;
 if ~certificate.Passed
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
         "The optimized motion failed continuous collision, dynamics, or C3 continuity certification.", ...
-        "planeCertificateUnavailable", true);
+        "planeCertificateUnavailable", true, ...
+        "certification", "planeCertificateUnavailable", false);
     return;
 end
 
@@ -233,6 +244,9 @@ end
 [candidate.Message, candidate.TerminationReason] = deal( ...
     "A directly certified BMTP trajectory was found.", "goalReached");
 [candidate.Success, diagnostics.Accepted]        = deal(true);
+candidate.FailureStage                           = "";
+candidate.FailureKind                            = "";
+candidate.AlternativeGuideEligible               = false;
 diagnostics.ElapsedTime_s                        = toc(totalTimer);
 end
 
@@ -296,6 +310,9 @@ function candidate = createEmptyCandidate(seed, initialState)
     candidate.Success                                  = false;
     candidate.OptimizerFeasible                        = false;
     candidate.OptimizerIterateUnavailable              = false;
+    candidate.AlternativeGuideEligible                 = false;
+    candidate.FailureStage                             = "notRun";
+    candidate.FailureKind                              = "notRun";
     candidate.Message                                  = "The BMTP kernel was not run.";
     candidate.TerminationReason                        = "notRun";
     candidate.SeedSource                               = seedSource;
@@ -349,9 +366,16 @@ function diagnostics = createEmptyDiagnostics(degree, segmentCount, regionCount)
 end
 
 function [candidate, diagnostics] = finishFailure( ...
-    candidate, diagnostics, timer, message, reason, optimizerFeasible)
+    candidate, diagnostics, timer, message, reason, optimizerFeasible, ...
+    failureStage, failureKind, alternativeGuideEligible)
     % Return a failure without fabricating motion data.
     [candidate.Message, candidate.TerminationReason, candidate.OptimizerFeasible] = ...
         deal(message, reason, optimizerFeasible);
+    candidate.FailureStage               = string(failureStage);
+    candidate.FailureKind                = string(failureKind);
+    candidate.AlternativeGuideEligible   = logical(alternativeGuideEligible);
+    diagnostics.FailureStage             = candidate.FailureStage;
+    diagnostics.FailureKind              = candidate.FailureKind;
+    diagnostics.AlternativeGuideEligible = candidate.AlternativeGuideEligible;
     [diagnostics.Accepted, diagnostics.ElapsedTime_s] = deal(false, toc(timer));
 end

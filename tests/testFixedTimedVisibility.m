@@ -112,6 +112,7 @@ end
 
 function testArrivalSnapshotAvoidsTimedFallback(testCase)
     scenario=createRandomAzimuthScenario(26,true);
+    scenario.Options.SpatialProbeIterationLimit=2;
     result=planner(scenario.Obstacles,scenario.InitialState, ...
         scenario.GoalState,scenario.Limits,scenario.Options);
     assertTrue(testCase,result.Success,result.Message);
@@ -119,10 +120,102 @@ function testArrivalSnapshotAvoidsTimedFallback(testCase)
     verifyEqual(testCase,result.SeedSource,"arrivalSpatialSnapshot");
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
         "arrivalSpatialSnapshot");
-    verifyFalse(testCase,isfield(result.VisibilityGraph,'SpatialSeedDiagnostics'));
-    verifyTrue(testCase,isfield(result.VisibilityGraph,'InitialSpatialSeedDiagnostics'));
-    verifyFalse(testCase,result.VisibilityGraph.InitialSpatialSeedDiagnostics.Accepted);
-    verifyEqual(testCase, ...
-        result.VisibilityGraph.InitialSpatialSeedDiagnostics.IterationCount,2);
+    verifyEqual(testCase,numel(result.Attempts),2);
+    verifyEqual(testCase,[result.Attempts.IsHeuristic],[true,true]);
+    verifyEqual(testCase,[result.Attempts.IterationLimit],[2,2]);
+    verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,2);
+    verifyEqual(testCase,result.Attempts(1).FailureKind,"iterationLimit");
+    verifyTrue(testCase,result.Attempts(1).FallbackEligible);
+    verifyEqual(testCase,result.Attempts(2).Outcome,"accepted");
+    verifyEqual(testCase,result.Attempts(2).ValidationStatus,"passed");
     verifyGreaterThan(testCase,size(result.Route_units,1),2);
+end
+
+function testTimedFallbackCrossesARecurrentCurtain(testCase)
+    wall=[-0.2,-7;0.2,-7;0.2,7;-0.2,7];
+    moved=wall+[0,14];
+    obstacle=obstacleAvoidance.obstacles.createObstacle('recurrent curtain', ...
+        [0;1;1.1;4;4.1;12], ...
+        {wall(:,1);wall(:,1);moved(:,1);moved(:,1);wall(:,1);wall(:,1)}, ...
+        {wall(:,2);wall(:,2);moved(:,2);moved(:,2);wall(:,2);wall(:,2)},0);
+    initial=struct('time_s',0,'position_units',[-4,0]);
+    goal=struct('time_s',12,'position_units',[4,0]);
+    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-6,6], ...
+        'maxVelocity_units_s',[4,4],'maxAcceleration_units_s2',[4,4], ...
+        'maxJerk_units_s3',[8,8]);
+    options=struct('GoalTimeMode','fixedArrival','TemporalResolution_s',0.25);
+
+    result=planner(obstacle,initial,goal,limits,options);
+
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,result.Validation.Passed);
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+        "timeExpandedVisibilityGraph");
+    verifyEqual(testCase,numel(result.Attempts),3);
+    verifyEqual(testCase,[result.Attempts(1:2).GuideStatus], ...
+        ["noRoute","noRoute"]);
+    verifyFalse(testCase,any([result.Attempts(1:2).SolverAttempted]));
+    verifyEqual(testCase,result.Attempts(3).Outcome,"accepted");
+    verifyEqual(testCase,result.Attempts(2).Trigger, ...
+        result.Attempts(1).FallbackReason);
+    verifyEqual(testCase,result.Attempts(3).Trigger, ...
+        result.Attempts(2).FallbackReason);
+end
+
+function testFailedTimedFallbackDoesNotLeakSpatialState(testCase)
+    wall=[-0.2,-7;0.2,-7;0.2,7;-0.2,7];
+    shifted=wall+[0.1,0];
+    obstacle=obstacleAvoidance.obstacles.createObstacle('persistent curtain', ...
+        [0;6;12],{wall(:,1);shifted(:,1);wall(:,1)}, ...
+        {wall(:,2);shifted(:,2);wall(:,2)},0);
+    initial=struct('time_s',0,'position_units',[-4,0]);
+    goal=struct('time_s',12,'position_units',[4,0]);
+    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-6,6], ...
+        'maxVelocity_units_s',[4,4],'maxAcceleration_units_s2',[4,4], ...
+        'maxJerk_units_s3',[8,8]);
+    options=struct('GoalTimeMode','fixedArrival','TemporalResolution_s',0.25);
+
+    result=planner(obstacle,initial,goal,limits,options);
+
+    verifyFalse(testCase,result.Success);
+    verifyEqual(testCase,result.TerminationReason,"noTimedRoute");
+    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+        "timeExpandedVisibilityGraph");
+    verifyFalse(testCase,result.VisibilityGraph.IsConnected);
+    verifyEmpty(testCase,result.Route_units);
+    verifyEmpty(testCase,result.time_s);
+    verifyEqual(testCase,numel(result.Attempts),3);
+    verifyEqual(testCase,result.Attempts(end).FailureStage,"search");
+    verifyEqual(testCase,result.Attempts(end).FailureKind,"noTimedRoute");
+    verifyEqual(testCase,result.Attempts(end).Outcome,"terminalFailure");
+    verifyEqual(testCase,result.Attempts(3).Trigger, ...
+        result.Attempts(2).FallbackReason);
+end
+
+function testDuplicateArrivalGuideIsNotSolvedTwice(testCase)
+    scenario=createRandomAzimuthScenario(26,true);
+    moving=scenario.Obstacles(1);
+    returning=obstacleAvoidance.obstacles.createObstacle('returning rectangle', ...
+        [0;90;180], ...
+        {moving.originalX_units{1};moving.originalX_units{2};moving.originalX_units{1}}, ...
+        {moving.originalY_units{1};moving.originalY_units{2};moving.originalY_units{1}}, ...
+        moving.safetyMargin_units);
+    obstacles=obstacleAvoidance.obstacles.combineObstacles( ...
+        {returning;scenario.Obstacles(2)});
+    scenario.Options.SpatialProbeIterationLimit=1;
+
+    result=planner(obstacles,scenario.InitialState,scenario.GoalState, ...
+        scenario.Limits,scenario.Options);
+
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,result.Validation.Passed);
+    verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,1);
+    verifyEqual(testCase,result.Attempts(1).IterationLimit,1);
+    verifyEqual(testCase,numel(result.Attempts),3);
+    verifyEqual(testCase,result.Attempts(2).GuideStatus,"duplicateRoute");
+    verifyFalse(testCase,result.Attempts(2).SolverAttempted);
+    verifyEqual(testCase,result.Attempts(2).FallbackReason, ...
+        "duplicateSpatialGuide");
+    verifyEqual(testCase,result.Attempts(3).Kind,"timedVisibility");
+    verifyEqual(testCase,result.Attempts(3).Outcome,"accepted");
 end

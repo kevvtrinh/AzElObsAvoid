@@ -1,8 +1,9 @@
-function result = planPeriodicRequest(obstacles, initialState, goalState, bandLimits, options, request)
+function result = planPeriodicRequest( ...
+    obstacles, initialState, goalState, bandLimits, options, request, plannerCore)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.input.planPeriodicRequest( ...
-%       obstacles, initialState, goalState, bandLimits, options, request)
+%       obstacles, initialState, goalState, bandLimits, options, request, plannerCore)
 %**************************************************************************
 % PURPOSE
 %   - Plan a request with wrapped axes as plain requests in the unwrapped
@@ -27,6 +28,8 @@ function result = planPeriodicRequest(obstacles, initialState, goalState, bandLi
 %   - request (scalar struct)
 %       SuppliedLimits, SuppliedGoalState, RequestedLimits, and
 %       RequestedGoalState of the periodic request.
+%   - plannerCore (function handle)
+%       Private planner implementation carrying the outer request context.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -109,7 +112,8 @@ for candidateIndex = 1:candidateCount
         end
     end
     wasPlanned(candidateIndex) = true;
-    candidate = planner(images, initialState, candidateGoalState, bandLimits, planarOptions, outerRequest);
+    candidate = plannerCore( ...
+        images, initialState, candidateGoalState, bandLimits, planarOptions, outerRequest);
     reasons(candidateIndex) = candidate.TerminationReason;
     if candidate.Success
         if isEarliest
