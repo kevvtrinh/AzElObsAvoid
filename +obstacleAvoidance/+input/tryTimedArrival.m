@@ -99,13 +99,11 @@ if freeGoalWindowIsUsed
 end
 seedDuration_s = routeTime_s(end) - initialState.time_s;
 
-% The producer declares the physical clock this guide was built on. Source
-% remains a diagnostic label and never selects a solver.
+% The producer declares the physical clock this guide was built on.
 normalizedRouteTime = (routeTime_s - initialState.time_s) / seedDuration_s;
 seed = struct( ...
     'position_units',      route_units, ...
     'tau',                 normalizedRouteTime, ...
-    'Source',              "timeExpandedVisibilityGraph", ...
     'UsesVariableClock',   false, ...
     'UsesTimeScopedSolver', false);
 motionGoalState = goalState;
@@ -132,7 +130,6 @@ end
 if ~candidate.Success
     result = obstacleAvoidance.input.finalizeCandidate( ...
         result, candidate, route_units, diagnostics);
-    result.UnderlyingTerminationReason = candidate.TerminationReason;
     result.TerminationReason = "timedMotionInfeasible";
     result.Message = "The timed route did not produce a feasible BMTP motion: " + ...
         candidate.Message;
@@ -170,13 +167,10 @@ necessaryArrivalTime_s = initialState.time_s + minimumTravelTime_s;
 result.TemporalSearch = struct( ...
     'Resolution_s',            previous.Options.TemporalResolution_s, ...
     'TrialTime_s',             candidate.ArrivalTime_s, ...
-    'TrialTerminationReason',  "goalReached", ...
-    'TrialStage',              string(candidate.SeedSource), ...
     'GlobalEarliestProven',    false, ...
     'NecessaryArrivalBound_s', necessaryArrivalTime_s, ...
     'IncumbentArrival_s',      NaN, ...
-    'RetainedIncumbent',       false, ...
-    'PriorTerminationReason',  previous.TerminationReason);
+    'RetainedIncumbent',       false);
 result.ElapsedTime_s = previous.ElapsedTime_s + toc(totalTimer);
 end
 
@@ -200,7 +194,6 @@ function result = resetTimedResult(previous)
     result.Success                      = false;
     result.Message                      = "The timed fallback has not completed.";
     result.TerminationReason            = "notStarted";
-    result.UnderlyingTerminationReason  = "";
     result.Route_units                  = zeros(0, 2);
     result.time_s                       = zeros(0, 1);
     result.position_units               = zeros(0, 2);
@@ -217,7 +210,6 @@ function result = resetTimedResult(previous)
     result.MotionLength_units           = Inf;
     result.IntegratedSquaredJerk_units2_s5 = Inf;
     result.MaximumConstraintViolation   = Inf;
-    result.SeedSource                   = "";
     result.OptimizerFeasible            = false;
     result.OptimizerIterateUnavailable  = false;
     result.AlternativeGuideEligible     = false;

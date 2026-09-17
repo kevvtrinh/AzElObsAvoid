@@ -19,9 +19,8 @@ the next stage. When a bad result appears, the inputs and decisions are
 reproduced by hand at each boundary and the first source of falseness is
 removed there. No stage carries a known-bad seed, clock, corridor, or geometry
 downstream and then adds filters, retries, fallback profiles, or cleanup stages
-to compensate. Diagnostic fields such as `SeedSource`, `SearchKind`, `Source`,
-and `TrialStage` explain provenance and never select polynomial degree,
-subdivision, solver formulation, or acceptance.
+to compensate. `SearchKind` summarizes the returned visibility evidence but
+never selects polynomial degree, subdivision, solver formulation, or acceptance.
 
 ## Current production flow (Mermaid)
 
@@ -67,7 +66,7 @@ flowchart TD
         FA -- "certification, numerical, or unknown failure" --> FTERM["Terminal typed failure"]
         FNEXT -- yes --> FS
         FNEXT -- no --> FT["One clean time-expanded visibility fallback<br/>normal BMTP budget"]
-        FT --> FTA{"Outcome"}
+        FT --> FTA{"Result"}
         FTA -- "validated" --> FTSUCCESS["Select timed motion"]
         FTA -- "otherwise" --> FTERM
     end
@@ -77,12 +76,12 @@ flowchart TD
         EC --> EK{"Request capability"}
 
         EK -- "static + fixed goal + rest endpoints" --> ES["Exact spatial graph + variable-clock BMTP"]
-        ES --> ESA{"Outcome"}
+        ES --> ESA{"Result"}
         ESA -- "validated" --> ESOK["Select static motion"]
         ESA -- "otherwise" --> ESTOP["Terminal: no unrelated fallback"]
 
         EK -- "dynamic + fixed goal + rest endpoints" --> ED["⚠ Analytic direct-departure family"]
-        ED --> EDA{"Outcome"}
+        ED --> EDA{"Result"}
         EDA -- "validator rejected" --> EDEFECT["Terminal invalidMotion defect"]
         EDA -- "validated" --> EI["⚠ Retain validated incumbent"]
         EDA -- "typed method-local miss" --> ET
@@ -90,7 +89,7 @@ flowchart TD
         EI --> ELB{"Necessary arrival lower bound attained<br/>within ArrivalTimeTolerance_s?"}
         ELB -- yes --> EPROOF["Select incumbent<br/>GlobalEarliestProven = true"]
         ELB -- no --> ET["⚠ One time-expanded variable-clock challenger<br/>horizon capped below incumbent - tolerance"]
-        ET --> ETA{"Outcome"}
+        ET --> ETA{"Result"}
         ETA -- "validated" --> ECMP["Compare candidate with incumbent<br/>within tolerance keep departure incumbent"]
         ECMP --> ESELECT["Select policy-preferred validated motion"]
         ETA -- "validator rejected" --> EDEFECT
@@ -139,13 +138,13 @@ flowchart TD
     VAL -. governs .-> ETA
     VAL -. governs .-> CSA
 
-    L["⚠ One ordered result.Attempts ledger<br/>typed failure, elapsed time, caps, prescreens, child attempts;<br/>selection and supersession outcomes update in place"]
+    L["⚠ One ordered result.Attempts ledger<br/>typed failure, elapsed time, caps, prescreens, child attempts;<br/>selection updates in place"]
     EC -. records .-> L
     FS -. records .-> L
     CH -. records .-> L
     L -. explains .-> O
 
-    S["Source / SeedSource / SearchKind / TrialStage"]
+    S["SearchKind"]
     S -. "diagnostics only; never branch" .-> FB
     S -. "diagnostics only; never branch" .-> ES
     S -. "diagnostics only; never branch" .-> ET
@@ -175,7 +174,7 @@ are distinct physical guides, and the timed fallback is constructed once.
 Chronological arrival trials are different requested clocks rather than retries
 of one solver state. The ten-step certificate loop refines only the proof mesh
 for one candidate. All acceptance arrows above pass through the same public
-validator; the selected source label only reports which physical method won.
+validator; the selected attempt kind reports which physical method won.
 
 ### Current earliest-arrival policy check (2026-09-17)
 
@@ -193,7 +192,7 @@ independent validator.
 | Static spatial variable clock | 0.031 | 4.631128877 | 4.123105626 | `initialSpatialSnapshot` | exact spatial guide accepted |
 
 Wall times are indicative single-machine measurements. Arrival, length,
-validation, attempt order, selected source, and stopping reason are the
+validation, attempt order, selected method, and bounded-search state are the
 deterministic comparison fields.
 
 ## Public planner routing
@@ -242,10 +241,7 @@ everything else, and the seed's own degree for a complete polynomial seed.
 The physical clock is declared by the seed's producer as typed
 `UsesVariableClock` / `UsesTimeScopedSolver` logicals, never by a timing
 label, and one canonical convex decomposition serves every producer and the
-independent validator, so no stored merge-order label selects geometry.
-`testTimeScopedPlanes/testTimedProfileDoesNotDependOnSeedSource` proves that
-two unrelated source labels produce identical degree, split count, warm
-controls, segment clock, and active region pairs.
+independent validator, so no stored label selects geometry.
 
 For a variable-clock timed guide, the motion mesh has
 `max(20, originalSegmentCount * request.SplitCount)` spans. The obstacle cell
@@ -260,7 +256,7 @@ for earliest-arrival requests, not a pure refactor.
 
 ## Branches removed in this consolidation
 
-- `Source == "timeExpandedVisibilityGraph"` degree and subdivision routing in
+- Diagnostic seed labels used for degree and subdivision routing in
   `bmtpEngine.pipeline.createSolveRequest`.
 - The earliest-arrival fixed-clock manufacture and refinement cascade; a free
   goal window now uses one variable-clock timed profile.
@@ -293,11 +289,9 @@ for earliest-arrival requests, not a pure refactor.
 - The near-goal wait preference and later-final-transition tie rule. Temporal
   states now retain the shortest spatial ancestry and first-discovered exact
   tie at each physical layer.
-- The `Source == "departureSchedule"` label branch in `bmtpEngine.solve`; the
-  delayed-chord family is selected from the physical request (direct
-  rest-to-rest earliest request with moving cells and no timed guide).
-  `testDepartureFamilyDoesNotDependOnSeedLabel` proves label invariance
-  through `solve`, not only through request construction.
+- The seed-label branch in `bmtpEngine.solve`; the delayed-chord family is
+  selected from the physical request (direct rest-to-rest earliest request
+  with moving cells and no timed guide).
 - The fixed-arrival guide cascade advancing past a solver success that the
   public validator rejected; only solver-level infeasibility admits the next
   guide, and a rejected motion terminates as a defect to diagnose upstream.

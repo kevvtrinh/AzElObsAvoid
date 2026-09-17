@@ -54,18 +54,12 @@ degree                = request.Degree;
 route_units           = warmStart.Route_units;
 segmentCount          = warmStart.SegmentCount;
 regionActiveBySegment = warmStart.RegionActiveBySegment;
-candidate             = createEmptyCandidate(seed, initialState);
+candidate             = createEmptyCandidate(initialState);
 diagnostics           = createEmptyDiagnostics(degree, segmentCount, numel(regions_units));
 diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
 diagnostics.WarmRouteResampled       = warmStart.WarmRouteResampled;
 diagnostics.ApplicablePairCount      = nnz(regionActiveBySegment);
 diagnostics.MaximumAlternatingIterations = request.MaximumAlternatingIterations;
-if isfield(coverage, 'BreakTime_s')
-    diagnostics.Identifier = "bmtpTimeCellsDegree" + string(degree);
-end
-if options.GoalTimeMode == "fixedArrival"
-    diagnostics.ConstraintRepresentation = "fixedClockElasticSocp";
-end
 endRegions_units = cell(0, 1);
 if isfield(coverage, 'EndRegions_units')
     endRegions_units = coverage.EndRegions_units;
@@ -82,8 +76,6 @@ obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_uni
 preparedMotion         = struct('Success', false);
 certificate            = struct('Passed', false);
 certificateCache       = [];
-analyticIdentifier     = "minimumJerkQuintic";
-analyticRepresentation = "analyticQuinticClock";
 if size(route_units, 1) == 2 && options.GoalTimeMode == "earliestArrival" && request.IsRest
     [controls_units, times_s, powers_units] = bmtpEngine.motion.createC3Chord( ...
         initialState.position_units, goalState.position_units, limits);
@@ -93,8 +85,6 @@ if size(route_units, 1) == 2 && options.GoalTimeMode == "earliestArrival" && req
             preparedMotion, roundoffReserve_units, ...
             obstacleTarget_units, certificateCache, true);
     end
-    analyticIdentifier     = "c3JerkLimitedChord";
-    analyticRepresentation = "analyticC3Clock";
 elseif options.GoalTimeMode == "fixedArrival"
     % A timed direct motion can pass even when the selected guide detours.
     % Check it before committing to the guide route. The chord and its
@@ -145,11 +135,8 @@ if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
             "certification", "directDepartureCertificateUnavailable", false);
         return;
     end
-    analyticIdentifier = "c3DepartureSchedule";
 end
 if preparedMotion.Success && certificate.Passed
-    diagnostics.Identifier               = analyticIdentifier;
-    diagnostics.ConstraintRepresentation = analyticRepresentation;
     diagnostics.Converged                = true;
     diagnostics.OptimizerSpanCount       = 0;
     diagnostics.SegmentCount             = numel(preparedMotion.SegmentTime_s);
@@ -339,9 +326,8 @@ function [preparedMotion, certificate, cache] = directFixedArrivalMotion(request
         deal(key, preparedMotion, certificate, cache);
 end
 
-function candidate = createEmptyCandidate(seed, initialState)
+function candidate = createEmptyCandidate(initialState)
     % Use the same candidate fields on success and failure.
-    seedSource     = string(optionalField(seed, "Source", ""));
     dimensionCount = numel(initialState.position_units);
     candidate                                          = struct();
     candidate.Success                                  = false;
@@ -352,7 +338,6 @@ function candidate = createEmptyCandidate(seed, initialState)
     candidate.FailureKind                              = "notRun";
     candidate.Message                                  = "The BMTP kernel was not run.";
     candidate.TerminationReason                        = "notRun";
-    candidate.SeedSource                               = seedSource;
     candidate.ArrivalTime_s                            = NaN;
     candidate.TrajectoryDuration_s                     = NaN;
     candidate.MotionLength_units                       = Inf;
@@ -378,8 +363,6 @@ end
 function diagnostics = createEmptyDiagnostics(degree, segmentCount, regionCount)
     % Initialize solver, timing, and certificate diagnostics.
     diagnostics = struct( ...
-        "Identifier",                        "bmtpStaticDegree" + string(degree), ...
-        "ConstraintRepresentation",          "thirdOrderTimePowerSocp", ...
         "Accepted",                          false, ...
         "Degree",                            degree, ...
         "OriginalSeedSegmentCount",           segmentCount, ...
@@ -397,7 +380,6 @@ function diagnostics = createEmptyDiagnostics(degree, segmentCount, regionCount)
         "MotionCertificate",                  struct(), ...
         "PlaneCertificate",                   struct(), ...
         "SolverMessage",                      "", ...
-        "LastAttemptMessage",                 "", ...
         "ElapsedTime_s",                      0, ...
         "ConicSolver",                        bmtpEngine.optimization.accumulateConicDiagnostics());
 end

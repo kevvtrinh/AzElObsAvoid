@@ -51,20 +51,15 @@ if candidate.Success && ~isempty(goalState.targetMotion)
     result.Intercept = struct( ...
         'Time_s',                     arrivalTime_s, ...
         'TargetPosition_units',       tgtPosition_units, ...
-        'TerminalVelocityPolicy',     "explicit", ...
-        'TerminalAccelerationPolicy', "explicit");
+        'TerminalVelocityPolicy',     "explicit");
     if all(candidate.velocity_units_s(end, :) == 0)
         result.Intercept.TerminalVelocityPolicy = "zero";
-    end
-    if all(candidate.acceleration_units_s2(end, :) == 0)
-        result.Intercept.TerminalAccelerationPolicy = "zero";
     end
     if result.Options.MatchTargetVelocity
         result.Intercept.TerminalVelocityPolicy = "matched";
         result.Intercept.TargetVelocity_units_s = tgtVel_units_s;
     end
     if result.Options.MatchTargetAcceleration
-        result.Intercept.TerminalAccelerationPolicy  = "matched";
         result.Intercept.TargetAcceleration_units_s2 = tgtAcc_units_s2;
     end
 end

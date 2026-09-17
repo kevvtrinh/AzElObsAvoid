@@ -47,8 +47,8 @@ exact initial- and arrival-snapshot visibility guides as bounded runtime
 shortcuts, then constructs one time-expanded guide when neither shortcut
 returns a complete motion. A shortcut failure is not evidence of request
 infeasibility. Every stage is recorded in `result.Attempts`, including its
-declared iteration limit, trigger, typed failure, and validation outcome. A
-validator rejection terminates as a defect; it never starts another attempt.
+declared iteration limit, typed failure, selection, and child-attempt evidence.
+A validator rejection terminates as a defect; it never starts another attempt.
 
 Earliest-arrival requests pass through one capability-based coordinator. Static
 fixed-position rest-to-rest requests use the exact spatial graph and
@@ -70,8 +70,8 @@ an explicit, bounded `IncumbentRefinementTrialLimit` to search earlier clocks
 without changing the public validator or discarding the incumbent. Every route,
 motion, and clock attempt is recorded in `result.Attempts`; chronological parent
 attempts retain their fixed-arrival child evidence. `EarliestArrival` records
-capabilities, the selected attempt, the incumbent, the stopping reason, and
-whether the necessary lower bound was actually attained.
+capabilities, the selected attempt, the incumbent, the bounded-search state,
+and whether the necessary lower bound was actually attained.
 
 There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
 repairs, connectivity-recovery passes, fixture-specific seeds, hidden

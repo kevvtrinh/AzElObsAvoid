@@ -3301,7 +3301,6 @@
           const httpError = new Error(message);
           httpError.isHttpError = true;
           httpError.status = response.status;
-          httpError.identifier = errorRecord && errorRecord.identifier || "";
           throw httpError;
         }
         return payload;

@@ -24,8 +24,8 @@ function [shape, geometry] = preparedShapeAtTime( ...
 %   - shape (polyshape)
 %       Protected shape, or empty when geometryOnly omits construction.
 %   - geometry (scalar struct)
-%       Protected boundary and its prepared interval model. An unprepared,
-%       unsupported, or unknown interval throws an error.
+%       Protected boundary and classification. An unprepared, unsupported,
+%       or unknown interval throws an error.
 %**************************************************************************
 % UNITS
 %   - Position uses coordinate units; time uses seconds.
@@ -46,7 +46,7 @@ queryOutsideHistory = numel(time_s) > 1 && ...
     (queryTime_s < time_s(1) || queryTime_s > time_s(end));
 if isempty(time_s) || queryOutsideHistory
     geometry = boundaryGeometry( ...
-        zeros(0, 1), zeros(0, 1), 0, false, false, 0, "inactive", classifyBoundary);
+        zeros(0, 1), zeros(0, 1), 0, false, false, 0, classifyBoundary);
     if ~geometryOnly
         shape = polyshape();
     end
@@ -80,7 +80,6 @@ topologyIsInterpolated = true;
 usesSweptCells         = false;
 if lowerSampleIndex == upperSampleIndex
     speed_units_s = preparation.SampleSpeedBound_units_s(lowerSampleIndex);
-    geometryModel = "authoritativeSample";
     if ~geometryOnly
         shape = preparation.SampleShapes{lowerSampleIndex};
     end
@@ -101,7 +100,6 @@ elseif preparation.MatchingTopology(lowerSampleIndex)
         y_units = y_units + fraction * preparation.DeltaY_units{lowerSampleIndex};
     end
     speed_units_s = preparation.IntervalSpeedBound_units_s(lowerSampleIndex);
-    geometryModel = preparation.IntervalGeometryModel(lowerSampleIndex);
     if ~geometryOnly && speed_units_s == 0
         shape = preparation.SampleShapes{lowerSampleIndex};
     end
@@ -116,7 +114,6 @@ elseif preparation.IntervalIsStationary(lowerSampleIndex) || ...
     speed_units_s          = 0;
     topologyIsInterpolated = false;
     usesSweptCells         = preparation.IntervalUsesSweptCells(lowerSampleIndex);
-    geometryModel          = preparation.IntervalGeometryModel(lowerSampleIndex);
 else
     error('preparedShapeAtTime:UnknownGeometryModel', ...
         'The prepared obstacle interval has an unknown geometry model.');
@@ -131,13 +128,13 @@ if nargout < 2
 end
 geometry = boundaryGeometry( ...
     x_units, y_units, speed_units_s, topologyIsInterpolated, usesSweptCells, ...
-    lowerSampleIndex, geometryModel, classifyBoundary);
+    lowerSampleIndex, classifyBoundary);
 end
 
 %% Section 3: Local Functions
 
 function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
-        topologyIsInterpolated, usesSweptCells, lowerSampleIndex, geometryModel, classifyBoundary)
+        topologyIsInterpolated, usesSweptCells, lowerSampleIndex, classifyBoundary)
     % Classify one ordered boundary without changing its vertices or ring order.
     finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
@@ -170,6 +167,5 @@ function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
         "OutwardSign",               outwardSign, ...
         "TopologyIsInterpolated",    topologyIsInterpolated, ...
         "UsesSweptCells",            usesSweptCells, ...
-        "GeometryModel",             string(geometryModel), ...
         "LowerSampleIndex",          lowerSampleIndex);
 end

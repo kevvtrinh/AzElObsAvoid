@@ -15,7 +15,7 @@ function stats = accumulateConicDiagnostics(stats, output)
 %**************************************************************************
 % OUTPUTS
 %   - stats (scalar struct)
-%       Solver name, call count, and total elapsed solver time.
+%       Solver call count and total elapsed solver time.
 %   - stats (scalar struct, zero-input call)
 %       Zeroed accumulator ready for the first call.
 %**************************************************************************
@@ -26,7 +26,6 @@ function stats = accumulateConicDiagnostics(stats, output)
 %% Section 1: Return The Zeroed Accumulator
 if nargin == 0
     stats             = struct();
-    stats.Solver      = 'coneprog';
     stats.CallCount   = 0;
     stats.TotalTime_s = 0;
     return

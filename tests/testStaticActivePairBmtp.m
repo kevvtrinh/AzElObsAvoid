@@ -204,7 +204,6 @@ end
 function verifyValidatedStaticBmtp(testCase,result)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpStaticDegree8");
     verifyGreaterThan(testCase,result.SolverDiagnostics.TaggedPairCount,0);
     verifyGreaterThanOrEqual(testCase, ...
         result.SolverDiagnostics.TransientPlaneRemovalCount,0);
@@ -221,8 +220,7 @@ end
 function value=seed(route_units)
     edgeLength_units=vecnorm(diff(route_units),2,2);
     value=struct('position_units',route_units, ...
-        'tau',[0;cumsum(edgeLength_units)]/sum(edgeLength_units), ...
-        'Source',"visibilityGraph");
+        'tau',[0;cumsum(edgeLength_units)]/sum(edgeLength_units));
 end
 
 function value=plane(normal,offset_units)

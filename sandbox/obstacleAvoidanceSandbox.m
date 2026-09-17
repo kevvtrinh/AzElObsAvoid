@@ -324,7 +324,7 @@ function actions = createActionButtons(panelHandle, actionNames, actionLabels)
     for actionIndex = 1:buttonCount
         actionName   = actionNames(actionIndex);
         leftPosition = (actionIndex - 1) * (buttonWidth + gap);
-        actions.(actionName) = uicontrol(panelHandle, "Style", "pushbutton", "String", actionLabels(actionIndex), "Units", "normalized", "Position", [leftPosition 0 buttonWidth 1], "UserData", struct("Mode", "goal", "Action", actionName), "Callback", @handleAction);
+        actions.(actionName) = uicontrol(panelHandle, "Style", "pushbutton", "String", actionLabels(actionIndex), "Units", "normalized", "Position", [leftPosition 0 buttonWidth 1], "UserData", struct("Action", actionName), "Callback", @handleAction);
     end
 end
 
@@ -335,7 +335,7 @@ function actions = createAddButtons(panelHandle, actionNames, actionLabels)
     for actionIndex = 1:numel(actionNames)
         columnIndex = mod(actionIndex - 1, 2);
         rowIndex    = floor((actionIndex - 1) / 2);
-        actions.(actionNames(actionIndex)) = uicontrol(panelHandle, "Style", "pushbutton", "String", actionLabels(actionIndex), "Units", "normalized", "Position", [0.02 + 0.50 * columnIndex, 0.52 - 0.48 * rowIndex, 0.46, 0.42], "UserData", struct("Mode", "goal", "Action", actionNames(actionIndex)), "Callback", @handleAction);
+        actions.(actionNames(actionIndex)) = uicontrol(panelHandle, "Style", "pushbutton", "String", actionLabels(actionIndex), "Units", "normalized", "Position", [0.02 + 0.50 * columnIndex, 0.52 - 0.48 * rowIndex, 0.46, 0.42], "UserData", struct("Action", actionNames(actionIndex)), "Callback", @handleAction);
     end
 end
 
@@ -343,7 +343,6 @@ function applicationState = initializeApplicationState(figureHandle, options, go
     % Create the stable Goal Mode record and application interaction state.
     applicationState = struct("FigureHandle", figureHandle, ...
         "Options", options, ...
-        "ActiveMode", "goal", ...
         "InteractionState", "idle", ...
         "ActiveStroke_units", zeros(0, 2), ...
         "ActiveTraceHandle", gobjects(0), ...

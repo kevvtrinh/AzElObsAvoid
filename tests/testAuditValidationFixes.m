@@ -62,7 +62,7 @@ function testContinuityProjectionMayOnlyAbsorbRoundoff(testCase)
     verifyGreaterThan(testCase, polynomial.ContinuityProjectionDisplacement_units, 1);
 
     route_units = [result.Inputs.initialState.position_units; result.Inputs.goalState.position_units];
-    seed        = struct('position_units', route_units, 'tau', [0; 1], 'Source', "discontinuous");
+    seed        = struct('position_units', route_units, 'tau', [0; 1]);
     request     = bmtpEngine.pipeline.createSolveRequest(seed, cell(0, 1), ...
         struct('Passed', true, 'ExactRegionCount', 0), ...
         result.Inputs.initialState, result.Inputs.goalState, result.Limits, result.Options);

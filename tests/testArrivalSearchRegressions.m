@@ -23,7 +23,6 @@ function testCircleDetourBeatsWaiting(testCase)
         "timeExpandedVisibilityGraph");
     verifyLessThan(testCase,result.ArrivalTime_s, ...
         result.VisibilityGraph.RouteTime_s(end));
-    verifyEqual(testCase,result.SeedSource,"timeExpandedVisibilityGraph");
     verifyFalse(testCase,isfield(result.SolverDiagnostics, ...
         'DirectVariableClockAttempt'));
 end
@@ -199,43 +198,6 @@ function testPartiallyActiveStaticObstacleIsCheckedOnItsSubInterval(testCase)
     % the first-discovered equal-length physical route is already clear.
     verifyEqual(testCase,routeTime_s(end-1),0,'AbsTol',1e-12);
     verifyEqual(testCase,route_units(end-1,:),nodes_units(1,:),'AbsTol',1e-12);
-end
-
-function testDepartureFamilyDoesNotDependOnSeedLabel(testCase)
-    % The delayed-chord construction is selected from the physical request
-    % (direct rest-to-rest earliest with moving cells and no timed guide),
-    % never from the diagnostic seed label.
-    obstacleTime_s = [0;6;6.5;12];
-    barrier_units = [-0.2,-3;0.2,-3;0.2,3;-0.2,3];
-    shifts_units = [0;0;8;8];
-    obstacle = obstacleAvoidance.obstacles.createObstacle('translating barrier', ...
-        obstacleTime_s,repmat({barrier_units(:,1)},4,1), ...
-        arrayfun(@(s)barrier_units(:,2)+s,shifts_units,'UniformOutput',false),0.1);
-    initial = struct('time_s',0,'position_units',[-5,0]);
-    goal = struct('time_s',12,'position_units',[5,0]);
-    limits = struct('xInterval_units',[-6,6],'yInterval_units',[-3,3], ...
-        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[1,1],'maxJerk_units_s3',[2,2]);
-    normalized = planner([],initial,goal,limits,struct('GoalTimeMode','earliestArrival'));
-    prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,12]);
-    cells = obstacleAvoidance.obstacles.createTimeCells(prepared,0,12);
-    coverage = struct('Passed',true,'ExactRegionCount',numel(cells.Regions_units), ...
-        'ActiveTimeInterval_s',cells.ActiveTimeInterval_s, ...
-        'EndRegions_units',{cells.EndRegions_units});
-    route_units = [initial.position_units;goal.position_units];
-    results = cell(2,1);
-    diagnostics = cell(2,1);
-    labels = ["departureSchedule","unrelatedDiagnosticLabel"];
-    for k = 1:2
-        seed = struct('position_units',route_units,'tau',[0;1],'Source',labels(k));
-        [results{k},diagnostics{k}] = bmtpEngine.solve(seed,cells.Regions_units, ...
-            coverage,normalized.Inputs.initialState,normalized.Inputs.goalState, ...
-            normalized.Limits,normalized.Options);
-    end
-    verifyTrue(testCase,results{1}.Success,results{1}.Message);
-    verifyTrue(testCase,results{2}.Success,results{2}.Message);
-    verifyEqual(testCase,results{2}.ArrivalTime_s,results{1}.ArrivalTime_s,'AbsTol',0);
-    verifyEqual(testCase,diagnostics{2}.Identifier,"c3DepartureSchedule");
-    verifyEqual(testCase,results{2}.position_units,results{1}.position_units,'AbsTol',0);
 end
 
 function testLongRequestUsesBudgetAfterPhysicalBound(testCase)
@@ -419,10 +381,6 @@ function testRoundedGridNeverQueriesPastTargetHistory(testCase)
     verifyEqual(testCase,result.TerminationReason,"arrivalSearchExhausted");
     verifyFalse(testCase,result.TemporalSearch.CandidateLimitReached);
     verifyTrue(testCase,result.TemporalSearch.SearchWindowExhausted);
-    verifyEqual(testCase,result.TemporalSearch.StoppingReason, ...
-        "searchWindowExhausted");
-    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
-        "searchWindowExhausted");
 end
 
 function testTinyResolutionRejectsUnrepresentableGrid(testCase)
@@ -480,10 +438,6 @@ function testPrescreenCandidateWorkAndStorageAreBounded(testCase)
     verifyEqual(testCase,result.TemporalSearch.PrescreenedCandidateCount,8);
     verifyEqual(testCase,result.TemporalSearch.SolverTrialCount,0);
     verifyTrue(testCase,result.TemporalSearch.CandidateLimitReached);
-    verifyEqual(testCase,result.TemporalSearch.StoppingReason, ...
-        "candidateLimitReached");
-    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
-        "candidateLimitReached");
 end
 
 function testCoincidentMovingTargetDoesNotSpendSolverBudget(testCase)
@@ -525,11 +479,7 @@ function testDisconnectedSnapshotRetainsValidatedWaitHonestly(testCase)
     verifyEqual(testCase,[result.Attempts.Kind], ...
         ["analyticDeparture","timedVisibility"]);
     verifyTrue(testCase,result.Attempts(1).Selected);
-    verifyEqual(testCase,result.Attempts(1).ValidationStatus,"passed");
-    verifyEqual(testCase,result.Attempts(2).Outcome,"nextMethodAdmitted");
     verifyTrue(testCase,result.Attempts(2).MethodFallbackEligible);
-    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
-        "incumbentRetainedAfterTimedFailure");
     verifyFalse(testCase,result.EarliestArrival.ChronologicalSearchUsed);
 end
 
@@ -547,8 +497,6 @@ function testMovingGeometryDoesNotUseInitialRouteAsGlobalBound(testCase)
     verifyEqual(testCase,[result.Attempts.Kind], ...
         ["analyticDeparture","timedVisibility"]);
     verifyTrue(testCase,result.Attempts(1).Selected);
-    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
-        "incumbentRetainedAfterTimedFailure");
 end
 
 function testIncumbentRefinementBudgetIsExplicit(testCase)
@@ -561,16 +509,10 @@ function testIncumbentRefinementBudgetIsExplicit(testCase)
     verifyEqual(testCase,result.TemporalSearch.MaximumTrialCount,1);
     verifyLessThanOrEqual(testCase,result.TemporalSearch.SolverTrialCount,1);
     verifyTrue(testCase,result.TemporalSearch.TrialLimitReached);
-    verifyEqual(testCase,result.TemporalSearch.StoppingReason, ...
-        "incumbentRetainedAtTrialLimit");
-    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
-        "incumbentRetainedAtTrialLimit");
     verifyTrue(testCase,result.EarliestArrival.ChronologicalSearchUsed);
     chronologicalIndices=find([result.Attempts.Kind] == ...
         "chronologicalFixedArrival");
     verifyNotEmpty(testCase,chronologicalIndices);
-    verifyEqual(testCase,result.Attempts(chronologicalIndices(end)).Outcome, ...
-        "trialLimitReached");
 end
 
 function testValidatorFailureStopsChronologicalSearch(testCase)
@@ -584,23 +526,18 @@ function testValidatorFailureStopsChronologicalSearch(testCase)
     base.Attempts=repmat(attemptTemplate,0,1);
     result=obstacleAvoidance.input.searchArrivalTimes(base, ...
         @(varargin) invalidMotionCandidate(base), ...
-        @(index,kind,role,trigger) createMockAttempt( ...
-        attemptTemplate,index,kind,role,trigger), ...
+        @(index,kind) createMockAttempt(attemptTemplate,index,kind), ...
         @(candidate) string(candidate.TerminationReason) ~= "invalidMotion",3);
 
     verifyFalse(testCase,result.Success);
     verifyEqual(testCase,result.TerminationReason,"invalidMotion");
     verifyEqual(testCase,numel(result.Attempts),1);
     verifyTrue(testCase,result.Attempts.CandidateSuccess);
-    verifyEqual(testCase,result.Attempts.ValidationStatus,"failed");
-    verifyEqual(testCase,result.Attempts.Outcome,"terminalFailure");
     verifyTrue(testCase,result.TemporalSearch.TerminalFailure);
     verifyEqual(testCase,result.TemporalSearch.SolverTrialCount,1);
     verifyFalse(testCase,result.TemporalSearch.CandidateLimitReached);
     verifyFalse(testCase,result.TemporalSearch.TrialLimitReached);
     verifyFalse(testCase,result.TemporalSearch.SearchWindowExhausted);
-    verifyEqual(testCase,result.TemporalSearch.StoppingReason, ...
-        "terminalTrialFailure");
 end
 
 function testArrivalSnapshotFindsAnOpeningMissingAtInitialTime(testCase)
@@ -625,8 +562,6 @@ function testArrivalSnapshotFindsAnOpeningMissingAtInitialTime(testCase)
     % through to a fixed-arrival trial merely to rediscover the same clock.
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
-    verifyEqual(testCase,result.VisibilityGraph.TimedSearch.TimedSearch. ...
-        DynamicEdgeCheckKind,"exactAffineConvexCells");
 end
 
 function testTimedSearchFindsRouteAfterWholeCurtainDeparts(testCase)
@@ -708,7 +643,6 @@ function testTimedHomotopyPrecedesDelayedDeparture(testCase)
     verifyEqual(testCase,numel(result.Attempts),2);
     verifyEqual(testCase,[result.Attempts.Kind], ...
         ["analyticDeparture","timedVisibility"]);
-    verifyEqual(testCase,result.Attempts(1).Outcome,"superseded");
     verifyTrue(testCase,result.Attempts(2).Selected);
     verifyLessThan(testCase,result.Attempts(2).CandidateArrival_s, ...
         result.Attempts(1).CandidateArrival_s);
@@ -738,17 +672,13 @@ function candidate = invalidMotionCandidate(base)
     candidate.FailureKind="independentValidationFailed";
 end
 
-function attempt = createMockAttempt(template,index,kind,role,trigger)
+function attempt = createMockAttempt(template,index,kind)
     attempt=template;
     attempt.Index=index;
     attempt.Kind=string(kind);
-    attempt.Role=string(role);
-    attempt.Trigger=string(trigger);
     attempt.Success=false;
     attempt.Selected=false;
-    attempt.Outcome="notRun";
     attempt.FallbackEligible=false;
-    attempt.FallbackReason="";
     attempt.MethodFallbackEligible=false;
     attempt.MethodFallbackReason="";
     attempt.ChildAttempts=repmat(struct(),0,1);

@@ -146,8 +146,6 @@ sliceTransform = @(sourcePosition_units, sampleTime_s, sampleIndex) ...
     baseLongitude_units, baseLatitude_units, sliceTransform, ...
     safetyMargin_units, struct("Verbose", verbose));
 profile = extremeUSProfile(time_s, missionStartTime_s, missionDuration_s);
-history.motionMode                = motionMode;
-history.sourceFile                = string(boundaryFile);
 history.sourceOutlineLatLon_units = [baseLatitude_units, baseLongitude_units];
 history.sourceOutlineVertexCount  = numel(baseLongitude_units);
 history.fullOutlineVertexCount    = fullOutlineVertexCount;

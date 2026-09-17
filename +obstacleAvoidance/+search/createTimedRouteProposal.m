@@ -8,8 +8,10 @@ function [route_units, routeTime_s, record] = createTimedRouteProposal(obstacles
 %   - Build a deterministic time-expanded route proposal for BMTP.
 %**************************************************************************
 % INPUTS
-%   - obstacles (canonical or prepared obstacle array)
-%       Protected geometry over the request horizon.
+%   - obstacles (prepared obstacle array)
+%       Protected geometry already prepared over at least the request
+%       horizon. The timed search prepares its own working copy, so this
+%       function does not prepare again.
 %   - initialState (scalar struct)
 %       Normalized initial endpoint state.
 %   - goalState (scalar struct)
@@ -34,8 +36,6 @@ function [route_units, routeTime_s, record] = createTimedRouteProposal(obstacles
 
 %% Section 1: Build The Sampled Swept Proposal
 
-obstacles = obstacleAvoidance.obstacles.prepareObstacles( ...
-    obstacles, [initialState.time_s, goalState.time_s]);
 sampleTimes_s  = obstacleAvoidance.search.createTimeLayers(obstacles, initialState.time_s, goalState.time_s);
 shapeParts     = cell(numel(sampleTimes_s) * numel(obstacles), 1);
 shapePartCount = 0;

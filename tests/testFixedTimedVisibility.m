@@ -68,7 +68,6 @@ function testSavedDetourUsesPrescribedDeadline(testCase)
     % The unified spatial result stays within one percent of the former
     % explicitly selected timed motion (229.400575729 units).
     verifyLessThan(testCase,result.MotionLength_units,232);
-    verifyEqual(testCase,result.SeedSource,"initialSpatialSnapshot");
     verifyGreaterThan(testCase,result.SolverDiagnostics.OptimizerSpanCount,16);
 end
 
@@ -117,7 +116,6 @@ function testArrivalSnapshotAvoidsTimedFallback(testCase)
         scenario.GoalState,scenario.Limits,scenario.Options);
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.SeedSource,"arrivalSpatialSnapshot");
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
         "arrivalSpatialSnapshot");
     verifyEqual(testCase,numel(result.Attempts),2);
@@ -126,8 +124,6 @@ function testArrivalSnapshotAvoidsTimedFallback(testCase)
     verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,2);
     verifyEqual(testCase,result.Attempts(1).FailureKind,"iterationLimit");
     verifyTrue(testCase,result.Attempts(1).FallbackEligible);
-    verifyEqual(testCase,result.Attempts(2).Outcome,"accepted");
-    verifyEqual(testCase,result.Attempts(2).ValidationStatus,"passed");
     verifyGreaterThan(testCase,size(result.Route_units,1),2);
 end
 
@@ -152,14 +148,7 @@ function testTimedFallbackCrossesARecurrentCurtain(testCase)
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
     verifyEqual(testCase,numel(result.Attempts),3);
-    verifyEqual(testCase,[result.Attempts(1:2).GuideStatus], ...
-        ["noRoute","noRoute"]);
     verifyFalse(testCase,any([result.Attempts(1:2).SolverAttempted]));
-    verifyEqual(testCase,result.Attempts(3).Outcome,"accepted");
-    verifyEqual(testCase,result.Attempts(2).Trigger, ...
-        result.Attempts(1).FallbackReason);
-    verifyEqual(testCase,result.Attempts(3).Trigger, ...
-        result.Attempts(2).FallbackReason);
 end
 
 function testFailedTimedFallbackDoesNotLeakSpatialState(testCase)
@@ -187,9 +176,6 @@ function testFailedTimedFallbackDoesNotLeakSpatialState(testCase)
     verifyEqual(testCase,numel(result.Attempts),3);
     verifyEqual(testCase,result.Attempts(end).FailureStage,"search");
     verifyEqual(testCase,result.Attempts(end).FailureKind,"noTimedRoute");
-    verifyEqual(testCase,result.Attempts(end).Outcome,"terminalFailure");
-    verifyEqual(testCase,result.Attempts(3).Trigger, ...
-        result.Attempts(2).FallbackReason);
 end
 
 function testDuplicateArrivalGuideIsNotSolvedTwice(testCase)
@@ -212,10 +198,6 @@ function testDuplicateArrivalGuideIsNotSolvedTwice(testCase)
     verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,1);
     verifyEqual(testCase,result.Attempts(1).IterationLimit,1);
     verifyEqual(testCase,numel(result.Attempts),3);
-    verifyEqual(testCase,result.Attempts(2).GuideStatus,"duplicateRoute");
     verifyFalse(testCase,result.Attempts(2).SolverAttempted);
-    verifyEqual(testCase,result.Attempts(2).FallbackReason, ...
-        "duplicateSpatialGuide");
     verifyEqual(testCase,result.Attempts(3).Kind,"timedVisibility");
-    verifyEqual(testCase,result.Attempts(3).Outcome,"accepted");
 end

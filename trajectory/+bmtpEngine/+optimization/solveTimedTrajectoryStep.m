@@ -181,7 +181,6 @@ while true
         coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
     solveCount = solveCount + 1;
     lastAttemptExitFlag = attemptExitFlag;
-    lastAttemptMessage  = string(attemptOutput.message);
     if ~bmtpEngine.optimization.hasUsableConicIterate(attemptX, attemptExitFlag)
         break
     end
@@ -243,7 +242,6 @@ output.MaximumPlaneConstraintResidual = returnedMaximumPlaneConstraintResidual;
 output.LoadedPlanePairCount           = nnz(returnedPlanePairs);
 output.ReturnedSolveIndex             = returnedSolveIndex;
 output.LastAttemptExitFlag            = lastAttemptExitFlag;
-output.LastAttemptMessage             = lastAttemptMessage;
 output.TerminatedAfterRetainedIterate = returnedSolveIndex > 0 && ...
     returnedSolveIndex < solveCount;
 output.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);

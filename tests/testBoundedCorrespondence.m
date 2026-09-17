@@ -413,10 +413,7 @@ function testReportedModelMutationDoesNotSelectBehavior(testCase)
     [mutatedShape, mutatedGeometry] = ...
         obstacleAvoidance.obstacles.preparedShapeAtTime(mutated, 0.5);
     verifyEqual(testCase, area(xor(mutatedShape, referenceShape)), 0);
-    reportedFields = {'GeometryModel'};
-    verifyEqual(testCase, rmfield(mutatedGeometry, reportedFields), ...
-        rmfield(referenceGeometry, reportedFields));
-    verifyEqual(testCase, mutatedGeometry.GeometryModel, "nonsense");
+    verifyEqual(testCase, mutatedGeometry, referenceGeometry);
 
     nodes_units = [
         -1, 2

@@ -8,8 +8,9 @@ function cells = createTimeCells(obstacles, initialTime_s, finalTime_s)
 %   - Prepare convex exclusion cells with affine vertex motion.
 %**************************************************************************
 % INPUTS
-%   - obstacles (canonical obstacle array)
-%       Static or time-varying canonical obstacle histories.
+%   - obstacles (canonical or prepared obstacle array)
+%       Static or time-varying obstacle histories. Raw histories are
+%       prepared here; already-prepared histories are reused.
 %   - initialTime_s (numeric scalar)
 %       Planning-horizon start time.
 %   - finalTime_s (numeric scalar)

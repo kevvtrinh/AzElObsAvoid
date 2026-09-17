@@ -116,7 +116,7 @@ combined-magnitude contract.
 Responses use `offlineSandboxResult/v1`:
 
 ```text
-requestId, generatedAtUtc
+requestId
 result
   Success, Message, TerminationReason, Options, Inputs
   Request (original endpoints, limits, options), RequestedLimits
@@ -124,7 +124,6 @@ result
   acceleration_units_s2, jerk_units_s3
   ArrivalTime_s, TrajectoryDuration_s, MotionLength_units, ElapsedTime_s
 diagnosis
-  Planner = "build-core"
   Search
     Nodes_units, AcceptedEdges_units, RejectedEdges_units
     NodeCount, AcceptedEdgeCount, ExpandedCount, RejectedTransitionCount

@@ -399,8 +399,7 @@ end
 route_units      = visibilityGraph.Route_units;
 edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
 seed             = struct('position_units', route_units, ...
-    'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
-    'Source', visibilityGraph.SearchKind);
+    'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units));
 [candidate, solverDiagnostics] = bmtpEngine.solve( ...
     seed, regions_units, coverage, initialState, motionGoalState, ...
     limits, options);
@@ -431,7 +430,7 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
     % Keep one truthful method cascade. A validated candidate is an incumbent;
     % only a public-validator pass can be selected, and acceptance defects are
     % terminal instead of being hidden by a later method.
-    attempts = repmat(createAttemptRecord(0, "", "", ""), 0, 1);
+    attempts = repmat(createAttemptRecord(0, ""), 0, 1);
     fixedRestGoal = ~earliestTarget && isRest;
     capabilities = struct( ...
         'StaticSpatialBmtp',      ~isDynamic && fixedRestGoal, ...
@@ -450,8 +449,7 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         graph = getVisibilityGraph(scene, initialState.position_units, ...
             goalState.position_units, limits, options, "initialSpatialSnapshot");
         result.VisibilityGraph = graph;
-        attempt = createAttemptRecord(1, "spatialVisibility", "primary", ...
-            "earliestArrivalPolicy");
+        attempt = createAttemptRecord(1, "spatialVisibility");
         attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
         attempt.GraphConnected           = graph.IsConnected;
         attempt.GraphIsFullyEnumerated   = graph.GraphIsFullyEnumerated;
@@ -459,22 +457,17 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         attempt.RouteLength_units        = graph.RouteLength_units;
         attempt.ExpandedCount            = graph.ExpandedCount;
         if ~graph.IsConnected
-            attempt.GuideStatus       = "noRoute";
-            attempt.FailureStage      = "search";
-            attempt.FailureKind       = "noSpatialRoute";
-            attempt.MotionStatus      = "notRun";
-            attempt.Outcome           = "terminalFailure";
-            attempt.TerminationReason = "noVisibilityRoute";
-            attempt.Message           = "The exhaustive static visibility graph has no route.";
-            attempt.ElapsedTime_s     = toc(attemptTimer);
-            result.Message            = attempt.Message;
-            result.TerminationReason  = attempt.TerminationReason;
-            result.FailureStage       = attempt.FailureStage;
-            result.FailureKind        = attempt.FailureKind;
-            result.Attempts           = attempt;
-            result.ElapsedTime_s      = toc(totalTimer);
+            attempt.FailureStage     = "search";
+            attempt.FailureKind      = "noSpatialRoute";
+            attempt.ElapsedTime_s    = toc(attemptTimer);
+            result.Message           = "The exhaustive static visibility graph has no route.";
+            result.TerminationReason = "noVisibilityRoute";
+            result.FailureStage      = attempt.FailureStage;
+            result.FailureKind       = attempt.FailureKind;
+            result.Attempts          = attempt;
+            result.ElapsedTime_s     = toc(totalTimer);
             result = finishEarliestArrival(result, attempt, capabilities, ...
-                necessaryArrivalTime_s, "staticGraphDisconnected");
+                necessaryArrivalTime_s);
             return
         end
 
@@ -482,9 +475,7 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
         seed = struct( ...
             'position_units', route_units, ...
-            'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
-            'Source', graph.SearchKind);
-        attempt.GuideStatus     = "connected";
+            'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units));
         attempt.SolverAttempted = true;
         [candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, ...
             initialState, goalState, limits, options);
@@ -493,25 +484,17 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         attempt = populateMotionAttempt(attempt, candidateResult, candidate, diagnostics);
         attempt.ElapsedTime_s = toc(attemptTimer);
         if candidateResult.Success
-            attempt.MotionStatus = "accepted";
-            attempt.Selected     = true;
-            attempt.Outcome      = "accepted";
+            attempt.Selected = true;
             candidateResult.Attempts = attempt;
             candidateResult.ElapsedTime_s = toc(totalTimer);
             result = finishEarliestArrival(candidateResult, attempt, capabilities, ...
-                necessaryArrivalTime_s, "staticSpatialBmtpAccepted");
+                necessaryArrivalTime_s);
             return
         end
-        if candidate.Success
-            attempt.MotionStatus = "validationFailure";
-        else
-            attempt.MotionStatus = attempt.FailureKind;
-        end
-        attempt.Outcome = "terminalFailure";
         candidateResult.Attempts = attempt;
         candidateResult.ElapsedTime_s = toc(totalTimer);
         result = finishEarliestArrival(candidateResult, attempt, capabilities, ...
-            necessaryArrivalTime_s, "staticSpatialBmtpFailed");
+            necessaryArrivalTime_s);
         return
     end
 
@@ -524,13 +507,10 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         departureRoute_units = [initialState.position_units; goalState.position_units];
         departureSeed = struct( ...
             'position_units', departureRoute_units, ...
-            'tau', [0; 1], ...
-            'Source', "departureSchedule");
-        attempt = createAttemptRecord(1, "analyticDeparture", ...
-            "heuristicShortcut", "earliestArrivalPolicy");
+            'tau', [0; 1]);
+        attempt = createAttemptRecord(1, "analyticDeparture");
         attempt.IsHeuristic             = true;
         attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
-        attempt.GuideStatus             = "directFamily";
         attempt.GraphConnected          = true;
         attempt.RouteNodeCount          = 2;
         attempt.RouteLength_units       = norm(diff(departureRoute_units, 1, 1));
@@ -549,46 +529,37 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         attempt.ElapsedTime_s = toc(attemptTimer);
 
         if candidate.Success && ~departureResult.Success
-            attempt.MotionStatus = "validationFailure";
-            attempt.Outcome      = "terminalFailure";
             departureResult.Attempts = attempt;
             departureResult.ElapsedTime_s = toc(totalTimer);
             result = finishEarliestArrival(departureResult, attempt, capabilities, ...
-                necessaryArrivalTime_s, "departureValidationFailure");
+                necessaryArrivalTime_s);
             return
         elseif departureResult.Success
             incumbentResult       = departureResult;
             incumbentAccepted     = true;
             incumbentAttemptIndex = 1;
-            attempt.MotionStatus  = "accepted";
-            attempt.Outcome       = "incumbentRetained";
             attempt.IncumbentArrival_s = departureResult.ArrivalTime_s;
             attempts(end + 1, 1) = attempt;
             if departureResult.ArrivalTime_s <= necessaryArrivalTime_s + ...
                     options.ArrivalTimeTolerance_s
                 attempts(1).Selected = true;
-                attempts(1).Outcome  = "accepted";
                 departureResult.Attempts = attempts;
                 departureResult.ElapsedTime_s = toc(totalTimer);
                 result = finishEarliestArrival(departureResult, attempts, capabilities, ...
-                    necessaryArrivalTime_s, "necessaryArrivalBoundAttained");
+                    necessaryArrivalTime_s);
                 return
             end
         else
-            attempt.MotionStatus = attempt.FailureKind;
             attempt.MethodFallbackEligible = methodFallbackEligible(departureResult);
             attempt.MethodFallbackReason   = attempt.FailureKind;
             attempt.FallbackEligible       = attempt.MethodFallbackEligible;
-            attempt.FallbackReason         = attempt.MethodFallbackReason;
             if attempt.MethodFallbackEligible
-                attempt.Outcome = "nextMethodAdmitted";
                 attempts(end + 1, 1) = attempt;
             else
-                attempt.Outcome = "terminalFailure";
                 departureResult.Attempts = attempt;
                 departureResult.ElapsedTime_s = toc(totalTimer);
                 result = finishEarliestArrival(departureResult, attempt, capabilities, ...
-                    necessaryArrivalTime_s, "departureTerminalFailure");
+                    necessaryArrivalTime_s);
                 return
             end
         end
@@ -612,14 +583,8 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
             priorElapsedTime_s = timedBase.ElapsedTime_s;
             [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival( ...
                 timedBase, maximumArrivalTime_s);
-            trigger = "departureFamilyUnavailable";
-            if incumbentAccepted
-                trigger = "validatedDepartureIncumbent";
-            elseif ~isempty(attempts)
-                trigger = attempts(end).MethodFallbackReason;
-            end
             timedAttempt = createTimedAttemptRecord(numel(attempts) + 1, ...
-                "primary", trigger, timedResult, timedAccepted, priorElapsedTime_s);
+                timedResult, timedAccepted, priorElapsedTime_s);
             timedAttempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
             if incumbentAccepted
                 timedAttempt.IncumbentArrival_s = incumbentResult.ArrivalTime_s;
@@ -632,51 +597,38 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
                     options.ArrivalTimeTolerance_s;
                 if incumbentIsNoLater
                     attempts(incumbentAttemptIndex).Selected = true;
-                    attempts(incumbentAttemptIndex).Outcome  = "accepted";
-                    attempts(end).Outcome = "superseded";
                     result = incumbentResult;
-                    stoppingReason = "departureIncumbentNoLater";
                 else
-                    if incumbentAccepted
-                        attempts(incumbentAttemptIndex).Outcome = "superseded";
-                    end
                     attempts(end).Selected = true;
-                    attempts(end).Outcome  = "accepted";
                     result = timedResult;
-                    stoppingReason = "timedVariableClockAccepted";
                 end
                 result.Attempts = attempts;
                 result.ElapsedTime_s = toc(totalTimer);
                 result = finishEarliestArrival(result, attempts, capabilities, ...
-                    necessaryArrivalTime_s, stoppingReason);
+                    necessaryArrivalTime_s);
                 return
             end
 
             if string(timedResult.TerminationReason) == "invalidMotion"
-                timedAttempt.MotionStatus = "validationFailure";
-                timedAttempt.Outcome      = "terminalFailure";
                 attempts(end + 1, 1)      = timedAttempt;
                 timedResult.Attempts      = attempts;
                 timedResult.ElapsedTime_s = toc(totalTimer);
                 result = finishEarliestArrival(timedResult, attempts, capabilities, ...
-                    necessaryArrivalTime_s, "timedValidationFailure");
+                    necessaryArrivalTime_s);
                 return
             end
 
             timedAttempt.MethodFallbackEligible = methodFallbackEligible(timedResult);
             timedAttempt.MethodFallbackReason   = timedAttempt.FailureKind;
             timedAttempt.FallbackEligible       = timedAttempt.MethodFallbackEligible;
-            timedAttempt.FallbackReason         = timedAttempt.MethodFallbackReason;
             if timedAttempt.MethodFallbackEligible
-                timedAttempt.Outcome = "nextMethodAdmitted";
                 attempts(end + 1, 1) = timedAttempt;
             else
-                timedAttempt.Outcome = "terminalFailure";
                 attempts(end + 1, 1) = timedAttempt;
                 timedResult.Attempts = attempts;
                 timedResult.ElapsedTime_s = toc(totalTimer);
                 result = finishEarliestArrival(timedResult, attempts, capabilities, ...
-                    necessaryArrivalTime_s, "timedTerminalFailure");
+                    necessaryArrivalTime_s);
                 return
             end
         end
@@ -698,12 +650,10 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
             options.IncumbentRefinementTrialLimit);
         if chronologicalTrialLimit == 0
             attempts(incumbentAttemptIndex).Selected = true;
-            attempts(incumbentAttemptIndex).Outcome  = "accepted";
             incumbentResult.Attempts = attempts;
             incumbentResult.ElapsedTime_s = toc(totalTimer);
             result = finishEarliestArrival(incumbentResult, attempts, ...
-                capabilities, necessaryArrivalTime_s, ...
-                "incumbentRetainedAfterTimedFailure");
+                capabilities, necessaryArrivalTime_s);
             return
         end
     end
@@ -712,7 +662,7 @@ function result = planEarliestArrival(result, scene, regions_units, coverage, ..
         @methodFallbackEligible, chronologicalTrialLimit);
     result.ElapsedTime_s = toc(totalTimer);
     result = finishEarliestArrival(result, result.Attempts, capabilities, ...
-        necessaryArrivalTime_s, chronologicalStoppingReason(result));
+        necessaryArrivalTime_s);
 end
 
 function attempt = populateMotionAttempt(attempt, candidateResult, candidate, diagnostics)
@@ -728,16 +678,7 @@ function attempt = populateMotionAttempt(attempt, candidateResult, candidate, di
         candidate, "AlternativeGuideEligible");
     attempt.FailureStage = readStringField(candidate, "FailureStage");
     attempt.FailureKind  = readStringField(candidate, "FailureKind");
-    attempt.ValidationStatus = "notRun";
-    if candidate.Success
-        attempt.ValidationStatus = "failed";
-        if candidateResult.Validation.Passed
-            attempt.ValidationStatus = "passed";
-        end
-    end
-    attempt.Success           = candidateResult.Success;
-    attempt.TerminationReason = candidateResult.TerminationReason;
-    attempt.Message           = candidateResult.Message;
+    attempt.Success = candidateResult.Success;
     if isfield(candidateResult, 'ArrivalTime_s') && ...
             isnumeric(candidateResult.ArrivalTime_s) && ...
             isscalar(candidateResult.ArrivalTime_s) && ...
@@ -746,16 +687,12 @@ function attempt = populateMotionAttempt(attempt, candidateResult, candidate, di
     end
 end
 
-function attempt = createTimedAttemptRecord(index, role, trigger, ...
-        timedResult, timedAccepted, priorElapsedTime_s)
+function attempt = createTimedAttemptRecord(index, timedResult, timedAccepted, ...
+        priorElapsedTime_s)
     % Record the one time-expanded method without retaining stale prior motion.
-    attempt = createAttemptRecord(index, "timedVisibility", role, trigger);
+    attempt = createAttemptRecord(index, "timedVisibility");
     attempt.GraphIsFullyEnumerated = false;
     attempt.GraphConnected = timedResult.VisibilityGraph.IsConnected;
-    attempt.GuideStatus = "noRoute";
-    if attempt.GraphConnected
-        attempt.GuideStatus = "connected";
-    end
     attempt.RouteNodeCount    = size(timedResult.Route_units, 1);
     attempt.RouteLength_units = timedResult.VisibilityGraph.RouteLength_units;
     attempt.ExpandedCount     = timedResult.VisibilityGraph.ExpandedCount;
@@ -773,23 +710,9 @@ function attempt = createTimedAttemptRecord(index, role, trigger, ...
         timedResult, "AlternativeGuideEligible");
     attempt.FailureStage = readStringField(timedResult, "FailureStage");
     attempt.FailureKind  = readStringField(timedResult, "FailureKind");
-    attempt.ValidationStatus = "notRun";
-    if attempt.CandidateSuccess
-        attempt.ValidationStatus = "failed";
-        if timedResult.Validation.Passed
-            attempt.ValidationStatus = "passed";
-        end
-    end
-    attempt.Success           = timedAccepted;
-    attempt.TerminationReason = timedResult.TerminationReason;
-    attempt.Message           = timedResult.Message;
-    attempt.Outcome           = "terminalFailure";
+    attempt.Success = timedAccepted;
     if timedAccepted
-        attempt.MotionStatus = "accepted";
-        attempt.Outcome      = "acceptedCandidate";
         attempt.CandidateArrival_s = timedResult.ArrivalTime_s;
-    elseif attempt.GraphConnected
-        attempt.MotionStatus = attempt.FailureKind;
     end
     attempt.ElapsedTime_s = max(0, timedResult.ElapsedTime_s - priorElapsedTime_s);
 end
@@ -821,7 +744,7 @@ function eligible = methodFallbackEligible(candidateResult)
 end
 
 function result = finishEarliestArrival(result, attempts, capabilities, ...
-        necessaryArrivalTime_s, stoppingReason)
+        necessaryArrivalTime_s)
     % Publish consistent selection evidence for every earliest-arrival path.
     result.Attempts = attempts;
     selectedAttemptIndex = find([attempts.Selected], 1, 'last');
@@ -854,7 +777,6 @@ function result = finishEarliestArrival(result, attempts, capabilities, ...
         'NecessaryArrivalBound_s',  necessaryArrivalTime_s, ...
         'IncumbentArrival_s',       incumbentArrivalTime_s, ...
         'SelectedAttemptIndex',     selectedAttemptIndex, ...
-        'StoppingReason',           string(stoppingReason), ...
         'GlobalEarliestProven',     globalEarliestProven, ...
         'UnsearchedInterval_s',     unsearchedInterval_s, ...
         'ChronologicalSearchUsed',  chronologicalSearchUsed, ...
@@ -862,17 +784,6 @@ function result = finishEarliestArrival(result, attempts, capabilities, ...
     if isfield(result, 'TemporalSearch')
         result.TemporalSearch.GlobalEarliestProven = globalEarliestProven;
         result.TemporalSearch.SelectedAttemptIndex = selectedAttemptIndex;
-        result.TemporalSearch.StoppingReason       = string(stoppingReason);
-    end
-end
-
-function reason = chronologicalStoppingReason(result)
-    % Distinguish a selected trial, a retained incumbent, and honest exhaustion.
-    reason = string(result.TerminationReason);
-    if isfield(result, 'TemporalSearch')
-        reason = string(result.TemporalSearch.StoppingReason);
-    elseif result.Success
-        reason = "chronologicalFixedArrivalAccepted";
     end
 end
 
@@ -884,18 +795,12 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
     snapshotProbeIterationLimit = options.SpatialProbeIterationLimit;
     snapshotKinds = ["initialSpatialSnapshot", "arrivalSpatialSnapshot"];
     snapshotTimes_s = [initialState.time_s, goalState.time_s];
-    attempts = repmat(createAttemptRecord(0, "", "", ""), 0, 1);
+    attempts = repmat(createAttemptRecord(0, ""), 0, 1);
     previousRoute_units = zeros(0, 2);
-    fallbackReason = "snapshotGuidesExhausted";
 
     for snapshotIndex = 1:numel(snapshotKinds)
         attemptTimer = tic;
-        trigger = "fixedArrivalPolicy";
-        if ~isempty(attempts)
-            trigger = attempts(end).FallbackReason;
-        end
-        attempt = createAttemptRecord(snapshotIndex, "spatialVisibility", ...
-            "heuristicShortcut", trigger);
+        attempt = createAttemptRecord(snapshotIndex, "spatialVisibility");
         attempt.IsHeuristic       = true;
         attempt.IterationLimit    = snapshotProbeIterationLimit;
         attempt.GraphSnapshotTime_s = snapshotTimes_s(snapshotIndex);
@@ -915,23 +820,11 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
         attempt.ExpandedCount          = graph.ExpandedCount;
 
         if ~graph.IsConnected
-            attempt.GuideStatus       = "noRoute";
-            attempt.MotionStatus      = "notRun";
-            attempt.FallbackEligible  = true;
-            attempt.FallbackReason    = "spatialGraphDisconnected";
-            attempt.Outcome           = "nextGuideAdmitted";
-            attempt.TerminationReason = "noSpatialRoute";
-            attempt.Message = "This exact snapshot graph has no route; it cannot rule out a route at another time.";
+            attempt.FallbackEligible = true;
         elseif ~isempty(previousRoute_units) && isequaln(graph.Route_units, previousRoute_units)
             % Identical routes produce identical BMTP requests because the
             % full time-cell coverage, not the snapshot label, is solved.
-            attempt.GuideStatus       = "duplicateRoute";
-            attempt.MotionStatus      = "notRun";
-            attempt.FallbackEligible  = true;
-            attempt.FallbackReason    = "duplicateSpatialGuide";
-            attempt.Outcome           = "nextGuideAdmitted";
-            attempt.TerminationReason = "duplicateSpatialGuide";
-            attempt.Message           = "The snapshot reproduced the preceding guide, so the duplicate solve was skipped.";
+            attempt.FallbackEligible = true;
         else
             route_units      = graph.Route_units;
             previousRoute_units = route_units;
@@ -939,9 +832,7 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
             seed = struct( ...
                 'position_units', route_units, ...
                 'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
-                'Source', graph.SearchKind, ...
                 'MaximumAlternatingIterations', snapshotProbeIterationLimit);
-            attempt.GuideStatus     = "connected";
             attempt.SolverAttempted = true;
             [candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, ...
                 initialState, goalState, limits, options);
@@ -957,21 +848,10 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
                 candidate, "AlternativeGuideEligible");
             attempt.FailureStage = readStringField(candidate, "FailureStage");
             attempt.FailureKind  = readStringField(candidate, "FailureKind");
-            attempt.ValidationStatus = "notRun";
-            if candidate.Success
-                attempt.ValidationStatus = "failed";
-                if candidateResult.Validation.Passed
-                    attempt.ValidationStatus = "passed";
-                end
-            end
-            attempt.Success           = candidateResult.Success;
-            attempt.TerminationReason = candidateResult.TerminationReason;
-            attempt.Message           = candidateResult.Message;
+            attempt.Success = candidateResult.Success;
 
             if candidateResult.Success
-                attempt.MotionStatus = "accepted";
-                attempt.Selected     = true;
-                attempt.Outcome      = "accepted";
+                attempt.Selected = true;
                 attempt.ElapsedTime_s = toc(attemptTimer);
                 candidateResult.Attempts = [attempts; attempt];
                 candidateResult.ElapsedTime_s = toc(totalTimer);
@@ -980,22 +860,15 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
             elseif candidate.Success
                 % A public-validator rejection is a terminal defect, never a
                 % reason to conceal the candidate behind another guide.
-                attempt.MotionStatus = "validationFailure";
-                attempt.Outcome      = "terminalFailure";
                 attempt.ElapsedTime_s = toc(attemptTimer);
                 candidateResult.Attempts = [attempts; attempt];
                 candidateResult.ElapsedTime_s = toc(totalTimer);
                 result = candidateResult;
                 return
             elseif attempt.AlternativeGuideEligible
-                attempt.MotionStatus     = attempt.FailureKind;
                 attempt.FallbackEligible = true;
-                attempt.FallbackReason   = attempt.FailureKind;
-                attempt.Outcome          = "nextGuideAdmitted";
                 result                   = candidateResult;
             else
-                attempt.MotionStatus = attempt.FailureKind;
-                attempt.Outcome      = "terminalFailure";
                 attempt.ElapsedTime_s = toc(attemptTimer);
                 candidateResult.Attempts = [attempts; attempt];
                 candidateResult.ElapsedTime_s = toc(totalTimer);
@@ -1005,7 +878,6 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
         end
         attempt.ElapsedTime_s = toc(attemptTimer);
         attempts(end + 1, 1)  = attempt; %#ok<AGROW>
-        fallbackReason        = attempt.FallbackReason;
     end
 
     % The timed fallback starts from a clean motion and graph record. It is
@@ -1014,14 +886,9 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
     result.ElapsedTime_s = toc(totalTimer);
     priorElapsedTime_s = result.ElapsedTime_s;
     [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
-    timedAttempt = createAttemptRecord(numel(attempts) + 1, ...
-        "timedVisibility", "fallback", fallbackReason);
+    timedAttempt = createAttemptRecord(numel(attempts) + 1, "timedVisibility");
     timedAttempt.GraphIsFullyEnumerated = false;
     timedAttempt.GraphConnected = timedResult.VisibilityGraph.IsConnected;
-    timedAttempt.GuideStatus = "noRoute";
-    if timedAttempt.GraphConnected
-        timedAttempt.GuideStatus = "connected";
-    end
     timedAttempt.RouteNodeCount    = size(timedResult.Route_units, 1);
     timedAttempt.RouteLength_units = timedResult.VisibilityGraph.RouteLength_units;
     timedAttempt.ExpandedCount     = timedResult.VisibilityGraph.ExpandedCount;
@@ -1039,36 +906,20 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
         timedResult, "AlternativeGuideEligible");
     timedAttempt.FailureStage     = readStringField(timedResult, "FailureStage");
     timedAttempt.FailureKind      = readStringField(timedResult, "FailureKind");
-    timedAttempt.ValidationStatus = "notRun";
-    if timedAttempt.CandidateSuccess
-        timedAttempt.ValidationStatus = "failed";
-        if timedResult.Validation.Passed
-            timedAttempt.ValidationStatus = "passed";
-        end
-    end
-    timedAttempt.Success           = timedAccepted;
-    timedAttempt.TerminationReason = timedResult.TerminationReason;
-    timedAttempt.Message           = timedResult.Message;
-    timedAttempt.Outcome           = "terminalFailure";
+    timedAttempt.Success = timedAccepted;
     if timedAccepted
-        timedAttempt.MotionStatus = "accepted";
-        timedAttempt.Selected     = true;
-        timedAttempt.Outcome      = "accepted";
-    elseif timedAttempt.GraphConnected
-        timedAttempt.MotionStatus = timedAttempt.FailureKind;
+        timedAttempt.Selected = true;
     end
     timedAttempt.ElapsedTime_s = max(0, timedResult.ElapsedTime_s - priorElapsedTime_s);
     timedResult.Attempts       = [attempts; timedAttempt];
     result                     = timedResult;
 end
 
-function attempt = createAttemptRecord(index, kind, role, trigger)
+function attempt = createAttemptRecord(index, kind)
     % Keep one compact, stable record for every guide proposal.
     attempt = struct( ...
         "Index",                        index, ...
         "Kind",                         string(kind), ...
-        "Role",                         string(role), ...
-        "Trigger",                      string(trigger), ...
         "IsHeuristic",                  false, ...
         "IterationLimit",               NaN, ...
         "GraphSnapshotTime_s",          NaN, ...
@@ -1076,16 +927,12 @@ function attempt = createAttemptRecord(index, kind, role, trigger)
         "CandidateArrival_s",           NaN, ...
         "NecessaryArrivalBound_s",      NaN, ...
         "IncumbentArrival_s",           NaN, ...
-        "PrescreenStatus",              "notRun", ...
-        "PrescreenReason",              "", ...
-        "GuideStatus",                  "notRun", ...
         "GraphConnected",               false, ...
         "GraphIsFullyEnumerated",       false, ...
         "RouteNodeCount",               0, ...
         "RouteLength_units",            Inf, ...
         "ExpandedCount",                0, ...
         "SolverAttempted",              false, ...
-        "MotionStatus",                 "notRun", ...
         "IterationCount",               0, ...
         "CandidateSuccess",             false, ...
         "OptimizerFeasible",            false, ...
@@ -1093,16 +940,11 @@ function attempt = createAttemptRecord(index, kind, role, trigger)
         "AlternativeGuideEligible",     false, ...
         "FailureStage",                 "", ...
         "FailureKind",                  "", ...
-        "ValidationStatus",             "notRun", ...
         "FallbackEligible",             false, ...
-        "FallbackReason",               "", ...
         "MethodFallbackEligible",       false, ...
         "MethodFallbackReason",         "", ...
         "Success",                      false, ...
         "Selected",                     false, ...
-        "Outcome",                      "notRun", ...
-        "TerminationReason",            "", ...
-        "Message",                      "", ...
         "ElapsedTime_s",                0, ...
         "ChildAttempts",                {repmat(struct(), 0, 1)});
 end
@@ -1323,8 +1165,7 @@ function result = createEmptyResult(obstacles, preparedObstacles, initialState, 
     result.Polynomial                   = struct();
     result.PlaneCertificate             = struct();
     result.SolverDiagnostics            = struct();
-    result.Attempts                     = repmat(createAttemptRecord( ...
-        0, "", "", ""), 0, 1);
+    result.Attempts                     = repmat(createAttemptRecord(0, ""), 0, 1);
     result.Validation                   = struct("Passed", false, "Message", "No motion is available.");
     result.ArrivalTime_s                = NaN;
     result.Intercept                    = struct('Time_s', NaN, 'TargetPosition_units', goalState.position_units, ...

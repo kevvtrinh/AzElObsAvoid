@@ -78,7 +78,6 @@ function testWorkspaceOvershootFallsThroughToBmtp(testCase)
         struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"bmtpStaticDegree5");
     verifyLessThanOrEqual(testCase,max(result.position_units(:,1)),1);
 end
 
@@ -94,7 +93,6 @@ function testPassingAnalyticProbeStillChecksEveryCollisionPair(testCase)
         struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"minimumJerkQuintic");
     verifyGreaterThan(testCase,result.PlaneCertificate.AllPairCount,0);
     verifyEqual(testCase,result.PlaneCertificate.VerifiedPairCount, ...
         result.PlaneCertificate.AllPairCount);
@@ -115,12 +113,9 @@ function testEarliestStaticDirectUsesAnalyticClock(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
     verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"c3JerkLimitedChord");
-    verifyEqual(testCase,result.SolverDiagnostics.ConstraintRepresentation,"analyticC3Clock");
     verifyEqual(testCase,numel(result.Attempts),1);
     verifyEqual(testCase,result.Attempts.Kind,"spatialVisibility");
     verifyTrue(testCase,result.Attempts.Selected);
-    verifyEqual(testCase,result.Attempts.ValidationStatus,"passed");
     verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
     verifyEqual(testCase,result.EarliestArrival.SelectedAttemptIndex,1);
 end
@@ -222,8 +217,6 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyGreaterThan(testCase,numel(result.Attempts),1);
-    verifyEqual(testCase,result.Attempts(1).TerminationReason, ...
-        "noVisibilityRoute");
     verifyEqual(testCase,result.Attempts(1).FailureStage,"search");
     verifyTrue(testCase,result.Attempts(1).MethodFallbackEligible);
     verifyTrue(testCase,any([result.Attempts.Selected]));
@@ -236,7 +229,6 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     verifyEqual(testCase,fixedResult.TerminationReason,"noVisibilityRoute");
     verifyEqual(testCase,numel(fixedResult.Attempts),1);
     verifyFalse(testCase,fixedResult.Attempts.MethodFallbackEligible);
-    verifyEqual(testCase,fixedResult.Attempts.Outcome,"terminalFailure");
 end
 
 function testPeriodicWrapUsesNearestImage(testCase)
@@ -429,16 +421,12 @@ function testSparseDynamicZeroWaitDeparture(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"c3DepartureSchedule");
     verifyFalse(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyEqual(testCase,result.SolverDiagnostics.Identifier,"c3JerkLimitedChord");
     verifyFalse(testCase,isfield(result.SolverDiagnostics,'DepartureSchedule'));
     verifyFalse(testCase,isfield(result,'TemporalSearch'));
     verifyEqual(testCase,numel(result.Attempts),2);
     verifyEqual(testCase,[result.Attempts.Kind], ...
         ["analyticDeparture","timedVisibility"]);
     verifyTrue(testCase,result.Attempts(1).Selected);
-    verifyEqual(testCase,result.Attempts(2).Outcome,"superseded");
-    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
-        "departureIncumbentNoLater");
     verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
     selectedIndex=result.EarliestArrival.SelectedAttemptIndex;
     verifyEqual(testCase,result.EarliestArrival.IncumbentArrival_s, ...

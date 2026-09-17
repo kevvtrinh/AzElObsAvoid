@@ -48,7 +48,6 @@ function testDirect(testCase)
     verifyEqual(testCase,r.ArrivalTime_s,12,'AbsTol',1e-8);
     verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
     verifyTrue(testCase,r.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyEqual(testCase,r.SolverDiagnostics.Identifier,"minimumJerkQuintic");
 end
 
 function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
@@ -187,7 +186,6 @@ function testDetourAndTampering(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
     verifyTrue(testCase,r.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyEqual(testCase,r.SolverDiagnostics.Identifier,"bmtpStaticDegree5");
     altered = r; altered.position_units(2,1) = altered.position_units(2,1)+0.1;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
     altered = r; altered.Polynomial.jerkPower_units_s3(1,1,1) = 1e4;
