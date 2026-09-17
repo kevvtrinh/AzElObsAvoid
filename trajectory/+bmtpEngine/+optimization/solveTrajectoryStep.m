@@ -212,7 +212,6 @@ A = [A; planeRows];
 b = [b; planeBounds];
 
 %% Section 3: Create The Objective And Solve
-cones                = bmtpEngine.optimization.createTimePowerCones(variableCount, powerIndex);
 f                    = zeros(variableCount, 1);
 f(powerIndex(4))     = 1;
 maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
@@ -234,23 +233,21 @@ if fixedClock
     if sharedSlack
         f(slackIndices) = 1e3 * planeCountBySegment(planeCountBySegment > 0);
     end
-end
-emptyCone = secondordercone( ...
-    sparse(2, variableCount), zeros(2, 1), sparse(variableCount, 1), 0);
-lengthCones = repmat(emptyCone, lengthCount, 1);
-for segmentIndex = 1:segmentCount
-    for controlIndex = 1:degree
-        lengthConeIndex = (segmentIndex - 1) * degree + controlIndex;
-        coneA = sparse(2, variableCount);
-        coneA(:, controlIndexOf(segmentIndex, controlIndex, 1:2, degree)) = eye(2);
-        coneA(:, controlIndexOf(segmentIndex, controlIndex - 1, 1:2, degree)) = -eye(2);
-        coneD = sparse(variableCount, 1);
-        coneD(lengthIndex(lengthConeIndex)) = 1;
-        lengthCones(lengthConeIndex) = secondordercone( ...
-            coneA, zeros(2, 1), coneD, 0);
+    emptyCone = secondordercone( ...
+        sparse(2, variableCount), zeros(2, 1), sparse(variableCount, 1), 0);
+    lengthCones = repmat(emptyCone, lengthCount, 1);
+    for segmentIndex = 1:segmentCount
+        for controlIndex = 1:degree
+            lengthConeIndex = (segmentIndex - 1) * degree + controlIndex;
+            coneA = sparse(2, variableCount);
+            coneA(:, controlIndexOf(segmentIndex, controlIndex, 1:2, degree)) = eye(2);
+            coneA(:, controlIndexOf(segmentIndex, controlIndex - 1, 1:2, degree)) = -eye(2);
+            coneD = sparse(variableCount, 1);
+            coneD(lengthIndex(lengthConeIndex)) = 1;
+            lengthCones(lengthConeIndex) = secondordercone( ...
+                coneA, zeros(2, 1), coneD, 0);
+        end
     end
-end
-if fixedClock
     cones = lengthCones;
     if intrinsicVariation
         smoothIndex = variableCount;
@@ -259,6 +256,8 @@ if fixedClock
         lb(smoothIndex) = 0;
         f(smoothIndex)  = 0.005 * norm(goal_units - start_units);
     end
+else
+    cones = bmtpEngine.optimization.createTimePowerCones(variableCount, powerIndex);
 end
 solverTimer = tic;
 solverTimes_s = [];

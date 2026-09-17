@@ -62,6 +62,7 @@ alternativeGuideEligible               = true;
 %% Section 2: Alternate Trajectory And Plane Updates
 
 maximumIterationCount = request.MaximumAlternatingIterations;
+constraintBase        = struct();
 for iterationIndex = 1:maximumIterationCount
     diagnostics.IterationCount = iterationIndex;
     trajectoryPlanes           = planes;
@@ -72,10 +73,11 @@ for iterationIndex = 1:maximumIterationCount
             nnz([planes.Active]) - nnz([trajectoryPlanes.Active]);
     end
 
-    [trialControl_units, trialTimes_s, exitFlag, output] = bmtpEngine.optimization.solveTrajectoryStep( ...
+    [trialControl_units, trialTimes_s, exitFlag, output, constraintBase] = ...
+        bmtpEngine.optimization.solveTrajectoryStep( ...
         segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, ...
         trajectoryPlanes, reserve_units, request.MotionHorizon_s, request.TrajectoryOptions, ...
-        ones(segmentCount, 1), false);
+        ones(segmentCount, 1), false, true, constraintBase);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     if ~bmtpEngine.optimization.hasUsableConicIterate(trialControl_units, exitFlag)
