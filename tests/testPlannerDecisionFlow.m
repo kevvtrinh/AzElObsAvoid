@@ -409,6 +409,37 @@ function testDisconnectedInitialSnapshotUsesArrivalSnapshot(testCase)
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
 end
 
+function testCoverageFieldsMatchTheScenePath(testCase)
+    % The planner builds coverage in three shapes: static, dynamic
+    % earliest-arrival, and dynamic fixed-arrival. Downstream code branches on
+    % field presence, so a placeholder field would change behaviour without
+    % changing any motion a test already checks. Pin the exact field list.
+    staticResult=planner([],state(0,[-4,0]),state(12,[4,0]), ...
+        standardLimits(),struct('GoalTimeMode','fixedArrival'));
+    verifyTrue(testCase,staticResult.Success,staticResult.Message);
+    verifyEqual(testCase,fieldnames(staticResult.PlaneCertificate.Coverage), ...
+        {'ExactRegionCount'});
+
+    box=[-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
+    first=box+[0,8];
+    last=box+[2,8];
+    mover=obstacleAvoidance.obstacles.createObstacle('remote mover',[0;20], ...
+        {first(:,1);last(:,1)},{first(:,2);last(:,2)},0);
+
+    fixedResult=planner(mover,state(0,[0,0]),state(20,[4,0]), ...
+        standardLimits(),struct('GoalTimeMode','fixedArrival'));
+    verifyTrue(testCase,fixedResult.Success,fixedResult.Message);
+    verifyEqual(testCase,fieldnames(fixedResult.PlaneCertificate.Coverage), ...
+        {'ExactRegionCount';'ActiveTimeInterval_s';'EndRegions_units';'BreakTime_s'});
+
+    % BreakTime_s is the one that separates two dynamic runs from each other.
+    earliestResult=planner(mover,state(0,[0,0]),state(20,[4,0]), ...
+        standardLimits(),struct('GoalTimeMode','earliestArrival'));
+    verifyTrue(testCase,earliestResult.Success,earliestResult.Message);
+    verifyEqual(testCase,fieldnames(earliestResult.PlaneCertificate.Coverage), ...
+        {'ExactRegionCount';'ActiveTimeInterval_s';'EndRegions_units'});
+end
+
 function testSparseDynamicZeroWaitDeparture(testCase)
     box=[-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     first=box+[0,8];
