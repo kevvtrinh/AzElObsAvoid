@@ -50,12 +50,28 @@ infeasibility. Every stage is recorded in `result.Attempts`, including its
 declared iteration limit, trigger, typed failure, and validation outcome. A
 validator rejection terminates as a defect; it never starts another attempt.
 
-Earliest-arrival requests optimize arrival time. Static requests use the
-variable-clock BMTP formulation. Moving requests test the physical direct
-departure family and the same source-independent variable-clock timed profile;
-chronological fixed-time trials are used only when neither supplies a certified
-motion. `TemporalSearch.GlobalEarliestProven` remains false when discrete time
-layers or a finite trial budget prevent a continuous-time global proof.
+Earliest-arrival requests pass through one capability-based coordinator. Static
+fixed-position rest-to-rest requests use the exact spatial graph and
+variable-clock BMTP. Dynamic fixed-position rest-to-rest requests first test the
+physical direct-departure family, retain any validated motion as an incumbent,
+then run one source-independent variable-clock timed challenger only below that
+incumbent. Moving targets and non-rest endpoint requests skip unsupported
+families and go directly to chronological fixed-clock trials. A typed
+search/timing/proposal miss may admit the next method; validation, geometric
+certification, reconstruction, numerical, and unknown failures are terminal.
+A complete continuous curve that passes workspace, continuity, and geometry
+checks but exceeds derivative limits is a clock-local timing miss, not a
+weakened certificate.
+
+By default, a validated dynamic incumbent is retained after the timed challenger
+fails instead of launching an unbounded chronological search. The result reports
+the unsearched interval and does not claim global optimality. Callers may spend
+an explicit, bounded `IncumbentRefinementTrialLimit` to search earlier clocks
+without changing the public validator or discarding the incumbent. Every route,
+motion, and clock attempt is recorded in `result.Attempts`; chronological parent
+attempts retain their fixed-arrival child evidence. `EarliestArrival` records
+capabilities, the selected attempt, the incumbent, the stopping reason, and
+whether the necessary lower bound was actually attained.
 
 There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
 repairs, connectivity-recovery passes, fixture-specific seeds, hidden
@@ -112,6 +128,9 @@ Public planner options are:
 - `MaxArrivalTrials`: maximum fixed-clock planner solves
 - `MaxArrivalCandidates`: maximum regular-grid clocks screened; exact declared
   obstacle, target, and horizon boundaries inside that grid window are retained
+- `IncumbentRefinementTrialLimit`: maximum chronological fixed-clock solves
+  allowed below a validated dynamic incumbent after the timed challenger fails
+  (default `0`; never exceeds `MaxArrivalTrials`)
 
 Unknown options issue one warning and do not change planner behavior. A
 wrapped axis is planned in the unwrapped frame inside the reach band of the

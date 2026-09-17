@@ -1,7 +1,9 @@
-function [result, accepted] = tryTimedArrival(previous)
+function [result, accepted] = tryTimedArrival(previous, maximumArrivalTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [result, accepted] = obstacleAvoidance.input.tryTimedArrival(previous)
+%   [result, accepted] = obstacleAvoidance.input.tryTimedArrival( ...
+%       previous, maximumArrivalTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Use timed visibility and BMTP for a fixed-arrival endpoint or a
@@ -10,6 +12,10 @@ function [result, accepted] = tryTimedArrival(previous)
 % INPUTS
 %   - previous (scalar struct)
 %       Normalized planner result carrying the request and geometry.
+%   - maximumArrivalTime_s (finite scalar, optional)
+%       Upper search clock for earliest-arrival requests. Omission keeps the
+%       request horizon. Fixed-arrival requests always keep their prescribed
+%       clock.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -29,6 +35,15 @@ result       = resetTimedResult(previous);
 accepted     = false;
 initialState = previous.Inputs.initialState;
 goalState    = previous.Inputs.goalState;
+if nargin < 2 || isempty(maximumArrivalTime_s)
+    maximumArrivalTime_s = goalState.time_s;
+end
+validateattributes(maximumArrivalTime_s, {'numeric'}, ...
+    {'real', 'finite', 'scalar', '>', initialState.time_s});
+maximumArrivalTime_s = min(maximumArrivalTime_s, goalState.time_s);
+if previous.Options.GoalTimeMode == "earliestArrival"
+    goalState.time_s = maximumArrivalTime_s;
+end
 
 endpointDerivatives = [initialState.velocity_units_s(:); initialState.acceleration_units_s2(:); ...
     goalState.velocity_units_s(:); goalState.acceleration_units_s2(:)];
@@ -208,6 +223,17 @@ function result = resetTimedResult(previous)
     result.AlternativeGuideEligible     = false;
     result.FailureStage                 = "notRun";
     result.FailureKind                  = "notRun";
+    staleFieldNames = ["TemporalSearch", "GoalArrivalWindow_s", ...
+        "FixedArrivalTrialTime_s", "TrajectoryCoverageEndTime_s"];
+    for fieldName = staleFieldNames
+        if isfield(result, fieldName)
+            result = rmfield(result, fieldName);
+        end
+    end
+    result.Intercept = struct( ...
+        'Time_s', NaN, ...
+        'TargetPosition_units', previous.Inputs.goalState.position_units, ...
+        'TerminalVelocityPolicy', "zero");
     result.VisibilityGraph = struct( ...
         'NodePosition_units',     zeros(0, 2), ...
         'AcceptedNodeIndex',      zeros(0, 2), ...

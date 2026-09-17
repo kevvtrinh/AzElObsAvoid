@@ -12,6 +12,9 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %     arrival-snapshot shortcuts, then one time-expanded fallback. Failed
 %     shortcuts never prove infeasibility, and every accepted motion passes
 %     independent validation.
+%   - Earliest-arrival requests use one capability-driven pipeline: an exact
+%     static BMTP solve, or a departure incumbent followed by one timed
+%     challenger, or chronological fixed-clock trials when required.
 %**************************************************************************
 % INPUTS
 %   - obstacles (struct array)
@@ -28,6 +31,9 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       residuals; the other options control the arrival mode, sampling,
 %       wrapping, endpoint matching, and search. SpatialProbeIterationLimit
 %       is the explicit BMTP budget for each fixed-arrival snapshot shortcut.
+%       IncumbentRefinementTrialLimit optionally spends bounded chronological
+%       trials below a validated earliest-arrival incumbent; zero skips that
+%       secondary refinement without discarding the incumbent.
 %       A wrapped axis is planned in the unwrapped frame inside the reach
 %       band: obstacle images that meet the band, a target lifted by
 %       continuity, and every goal image in the band planned and accepted
@@ -301,65 +307,10 @@ end
 endpointDerivatives = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
     goalState.velocity_units_s, goalState.acceleration_units_s2];
 isRest              = all(endpointDerivatives == 0);
-needsTimedPlanning  = isDynamic || earliestTarget || ~isRest;
-if options.GoalTimeMode == "earliestArrival" && needsTimedPlanning
-    % The C3 chord is the retained analytic departure profile. A chord that
-    % certifies with zero departure delay is accepted directly; a delayed
-    % chord is only an incumbent that the single timed BMTP profile may beat.
-    % Each candidate passes the public acceptance gate exactly once, and only
-    % a candidate that passed it can be selected.
-    departureResult   = result;
-    departureAccepted = false;
-    if isDynamic && ~earliestTarget && isRest
-        departureRoute_units = [initialState.position_units; goalState.position_units];
-        departureSeed        = struct('position_units', departureRoute_units, 'tau', [0; 1], 'Source', "departureSchedule");
-        [departureCandidate, departureDiagnostics] = bmtpEngine.solve( ...
-            departureSeed, regions_units, coverage, initialState, goalState, ...
-            limits, options);
-        if departureCandidate.Success
-            departureResult = obstacleAvoidance.input.finalizeCandidate( ...
-                result, departureCandidate, departureRoute_units, departureDiagnostics);
-            departureResult.VisibilityGraph.SearchKind = "c3DepartureSchedule";
-            departureAccepted = departureResult.Success;
-
-            departureDelay_s = 0;
-            if isfield(departureDiagnostics, 'DepartureSchedule')
-                departureDelay_s = departureDiagnostics.DepartureSchedule.DepartureDelay_s;
-            end
-            if departureAccepted && departureDelay_s <= options.ArrivalTimeTolerance_s
-                result               = departureResult;
-                result.ElapsedTime_s = toc(totalTimer);
-                return
-            end
-            if ~departureAccepted
-                % A solver success the public gate rejected is reported to the
-                % later stages as their prior outcome, never reselected.
-                result.Message           = departureResult.Message;
-                result.TerminationReason = departureResult.TerminationReason;
-            end
-        end
-    end
-    result.ElapsedTime_s         = toc(totalTimer);
-    [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
-    if timedAccepted
-        departureIsNoLater = departureAccepted && ...
-            departureResult.ArrivalTime_s <= timedResult.ArrivalTime_s + options.ArrivalTimeTolerance_s;
-        if departureIsNoLater
-            result               = departureResult;
-            result.ElapsedTime_s = toc(totalTimer);
-        else
-            result = timedResult;
-        end
-        return
-    end
-    if departureAccepted
-        result               = departureResult;
-        result.ElapsedTime_s = toc(totalTimer);
-        return
-    end
-    result               = timedResult;
-    result.ElapsedTime_s = toc(totalTimer);
-    result               = obstacleAvoidance.input.searchArrivalTimes(result, @plannerCore);
+if options.GoalTimeMode == "earliestArrival"
+    result = planEarliestArrival(result, scene, regions_units, coverage, ...
+        initialState, goalState, limits, options, totalTimer, ...
+        isDynamic, earliestTarget, isRest, @plannerCore);
     return
 end
 
@@ -380,6 +331,8 @@ result.VisibilityGraph = visibilityGraph;
 if ~visibilityGraph.IsConnected
     result.Message           = "The initial visibility graph contains no start-to-goal route.";
     result.TerminationReason = "noVisibilityRoute";
+    result.FailureStage      = "search";
+    result.FailureKind       = "noSpatialRoute";
     result.ElapsedTime_s     = toc(totalTimer);
     return
 end
@@ -411,6 +364,457 @@ function graph = getVisibilityGraph(scene, start_units, goal_units, limits, opti
         previousGraph = graph;
     end
     graph.SearchKind = kind;
+end
+
+function result = planEarliestArrival(result, scene, regions_units, coverage, ...
+        initialState, goalState, limits, options, totalTimer, ...
+        isDynamic, earliestTarget, isRest, plannerCore)
+    % Keep one truthful method cascade. A validated candidate is an incumbent;
+    % only a public-validator pass can be selected, and acceptance defects are
+    % terminal instead of being hidden by a later method.
+    attempts = repmat(createAttemptRecord(0, "", "", ""), 0, 1);
+    fixedRestGoal = ~earliestTarget && isRest;
+    capabilities = struct( ...
+        'StaticSpatialBmtp',      ~isDynamic && fixedRestGoal, ...
+        'DepartureFamily',        isDynamic && fixedRestGoal, ...
+        'TimedVariableClockBmtp', isDynamic && fixedRestGoal, ...
+        'ChronologicalFixedClock', earliestTarget || ~isRest || isDynamic);
+    necessaryArrivalTime_s = NaN;
+    if ~earliestTarget
+        necessaryArrivalTime_s = initialState.time_s + ...
+            obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
+    end
+
+    %% Static Fixed-Position Rest Requests Use One Exact Spatial Proposal
+    if capabilities.StaticSpatialBmtp
+        attemptTimer = tic;
+        graph = getVisibilityGraph(scene, initialState.position_units, ...
+            goalState.position_units, limits, options, "initialSpatialSnapshot");
+        result.VisibilityGraph = graph;
+        attempt = createAttemptRecord(1, "spatialVisibility", "primary", ...
+            "earliestArrivalPolicy");
+        attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
+        attempt.GraphConnected           = graph.IsConnected;
+        attempt.GraphIsFullyEnumerated   = graph.GraphIsFullyEnumerated;
+        attempt.RouteNodeCount           = size(graph.Route_units, 1);
+        attempt.RouteLength_units        = graph.RouteLength_units;
+        attempt.ExpandedCount            = graph.ExpandedCount;
+        if ~graph.IsConnected
+            attempt.GuideStatus       = "noRoute";
+            attempt.FailureStage      = "search";
+            attempt.FailureKind       = "noSpatialRoute";
+            attempt.MotionStatus      = "notRun";
+            attempt.Outcome           = "terminalFailure";
+            attempt.TerminationReason = "noVisibilityRoute";
+            attempt.Message           = "The exhaustive static visibility graph has no route.";
+            attempt.ElapsedTime_s     = toc(attemptTimer);
+            result.Message            = attempt.Message;
+            result.TerminationReason  = attempt.TerminationReason;
+            result.FailureStage       = attempt.FailureStage;
+            result.FailureKind        = attempt.FailureKind;
+            result.Attempts           = attempt;
+            result.ElapsedTime_s      = toc(totalTimer);
+            result = finishEarliestArrival(result, attempt, capabilities, ...
+                necessaryArrivalTime_s, "staticGraphDisconnected");
+            return
+        end
+
+        route_units      = graph.Route_units;
+        edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
+        seed = struct( ...
+            'position_units', route_units, ...
+            'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
+            'Source', graph.SearchKind);
+        attempt.GuideStatus     = "connected";
+        attempt.SolverAttempted = true;
+        [candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, ...
+            initialState, goalState, limits, options);
+        candidateResult = obstacleAvoidance.input.finalizeCandidate( ...
+            result, candidate, route_units, diagnostics);
+        attempt = populateMotionAttempt(attempt, candidateResult, candidate, diagnostics);
+        attempt.ElapsedTime_s = toc(attemptTimer);
+        if candidateResult.Success
+            attempt.MotionStatus = "accepted";
+            attempt.Selected     = true;
+            attempt.Outcome      = "accepted";
+            candidateResult.Attempts = attempt;
+            candidateResult.ElapsedTime_s = toc(totalTimer);
+            result = finishEarliestArrival(candidateResult, attempt, capabilities, ...
+                necessaryArrivalTime_s, "staticSpatialBmtpAccepted");
+            return
+        end
+        if candidate.Success
+            attempt.MotionStatus = "validationFailure";
+        else
+            attempt.MotionStatus = attempt.FailureKind;
+        end
+        attempt.Outcome = "terminalFailure";
+        candidateResult.Attempts = attempt;
+        candidateResult.ElapsedTime_s = toc(totalTimer);
+        result = finishEarliestArrival(candidateResult, attempt, capabilities, ...
+            necessaryArrivalTime_s, "staticSpatialBmtpFailed");
+        return
+    end
+
+    %% Dynamic Fixed-Position Rest Requests Try The Direct Departure Family
+    incumbentResult       = result;
+    incumbentAccepted     = false;
+    incumbentAttemptIndex = 0;
+    if capabilities.DepartureFamily
+        attemptTimer = tic;
+        departureRoute_units = [initialState.position_units; goalState.position_units];
+        departureSeed = struct( ...
+            'position_units', departureRoute_units, ...
+            'tau', [0; 1], ...
+            'Source', "departureSchedule");
+        attempt = createAttemptRecord(1, "analyticDeparture", ...
+            "heuristicShortcut", "earliestArrivalPolicy");
+        attempt.IsHeuristic             = true;
+        attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
+        attempt.GuideStatus             = "directFamily";
+        attempt.GraphConnected          = true;
+        attempt.RouteNodeCount          = 2;
+        attempt.RouteLength_units       = norm(diff(departureRoute_units, 1, 1));
+        attempt.SolverAttempted         = true;
+        [candidate, diagnostics] = bmtpEngine.solve( ...
+            departureSeed, regions_units, coverage, initialState, goalState, ...
+            limits, options);
+        departureResult = obstacleAvoidance.input.finalizeCandidate( ...
+            result, candidate, departureRoute_units, diagnostics);
+        departureResult.VisibilityGraph.SearchKind         = "c3DepartureSchedule";
+        departureResult.VisibilityGraph.Route_units        = departureRoute_units;
+        departureResult.VisibilityGraph.RouteLength_units  = attempt.RouteLength_units;
+        departureResult.VisibilityGraph.IsConnected        = true;
+        departureResult.VisibilityGraph.GraphIsFullyEnumerated = false;
+        attempt = populateMotionAttempt(attempt, departureResult, candidate, diagnostics);
+        attempt.ElapsedTime_s = toc(attemptTimer);
+
+        if candidate.Success && ~departureResult.Success
+            attempt.MotionStatus = "validationFailure";
+            attempt.Outcome      = "terminalFailure";
+            departureResult.Attempts = attempt;
+            departureResult.ElapsedTime_s = toc(totalTimer);
+            result = finishEarliestArrival(departureResult, attempt, capabilities, ...
+                necessaryArrivalTime_s, "departureValidationFailure");
+            return
+        elseif departureResult.Success
+            incumbentResult       = departureResult;
+            incumbentAccepted     = true;
+            incumbentAttemptIndex = 1;
+            attempt.MotionStatus  = "accepted";
+            attempt.Outcome       = "incumbentRetained";
+            attempt.IncumbentArrival_s = departureResult.ArrivalTime_s;
+            attempts(end + 1, 1) = attempt;
+            if departureResult.ArrivalTime_s <= necessaryArrivalTime_s + ...
+                    options.ArrivalTimeTolerance_s
+                attempts(1).Selected = true;
+                attempts(1).Outcome  = "accepted";
+                departureResult.Attempts = attempts;
+                departureResult.ElapsedTime_s = toc(totalTimer);
+                result = finishEarliestArrival(departureResult, attempts, capabilities, ...
+                    necessaryArrivalTime_s, "necessaryArrivalBoundAttained");
+                return
+            end
+        else
+            attempt.MotionStatus = attempt.FailureKind;
+            attempt.MethodFallbackEligible = methodFallbackEligible(departureResult);
+            attempt.MethodFallbackReason   = attempt.FailureKind;
+            attempt.FallbackEligible       = attempt.MethodFallbackEligible;
+            attempt.FallbackReason         = attempt.MethodFallbackReason;
+            if attempt.MethodFallbackEligible
+                attempt.Outcome = "nextMethodAdmitted";
+                attempts(end + 1, 1) = attempt;
+            else
+                attempt.Outcome = "terminalFailure";
+                departureResult.Attempts = attempt;
+                departureResult.ElapsedTime_s = toc(totalTimer);
+                result = finishEarliestArrival(departureResult, attempt, capabilities, ...
+                    necessaryArrivalTime_s, "departureTerminalFailure");
+                return
+            end
+        end
+    end
+
+    %% One Time-Expanded Variable-Clock Challenger
+    timedAttempted = false;
+    timedResult    = result;
+    if capabilities.TimedVariableClockBmtp
+        maximumArrivalTime_s = goalState.time_s;
+        if incumbentAccepted
+            maximumArrivalTime_s = min(maximumArrivalTime_s, ...
+                incumbentResult.ArrivalTime_s - options.ArrivalTimeTolerance_s);
+        end
+        if maximumArrivalTime_s > initialState.time_s + ...
+                options.ArrivalTimeTolerance_s
+            timedAttempted = true;
+            timedBase = result;
+            timedBase.Attempts = attempts;
+            timedBase.ElapsedTime_s = toc(totalTimer);
+            priorElapsedTime_s = timedBase.ElapsedTime_s;
+            [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival( ...
+                timedBase, maximumArrivalTime_s);
+            trigger = "departureFamilyUnavailable";
+            if incumbentAccepted
+                trigger = "validatedDepartureIncumbent";
+            elseif ~isempty(attempts)
+                trigger = attempts(end).MethodFallbackReason;
+            end
+            timedAttempt = createTimedAttemptRecord(numel(attempts) + 1, ...
+                "primary", trigger, timedResult, timedAccepted, priorElapsedTime_s);
+            timedAttempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
+            if incumbentAccepted
+                timedAttempt.IncumbentArrival_s = incumbentResult.ArrivalTime_s;
+            end
+
+            if timedAccepted
+                attempts(end + 1, 1) = timedAttempt;
+                incumbentIsNoLater = incumbentAccepted && ...
+                    incumbentResult.ArrivalTime_s <= timedResult.ArrivalTime_s + ...
+                    options.ArrivalTimeTolerance_s;
+                if incumbentIsNoLater
+                    attempts(incumbentAttemptIndex).Selected = true;
+                    attempts(incumbentAttemptIndex).Outcome  = "accepted";
+                    attempts(end).Outcome = "superseded";
+                    result = incumbentResult;
+                    stoppingReason = "departureIncumbentNoLater";
+                else
+                    if incumbentAccepted
+                        attempts(incumbentAttemptIndex).Outcome = "superseded";
+                    end
+                    attempts(end).Selected = true;
+                    attempts(end).Outcome  = "accepted";
+                    result = timedResult;
+                    stoppingReason = "timedVariableClockAccepted";
+                end
+                result.Attempts = attempts;
+                result.ElapsedTime_s = toc(totalTimer);
+                result = finishEarliestArrival(result, attempts, capabilities, ...
+                    necessaryArrivalTime_s, stoppingReason);
+                return
+            end
+
+            if string(timedResult.TerminationReason) == "invalidMotion"
+                timedAttempt.MotionStatus = "validationFailure";
+                timedAttempt.Outcome      = "terminalFailure";
+                attempts(end + 1, 1)      = timedAttempt;
+                timedResult.Attempts      = attempts;
+                timedResult.ElapsedTime_s = toc(totalTimer);
+                result = finishEarliestArrival(timedResult, attempts, capabilities, ...
+                    necessaryArrivalTime_s, "timedValidationFailure");
+                return
+            end
+
+            timedAttempt.MethodFallbackEligible = methodFallbackEligible(timedResult);
+            timedAttempt.MethodFallbackReason   = timedAttempt.FailureKind;
+            timedAttempt.FallbackEligible       = timedAttempt.MethodFallbackEligible;
+            timedAttempt.FallbackReason         = timedAttempt.MethodFallbackReason;
+            if timedAttempt.MethodFallbackEligible
+                timedAttempt.Outcome = "nextMethodAdmitted";
+                attempts(end + 1, 1) = timedAttempt;
+            else
+                timedAttempt.Outcome = "terminalFailure";
+                attempts(end + 1, 1) = timedAttempt;
+                timedResult.Attempts = attempts;
+                timedResult.ElapsedTime_s = toc(totalTimer);
+                result = finishEarliestArrival(timedResult, attempts, capabilities, ...
+                    necessaryArrivalTime_s, "timedTerminalFailure");
+                return
+            end
+        end
+    end
+
+    %% Chronological Fixed-Clock Fallback Or Primary Method
+    if incumbentAccepted
+        searchBase = incumbentResult;
+    elseif timedAttempted
+        searchBase = timedResult;
+    else
+        searchBase = result;
+    end
+    searchBase.Attempts      = attempts;
+    searchBase.ElapsedTime_s = toc(totalTimer);
+    chronologicalTrialLimit = options.MaxArrivalTrials;
+    if incumbentAccepted
+        chronologicalTrialLimit = min(chronologicalTrialLimit, ...
+            options.IncumbentRefinementTrialLimit);
+        if chronologicalTrialLimit == 0
+            attempts(incumbentAttemptIndex).Selected = true;
+            attempts(incumbentAttemptIndex).Outcome  = "accepted";
+            incumbentResult.Attempts = attempts;
+            incumbentResult.ElapsedTime_s = toc(totalTimer);
+            result = finishEarliestArrival(incumbentResult, attempts, ...
+                capabilities, necessaryArrivalTime_s, ...
+                "incumbentRetainedAfterTimedFailure");
+            return
+        end
+    end
+    result = obstacleAvoidance.input.searchArrivalTimes( ...
+        searchBase, plannerCore, @createAttemptRecord, ...
+        @methodFallbackEligible, chronologicalTrialLimit);
+    result.ElapsedTime_s = toc(totalTimer);
+    result = finishEarliestArrival(result, result.Attempts, capabilities, ...
+        necessaryArrivalTime_s, chronologicalStoppingReason(result));
+end
+
+function attempt = populateMotionAttempt(attempt, candidateResult, candidate, diagnostics)
+    % Translate one BMTP result into the stable planner-level attempt schema.
+    attempt.IterationLimit = readDiagnosticScalar( ...
+        diagnostics, "MaximumAlternatingIterations", NaN);
+    attempt.IterationCount = readDiagnosticScalar(diagnostics, "IterationCount", 0);
+    attempt.CandidateSuccess            = candidate.Success;
+    attempt.OptimizerFeasible           = readLogicalField(candidate, "OptimizerFeasible");
+    attempt.OptimizerIterateUnavailable = readLogicalField( ...
+        candidate, "OptimizerIterateUnavailable");
+    attempt.AlternativeGuideEligible = readLogicalField( ...
+        candidate, "AlternativeGuideEligible");
+    attempt.FailureStage = readStringField(candidate, "FailureStage");
+    attempt.FailureKind  = readStringField(candidate, "FailureKind");
+    attempt.ValidationStatus = "notRun";
+    if candidate.Success
+        attempt.ValidationStatus = "failed";
+        if candidateResult.Validation.Passed
+            attempt.ValidationStatus = "passed";
+        end
+    end
+    attempt.Success           = candidateResult.Success;
+    attempt.TerminationReason = candidateResult.TerminationReason;
+    attempt.Message           = candidateResult.Message;
+    if isfield(candidateResult, 'ArrivalTime_s') && ...
+            isnumeric(candidateResult.ArrivalTime_s) && ...
+            isscalar(candidateResult.ArrivalTime_s) && ...
+            isfinite(candidateResult.ArrivalTime_s)
+        attempt.CandidateArrival_s = candidateResult.ArrivalTime_s;
+    end
+end
+
+function attempt = createTimedAttemptRecord(index, role, trigger, ...
+        timedResult, timedAccepted, priorElapsedTime_s)
+    % Record the one time-expanded method without retaining stale prior motion.
+    attempt = createAttemptRecord(index, "timedVisibility", role, trigger);
+    attempt.GraphIsFullyEnumerated = false;
+    attempt.GraphConnected = timedResult.VisibilityGraph.IsConnected;
+    attempt.GuideStatus = "noRoute";
+    if attempt.GraphConnected
+        attempt.GuideStatus = "connected";
+    end
+    attempt.RouteNodeCount    = size(timedResult.Route_units, 1);
+    attempt.RouteLength_units = timedResult.VisibilityGraph.RouteLength_units;
+    attempt.ExpandedCount     = timedResult.VisibilityGraph.ExpandedCount;
+    attempt.SolverAttempted   = attempt.GraphConnected;
+    attempt.IterationLimit = readDiagnosticScalar( ...
+        timedResult.SolverDiagnostics, "MaximumAlternatingIterations", NaN);
+    attempt.IterationCount = readDiagnosticScalar( ...
+        timedResult.SolverDiagnostics, "IterationCount", 0);
+    attempt.CandidateSuccess = readLogicalField( ...
+        timedResult.SolverDiagnostics, "Accepted");
+    attempt.OptimizerFeasible = readLogicalField(timedResult, "OptimizerFeasible");
+    attempt.OptimizerIterateUnavailable = readLogicalField( ...
+        timedResult, "OptimizerIterateUnavailable");
+    attempt.AlternativeGuideEligible = readLogicalField( ...
+        timedResult, "AlternativeGuideEligible");
+    attempt.FailureStage = readStringField(timedResult, "FailureStage");
+    attempt.FailureKind  = readStringField(timedResult, "FailureKind");
+    attempt.ValidationStatus = "notRun";
+    if attempt.CandidateSuccess
+        attempt.ValidationStatus = "failed";
+        if timedResult.Validation.Passed
+            attempt.ValidationStatus = "passed";
+        end
+    end
+    attempt.Success           = timedAccepted;
+    attempt.TerminationReason = timedResult.TerminationReason;
+    attempt.Message           = timedResult.Message;
+    attempt.Outcome           = "terminalFailure";
+    if timedAccepted
+        attempt.MotionStatus = "accepted";
+        attempt.Outcome      = "acceptedCandidate";
+        attempt.CandidateArrival_s = timedResult.ArrivalTime_s;
+    elseif attempt.GraphConnected
+        attempt.MotionStatus = attempt.FailureKind;
+    end
+    attempt.ElapsedTime_s = max(0, timedResult.ElapsedTime_s - priorElapsedTime_s);
+end
+
+function eligible = methodFallbackEligible(candidateResult)
+    % Admit another method only for a typed method-local miss or bounded
+    % optimization exhaustion. Unknown and acceptance-defect outcomes stop.
+    eligible = false;
+    if string(candidateResult.TerminationReason) == "invalidMotion"
+        return
+    end
+    failureStage = readStringField(candidateResult, "FailureStage");
+    failureKind  = readStringField(candidateResult, "FailureKind");
+    if failureStage == "" && isfield(candidateResult, 'Attempts') && ...
+            ~isempty(candidateResult.Attempts)
+        failureStage = string(candidateResult.Attempts(end).FailureStage);
+        failureKind  = string(candidateResult.Attempts(end).FailureKind);
+    end
+    eligible = any(failureStage == ["search", "timing", "proposal", "optimization"]);
+    if failureStage == "optimization"
+        eligible = any(failureKind == ["iterationLimit", ...
+            "trajectorySolverIterationLimit", "timedPairSetStalled"]);
+    end
+    if failureStage == ""
+        eligible = any(string(candidateResult.TerminationReason) == ...
+            ["noSpatialRoute", "noVisibilityRoute", "noTimedRoute", "noDepartureWindow", ...
+            "timedMotionInfeasible", "noOptimizedFeasibleIterate"]);
+    end
+end
+
+function result = finishEarliestArrival(result, attempts, capabilities, ...
+        necessaryArrivalTime_s, stoppingReason)
+    % Publish consistent selection evidence for every earliest-arrival path.
+    result.Attempts = attempts;
+    selectedAttemptIndex = find([attempts.Selected], 1, 'last');
+    if isempty(selectedAttemptIndex)
+        selectedAttemptIndex = 0;
+    end
+    incumbentArrivalTime_s = NaN;
+    if selectedAttemptIndex > 0 && ...
+            isfinite(attempts(selectedAttemptIndex).CandidateArrival_s)
+        incumbentArrivalTime_s = attempts(selectedAttemptIndex).CandidateArrival_s;
+    end
+    globalEarliestProven = result.Success && isfinite(necessaryArrivalTime_s) && ...
+        result.ArrivalTime_s <= necessaryArrivalTime_s + ...
+        result.Options.ArrivalTimeTolerance_s;
+    unsearchedInterval_s = [NaN, NaN];
+    if result.Success && ~globalEarliestProven && isfinite(necessaryArrivalTime_s)
+        unsearchedUpperTime_s = result.ArrivalTime_s - ...
+            result.Options.ArrivalTimeTolerance_s;
+        if unsearchedUpperTime_s > necessaryArrivalTime_s
+            unsearchedInterval_s = [necessaryArrivalTime_s, unsearchedUpperTime_s];
+        end
+    end
+    chronologicalSearchUsed = false;
+    if ~isempty(attempts)
+        chronologicalSearchUsed = any([attempts.Kind] == ...
+            "chronologicalFixedArrival");
+    end
+    result.EarliestArrival = struct( ...
+        'Capabilities',             capabilities, ...
+        'NecessaryArrivalBound_s',  necessaryArrivalTime_s, ...
+        'IncumbentArrival_s',       incumbentArrivalTime_s, ...
+        'SelectedAttemptIndex',     selectedAttemptIndex, ...
+        'StoppingReason',           string(stoppingReason), ...
+        'GlobalEarliestProven',     globalEarliestProven, ...
+        'UnsearchedInterval_s',     unsearchedInterval_s, ...
+        'ChronologicalSearchUsed',  chronologicalSearchUsed, ...
+        'AttemptCount',             numel(attempts));
+    if isfield(result, 'TemporalSearch')
+        result.TemporalSearch.GlobalEarliestProven = globalEarliestProven;
+        result.TemporalSearch.SelectedAttemptIndex = selectedAttemptIndex;
+        result.TemporalSearch.StoppingReason       = string(stoppingReason);
+    end
+end
+
+function reason = chronologicalStoppingReason(result)
+    % Distinguish a selected trial, a retained incumbent, and honest exhaustion.
+    reason = string(result.TerminationReason);
+    if isfield(result, 'TemporalSearch')
+        reason = string(result.TemporalSearch.StoppingReason);
+    elseif result.Success
+        reason = "chronologicalFixedArrivalAccepted";
+    end
 end
 
 function result = planFixedArrivalDynamic(result, scene, regions_units, coverage, ...
@@ -507,6 +911,7 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
 
             if candidateResult.Success
                 attempt.MotionStatus = "accepted";
+                attempt.Selected     = true;
                 attempt.Outcome      = "accepted";
                 attempt.ElapsedTime_s = toc(attemptTimer);
                 candidateResult.Attempts = [attempts; attempt];
@@ -588,6 +993,7 @@ function result = planFixedArrivalDynamic(result, scene, regions_units, coverage
     timedAttempt.Outcome           = "terminalFailure";
     if timedAccepted
         timedAttempt.MotionStatus = "accepted";
+        timedAttempt.Selected     = true;
         timedAttempt.Outcome      = "accepted";
     elseif timedAttempt.GraphConnected
         timedAttempt.MotionStatus = timedAttempt.FailureKind;
@@ -607,6 +1013,12 @@ function attempt = createAttemptRecord(index, kind, role, trigger)
         "IsHeuristic",                  false, ...
         "IterationLimit",               NaN, ...
         "GraphSnapshotTime_s",          NaN, ...
+        "TrialTime_s",                  NaN, ...
+        "CandidateArrival_s",           NaN, ...
+        "NecessaryArrivalBound_s",      NaN, ...
+        "IncumbentArrival_s",           NaN, ...
+        "PrescreenStatus",              "notRun", ...
+        "PrescreenReason",              "", ...
         "GuideStatus",                  "notRun", ...
         "GraphConnected",               false, ...
         "GraphIsFullyEnumerated",       false, ...
@@ -625,11 +1037,15 @@ function attempt = createAttemptRecord(index, kind, role, trigger)
         "ValidationStatus",             "notRun", ...
         "FallbackEligible",             false, ...
         "FallbackReason",               "", ...
+        "MethodFallbackEligible",       false, ...
+        "MethodFallbackReason",         "", ...
         "Success",                      false, ...
+        "Selected",                     false, ...
         "Outcome",                      "notRun", ...
         "TerminationReason",            "", ...
         "Message",                      "", ...
-        "ElapsedTime_s",                0);
+        "ElapsedTime_s",                0, ...
+        "ChildAttempts",                {repmat(struct(), 0, 1)});
 end
 
 function value = readLogicalField(record, name)
@@ -691,6 +1107,7 @@ function [initialState, goalState, limits, options] = createDefaults()
         "MatchTargetAcceleration",           false, ...
         "TemporalResolution_s",              0.5, ...
         "SpatialProbeIterationLimit",        2, ...
+        "IncumbentRefinementTrialLimit",     0, ...
         "MaxArrivalTrials",                  100, ...
         "MaxArrivalCandidates",              4096);
 end
@@ -812,6 +1229,10 @@ function options = resolveOptions(options, defaults)
             {'scalar', 'finite', 'integer', 'positive'});
         options.(optionName) = double(options.(optionName));
     end
+    validateattributes(options.IncumbentRefinementTrialLimit, {'numeric'}, ...
+        {'scalar', 'finite', 'integer', 'nonnegative'});
+    options.IncumbentRefinementTrialLimit = ...
+        double(options.IncumbentRefinementTrialLimit);
     if options.SpatialProbeIterationLimit > 35
         error("planner:InvalidSpatialProbeIterationLimit", ...
             "SpatialProbeIterationLimit must not exceed the full BMTP limit of 35.");

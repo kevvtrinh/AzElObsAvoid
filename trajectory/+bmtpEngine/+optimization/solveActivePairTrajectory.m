@@ -55,10 +55,13 @@ bestPlanes                             = planes;
 bestTaggedPairs                        = taggedPairs;
 bestSolverMessage                      = "";
 lastAttemptMessage                     = "The active-pair BMTP iteration limit was reached.";
+failureStage                           = "optimization";
+failureKind                            = "iterationLimit";
+alternativeGuideEligible               = true;
 
 %% Section 2: Alternate Trajectory And Plane Updates
 
-maximumIterationCount = 16;
+maximumIterationCount = request.MaximumAlternatingIterations;
 for iterationIndex = 1:maximumIterationCount
     diagnostics.IterationCount = iterationIndex;
     trajectoryPlanes           = planes;
@@ -77,6 +80,19 @@ for iterationIndex = 1:maximumIterationCount
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     if ~bmtpEngine.optimization.hasUsableConicIterate(trialControl_units, exitFlag)
         lastAttemptMessage = "Trajectory SOCP failed: " + string(output.message);
+        if exitFlag == 0
+            failureStage             = "optimization";
+            failureKind              = "trajectorySolverIterationLimit";
+            alternativeGuideEligible = true;
+        elseif exitFlag == -2
+            failureStage             = "proposal";
+            failureKind              = "trajectorySubproblemInfeasible";
+            alternativeGuideEligible = true;
+        else
+            failureStage             = "numericalSolver";
+            failureKind              = "optimizerIterateUnavailable";
+            alternativeGuideEligible = false;
+        end
         break
     end
 
@@ -135,6 +151,9 @@ for iterationIndex = 1:maximumIterationCount
         activePairs = newPairs;
     else
         lastAttemptMessage = "A tagged pair crossed its retained separating plane.";
+        failureStage             = "proposal";
+        failureKind              = "retainedSeparatingPlaneViolated";
+        alternativeGuideEligible = true;
         break
     end
 
@@ -151,6 +170,9 @@ for iterationIndex = 1:maximumIterationCount
         planeUpdateFailed = (planeExitFlag <= 0 && planeExitFlag ~= -7) || ~plane.Active;
         if planeUpdateFailed
             lastAttemptMessage = "A separating-plane update failed.";
+            failureStage             = "proposal";
+            failureKind              = "separatingPlaneUpdateUnavailable";
+            alternativeGuideEligible = true;
             updateFailed  = true;
             break
         end
@@ -207,6 +229,9 @@ selectedCollisionPairCount = 0;
 solverMessage              = lastAttemptMessage;
 if ~isempty(bestControl_units)
     solverMessage = bestSolverMessage;
+    failureStage             = "";
+    failureKind              = "";
+    alternativeGuideEligible = false;
     if bestCertificate.Passed
         selectedControl_units      = bestPreparedMotion.ControlPoint_units;
         selectedTimes_s            = bestPreparedMotion.SegmentTime_s;
@@ -223,6 +248,9 @@ diagnostics.SolverMessage           = solverMessage;
 result = struct( ...
     'Success',            ~isempty(selectedControl_units), ...
     'SolverMessage',      solverMessage, ...
+    'FailureStage',       failureStage, ...
+    'FailureKind',        failureKind, ...
+    'AlternativeGuideEligible', alternativeGuideEligible, ...
     'ControlPoint_units', selectedControl_units, ...
     'SegmentTime_s',      selectedTimes_s, ...
     'Planes',             selectedPlanes, ...

@@ -117,6 +117,12 @@ function testEarliestStaticDirectUsesAnalyticClock(testCase)
     verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
     verifyEqual(testCase,result.SolverDiagnostics.Identifier,"c3JerkLimitedChord");
     verifyEqual(testCase,result.SolverDiagnostics.ConstraintRepresentation,"analyticC3Clock");
+    verifyEqual(testCase,numel(result.Attempts),1);
+    verifyEqual(testCase,result.Attempts.Kind,"spatialVisibility");
+    verifyTrue(testCase,result.Attempts.Selected);
+    verifyEqual(testCase,result.Attempts.ValidationStatus,"passed");
+    verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
+    verifyEqual(testCase,result.EarliestArrival.SelectedAttemptIndex,1);
 end
 
 function testEarliestStaticNonrestUsesPhysicalClockTrials(testCase)
@@ -129,6 +135,11 @@ function testEarliestStaticNonrestUsesPhysicalClockTrials(testCase)
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s, ...
         'AbsTol',1e-12);
     verifyFalse(testCase,result.TemporalSearch.GlobalEarliestProven);
+    verifyFalse(testCase,result.EarliestArrival.Capabilities.TimedVariableClockBmtp);
+    verifyGreaterThanOrEqual(testCase,numel(result.Attempts),1);
+    verifyTrue(testCase,all([result.Attempts.Kind] == ...
+        "chronologicalFixedArrival"));
+    verifyEqual(testCase,nnz([result.Attempts.Selected]),1);
 end
 
 function testFixedMovingTargetMatchesPchipDerivatives(testCase)
@@ -166,6 +177,66 @@ function testEarliestMovingTargetUsesChronologicalClock(testCase)
         'AbsTol',1e-10);
     verifyEqual(testCase,result.Intercept.Time_s,result.ArrivalTime_s, ...
         'AbsTol',1e-10);
+    verifyFalse(testCase,result.EarliestArrival.Capabilities.TimedVariableClockBmtp);
+    verifyGreaterThanOrEqual(testCase,numel(result.Attempts),1);
+    verifyTrue(testCase,all([result.Attempts.Kind] == ...
+        "chronologicalFixedArrival"));
+    verifyEqual(testCase,nnz([result.Attempts.Selected]),1);
+end
+
+function testEarliestMovingTargetMatchesSelectedClockDerivatives(testCase)
+    targetMotion=struct('time_s',[0;5;10], ...
+        'position_units',[2,0;3,0;4,0], ...
+        'InterpolationMethod','linear');
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    options=struct('GoalTimeMode','earliestArrival', ...
+        'MatchTargetVelocity',true,'MatchTargetAcceleration',true, ...
+        'TemporalResolution_s',0.5);
+    result=planner([],state(0,[0,0]),goal,standardLimits(),options);
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyLessThan(testCase,result.ArrivalTime_s,goal.time_s);
+    [targetPosition_units,targetVelocity_units_s,targetAcceleration_units_s2]= ...
+        obstacleAvoidance.input.targetPositionAtTime( ...
+        targetMotion,result.ArrivalTime_s);
+    verifyEqual(testCase,result.Intercept.TargetPosition_units, ...
+        targetPosition_units,'AbsTol',1e-10);
+    verifyEqual(testCase,result.velocity_units_s(end,:), ...
+        targetVelocity_units_s,'AbsTol',1e-8);
+    verifyEqual(testCase,result.acceleration_units_s2(end,:), ...
+        targetAcceleration_units_s2,'AbsTol',1e-8);
+end
+
+function testDisconnectedMovingTargetClockAdvances(testCase)
+    wall_units=[-0.4,-5;0.4,-5;0.4,5;-0.4,5];
+    obstacle=obstacleAvoidance.obstacles.createObstacle( ...
+        'static separating wall',0,{wall_units(:,1)},{wall_units(:,2)},0);
+    targetMotion=struct('time_s',[0;10], ...
+        'position_units',[4,0;-2,0],'InterpolationMethod','linear');
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    limits=standardLimits();
+    limits.xInterval_units=[-5,5];
+    limits.yInterval_units=[-5,5];
+    result=planner(obstacle,state(0,[-4,0]),goal,limits, ...
+        struct('GoalTimeMode','earliestArrival','TemporalResolution_s',1));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyGreaterThan(testCase,numel(result.Attempts),1);
+    verifyEqual(testCase,result.Attempts(1).TerminationReason, ...
+        "noVisibilityRoute");
+    verifyEqual(testCase,result.Attempts(1).FailureStage,"search");
+    verifyTrue(testCase,result.Attempts(1).MethodFallbackEligible);
+    verifyTrue(testCase,any([result.Attempts.Selected]));
+
+    fixedInitial=state(0,[-4,0]);
+    fixedInitial.velocity_units_s=[0.1,0];
+    fixedResult=planner(obstacle,fixedInitial,state(10,[4,0]),limits, ...
+        struct('GoalTimeMode','earliestArrival','TemporalResolution_s',1));
+    verifyFalse(testCase,fixedResult.Success);
+    verifyEqual(testCase,fixedResult.TerminationReason,"noVisibilityRoute");
+    verifyEqual(testCase,numel(fixedResult.Attempts),1);
+    verifyFalse(testCase,fixedResult.Attempts.MethodFallbackEligible);
+    verifyEqual(testCase,fixedResult.Attempts.Outcome,"terminalFailure");
 end
 
 function testPeriodicWrapUsesNearestImage(testCase)
@@ -273,6 +344,14 @@ function testPeriodicFarImageBeatsABlockedNearImage(testCase)
     verifyEqual(testCase,result.PeriodicImages.GoalOffset_units,[-10,0]);
     verifyEqual(testCase,result.MotionLength_units,8,'AbsTol',1e-6);
     verifyGreaterThan(testCase,nnz(result.PeriodicImages.CandidatePlanned),1);
+
+    earliest=planner(wall,state(0,[4,0]),state(10,[-4,0]),limits, ...
+        struct('GoalTimeMode','earliestArrival','WrapX',true));
+    verifyTrue(testCase,earliest.Success,earliest.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(earliest).Passed);
+    verifyEqual(testCase,earliest.PeriodicImages.GoalOffset_units,[-10,0]);
+    verifyGreaterThan(testCase,nnz(earliest.PeriodicImages.CandidatePlanned),1);
+    verifyLessThan(testCase,earliest.ArrivalTime_s,10);
 end
 
 function testPeriodicYAndDualAxisWrap(testCase)
@@ -349,9 +428,23 @@ function testSparseDynamicZeroWaitDeparture(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.VisibilityGraph.SearchKind,"c3DepartureSchedule");
+    verifyFalse(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
     verifyEqual(testCase,result.SolverDiagnostics.Identifier,"c3JerkLimitedChord");
     verifyFalse(testCase,isfield(result.SolverDiagnostics,'DepartureSchedule'));
     verifyFalse(testCase,isfield(result,'TemporalSearch'));
+    verifyEqual(testCase,numel(result.Attempts),2);
+    verifyEqual(testCase,[result.Attempts.Kind], ...
+        ["analyticDeparture","timedVisibility"]);
+    verifyTrue(testCase,result.Attempts(1).Selected);
+    verifyEqual(testCase,result.Attempts(2).Outcome,"superseded");
+    verifyEqual(testCase,result.EarliestArrival.StoppingReason, ...
+        "departureIncumbentNoLater");
+    verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
+    selectedIndex=result.EarliestArrival.SelectedAttemptIndex;
+    verifyEqual(testCase,result.EarliestArrival.IncumbentArrival_s, ...
+        result.ArrivalTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Attempts(selectedIndex).CandidateArrival_s, ...
+        result.ArrivalTime_s,'AbsTol',1e-12);
 end
 
 function testEquivalentSparseAndDenseHistoriesUseCertifiedDeparture(testCase)
@@ -464,6 +557,10 @@ function testOptionValidationDecisions(testCase)
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('MaxArrivalCandidates',1.5)),'MATLAB:expectedInteger');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
+        struct('IncumbentRefinementTrialLimit',-1)),'MATLAB:expectedNonnegative');
+    verifyError(testCase,@()planner([],initial,goal,limits, ...
+        struct('IncumbentRefinementTrialLimit',1.5)),'MATLAB:expectedInteger');
+    verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('SpatialProbeIterationLimit',0)),'MATLAB:expectedPositive');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('SpatialProbeIterationLimit',36)), ...
@@ -471,6 +568,7 @@ function testOptionValidationDecisions(testCase)
     defaulted=planner([],initial,goal,limits,struct('SampleTime_s',[]));
     verifyTrue(testCase,defaulted.Success,defaulted.Message);
     verifyEqual(testCase,defaulted.Options.SampleTime_s,0.05);
+    verifyEqual(testCase,defaulted.Options.IncumbentRefinementTrialLimit,0);
     verifyWarning(testCase,@()planner([],initial,goal,limits, ...
         struct('unusedOption',1)),'planTrajectory:UnknownOptions');
 end

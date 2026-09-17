@@ -23,6 +23,179 @@ to compensate. Diagnostic fields such as `SeedSource`, `SearchKind`, `Source`,
 and `TrialStage` explain provenance and never select polynomial degree,
 subdivision, solver formulation, or acceptance.
 
+## Current production flow (Mermaid)
+
+This chart is generated from production MATLAB only. Tests, examples, and
+sandbox copies are deliberately excluded. `⚠` marks logic added or materially
+changed in the current working tree; `◆` marks a threshold or finite budget
+that is easy to miss in a top-level read.
+
+```mermaid
+flowchart TD
+    A["planner(obstacles, initialState, goalState, limits, options)"] --> B["Normalize and validate public inputs"]
+    B --> W{"Periodic axis requested?"}
+    W -- yes --> W1["Create exact reachable obstacle and goal images<br/>lift moving target continuously"]
+    W1 --> W2["Plan plain unwrapped goal images nearest first<br/>prune fixed-goal images only by admissible bounds;<br/>validate each candidate against the periodic request"]
+    W2 --> W3["Select earliest arrival or shortest fixed motion"]
+    W3 --> O
+    W -- no --> G["Prepare original and protected geometry once<br/>margin applied exactly once"]
+    G --> U{"Every overlapping obstacle span<br/>has certified continuous geometry?"}
+    U -- no --> TU["Return unsupportedObstacleInterpolation"]
+    U -- yes --> E{"Endpoints and reachable set feasible?"}
+    E -- no --> TE["Return stable endpoint or reachability reason"]
+    E -- yes --> C["Build exact static regions or exact affine time cells"]
+    C --> M{"GoalTimeMode"}
+
+    subgraph FIXED["Fixed-arrival branch"]
+        F0{"Dynamic geometry?"}
+        F0 -- no --> F1["Exhaustive exact spatial visibility graph"]
+        F1 --> F2{"Connected?"}
+        F2 -- no --> FN["Return noVisibilityRoute"]
+        F2 -- yes --> FB["BMTP on prescribed clock"]
+        FB --> FBA{"Result after solver, certificate,<br/>and public acceptance gate"}
+        FBA -- "validated" --> O
+        FBA -- "otherwise" --> FTERM
+
+        F0 -- yes --> FS["Initial snapshot, then arrival snapshot<br/>exact exhaustive graphs"]
+        FS --> FSG{"Graph connected and route distinct<br/>from the preceding snapshot?"}
+        FSG -- no --> FNEXT
+        FSG -- yes --> FH["◆ Snapshot BMTP probe budget<br/>SpatialProbeIterationLimit = 2 default, max 35"]
+        FH --> FA{"Motion outcome"}
+        FA -- "validated" --> FSUCCESS["Select snapshot motion"]
+        FA -- "validator rejected" --> FDEFECT["Terminal invalidMotion defect"]
+        FA -- "typed timing, proposal,<br/>or bounded optimization miss" --> FNEXT{"Another distinct snapshot remains?"}
+        FA -- "certification, numerical, or unknown failure" --> FTERM["Terminal typed failure"]
+        FNEXT -- yes --> FS
+        FNEXT -- no --> FT["One clean time-expanded visibility fallback<br/>normal BMTP budget"]
+        FT --> FTA{"Outcome"}
+        FTA -- "validated" --> FTSUCCESS["Select timed motion"]
+        FTA -- "otherwise" --> FTERM
+    end
+
+    subgraph EARLY["Earliest-arrival branch ⚠"]
+        EC["⚠ Resolve capabilities once:<br/>static spatial, departure family,<br/>timed variable clock, chronological fixed clock"]
+        EC --> EK{"Request capability"}
+
+        EK -- "static + fixed goal + rest endpoints" --> ES["Exact spatial graph + variable-clock BMTP"]
+        ES --> ESA{"Outcome"}
+        ESA -- "validated" --> ESOK["Select static motion"]
+        ESA -- "otherwise" --> ESTOP["Terminal: no unrelated fallback"]
+
+        EK -- "dynamic + fixed goal + rest endpoints" --> ED["⚠ Analytic direct-departure family"]
+        ED --> EDA{"Outcome"}
+        EDA -- "validator rejected" --> EDEFECT["Terminal invalidMotion defect"]
+        EDA -- "validated" --> EI["⚠ Retain validated incumbent"]
+        EDA -- "typed method-local miss" --> ET
+        EDA -- "other failure" --> ESTOP
+        EI --> ELB{"Necessary arrival lower bound attained<br/>within ArrivalTimeTolerance_s?"}
+        ELB -- yes --> EPROOF["Select incumbent<br/>GlobalEarliestProven = true"]
+        ELB -- no --> ET["⚠ One time-expanded variable-clock challenger<br/>horizon capped below incumbent - tolerance"]
+        ET --> ETA{"Outcome"}
+        ETA -- "validated" --> ECMP["Compare candidate with incumbent<br/>within tolerance keep departure incumbent"]
+        ECMP --> ESELECT["Select policy-preferred validated motion"]
+        ETA -- "validator rejected" --> EDEFECT
+        ETA -- "typed method-local miss" --> ER{"Validated incumbent exists?"}
+        ETA -- "geometry certification, reconstruction,<br/>numerical, or unknown failure" --> ESTOP
+
+        EK -- "moving target or non-rest endpoint" --> CH
+        ER -- no --> CH
+        ER -- yes --> RB{"◆ IncumbentRefinementTrialLimit<br/>default 0; capped by MaxArrivalTrials"}
+        RB -- 0 --> KEEP["⚠ Retain incumbent; publish unsearched interval<br/>do not claim global earliest"]
+        RB -- "> 0" --> CH
+
+        CH["⚠ Chronological fixed-clock search"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
+        CG --> CP["⚠ Prescreen endpoint physics and per-clock<br/>minimum travel time before solver"]
+        CP -- "rejected cheaply" --> CN{"More candidates and budget?"}
+        CP -- "passes" --> CS["Call fixed-arrival planner on that physical clock<br/>store its attempts as child evidence"]
+        CS --> CSA{"Fixed child outcome"}
+        CSA -- "validated" --> COK["Select earliest tried valid clock"]
+        CSA -- "validator or ineligible typed failure" --> CTERM["Terminal failure"]
+        CSA -- "typed clock-local miss" --> CN
+        CN -- yes --> CP
+        CN -- no --> CX{"Validated incumbent exists?"}
+        CX -- yes --> CRETAIN["Retain incumbent with explicit cap/exhaustion reason"]
+        CX -- no --> CFAIL["Return arrivalSearchExhausted"]
+        CS -. "◆ solver trials: MaxArrivalTrials = 100 default<br/>separate from candidate cap" .-> CN
+    end
+
+    M -- fixedArrival --> F0
+    M -- earliestArrival --> EC
+
+    FSUCCESS --> O["Return selected validated motion"]
+    FTSUCCESS --> O
+    ESOK --> O
+    EPROOF --> O
+    ESELECT --> O
+    KEEP --> O
+    COK --> O
+    CRETAIN --> O
+
+    VAL["Public independent validator runs inside finalizeCandidate<br/>before Success, incumbent retention, or selection"]
+    VAL -. governs .-> FBA
+    VAL -. governs .-> FA
+    VAL -. governs .-> FTA
+    VAL -. governs .-> ESA
+    VAL -. governs .-> EDA
+    VAL -. governs .-> ETA
+    VAL -. governs .-> CSA
+
+    L["⚠ One ordered result.Attempts ledger<br/>typed failure, elapsed time, caps, prescreens, child attempts;<br/>selection and supersession outcomes update in place"]
+    EC -. records .-> L
+    FS -. records .-> L
+    CH -. records .-> L
+    L -. explains .-> O
+
+    S["Source / SeedSource / SearchKind / TrialStage"]
+    S -. "diagnostics only; never branch" .-> FB
+    S -. "diagnostics only; never branch" .-> ES
+    S -. "diagnostics only; never branch" .-> ET
+
+    H["◆ Standard BMTP alternating cap = 35<br/>⚠ active-pair solver now uses request cap,<br/>not a hidden local 16-iteration cap"]
+    H -. bounds .-> FB
+    H -. bounds .-> ES
+    H -. bounds .-> ET
+
+    HC["◆ Internal certificate proof-mesh refinement cap = 10<br/>refines proof spans only; never geometry or tolerance"]
+    HC -. certifies .-> FB
+    HC -. certifies .-> ES
+    HC -. certifies .-> ET
+
+    HT["◆ Timed proposal budgets:<br/>boundary-pair work budget = 1e6;<br/>9 uniform layers plus every event and midpoint;<br/>variable-clock mesh = max(20, guide edges × split count)"]
+    HT -. bounds proposal only .-> FT
+    HT -. bounds proposal only .-> ET
+
+    classDef changed fill:#fff2cc,stroke:#b7791f,stroke-width:2px;
+    classDef threshold fill:#e8f1ff,stroke:#285ea8,stroke-width:2px;
+    class EC,ED,EI,ET,RB,KEEP,CH,CP,L,H changed;
+    class FH,RB,CG,H,HC,HT threshold;
+```
+
+There is no route-generation retry schedule. The two fixed-arrival snapshots
+are distinct physical guides, and the timed fallback is constructed once.
+Chronological arrival trials are different requested clocks rather than retries
+of one solver state. The ten-step certificate loop refines only the proof mesh
+for one candidate. All acceptance arrows above pass through the same public
+validator; the selected source label only reports which physical method won.
+
+### Current earliest-arrival policy check (2026-09-17)
+
+`benchmarkEarliestArrivalPolicy(1)` performs one warmup and one measured run
+for each retained method family. All six measured results passed the public
+independent validator.
+
+| Case | Runtime (s) | Arrival (s) | Length | Selected source | Attempt path |
+| --- | ---: | ---: | ---: | --- | --- |
+| Zero-delay departure incumbent | 1.295 | 4.631128877 | 4.000000000 | `departureSchedule` | analytic accepted; timed challenger superseded |
+| Delayed departure retained | 0.399 | 10.140088919 | 10.000000000 | `departureSchedule` | analytic accepted; timed typed miss; incumbent retained |
+| Timed homotopy beats departure | 3.303 | 8.553411322 | 12.463061582 | `timeExpandedVisibilityGraph` | analytic superseded; timed accepted |
+| Non-rest chronological clock | 0.389 | 5.000000000 | 4.000000000 | `initialSpatialSnapshot` | six clock-local misses; seventh clock accepted |
+| Moving-target chronological clock | 0.168 | 5.000000000 | 4.609772229 | `initialSpatialSnapshot` | first physical clock accepted |
+| Static spatial variable clock | 0.031 | 4.631128877 | 4.123105626 | `initialSpatialSnapshot` | exact spatial guide accepted |
+
+Wall times are indicative single-machine measurements. Arrival, length,
+validation, attempt order, selected source, and stopping reason are the
+deterministic comparison fields.
+
 ## Public planner routing
 
 | Decision | Representative fixture | Evidence checked | Disposition |
@@ -42,11 +215,11 @@ subdivision, solver formulation, or acceptance.
 | Static no visibility route | `testPlanningCore/testNoPath`, `exampleNoPath` | Exhaustive graph disconnected; `noVisibilityRoute` | Required exact no-route outcome |
 | Earliest static rest-to-rest direct | `testEarliestStaticDirectUsesAnalyticClock` | Analytic C3 jerk-limited clock and validation | Retained; fastest exact specialization |
 | Earliest static detour | `testStaticActivePairBmtp/testSeparatedSlalomBarriers` | Static active-pair variable-clock BMTP | Retained |
-| Earliest zero-delay C3 chord | `testSparseDynamicZeroWaitDeparture` | The retained analytic C3 profile is accepted when it certifies with zero departure delay and passes the public gate; it returns immediately with no timed or chronological search. Its smoothing width is a construction choice, not a proven lower bound | Retained analytic profile |
-| Earliest delayed C3 chord as incumbent | `testChallengedDelayedChordIncumbentIsRetained`, `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, `testTimedHomotopyPrecedesDelayedDeparture` | A delayed chord is only an incumbent; the single timed profile may replace it only with an earlier independently valid motion | Retained incumbent rule |
+| Earliest zero-delay C3 chord | `testSparseDynamicZeroWaitDeparture` | The retained analytic C3 profile becomes a validated incumbent. It is objective-terminal only if it attains the necessary arrival lower bound; otherwise the one timed challenger may compete below it | Retained analytic profile with honest proof rule |
+| Earliest delayed C3 chord as incumbent | `testChallengedDelayedChordIncumbentIsRetained`, `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, `testTimedHomotopyPrecedesDelayedDeparture` | A delayed chord is only an incumbent; the single timed profile may replace it only with an earlier independently valid motion. If that challenger has a typed method-local miss, the default refinement budget of zero retains the incumbent and reports the unsearched interval; a caller may explicitly permit bounded chronological refinement | Retained and strengthened fallback |
 | Earliest timed profile beats the incumbent | `exampleMovingCircleNoWrap`, `testCircleDetourBeatsWaiting`, `testTimedHomotopyPrecedesDelayedDeparture` | The variable-clock timed profile arrives at 8.5732 s for the circle and 8.55 s for the rising-circle regression; both beat their delayed direct chords and validate | Retained |
 | Earliest timed profile with a free goal window | `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival`, random case 1 earliest, `testGoalVisibilityWindows/testPublicPlannerChoosesAReopenedGoalWindow`, `testLongRequestUsesBudgetAfterPhysicalBound` | One source-independent variable-clock profile; the goal's clear-wait window bounds the clock; BMTP, not the seed builder, satisfies derivative limits | Retained; the only timed earliest profile |
-| Earliest chronological search | `testEarliestMovingTargetUsesChronologicalClock`, `testEarliestStaticNonrestUsesPhysicalClockTrials` | Fixed-arrival trials on declared physical clocks only after the analytic family and the timed profile both fail; moving targets and non-rest endpoints change the goal state with the clock. Each trial is planned on its own clock and accepted against the outer request in the planner's one acceptance gate (`testWrappedNonrestEarliestTrialIsAcceptedOnce`) | Retained; honest incomplete search |
+| Earliest chronological search | `testEarliestMovingTargetUsesChronologicalClock`, `testEarliestStaticNonrestUsesPhysicalClockTrials` | Moving targets and non-rest endpoints route directly to fixed-arrival trials because the other families do not support their endpoint physics. Dynamic fixed-rest requests enter only after eligible earlier-method misses and, when an incumbent exists, only within the explicit refinement budget. Each trial is planned on its own clock and accepted against the outer request in the planner's one acceptance gate (`testWrappedNonrestEarliestTrialIsAcceptedOnce`) | Retained; capability-gated incomplete search |
 | Earliest chronological exhaustion | `testArrivalSearchExhausted` | Stable `arrivalSearchExhausted` with explicit unsearched intervals | Required honest outcome |
 
 ## BMTP motion-generation routing

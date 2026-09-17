@@ -61,7 +61,15 @@ function testStaticZonesWithMovingGoal(testCase)
             caseIndex, 'staticZone', testCase.TestData.RandomSeed);
         label = "static-zone case " + caseIndex;
         verifyTargetOccupancyPattern(testCase, scenario, label);
-        verifyPlannerOutcome(testCase, scenario, label);
+        result = verifyPlannerOutcome(testCase, scenario, label);
+        if caseIndex == 8
+            verifyGreaterThan(testCase,numel(result.Attempts),1);
+            verifyEqual(testCase,result.Attempts(1).FailureStage,"timing");
+            verifyEqual(testCase,result.Attempts(1).FailureKind, ...
+                "kinematicCertificateUnavailable");
+            verifyTrue(testCase,result.Attempts(1).MethodFallbackEligible);
+            verifyTrue(testCase,any([result.Attempts.Selected]));
+        end
     end
 end
 

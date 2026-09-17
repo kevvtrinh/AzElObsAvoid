@@ -1,7 +1,9 @@
-function result = searchArrivalTimes(previous, plannerCore)
+function result = searchArrivalTimes(previous, plannerCore, attemptFactory, ...
+        fallbackPolicy, maximumTrialCount)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.input.searchArrivalTimes(previous, plannerCore)
+%   result = obstacleAvoidance.input.searchArrivalTimes( ...
+%       previous, plannerCore, attemptFactory, fallbackPolicy)
 %**************************************************************************
 % PURPOSE
 %   - Search declared chronological fixed-arrival trials.
@@ -12,13 +14,20 @@ function result = searchArrivalTimes(previous, plannerCore)
 %       Planner result containing the request and any valid incumbent.
 %   - plannerCore (function handle)
 %       Private planner implementation carrying the outer request context.
+%   - attemptFactory (function handle)
+%       Creates one planner-level attempt record with the public schema.
+%   - fallbackPolicy (function handle)
+%       Returns true only when another physical arrival clock is admitted.
+%   - maximumTrialCount (positive integer scalar)
+%       Solver attempts available to this search. A validated incumbent may
+%       deliberately use a smaller refinement budget than the public maximum.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Valid candidate or an honest exhausted-search outcome. An exhausted
-%       search returns Success = false with TerminationReason
-%       "arrivalSearchExhausted" and retains a valid incumbent. Invalid
-%       input throws an error.
+%       Valid candidate or an honest exhausted-search outcome. Exhaustion
+%       retains a validated incumbent when one exists; otherwise it returns
+%       Success = false with TerminationReason "arrivalSearchExhausted".
+%       Invalid input throws an error.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -30,6 +39,11 @@ searchTimer       = tic;
 initialState      = previous.Inputs.initialState;
 suppliedGoalState = previous.SuppliedGoalState;
 trialOptions      = previous.Options;
+if nargin < 5 || isempty(maximumTrialCount)
+    maximumTrialCount = trialOptions.MaxArrivalTrials;
+end
+validateattributes(maximumTrialCount, {'numeric'}, ...
+    {'scalar', 'finite', 'integer', 'positive'});
 
 startTime_s   = initialState.time_s;
 horizonTime_s = previous.Inputs.goalState.time_s;
@@ -106,23 +120,33 @@ end
 
 %% Section 4: Screen Endpoint Physics, Then Spend The Solver Budget
 
-maximumTrialCount = trialOptions.MaxArrivalTrials;
 storageCount = min(maximumTrialCount, numel(candidateTimes_s));
 trialTimes_s            = NaN(storageCount, 1);
 trialTerminationReasons = strings(storageCount, 1);
+trialFailureStages      = strings(storageCount, 1);
+trialFailureKinds       = strings(storageCount, 1);
+trialOutcomes           = strings(storageCount, 1);
+prescreenedTimes_s      = NaN(numel(candidateTimes_s), 1);
+prescreenReasons        = strings(numel(candidateTimes_s), 1);
+attempts                = previous.Attempts;
+attemptStartIndex       = numel(attempts) + 1;
 
-result             = previous;
-trialWasSelected   = false;
-triedCount         = 0;
-prescreenCount     = 0;
+result                       = previous;
+trialWasSelected             = false;
+terminalFailure              = false;
+triedCount                   = 0;
+prescreenCount               = 0;
+nextUnprocessedCandidateIndex = 0;
 for candidateIndex = 1:numel(candidateTimes_s)
     if triedCount >= maximumTrialCount
+        nextUnprocessedCandidateIndex = candidateIndex;
         break
     end
     trialTime_s = candidateTimes_s(candidateIndex);
     endpointGoalState = previous.Inputs.goalState;
     endpointGoalState.time_s = trialTime_s;
     endpointFeasible = false;
+    trialNecessaryArrivalTime_s = initialState.time_s;
     try
         if ~isempty(endpointGoalState.targetMotion)
             if trialOptions.MatchTargetVelocity || trialOptions.MatchTargetAcceleration
@@ -142,21 +166,34 @@ for candidateIndex = 1:numel(candidateTimes_s)
                 endpointGoalState.acceleration_units_s2 = targetAcceleration_units_s2;
             end
         end
-        [endpointFeasible, ~, ~] = ...
+        trialNecessaryArrivalTime_s = initialState.time_s + ...
+            obstacleAvoidance.input.minimumTravelTime( ...
+            initialState, endpointGoalState, previous.Limits);
+        [endpointFeasible, ~, endpointReason] = ...
             obstacleAvoidance.input.validatePlannerEndpoints( ...
             previous.PreparedObstacles, initialState, endpointGoalState, ...
             previous.Limits, trialOptions);
+        prescreenReason = string(endpointReason);
+        if endpointFeasible && trialTime_s < trialNecessaryArrivalTime_s - ...
+                trialOptions.ArrivalTimeTolerance_s
+            endpointFeasible = false;
+            prescreenReason  = "minimumTravelTime";
+        end
     catch exception
         if string(exception.identifier) ~= "planner:UndefinedTargetDerivative"
             rethrow(exception);
         end
+        prescreenReason = string(exception.identifier);
     end
     if endpointFeasible && norm(endpointGoalState.position_units - ...
             initialState.position_units) <= trialOptions.ConstraintTolerance
         endpointFeasible = false;
+        prescreenReason  = "coincidentEndpoints";
     end
     if ~endpointFeasible
         prescreenCount = prescreenCount + 1;
+        prescreenedTimes_s(prescreenCount) = trialTime_s;
+        prescreenReasons(prescreenCount)   = prescreenReason;
         continue
     end
 
@@ -166,6 +203,23 @@ for candidateIndex = 1:numel(candidateTimes_s)
     trialGoalState.time_s       = trialTime_s;
     trialRequest                = outerRequest;
     trialRequest.FixedArrivalTrialTime_s = trialTime_s;
+    role = "primary";
+    trigger = "chronologicalCapabilityRequired";
+    if ~isempty(attempts)
+        role = "fallback";
+        trigger = attempts(end).MethodFallbackReason;
+        if trigger == ""
+            trigger = attempts(end).TerminationReason;
+        end
+    end
+    attempt = attemptFactory(numel(attempts) + 1, ...
+        "chronologicalFixedArrival", role, trigger);
+    attempt.TrialTime_s             = trialTime_s;
+    attempt.NecessaryArrivalBound_s = trialNecessaryArrivalTime_s;
+    attempt.IncumbentArrival_s      = incumbentArrivalTime_s;
+    attempt.PrescreenStatus         = "passed";
+    attempt.SolverAttempted         = true;
+    attemptTimer                    = tic;
     try
         candidate = plannerCore(previous.PreparedObstacles, initialState, trialGoalState, ...
             previous.RequestedLimits, trialOptions, trialRequest);
@@ -174,40 +228,218 @@ for candidateIndex = 1:numel(candidateTimes_s)
             ["planner:UndefinedTargetDerivative", "planTrajectory:CoincidentEndpoints"];
         if any(failureIsExpected)
             trialTerminationReasons(triedCount) = string(exception.identifier);
+            trialFailureStages(triedCount)       = "endpoint";
+            trialFailureKinds(triedCount)        = string(exception.identifier);
+            trialOutcomes(triedCount)            = "nextClockAdmitted";
+            attempt.FailureStage                 = "endpoint";
+            attempt.FailureKind                  = string(exception.identifier);
+            attempt.MethodFallbackEligible      = true;
+            attempt.MethodFallbackReason        = attempt.FailureKind;
+            attempt.FallbackEligible            = true;
+            attempt.FallbackReason              = attempt.FailureKind;
+            attempt.Outcome                     = "nextClockAdmitted";
+            attempt.TerminationReason           = string(exception.identifier);
+            attempt.Message                     = string(exception.message);
+            attempt.ElapsedTime_s               = toc(attemptTimer);
+            attempts(end + 1, 1)                = attempt; %#ok<AGROW>
             continue
         end
         rethrow(exception);
     end
+    attempt.ElapsedTime_s = toc(attemptTimer);
+    attempt.ChildAttempts = candidate.Attempts;
+    attempt.GraphConnected = candidate.VisibilityGraph.IsConnected;
+    attempt.GraphIsFullyEnumerated = candidate.VisibilityGraph.GraphIsFullyEnumerated;
+    attempt.RouteNodeCount    = size(candidate.Route_units, 1);
+    attempt.RouteLength_units = candidate.VisibilityGraph.RouteLength_units;
+    attempt.ExpandedCount     = candidate.VisibilityGraph.ExpandedCount;
+    attempt.IterationCount    = sumAttemptField(candidate.Attempts, "IterationCount");
+    attempt.CandidateSuccess  = candidate.Success || ...
+        readLogical(candidate.SolverDiagnostics, "Accepted");
+    attempt.OptimizerFeasible = readLogical(candidate, "OptimizerFeasible");
+    attempt.OptimizerIterateUnavailable = readLogical( ...
+        candidate, "OptimizerIterateUnavailable");
+    [attempt.FailureStage, attempt.FailureKind, ...
+        attempt.AlternativeGuideEligible] = failureEvidence(candidate);
+    attempt.ValidationStatus = "notRun";
+    if string(candidate.TerminationReason) == "invalidMotion"
+        attempt.ValidationStatus = "failed";
+    elseif candidate.Success
+        attempt.ValidationStatus = "passed";
+    end
+    attempt.Success           = candidate.Success;
+    attempt.TerminationReason = candidate.TerminationReason;
+    attempt.Message           = candidate.Message;
+    if candidate.Success && isfinite(candidate.ArrivalTime_s)
+        attempt.CandidateArrival_s = candidate.ArrivalTime_s;
+    end
     trialTerminationReasons(triedCount) = candidate.TerminationReason;
+    trialFailureStages(triedCount)       = attempt.FailureStage;
+    trialFailureKinds(triedCount)        = attempt.FailureKind;
     if candidate.Success
+        for priorIndex = reshape(find([attempts.Success]), 1, [])
+            attempts(priorIndex).Selected = false;
+            attempts(priorIndex).Outcome  = "superseded";
+        end
+        attempt.MotionStatus = "accepted";
+        attempt.Selected     = true;
+        attempt.Outcome      = "accepted";
+        trialOutcomes(triedCount) = attempt.Outcome;
+        attempts(end + 1, 1) = attempt; %#ok<AGROW>
         result           = candidate;
         trialWasSelected = true;
         break
     end
+    attempt.MotionStatus = attempt.FailureKind;
+    attempt.MethodFallbackEligible = fallbackPolicy(candidate);
+    if string(candidate.TerminationReason) == "noVisibilityRoute" && ...
+            isempty(previous.Inputs.goalState.targetMotion)
+        % Static geometry and a fixed goal do not change with the clock.
+        % Repeating the same disconnected exact graph cannot reveal a path.
+        attempt.MethodFallbackEligible = false;
+    end
+    attempt.MethodFallbackReason   = attempt.FailureKind;
+    attempt.FallbackEligible       = attempt.MethodFallbackEligible;
+    attempt.FallbackReason         = attempt.MethodFallbackReason;
+    if attempt.MethodFallbackEligible
+        attempt.Outcome = "nextClockAdmitted";
+        trialOutcomes(triedCount) = attempt.Outcome;
+        attempts(end + 1, 1) = attempt; %#ok<AGROW>
+        continue
+    end
+    attempt.Outcome = "terminalFailure";
+    trialOutcomes(triedCount) = attempt.Outcome;
+    attempts(end + 1, 1) = attempt; %#ok<AGROW>
+    candidate = obstacleAvoidance.input.applyOuterRequest(candidate, trialRequest);
+    result = candidate;
+    terminalFailure = true;
+    break
 end
 
 %% Section 5: Record The Honest Chronological Search Outcome
 
 trialTimes_s = trialTimes_s(1:triedCount);
-candidateLimitReached = ~trialWasSelected && gridWasTruncated && ...
-    triedCount < maximumTrialCount;
+prescreenedTimes_s = prescreenedTimes_s(1:prescreenCount);
+prescreenReasons   = prescreenReasons(1:prescreenCount);
+candidateLimitReached = ~trialWasSelected && ~terminalFailure && gridWasTruncated;
+trialLimitReached = ~trialWasSelected && ~terminalFailure && ...
+    nextUnprocessedCandidateIndex > 0;
+searchWindowExhausted = ~trialWasSelected && ~terminalFailure && ...
+    ~candidateLimitReached && ~trialLimitReached;
+retainedIncumbent = previous.Success && ~trialWasSelected && ~terminalFailure;
+finalAttemptOutcome = "";
+if trialLimitReached
+    finalAttemptOutcome = "trialLimitReached";
+elseif candidateLimitReached
+    finalAttemptOutcome = "candidateLimitReached";
+elseif searchWindowExhausted
+    finalAttemptOutcome = "searchWindowExhausted";
+end
+if triedCount > 0 && strlength(finalAttemptOutcome) > 0 && ...
+        numel(attempts) >= attemptStartIndex
+    attempts(end).Outcome          = finalAttemptOutcome;
+    trialOutcomes(triedCount, 1)   = finalAttemptOutcome;
+end
+if retainedIncumbent
+    acceptedIndices = find([attempts.Success]);
+    if ~isempty(acceptedIndices)
+        acceptedTimes_s = [attempts(acceptedIndices).CandidateArrival_s];
+        [~, selectedOffset] = min(acceptedTimes_s);
+        selectedIndex = acceptedIndices(selectedOffset);
+        attempts(selectedIndex).Selected = true;
+        attempts(selectedIndex).Outcome  = "accepted";
+    end
+end
+result.Attempts = attempts;
+stoppingReason = "arrivalSearchExhausted";
+if trialWasSelected
+    stoppingReason = "chronologicalFixedArrivalAccepted";
+elseif terminalFailure
+    stoppingReason = "terminalTrialFailure";
+elseif trialLimitReached
+    stoppingReason = "trialLimitReached";
+elseif candidateLimitReached
+    stoppingReason = "candidateLimitReached";
+elseif searchWindowExhausted
+    stoppingReason = "searchWindowExhausted";
+end
+if retainedIncumbent
+    if trialLimitReached
+        stoppingReason = "incumbentRetainedAtTrialLimit";
+    elseif candidateLimitReached
+        stoppingReason = "incumbentRetainedAtCandidateLimit";
+    elseif searchWindowExhausted
+        stoppingReason = "incumbentRetainedAfterSearchWindow";
+    else
+        stoppingReason = "incumbentRetained";
+    end
+end
 result.TemporalSearch = struct( ...
     'Resolution_s',                  resolution_s, ...
     'TrialTime_s',                   trialTimes_s, ...
     'TrialTerminationReason',        trialTerminationReasons(1:triedCount), ...
+    'TrialFailureStage',             trialFailureStages(1:triedCount), ...
+    'TrialFailureKind',              trialFailureKinds(1:triedCount), ...
+    'TrialOutcome',                  trialOutcomes(1:triedCount), ...
+    'TrialStage',                    "chronologicalFixedArrival", ...
+    'MaximumTrialCount',             maximumTrialCount, ...
     'SolverTrialCount',              triedCount, ...
     'PrescreenedCandidateCount',     prescreenCount, ...
+    'PrescreenedTime_s',             prescreenedTimes_s, ...
+    'PrescreenReason',               prescreenReasons, ...
     'CandidateLimitReached',         candidateLimitReached, ...
+    'TrialLimitReached',             trialLimitReached, ...
+    'SearchWindowExhausted',         searchWindowExhausted, ...
+    'TerminalFailure',               terminalFailure, ...
     'GlobalEarliestProven',          false, ...
     'NecessaryArrivalBound_s',       earliestTime_s, ...
     'IncumbentArrival_s',            incumbentArrivalTime_s, ...
-    'RetainedIncumbent',             previous.Success && ~trialWasSelected, ...
+    'RetainedIncumbent',             retainedIncumbent, ...
+    'AttemptStartIndex',             attemptStartIndex, ...
+    'StoppingReason',                stoppingReason, ...
     'PriorTerminationReason',        previous.TerminationReason);
 if trialWasSelected
     result.Message = "A chronological fixed-arrival trial passed independent validation; earlier gaps remain unsearched.";
-elseif ~result.Success
+elseif retainedIncumbent
+    result.Message = "No earlier declared clock was certified; the validated incumbent was retained.";
+elseif ~result.Success && ~terminalFailure
     result.TerminationReason = "arrivalSearchExhausted";
     result.Message = "No declared arrival trial was certified. Unsearched times and solver failures do not prove infeasibility.";
 end
 result.ElapsedTime_s = previous.ElapsedTime_s + toc(searchTimer);
+end
+
+function [failureStage, failureKind, alternativeGuideEligible] = failureEvidence(candidate)
+    % Prefer the top-level typed result; otherwise use the decisive child attempt.
+    failureStage = readString(candidate, "FailureStage");
+    failureKind  = readString(candidate, "FailureKind");
+    alternativeGuideEligible = readLogical(candidate, "AlternativeGuideEligible");
+    if failureStage == "" && ~isempty(candidate.Attempts)
+        failureStage = string(candidate.Attempts(end).FailureStage);
+        failureKind  = string(candidate.Attempts(end).FailureKind);
+        alternativeGuideEligible = logical( ...
+            candidate.Attempts(end).AlternativeGuideEligible);
+    end
+end
+
+function total = sumAttemptField(attempts, fieldName)
+    % Sum one numeric child-attempt field without coupling selection to it.
+    total = 0;
+    if ~isempty(attempts)
+        total = sum([attempts.(fieldName)]);
+    end
+end
+
+function value = readLogical(record, fieldName)
+    value = false;
+    if isstruct(record) && isscalar(record) && isfield(record, fieldName)
+        value = logical(record.(fieldName));
+    end
+end
+
+function value = readString(record, fieldName)
+    value = "";
+    if isstruct(record) && isscalar(record) && isfield(record, fieldName)
+        value = string(record.(fieldName));
+    end
 end

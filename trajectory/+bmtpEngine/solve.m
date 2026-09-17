@@ -116,16 +116,33 @@ if usesDepartureSchedule && ~(preparedMotion.Success && certificate.Passed)
     if isempty(times_s)
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
             "No C3 chord departure fits the horizon.", "noDepartureWindow", false, ...
-            "timing", "noDepartureWindow", false);
+            "timing", "noDepartureWindow", true);
         return;
     end
     preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, times_s, powers_units);
+    if ~preparedMotion.Success
+        [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
+            preparedMotion.Message, preparedMotion.TerminationReason, false, ...
+            "reconstruction", string(preparedMotion.TerminationReason), false);
+        return;
+    end
     [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, roundoffReserve_units, obstacleTarget_units, certificateCache);
-    if ~preparedMotion.Success || ~certificate.Passed
+    if ~certificate.Passed
+        geometryOnlyMiss = certificate.CoverageMetadataConsistent && ...
+            certificate.WorkspacePassed && certificate.DynamicsPassed && ...
+            certificate.ContinuityPassed && ...
+            certificate.VerifiedPairCount < certificate.AllPairCount;
+        if geometryOnlyMiss
+            [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
+                "The direct departure family is obstructed on this route.", ...
+                "departureUncertified", false, ...
+                "proposal", "directDepartureObstructed", true);
+            return;
+        end
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
             "The C3 departure proposal did not pass certification.", "departureUncertified", false, ...
-            "certification", "departureUncertified", false);
+            "certification", "directDepartureCertificateUnavailable", false);
         return;
     end
     analyticIdentifier = "c3DepartureSchedule";
@@ -233,10 +250,30 @@ candidate                     = bmtpEngine.pipeline.createMotionOutput(candidate
 candidate.OptimizerFeasible   = true;
 % Reject optimizer output that fails the independent certificate even when the numerical solver reported success.
 if ~certificate.Passed
+    failureStage              = "certification";
+    failureKind               = "planeCertificateUnavailable";
+    alternativeGuideEligible = false;
+    geometryCertificatePassed = certificate.CoverageMetadataConsistent && ...
+        certificate.VerifiedPairCount == certificate.AllPairCount;
+    if geometryCertificatePassed && certificate.WorkspacePassed && ...
+            ~certificate.DynamicsPassed && certificate.ContinuityPassed
+        % The curve and its geometry certificate are intact, but this clock
+        % is too short for the returned motion. Another physical clock may
+        % be tried without accepting or repairing this candidate.
+        failureStage              = "timing";
+        failureKind               = "kinematicCertificateUnavailable";
+        alternativeGuideEligible = true;
+    elseif certificate.WorkspacePassed && certificate.DynamicsPassed && ...
+            ~certificate.ContinuityPassed
+        failureStage = "reconstruction";
+        failureKind  = "continuityCertificateUnavailable";
+    elseif ~certificate.WorkspacePassed
+        failureKind = "workspaceCertificateUnavailable";
+    end
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
         "The optimized motion failed continuous collision, dynamics, or C3 continuity certification.", ...
         "planeCertificateUnavailable", true, ...
-        "certification", "planeCertificateUnavailable", false);
+        failureStage, failureKind, alternativeGuideEligible);
     return;
 end
 

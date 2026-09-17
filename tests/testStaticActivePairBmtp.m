@@ -95,6 +95,11 @@ function testReturnedActivePlanesCertifyReturnedControls(testCase)
     [result, diagnostics] = bmtpEngine.optimization.solveActivePairTrajectory( ...
         request, warmStart, diagnostics, target_units, reserve_units);
     verifyTrue(testCase, result.Success, result.SolverMessage);
+    verifyEqual(testCase, result.FailureStage, "");
+    verifyEqual(testCase, result.FailureKind, "");
+    verifyFalse(testCase, result.AlternativeGuideEligible);
+    verifyLessThanOrEqual(testCase, diagnostics.IterationCount, ...
+        request.MaximumAlternatingIterations);
     verifyEqual(testCase, size(result.Planes), size(result.TaggedPairs));
     activePairs = reshape([result.Planes.Active], size(result.Planes));
     verifyEqual(testCase, result.TaggedPairs, activePairs);

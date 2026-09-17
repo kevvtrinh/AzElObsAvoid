@@ -202,6 +202,11 @@ function testNoPath(testCase)
     verifyFalse(testCase,r.Success);
     verifyEqual(testCase,r.TerminationReason,"noVisibilityRoute");
     verifyEmpty(testCase,r.time_s);
+    earliest = planner(obstacle,testCase.TestData.Initial,testCase.TestData.Goal, ...
+        testCase.TestData.Limits,struct('GoalTimeMode','earliestArrival'));
+    verifyFalse(testCase,earliest.Success);
+    verifyEqual(testCase,earliest.TerminationReason,"noVisibilityRoute");
+    verifyEqual(testCase,earliest.Attempts.FailureKind,"noSpatialRoute");
 end
 
 function testInvalidInputs(testCase)
