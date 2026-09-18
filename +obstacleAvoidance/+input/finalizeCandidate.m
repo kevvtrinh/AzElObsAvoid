@@ -29,7 +29,7 @@ function result = finalizeCandidate(preparedObstacles, request, requestContext, 
 %   - elapsedTime_s (nonnegative scalar)
 %       Planner time accumulated before candidate assembly.
 %   - usesTimedResultSchema (logical scalar)
-%       True when resetTimedResult established the timed field ordering.
+%       True when the timed result requires its stable outcome field ordering.
 %   - validationDeclarations (scalar struct)
 %       Optional fixed-clock or free-window fields needed by validation.
 %   - candidate (scalar struct)
@@ -86,8 +86,8 @@ result = obstacleAvoidance.input.createEmptyResult( ...
     preparedObstacles, acceptanceDeclaration.request, ...
     acceptanceDeclaration.requestContext, visibilityGraph, attempts, elapsedTime_s);
 
-% resetTimedResult declares these stable outcome fields before a timed BMTP
-% candidate exists. Preserve that schema without importing its result record.
+% Timed planning declares these stable outcome fields before a BMTP candidate
+% exists. Preserve that ordering when assembling the candidate record.
 if usesTimedResultSchema
     result.MotionLength_units                  = Inf;
     result.IntegratedSquaredJerk_units2_s5     = Inf;

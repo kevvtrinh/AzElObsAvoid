@@ -613,12 +613,10 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
         if maximumArrivalTime_s > request.initialState.time_s + ...
                 request.options.ArrivalTimeTolerance_s
             timedAttempted = true;
-            timedBase = result;
-            timedBase.Attempts = attempts;
-            timedBase.ElapsedTime_s = toc(totalTimer);
-            priorElapsedTime_s = timedBase.ElapsedTime_s;
+            priorElapsedTime_s = toc(totalTimer);
             [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival( ...
-                timedBase, maximumArrivalTime_s);
+                request, requestContext, scene.preparedObstacles, attempts, ...
+                priorElapsedTime_s, maximumArrivalTime_s);
             timedAttempt = createTimedAttemptRecord(numel(attempts) + 1, ...
                 timedResult, timedAccepted, priorElapsedTime_s);
             timedAttempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
@@ -920,10 +918,9 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
 
     % The timed fallback starts from a clean motion and graph record. It is
     % the only non-snapshot proposal and runs with the normal solver budget.
-    result.Attempts     = attempts;
-    result.ElapsedTime_s = toc(totalTimer);
-    priorElapsedTime_s = result.ElapsedTime_s;
-    [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival(result);
+    priorElapsedTime_s = toc(totalTimer);
+    [timedResult, timedAccepted] = obstacleAvoidance.input.tryTimedArrival( ...
+        request, requestContext, scene.preparedObstacles, attempts, priorElapsedTime_s);
     timedAttempt = createAttemptRecord(numel(attempts) + 1, "timedVisibility");
     timedAttempt.GraphIsFullyEnumerated = false;
     timedAttempt.GraphConnected = timedResult.VisibilityGraph.IsConnected;
