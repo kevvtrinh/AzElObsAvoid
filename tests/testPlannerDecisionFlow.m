@@ -202,6 +202,52 @@ function testEarliestMovingTargetMatchesSelectedClockDerivatives(testCase)
         targetAcceleration_units_s2,'AbsTol',1e-8);
 end
 
+function testMovingTargetTrialRetainsTrialClockDerivatives(testCase)
+    targetMotion=struct('time_s',[0;4.3;10], ...
+        'position_units',[2,0;2.43,0;5.28,0], ...
+        'InterpolationMethod','linear');
+    initial=state(0,[0,0]);
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    options=struct('GoalTimeMode','earliestArrival', ...
+        'MatchTargetVelocity',true,'MatchTargetAcceleration',true, ...
+        'TemporalResolution_s',0.5);
+    result=planner([],initial,goal,standardLimits(),options);
+
+    expectedTrialTime_s=3;
+    firstDuration_s=targetMotion.time_s(2)-targetMotion.time_s(1);
+    expectedTrialVelocity_units_s= ...
+        (targetMotion.position_units(2,:)-targetMotion.position_units(1,:))/firstDuration_s;
+    expectedTrialPosition_units=targetMotion.position_units(1,:)+ ...
+        (expectedTrialTime_s-targetMotion.time_s(1))*expectedTrialVelocity_units_s;
+    expectedTrialAcceleration_units_s2=[0,0];
+    finalDuration_s=targetMotion.time_s(3)-targetMotion.time_s(2);
+    expectedHorizonVelocity_units_s= ...
+        (targetMotion.position_units(3,:)-targetMotion.position_units(2,:))/finalDuration_s;
+
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
+    verifyEqual(testCase,result.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.ArrivalTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Inputs.goalState.targetMotion,targetMotion);
+    verifyEqual(testCase,result.Inputs.goalState.position_units, ...
+        expectedTrialPosition_units,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Inputs.goalState.velocity_units_s, ...
+        expectedTrialVelocity_units_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Inputs.goalState.acceleration_units_s2, ...
+        expectedTrialAcceleration_units_s2,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Intercept.Time_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Intercept.TargetPosition_units, ...
+        expectedTrialPosition_units,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Intercept.TargetVelocity_units_s, ...
+        expectedTrialVelocity_units_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Intercept.TargetAcceleration_units_s2, ...
+        expectedTrialAcceleration_units_s2,'AbsTol',1e-12);
+    verifyGreaterThan(testCase,norm(expectedHorizonVelocity_units_s- ...
+        expectedTrialVelocity_units_s),0.3);
+    verifyGreaterThan(testCase,norm(result.Intercept.TargetVelocity_units_s- ...
+        expectedHorizonVelocity_units_s),0.3);
+end
+
 function testDisconnectedMovingTargetClockAdvances(testCase)
     wall_units=[-0.4,-5;0.4,-5;0.4,5;-0.4,5];
     obstacle=obstacleAvoidance.obstacles.createObstacle( ...
@@ -223,12 +269,26 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
 
     fixedInitial=state(0,[-4,0]);
     fixedInitial.velocity_units_s=[0.1,0];
-    fixedResult=planner(obstacle,fixedInitial,state(10,[4,0]),limits, ...
-        struct('GoalTimeMode','earliestArrival','TemporalResolution_s',1));
+    fixedGoal=state(10,[4,0]);
+    fixedOptions=struct('GoalTimeMode','earliestArrival', ...
+        'TemporalResolution_s',1,'WrapX',false,'WrapY',false);
+    fixedResult=planner(obstacle,fixedInitial,fixedGoal,limits,fixedOptions);
     verifyFalse(testCase,fixedResult.Success);
     verifyEqual(testCase,fixedResult.TerminationReason,"noVisibilityRoute");
     verifyEqual(testCase,numel(fixedResult.Attempts),1);
     verifyFalse(testCase,fixedResult.Attempts.MethodFallbackEligible);
+    verifyTrue(testCase,fixedResult.TemporalSearch.TerminalFailure);
+    verifyEqual(testCase,fixedResult.Options.GoalTimeMode, ...
+        string(fixedOptions.GoalTimeMode));
+    verifyFalse(testCase,fixedResult.Options.WrapX);
+    verifyFalse(testCase,fixedResult.Options.WrapY);
+    verifyEqual(testCase,fixedResult.SuppliedLimits,limits);
+    verifyEqual(testCase,fixedResult.SuppliedGoalState.position_units, ...
+        fixedGoal.position_units);
+    verifyEqual(testCase,fixedResult.SuppliedGoalState.time_s,fixedGoal.time_s);
+    verifyEqual(testCase,fixedResult.Inputs.obstacles,obstacle);
+    verifyEqual(testCase,fixedResult.Inputs.goalState.time_s,fixedGoal.time_s);
+    verifyFalse(testCase,isfield(fixedResult,'OuterRequest'));
 end
 
 function testPeriodicWrapUsesNearestImage(testCase)
@@ -302,11 +362,12 @@ function testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
     limits.xInterval_units=[-180,180];
     obstacle=struct('Vertices_units',[-180,-3;-179.5,-3;-179.5,3;-180,3]);
     initial=state(0,[179,0]); initial.velocity_units_s=[0.1,0];
+    goal=state(10,[-179,0]);
+    options=struct('GoalTimeMode','earliestArrival','WrapX',true, ...
+        'WrapY',false,'TemporalResolution_s',6,'MaxArrivalTrials',2);
     % A coarse trial grid keeps the fixture cheap: the first declared clock
     % (6 s) admits the detour, so one trial is planned and accepted.
-    result=planner(obstacle,initial,state(10,[-179,0]),limits, ...
-        struct('GoalTimeMode','earliestArrival','WrapX',true, ...
-        'TemporalResolution_s',6,'MaxArrivalTrials',2));
+    result=planner(obstacle,initial,goal,limits,options);
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyTrue(testCase,isfield(result,'TemporalSearch'));
@@ -318,6 +379,52 @@ function testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-9);
     verifyLessThan(testCase,result.ArrivalTime_s,10);
     verifyGreaterThan(testCase,result.MotionLength_units,6);
+
+    expectedTrialTime_s=initial.time_s+options.TemporalResolution_s;
+    reach_units=limits.maxVelocity_units_s(1)*(goal.time_s-initial.time_s);
+    expectedBand_units=initial.position_units(1)+[-reach_units,reach_units];
+    verifyEqual(testCase,result.SuppliedLimits,limits);
+    verifyEqual(testCase,result.SuppliedGoalState.position_units,goal.position_units);
+    verifyEqual(testCase,result.SuppliedGoalState.time_s,goal.time_s);
+    verifyEqual(testCase,result.RequestedLimits.xInterval_units,limits.xInterval_units);
+    verifyEqual(testCase,result.Limits.xInterval_units,expectedBand_units);
+    verifyFalse(testCase,result.Options.WrapY);
+    verifyFalse(testCase,isfield(result,'OuterRequest'));
+    verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
+    verifyEqual(testCase,result.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.ArrivalTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,numel(result.Attempts),1);
+    verifyEqual(testCase,result.Attempts.TrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+end
+
+function testPeriodicAllCandidateFailuresDeclareOuterRequest(testCase)
+    obstacle=struct('Vertices_units',[-1,-5;1,-5;1,5;-1,5]);
+    initial=state(0,[-4,0]);
+    goal=state(12,[4,0]);
+    limits=standardLimits();
+    limits.yInterval_units=[-4,4];
+    options=struct('GoalTimeMode','fixedArrival', ...
+        'WrapX',false,'WrapY',true);
+    result=planner(obstacle,initial,goal,limits,options);
+
+    reach_units=limits.maxVelocity_units_s(2)*(goal.time_s-initial.time_s);
+    expectedBand_units=initial.position_units(2)+[-reach_units,reach_units];
+    verifyFailure(testCase,result,"noVisibilityRoute");
+    verifyGreaterThan(testCase,numel(result.PeriodicImages.CandidatePlanned),1);
+    verifyTrue(testCase,all(result.PeriodicImages.CandidatePlanned));
+    verifyFalse(testCase,any(result.PeriodicImages.CandidateTerminationReason == ...
+        "goalReached"));
+    verifyEqual(testCase,result.Options.GoalTimeMode,string(options.GoalTimeMode));
+    verifyFalse(testCase,result.Options.WrapX);
+    verifyTrue(testCase,result.Options.WrapY);
+    verifyEqual(testCase,result.SuppliedLimits,limits);
+    verifyEqual(testCase,result.SuppliedGoalState.position_units,goal.position_units);
+    verifyEqual(testCase,result.SuppliedGoalState.time_s,goal.time_s);
+    verifyEqual(testCase,result.RequestedLimits.yInterval_units,limits.yInterval_units);
+    verifyEqual(testCase,result.Limits.yInterval_units,expectedBand_units);
+    verifyEqual(testCase,result.Inputs.obstacles,obstacle);
+    verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
+    verifyFalse(testCase,isfield(result,'OuterRequest'));
 end
 
 function testPeriodicFarImageBeatsABlockedNearImage(testCase)
