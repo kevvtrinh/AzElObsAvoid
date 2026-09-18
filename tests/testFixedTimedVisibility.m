@@ -178,6 +178,50 @@ function testFailedTimedFallbackDoesNotLeakSpatialState(testCase)
     verifyEqual(testCase,result.Attempts(end).FailureKind,"noTimedRoute");
 end
 
+function testTimedResultFieldOrderDoesNotDependOnTheRouteTaken(testCase)
+    % A timed result reaches the finalizer by two histories: with no preceding
+    % spatial BMTP candidate, and after a failed one. The record is assembled
+    % from one constructor, so the field order must not depend on which history
+    % produced it. Nothing reads field order today, but a record whose shape
+    % varies by route is a schema that cannot be relied on.
+    wall=[-0.2,-7;0.2,-7;0.2,7;-0.2,7];
+    moved=wall+[0,14];
+    curtain=obstacleAvoidance.obstacles.createObstacle('recurrent curtain', ...
+        [0;1;1.1;4;4.1;12], ...
+        {wall(:,1);wall(:,1);moved(:,1);moved(:,1);wall(:,1);wall(:,1)}, ...
+        {wall(:,2);wall(:,2);moved(:,2);moved(:,2);wall(:,2);wall(:,2)},0);
+    limits=struct('xInterval_units',[-5,5],'yInterval_units',[-6,6], ...
+        'maxVelocity_units_s',[4,4],'maxAcceleration_units_s2',[4,4], ...
+        'maxJerk_units_s3',[8,8]);
+    noSpatialSolve=planner(curtain,struct('time_s',0,'position_units',[-4,0]), ...
+        struct('time_s',12,'position_units',[4,0]),limits, ...
+        struct('GoalTimeMode','fixedArrival','TemporalResolution_s',0.25));
+    assertTrue(testCase,noSpatialSolve.Success,noSpatialSolve.Message);
+
+    scenario=createRandomAzimuthScenario(26,true);
+    moving=scenario.Obstacles(1);
+    returning=obstacleAvoidance.obstacles.createObstacle('returning rectangle', ...
+        [0;90;180], ...
+        {moving.originalX_units{1};moving.originalX_units{2};moving.originalX_units{1}}, ...
+        {moving.originalY_units{1};moving.originalY_units{2};moving.originalY_units{1}}, ...
+        moving.safetyMargin_units);
+    scenario.Options.SpatialProbeIterationLimit=1;
+    afterFailedSpatial=planner(obstacleAvoidance.obstacles.combineObstacles( ...
+        {returning;scenario.Obstacles(2)}),scenario.InitialState, ...
+        scenario.GoalState,scenario.Limits,scenario.Options);
+    assertTrue(testCase,afterFailedSpatial.Success,afterFailedSpatial.Message);
+
+    % The measures must precede the optimizer flags on both routes.
+    verifyEqual(testCase,measureBeforeOptimizer(noSpatialSolve), ...
+        measureBeforeOptimizer(afterFailedSpatial));
+    verifyTrue(testCase,measureBeforeOptimizer(noSpatialSolve));
+end
+
+function isBefore=measureBeforeOptimizer(result)
+    names=string(fieldnames(result));
+    isBefore=find(names=="MotionLength_units",1)<find(names=="OptimizerFeasible",1);
+end
+
 function testDuplicateArrivalGuideIsNotSolvedTwice(testCase)
     scenario=createRandomAzimuthScenario(26,true);
     moving=scenario.Obstacles(1);

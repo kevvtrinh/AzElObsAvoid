@@ -186,6 +186,13 @@ request = struct( ...
     'goalState',    goalState, ...
     'limits',       limits, ...
     'options',      options);
+requestContext = struct( ...
+    'obstacles',          {obstacles}, ...
+    'suppliedLimits',     suppliedLimits, ...
+    'requestedLimits',    requestedLimits, ...
+    'suppliedGoalState',  suppliedGoalState, ...
+    'requestedGoalState', requestedGoalState, ...
+    'outerRequest',       {outerRequest});
 
 % A moving target's deadline position only bounds the earliest-arrival
 % search; a fixed goal or a fixed-arrival intercept is a required endpoint.
@@ -244,14 +251,9 @@ visibilityGraph = struct( ...
     'ExpandedCount',          0, ...
     'GraphIsFullyEnumerated', false, ...
     'SearchKind',             "notSearched");
-result = createEmptyResult(obstacles, scene, request, visibilityGraph);
-result.SuppliedLimits     = suppliedLimits;
-result.RequestedLimits    = requestedLimits;
-result.RequestedGoalState = requestedGoalState;
-result.SuppliedGoalState  = suppliedGoalState;
-if ~isempty(outerRequest)
-    result.OuterRequest = outerRequest;
-end
+emptyAttempts = repmat(createAttemptRecord(0, ""), 0, 1);
+result = obstacleAvoidance.input.createEmptyResult( ...
+    scene.preparedObstacles, request, requestContext, visibilityGraph, emptyAttempts, 0);
 
 % Swept corresponding cells have a declared conservative continuous model.
 % Only intervals without correspondence or any certificate stop preparation.
@@ -396,7 +398,7 @@ endpointDerivatives = [request.initialState.velocity_units_s, ...
     request.goalState.velocity_units_s, request.goalState.acceleration_units_s2];
 isRest              = all(endpointDerivatives == 0);
 if request.options.GoalTimeMode == "earliestArrival"
-    result = planEarliestArrival(result, scene, request, totalTimer, ...
+    result = planEarliestArrival(result, scene, request, requestContext, totalTimer, ...
         isDynamic, earliestTarget, isRest, @plannerCore);
     return
 end
@@ -406,7 +408,7 @@ end
 motionGoalState     = request.goalState;
 fixedArrivalDynamic = isDynamic && request.options.GoalTimeMode == "fixedArrival";
 if fixedArrivalDynamic
-    result = planFixedArrivalDynamic(result, scene, request, totalTimer);
+    result = planFixedArrivalDynamic(result, scene, request, requestContext, totalTimer);
     return
 end
 
@@ -431,7 +433,9 @@ seed             = struct('position_units', route_units, ...
     seed, scene.regions_units, scene.coverage, request.initialState, motionGoalState, ...
     request.limits, request.options);
 
-result = obstacleAvoidance.input.finalizeCandidate(result, candidate, route_units, solverDiagnostics);
+result = obstacleAvoidance.input.finalizeCandidate( ...
+    scene.preparedObstacles, request, requestContext, visibilityGraph, result.Attempts, ...
+    result.ElapsedTime_s, false, struct(), candidate, route_units, solverDiagnostics);
 result.ElapsedTime_s = toc(totalTimer);
 end
 
@@ -451,7 +455,7 @@ function graph = getVisibilityGraph(scene, start_units, goal_units, limits, opti
     graph.SearchKind = kind;
 end
 
-function result = planEarliestArrival(result, scene, request, totalTimer, ...
+function result = planEarliestArrival(result, scene, request, requestContext, totalTimer, ...
         isDynamic, earliestTarget, isRest, plannerCore)
     % Keep one truthful method cascade. A validated candidate is an incumbent;
     % only a public-validator pass can be selected, and acceptance defects are
@@ -508,7 +512,8 @@ function result = planEarliestArrival(result, scene, request, totalTimer, ...
         [candidate, diagnostics] = bmtpEngine.solve(seed, scene.regions_units, scene.coverage, ...
             request.initialState, request.goalState, request.limits, request.options);
         candidateResult = obstacleAvoidance.input.finalizeCandidate( ...
-            result, candidate, route_units, diagnostics);
+            scene.preparedObstacles, request, requestContext, graph, result.Attempts, ...
+            result.ElapsedTime_s, false, struct(), candidate, route_units, diagnostics);
         attempt = populateMotionAttempt(attempt, candidateResult, candidate, diagnostics);
         attempt.ElapsedTime_s = toc(attemptTimer);
         if candidateResult.Success
@@ -547,13 +552,15 @@ function result = planEarliestArrival(result, scene, request, totalTimer, ...
         [candidate, diagnostics] = bmtpEngine.solve( ...
             departureSeed, scene.regions_units, scene.coverage, request.initialState, ...
             request.goalState, request.limits, request.options);
+        departureGraph = result.VisibilityGraph;
+        departureGraph.SearchKind             = "c3DepartureSchedule";
+        departureGraph.Route_units            = departureRoute_units;
+        departureGraph.RouteLength_units      = attempt.RouteLength_units;
+        departureGraph.IsConnected            = true;
+        departureGraph.GraphIsFullyEnumerated = false;
         departureResult = obstacleAvoidance.input.finalizeCandidate( ...
-            result, candidate, departureRoute_units, diagnostics);
-        departureResult.VisibilityGraph.SearchKind         = "c3DepartureSchedule";
-        departureResult.VisibilityGraph.Route_units        = departureRoute_units;
-        departureResult.VisibilityGraph.RouteLength_units  = attempt.RouteLength_units;
-        departureResult.VisibilityGraph.IsConnected        = true;
-        departureResult.VisibilityGraph.GraphIsFullyEnumerated = false;
+            scene.preparedObstacles, request, requestContext, departureGraph, result.Attempts, ...
+            result.ElapsedTime_s, false, struct(), candidate, departureRoute_units, diagnostics);
         attempt = populateMotionAttempt(attempt, departureResult, candidate, diagnostics);
         attempt.ElapsedTime_s = toc(attemptTimer);
 
@@ -816,7 +823,7 @@ function result = finishEarliestArrival(result, attempts, capabilities, ...
     end
 end
 
-function result = planFixedArrivalDynamic(result, scene, request, totalTimer)
+function result = planFixedArrivalDynamic(result, scene, request, requestContext, totalTimer)
     % Two cheap exact-snapshot guides are deterministic shortcuts. Their
     % bounded failures never prove infeasibility; eligible failures advance
     % to the next guide and ultimately to one clean timed fallback.
@@ -867,7 +874,8 @@ function result = planFixedArrivalDynamic(result, scene, request, totalTimer)
                 seed, scene.regions_units, scene.coverage, ...
                 request.initialState, request.goalState, request.limits, request.options);
             candidateResult = obstacleAvoidance.input.finalizeCandidate( ...
-                result, candidate, route_units, diagnostics);
+                scene.preparedObstacles, request, requestContext, graph, result.Attempts, ...
+                result.ElapsedTime_s, false, struct(), candidate, route_units, diagnostics);
 
             attempt.IterationCount = readDiagnosticScalar( ...
                 diagnostics, "IterationCount", 0);
@@ -1172,35 +1180,4 @@ function options = resolveOptions(options, defaults)
         error("planner:InvalidSpatialProbeIterationLimit", ...
             "SpatialProbeIterationLimit must not exceed the full BMTP limit of 35.");
     end
-end
-
-function result = createEmptyResult(obstacles, scene, request, visibilityGraph)
-    % Keep one result schema for expected search and solver failures.
-    result                              = struct();
-    result.Success                      = false;
-    result.Message                      = "Planning has not completed.";
-    result.TerminationReason            = "notStarted";
-    result.Inputs                       = struct("obstacles", {obstacles}, ...
-        "initialState", request.initialState, "goalState", request.goalState);
-    result.PreparedObstacles            = scene.preparedObstacles;
-    result.Limits                       = request.limits;
-    result.Options                      = request.options;
-    result.VisibilityGraph              = visibilityGraph;
-    result.Route_units                  = zeros(0, 2);
-    result.time_s                       = zeros(0, 1);
-    result.position_units               = zeros(0, 2);
-    result.velocity_units_s             = zeros(0, 2);
-    result.acceleration_units_s2        = zeros(0, 2);
-    result.jerk_units_s3                = zeros(0, 2);
-    result.Polynomial                   = struct();
-    result.PlaneCertificate             = struct();
-    result.SolverDiagnostics            = struct();
-    result.Attempts                     = repmat(createAttemptRecord(0, ""), 0, 1);
-    result.Validation                   = struct("Passed", false, "Message", "No motion is available.");
-    result.ArrivalTime_s                = NaN;
-    result.Intercept                    = struct('Time_s', NaN, ...
-        'TargetPosition_units', request.goalState.position_units, ...
-        'TerminalVelocityPolicy', "zero");
-    result.TrajectoryDuration_s         = NaN;
-    result.ElapsedTime_s                = 0;
 end
