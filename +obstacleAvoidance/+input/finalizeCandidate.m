@@ -49,10 +49,42 @@ function result = finalizeCandidate(preparedObstacles, request, requestContext, 
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Assemble The Complete Candidate Record
+%% Section 1: Choose The Acceptance Declaration
+
+acceptanceDeclaration = struct( ...
+    'request',        request, ...
+    'requestContext', requestContext);
+outerRequest = requestContext.outerRequest;
+if ~isempty(outerRequest) && candidate.Success
+    acceptanceDeclaration.requestContext.outerRequest = [];
+    acceptanceDeclaration.requestContext.suppliedLimits = outerRequest.SuppliedLimits;
+    acceptanceDeclaration.requestContext.suppliedGoalState = outerRequest.SuppliedGoalState;
+    acceptanceDeclaration.requestContext.requestedGoalState = outerRequest.RequestedGoalState;
+    if isfield(outerRequest, 'RequestedLimits')
+        acceptanceDeclaration.requestContext.requestedLimits = outerRequest.RequestedLimits;
+    end
+    if isfield(outerRequest, 'Obstacles')
+        acceptanceDeclaration.requestContext.obstacles = outerRequest.Obstacles;
+    end
+    if isfield(outerRequest, 'WrapX')
+        acceptanceDeclaration.request.options.WrapX = outerRequest.WrapX;
+        acceptanceDeclaration.request.options.WrapY = outerRequest.WrapY;
+    end
+    % The declared goal keeps the whole effective inner goal except its clock,
+    % including the selected target lift and resolved derivatives.
+    acceptanceDeclaration.request.goalState.time_s = outerRequest.GoalTime_s;
+    acceptanceDeclaration.request.options.GoalTimeMode = outerRequest.GoalTimeMode;
+    if isfield(outerRequest, 'FixedArrivalTrialTime_s')
+        validationDeclarations.FixedArrivalTrialTime_s = ...
+            outerRequest.FixedArrivalTrialTime_s;
+    end
+end
+
+%% Section 2: Assemble The Complete Candidate Record
 
 result = obstacleAvoidance.input.createEmptyResult( ...
-    preparedObstacles, request, requestContext, visibilityGraph, attempts, elapsedTime_s);
+    preparedObstacles, acceptanceDeclaration.request, ...
+    acceptanceDeclaration.requestContext, visibilityGraph, attempts, elapsedTime_s);
 
 % resetTimedResult declares these stable outcome fields before a timed BMTP
 % candidate exists. Preserve that schema without importing its result record.
@@ -105,17 +137,6 @@ if candidate.Success && ~isempty(goalState.targetMotion)
     if request.options.MatchTargetAcceleration
         result.Intercept.TargetAcceleration_units_s2 = tgtAcc_units_s2;
     end
-end
-
-%% Section 2: Carry The Outer Request Into An Accepted Record
-
-% A periodic request is planned as plain requests in the unwrapped frame,
-% and the chronological search plans trials on their own fixed clocks. A
-% successful candidate's record declares the outer request before the one
-% validation, so nothing is validated twice. A failed candidate keeps its
-% own request so later stages can still read the outer one.
-if ~isempty(requestContext.outerRequest) && candidate.Success
-    result = obstacleAvoidance.input.applyOuterRequest(result, requestContext.outerRequest);
 end
 
 %% Section 3: Apply The One Public Acceptance Gate
