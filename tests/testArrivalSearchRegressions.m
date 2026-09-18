@@ -515,16 +515,115 @@ function testIncumbentRefinementBudgetIsExplicit(testCase)
     verifyNotEmpty(testCase,chronologicalIndices);
 end
 
+function testWrappedIncumbentRefinementRetainsValidatedDeparture(testCase)
+    x=[-0.2;-0.2;0.2;0.2];
+    y=[-3;3;3;-3];
+    obstacleTimes_s=[0;6;6.5;12];
+    yOffsets_units=[0;0;8;8];
+    obstacle=obstacleAvoidance.obstacles.createObstacle('translating barrier', ...
+        obstacleTimes_s,repmat({x},4,1), ...
+        arrayfun(@(offset_units) {y+offset_units},yOffsets_units),0.1);
+    initial=restState(0,[-5,0]);
+    goal=restState(12,[5,0]);
+    limits=struct('xInterval_units',[-180,180], ...
+        'yInterval_units',[-3,3],'maxVelocity_units_s',[2,2], ...
+        'maxAcceleration_units_s2',[1,1],'maxJerk_units_s3',[2,2]);
+    options=struct('GoalTimeMode','earliestArrival','WrapX',true, ...
+        'TemporalResolution_s',0.5,'IncumbentRefinementTrialLimit',1);
+
+    result=planner(obstacle,initial,goal,limits,options);
+
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.ArrivalTime_s,10.1400889258125,'AbsTol',1e-8);
+    verifyFalse(testCase,isfield(result,'FixedArrivalTrialTime_s'));
+    verifyTrue(testCase,result.TemporalSearch.RetainedIncumbent);
+    verifyEqual(testCase,result.TemporalSearch.TrialTime_s,7.5,'AbsTol',1e-12);
+    verifyEqual(testCase,[result.Attempts.Kind], ...
+        ["analyticDeparture","timedVisibility","chronologicalFixedArrival"]);
+    verifyTrue(testCase,result.Attempts(1).Success);
+    verifyTrue(testCase,result.Attempts(1).Selected);
+    verifyFalse(testCase,result.Attempts(3).Success);
+    verifyFalse(testCase,result.Attempts(3).Selected);
+    verifyTrue(testCase,result.Options.WrapX);
+    verifyEqual(testCase,result.SuppliedLimits,limits);
+    verifyEqual(testCase,result.RequestedLimits.xInterval_units,[-180,180]);
+    verifyEqual(testCase,result.Limits.xInterval_units,[-29,19]);
+end
+
+function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
+    initial=restState(0,[179,0]);
+    goal=restState(12,[-179,0]);
+    publicLimits=fastLimits([-3,3]);
+    publicLimits.xInterval_units=[-180,180];
+    base=planner([],initial,goal,publicLimits, ...
+        struct('GoalTimeMode','earliestArrival','WrapX',true));
+
+    base.ArrivalTime_s=10;
+    base.Attempts(1).CandidateArrival_s=10;
+    base.Attempts(1).Success=true;
+    base.Attempts(1).Selected=true;
+    base.ElapsedTime_s=0;
+
+    planarOptions=base.Options;
+    planarOptions.WrapX=false;
+    planarOptions.WrapY=false;
+    planarOptions.TemporalResolution_s=6;
+    planarGoal=base.Inputs.goalState;
+    request=struct( ...
+        'initialState',base.Inputs.initialState, ...
+        'goalState',planarGoal, ...
+        'limits',base.Limits, ...
+        'options',planarOptions);
+    outerRequest=struct( ...
+        'SuppliedLimits',publicLimits, ...
+        'SuppliedGoalState',goal, ...
+        'RequestedLimits',base.RequestedLimits, ...
+        'RequestedGoalState',base.RequestedGoalState, ...
+        'Obstacles',{base.Inputs.obstacles}, ...
+        'WrapX',true, ...
+        'WrapY',false, ...
+        'GoalTime_s',goal.time_s, ...
+        'GoalTimeMode',"earliestArrival");
+    requestContext=struct( ...
+        'obstacles',{base.Inputs.obstacles}, ...
+        'suppliedLimits',base.Limits, ...
+        'requestedLimits',base.Limits, ...
+        'suppliedGoalState',planarGoal, ...
+        'requestedGoalState',planarGoal, ...
+        'outerRequest',{outerRequest});
+    scene=struct('preparedObstacles',base.PreparedObstacles);
+    attemptTemplate=base.Attempts(1);
+
+    result=obstacleAvoidance.input.searchArrivalTimes( ...
+        request,requestContext,scene,base,base.Attempts, ...
+        @(varargin) selectedPlanarRefinement( ...
+        testCase,base,request,scene,varargin{:}), ...
+        @(index,kind) createMockAttempt(attemptTemplate,index,kind), ...
+        @(candidate) false,1);
+
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.ArrivalTime_s,6,'AbsTol',1e-12);
+    verifyFalse(testCase,result.TemporalSearch.RetainedIncumbent);
+    verifyEqual(testCase,result.TemporalSearch.TrialTime_s,6,'AbsTol',1e-12);
+    verifyEqual(testCase,numel(result.Attempts),2);
+    verifyFalse(testCase,result.Attempts(1).Selected);
+    verifyTrue(testCase,result.Attempts(2).Success);
+    verifyTrue(testCase,result.Attempts(2).Selected);
+end
+
 function testValidatorFailureStopsChronologicalSearch(testCase)
     base=planner([],restState(0,[0,0]),restState(10,[1,0]), ...
         struct(),struct('GoalTimeMode','earliestArrival'));
     attemptTemplate=base.Attempts(1);
-    base.Success=false;
-    base.TerminationReason="notStarted";
-    base.ArrivalTime_s=NaN;
+    base.Success=true;
+    base.TerminationReason="goalReached";
+    base.ArrivalTime_s=10;
     base.ElapsedTime_s=0;
     base.Attempts=repmat(attemptTemplate,0,1);
-    result=obstacleAvoidance.input.searchArrivalTimes(base, ...
+    [request,requestContext,scene]=explicitSearchInputs(base);
+    result=obstacleAvoidance.input.searchArrivalTimes( ...
+        request,requestContext,scene,base,base.Attempts, ...
         @(varargin) invalidMotionCandidate(base), ...
         @(index,kind) createMockAttempt(attemptTemplate,index,kind), ...
         @(candidate) string(candidate.TerminationReason) ~= "invalidMotion",3);
@@ -538,6 +637,8 @@ function testValidatorFailureStopsChronologicalSearch(testCase)
     verifyFalse(testCase,result.TemporalSearch.CandidateLimitReached);
     verifyFalse(testCase,result.TemporalSearch.TrialLimitReached);
     verifyFalse(testCase,result.TemporalSearch.SearchWindowExhausted);
+    verifyEqual(testCase,result.TemporalSearch.IncumbentArrival_s,10);
+    verifyFalse(testCase,result.TemporalSearch.RetainedIncumbent);
 end
 
 function testArrivalSnapshotFindsAnOpeningMissingAtInitialTime(testCase)
@@ -672,6 +773,29 @@ function candidate = invalidMotionCandidate(base)
     candidate.FailureKind="independentValidationFailed";
 end
 
+function candidate=selectedPlanarRefinement(testCase,base,request,scene, ...
+        preparedObstacles,initialState,goalState,limits,options,trialRequest)
+    verifyEqual(testCase,preparedObstacles,scene.preparedObstacles);
+    verifyEqual(testCase,initialState,request.initialState);
+    verifyEqual(testCase,goalState.position_units,request.goalState.position_units);
+    verifyEqual(testCase,goalState.time_s,6,'AbsTol',1e-12);
+    verifyEqual(testCase,limits,request.limits);
+    verifyFalse(testCase,options.WrapX);
+    verifyEqual(testCase,options.GoalTimeMode,"fixedArrival");
+    verifyTrue(testCase,trialRequest.WrapX);
+    verifyEqual(testCase,trialRequest.FixedArrivalTrialTime_s,6,'AbsTol',1e-12);
+
+    candidate=base;
+    candidate.Success=true;
+    candidate.Message="goalReached";
+    candidate.TerminationReason="goalReached";
+    candidate.ArrivalTime_s=goalState.time_s;
+    candidate.FixedArrivalTrialTime_s=goalState.time_s;
+    candidate.Attempts=repmat(base.Attempts,0,1);
+    candidate.SolverDiagnostics=struct('Accepted',true);
+    candidate.Validation=struct('Passed',true,'Message',"Trajectory is valid.");
+end
+
 function attempt = createMockAttempt(template,index,kind)
     attempt=template;
     attempt.Index=index;
@@ -682,6 +806,22 @@ function attempt = createMockAttempt(template,index,kind)
     attempt.MethodFallbackEligible=false;
     attempt.MethodFallbackReason="";
     attempt.ChildAttempts=repmat(struct(),0,1);
+end
+
+function [request,requestContext,scene]=explicitSearchInputs(result)
+    request=struct( ...
+        'initialState',result.Inputs.initialState, ...
+        'goalState',result.Inputs.goalState, ...
+        'limits',result.Limits, ...
+        'options',result.Options);
+    requestContext=struct( ...
+        'obstacles',{result.Inputs.obstacles}, ...
+        'suppliedLimits',result.SuppliedLimits, ...
+        'requestedLimits',result.RequestedLimits, ...
+        'suppliedGoalState',result.SuppliedGoalState, ...
+        'requestedGoalState',result.RequestedGoalState, ...
+        'outerRequest',{[]});
+    scene=struct('preparedObstacles',result.PreparedObstacles);
 end
 
 function limits = fastLimits(yInterval_units)

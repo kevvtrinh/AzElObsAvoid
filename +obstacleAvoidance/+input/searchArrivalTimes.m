@@ -1,17 +1,26 @@
-function result = searchArrivalTimes(previous, plannerCore, attemptFactory, ...
-        fallbackPolicy, maximumTrialCount)
+function result = searchArrivalTimes(request, requestContext, scene, baseResult, ...
+        priorAttempts, plannerCore, attemptFactory, fallbackPolicy, maximumTrialCount)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.input.searchArrivalTimes( ...
-%       previous, plannerCore, attemptFactory, fallbackPolicy)
+%       request, requestContext, scene, baseResult, priorAttempts, ...
+%       plannerCore, attemptFactory, fallbackPolicy, maximumTrialCount)
 %**************************************************************************
 % PURPOSE
 %   - Search declared chronological fixed-arrival trials.
 %   - Preserve the outer request for the planner's single acceptance gate.
 %**************************************************************************
 % INPUTS
-%   - previous (scalar struct)
-%       Planner result containing the request and any valid incumbent.
+%   - request (scalar struct)
+%       Normalized planar request that owns the chronological trials.
+%   - requestContext (scalar struct)
+%       Original planar inputs, provenance, and optional outer request.
+%   - scene (scalar struct)
+%       Prepared geometry owned by the planar request.
+%   - baseResult (scalar struct)
+%       Outcome retained on exhaustion, including any valid incumbent.
+%   - priorAttempts (struct array)
+%       Planner attempts completed before chronological search.
 %   - plannerCore (function handle)
 %       Private planner implementation carrying the outer request context.
 %   - attemptFactory (function handle)
@@ -36,40 +45,40 @@ function result = searchArrivalTimes(previous, plannerCore, attemptFactory, ...
 %% Section 1: Collect The Physical Window And Its Source Boundaries
 
 searchTimer       = tic;
-initialState      = previous.Inputs.initialState;
-suppliedGoalState = previous.SuppliedGoalState;
-trialOptions      = previous.Options;
-if nargin < 5 || isempty(maximumTrialCount)
+initialState      = request.initialState;
+suppliedGoalState = requestContext.suppliedGoalState;
+trialOptions      = request.options;
+if nargin < 9 || isempty(maximumTrialCount)
     maximumTrialCount = trialOptions.MaxArrivalTrials;
 end
 validateattributes(maximumTrialCount, {'numeric'}, ...
     {'scalar', 'finite', 'integer', 'positive'});
 
 startTime_s   = initialState.time_s;
-horizonTime_s = previous.Inputs.goalState.time_s;
+horizonTime_s = request.goalState.time_s;
 resolution_s  = trialOptions.TemporalResolution_s;
 
 boundaryTimes_s = horizonTime_s;
-for obstacleIndex = 1:numel(previous.PreparedObstacles)
-    boundaryTimes_s = [boundaryTimes_s; previous.PreparedObstacles(obstacleIndex).time_s(:)]; %#ok<AGROW>
+for obstacleIndex = 1:numel(scene.preparedObstacles)
+    boundaryTimes_s = [boundaryTimes_s; scene.preparedObstacles(obstacleIndex).time_s(:)]; %#ok<AGROW>
 end
-if isfield(suppliedGoalState, 'targetMotion') && ~isempty(suppliedGoalState.targetMotion)
-    boundaryTimes_s = [boundaryTimes_s; suppliedGoalState.targetMotion.time_s(:)];
-    startTime_s     = max(startTime_s, suppliedGoalState.targetMotion.time_s(1));
-    horizonTime_s   = min(horizonTime_s, suppliedGoalState.targetMotion.time_s(end));
+if ~isempty(request.goalState.targetMotion)
+    boundaryTimes_s = [boundaryTimes_s; request.goalState.targetMotion.time_s(:)];
+    startTime_s     = max(startTime_s, request.goalState.targetMotion.time_s(1));
+    horizonTime_s   = min(horizonTime_s, request.goalState.targetMotion.time_s(end));
 end
 
 %% Section 2: Bound The Window By Physics And The Valid Incumbent
 
 earliestTime_s = startTime_s;
-if isempty(previous.Inputs.goalState.targetMotion)
+if isempty(request.goalState.targetMotion)
     minimumTravelTime_s = obstacleAvoidance.input.minimumTravelTime( ...
-        initialState, previous.Inputs.goalState, previous.Limits);
+        initialState, request.goalState, request.limits);
     earliestTime_s = max(earliestTime_s, initialState.time_s + minimumTravelTime_s);
 end
 incumbentArrivalTime_s = NaN;
-if previous.Success
-    incumbentArrivalTime_s = previous.ArrivalTime_s;
+if baseResult.Success
+    incumbentArrivalTime_s = baseResult.ArrivalTime_s;
     horizonTime_s = min(horizonTime_s, incumbentArrivalTime_s - ...
         trialOptions.ArrivalTimeTolerance_s);
 end
@@ -106,16 +115,16 @@ candidateTimes_s     = unique([gridTimes_s; boundaryTimes_s]);
 candidateTimes_s     = candidateTimes_s(candidateTimes_s <= horizonTime_s);
 
 trialOptions.GoalTimeMode = "fixedArrival";
-if isfield(previous, 'OuterRequest')
-    outerRequest = previous.OuterRequest;
+if ~isempty(requestContext.outerRequest)
+    outerRequest = requestContext.outerRequest;
 else
     outerRequest = struct( ...
-        'SuppliedLimits',     previous.SuppliedLimits, ...
-        'SuppliedGoalState',  previous.SuppliedGoalState, ...
-        'RequestedGoalState', previous.RequestedGoalState, ...
-        'Obstacles',          {previous.Inputs.obstacles}, ...
-        'GoalTime_s',         previous.Inputs.goalState.time_s, ...
-        'GoalTimeMode',       previous.Options.GoalTimeMode);
+        'SuppliedLimits',     requestContext.suppliedLimits, ...
+        'SuppliedGoalState',  requestContext.suppliedGoalState, ...
+        'RequestedGoalState', requestContext.requestedGoalState, ...
+        'Obstacles',          {requestContext.obstacles}, ...
+        'GoalTime_s',         request.goalState.time_s, ...
+        'GoalTimeMode',       request.options.GoalTimeMode);
 end
 
 %% Section 4: Screen Endpoint Physics, Then Spend The Solver Budget
@@ -123,10 +132,11 @@ end
 storageCount = min(maximumTrialCount, numel(candidateTimes_s));
 trialTimes_s        = NaN(storageCount, 1);
 prescreenedTimes_s  = NaN(numel(candidateTimes_s), 1);
-attempts            = previous.Attempts;
+attempts            = priorAttempts;
 attemptStartIndex   = numel(attempts) + 1;
 
-result                       = previous;
+selectedResult               = struct([]);
+terminalResult               = struct([]);
 trialWasSelected             = false;
 terminalFailure              = false;
 triedCount                   = 0;
@@ -138,7 +148,7 @@ for candidateIndex = 1:numel(candidateTimes_s)
         break
     end
     trialTime_s = candidateTimes_s(candidateIndex);
-    endpointGoalState = previous.Inputs.goalState;
+    endpointGoalState = request.goalState;
     endpointGoalState.time_s = trialTime_s;
     endpointFeasible = false;
     trialNecessaryArrivalTime_s = initialState.time_s;
@@ -163,11 +173,11 @@ for candidateIndex = 1:numel(candidateTimes_s)
         end
         trialNecessaryArrivalTime_s = initialState.time_s + ...
             obstacleAvoidance.input.minimumTravelTime( ...
-            initialState, endpointGoalState, previous.Limits);
+            initialState, endpointGoalState, request.limits);
         [endpointFeasible, endpointMessage, endpointReason] = ...
             obstacleAvoidance.input.validatePlannerEndpoints( ...
-            previous.PreparedObstacles, initialState, endpointGoalState, ...
-            previous.Limits, trialOptions);
+            scene.preparedObstacles, initialState, endpointGoalState, ...
+            request.limits, trialOptions);
         if endpointFeasible && trialTime_s < trialNecessaryArrivalTime_s - ...
                 trialOptions.ArrivalTimeTolerance_s
             endpointFeasible = false;
@@ -211,11 +221,11 @@ for candidateIndex = 1:numel(candidateTimes_s)
         'velocity_units_s',      endpointGoalState.velocity_units_s, ...
         'acceleration_units_s2', endpointGoalState.acceleration_units_s2);
     endpointValidationKey = struct();
-    endpointValidationKey.PreparedObstacles = previous.PreparedObstacles;
+    endpointValidationKey.PreparedObstacles = scene.preparedObstacles;
     endpointValidationKey.RequestHorizon_s  = [initialState.time_s, endpointGoalState.time_s];
     endpointValidationKey.InitialState      = initialEndpointState;
     endpointValidationKey.GoalState         = goalEndpointState;
-    endpointValidationKey.Limits            = previous.Limits;
+    endpointValidationKey.Limits            = request.limits;
     endpointValidationKey.Options           = endpointValidationOptions;
     trialRequest.EndpointValidation = struct( ...
         'Key',      endpointValidationKey, ...
@@ -230,8 +240,8 @@ for candidateIndex = 1:numel(candidateTimes_s)
     attempt.SolverAttempted         = true;
     attemptTimer                    = tic;
     try
-        candidate = plannerCore(previous.PreparedObstacles, initialState, trialGoalState, ...
-            previous.RequestedLimits, trialOptions, trialRequest);
+        candidate = plannerCore(scene.preparedObstacles, initialState, trialGoalState, ...
+            request.limits, trialOptions, trialRequest);
     catch exception
         failureIsExpected = string(exception.identifier) == ...
             ["planner:UndefinedTargetDerivative", "planTrajectory:CoincidentEndpoints"];
@@ -272,13 +282,13 @@ for candidateIndex = 1:numel(candidateTimes_s)
         end
         attempt.Selected = true;
         attempts(end + 1, 1) = attempt; %#ok<AGROW>
-        result           = candidate;
+        selectedResult   = candidate;
         trialWasSelected = true;
         break
     end
     attempt.MethodFallbackEligible = fallbackPolicy(candidate);
     if string(candidate.TerminationReason) == "noVisibilityRoute" && ...
-            isempty(previous.Inputs.goalState.targetMotion)
+            isempty(request.goalState.targetMotion)
         % Static geometry and a fixed goal do not change with the clock.
         % Repeating the same disconnected exact graph cannot reveal a path.
         attempt.MethodFallbackEligible = false;
@@ -290,8 +300,11 @@ for candidateIndex = 1:numel(candidateTimes_s)
         continue
     end
     attempts(end + 1, 1) = attempt; %#ok<AGROW>
-    candidate = obstacleAvoidance.input.applyOuterRequest(candidate, trialRequest);
-    result = candidate;
+    terminalResult = candidate;
+    % A terminal record declares the clock it attempted. A periodic failure
+    % boundary later applies its own outer request, which carries no trial
+    % marker, so publishing it here keeps the declaration through that.
+    terminalResult.FixedArrivalTrialTime_s = trialTime_s;
     terminalFailure = true;
     break
 end
@@ -305,7 +318,7 @@ trialLimitReached = ~trialWasSelected && ~terminalFailure && ...
     nextUnprocessedCandidateIndex > 0;
 searchWindowExhausted = ~trialWasSelected && ~terminalFailure && ...
     ~candidateLimitReached && ~trialLimitReached;
-retainedIncumbent = previous.Success && ~trialWasSelected && ~terminalFailure;
+retainedIncumbent = baseResult.Success && ~trialWasSelected && ~terminalFailure;
 if retainedIncumbent
     acceptedIndices = find([attempts.Success]);
     if ~isempty(acceptedIndices)
@@ -314,6 +327,13 @@ if retainedIncumbent
         selectedIndex = acceptedIndices(selectedOffset);
         attempts(selectedIndex).Selected = true;
     end
+end
+if trialWasSelected
+    result = selectedResult;
+elseif terminalFailure
+    result = terminalResult;
+else
+    result = baseResult;
 end
 result.Attempts = attempts;
 result.TemporalSearch = struct( ...
@@ -340,7 +360,7 @@ elseif ~result.Success && ~terminalFailure
     result.TerminationReason = "arrivalSearchExhausted";
     result.Message = "No declared arrival trial was certified. Unsearched times and solver failures do not prove infeasibility.";
 end
-result.ElapsedTime_s = previous.ElapsedTime_s + toc(searchTimer);
+result.ElapsedTime_s = baseResult.ElapsedTime_s + toc(searchTimer);
 end
 
 function [failureStage, failureKind, alternativeGuideEligible] = failureEvidence(candidate)

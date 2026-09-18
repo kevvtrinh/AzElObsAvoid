@@ -95,7 +95,22 @@ for optionName = nonnegativeOptionNames
 end
 validateattributes(options.FrameStride, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 handles         = createEmptyHandles(options);
-plotTimeRange_s = [result.Inputs.initialState.time_s, result.Inputs.goalState.time_s];
+% A raw failure keeps the declaration of the trial that failed, so its goal
+% clock is that trial's, not the horizon the caller asked about. Plot the
+% requested horizon when the record still carries it.
+plotHorizon_s = result.Inputs.goalState.time_s;
+% Only a failure keeps an outer request, and its clock is optional metadata,
+% so accept it only when it is a usable scalar time, and never shrink the window.
+if ~result.Success && isfield(result, 'OuterRequest') && ...
+        isstruct(result.OuterRequest) && isscalar(result.OuterRequest) && ...
+        isfield(result.OuterRequest, 'GoalTime_s')
+    outerHorizon_s = result.OuterRequest.GoalTime_s;
+    if isnumeric(outerHorizon_s) && isscalar(outerHorizon_s) && ...
+            isreal(outerHorizon_s) && isfinite(outerHorizon_s)
+        plotHorizon_s = max(plotHorizon_s, double(outerHorizon_s));
+    end
+end
+plotTimeRange_s = [result.Inputs.initialState.time_s, plotHorizon_s];
 obstacles       = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles, plotTimeRange_s);
 originalObstacles = obstacles;
 if options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimation || options.SaveAnimationGif

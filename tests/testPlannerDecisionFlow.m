@@ -278,17 +278,27 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     verifyEqual(testCase,numel(fixedResult.Attempts),1);
     verifyFalse(testCase,fixedResult.Attempts.MethodFallbackEligible);
     verifyTrue(testCase,fixedResult.TemporalSearch.TerminalFailure);
-    verifyEqual(testCase,fixedResult.Options.GoalTimeMode, ...
-        string(fixedOptions.GoalTimeMode));
+    verifyEqual(testCase,fixedResult.Options.GoalTimeMode,"fixedArrival");
     verifyFalse(testCase,fixedResult.Options.WrapX);
     verifyFalse(testCase,fixedResult.Options.WrapY);
     verifyEqual(testCase,fixedResult.SuppliedLimits,limits);
     verifyEqual(testCase,fixedResult.SuppliedGoalState.position_units, ...
         fixedGoal.position_units);
-    verifyEqual(testCase,fixedResult.SuppliedGoalState.time_s,fixedGoal.time_s);
-    verifyEqual(testCase,fixedResult.Inputs.obstacles,obstacle);
-    verifyEqual(testCase,fixedResult.Inputs.goalState.time_s,fixedGoal.time_s);
-    verifyFalse(testCase,isfield(fixedResult,'OuterRequest'));
+    verifyEqual(testCase,fixedResult.SuppliedGoalState.time_s,4);
+    % Anchored to the obstacle this test passed in, not to another field of
+    % the same result: a record agreeing with itself proves nothing here.
+    verifyEqual(testCase,fixedResult.Inputs.obstacles, ...
+        obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,4],true));
+    verifyEqual(testCase,fixedResult.Inputs.goalState.time_s,4);
+    verifyTrue(testCase,isfield(fixedResult,'OuterRequest'));
+    verifyEqual(testCase,fixedResult.OuterRequest.Obstacles,obstacle);
+    verifyEqual(testCase,fixedResult.OuterRequest.GoalTime_s,fixedGoal.time_s);
+    % The supplied goal provenance is a different field from the outer clock;
+    % relocating one does not cover the other.
+    verifyEqual(testCase,fixedResult.OuterRequest.SuppliedGoalState,fixedGoal);
+    verifyEqual(testCase,fixedResult.OuterRequest.GoalTimeMode, ...
+        string(fixedOptions.GoalTimeMode));
+    verifyEqual(testCase,fixedResult.OuterRequest.FixedArrivalTrialTime_s,4);
 end
 
 function testPeriodicWrapUsesNearestImage(testCase)

@@ -676,7 +676,6 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
     else
         searchBase = result;
     end
-    searchBase.Attempts      = attempts;
     searchBase.ElapsedTime_s = toc(totalTimer);
     chronologicalTrialLimit = request.options.MaxArrivalTrials;
     if incumbentAccepted
@@ -692,8 +691,8 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
         end
     end
     result = obstacleAvoidance.input.searchArrivalTimes( ...
-        searchBase, plannerCore, @createAttemptRecord, ...
-        @methodFallbackEligible, chronologicalTrialLimit);
+        request, requestContext, scene, searchBase, attempts, plannerCore, ...
+        @createAttemptRecord, @methodFallbackEligible, chronologicalTrialLimit);
     result.ElapsedTime_s = toc(totalTimer);
     result = finishEarliestArrival(result, result.Attempts, capabilities, ...
         necessaryArrivalTime_s);
