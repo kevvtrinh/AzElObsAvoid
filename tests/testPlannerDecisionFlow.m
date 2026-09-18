@@ -497,6 +497,32 @@ function testPeriodicMovingTargetIsLiftedAcrossTheSeam(testCase)
     verifyEqual(testCase,result.MotionLength_units,6,'AbsTol',1e-6);
 end
 
+function testPeriodicSeamCrossingTargetRejectsStaleMatchedDerivative(testCase)
+    initial=state(0,[0,0.5]);
+    targetMotion=struct('time_s',[0;10], ...
+        'position_units',[0,0.9;0,-0.9],'InterpolationMethod','linear');
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    limits=standardLimits(); limits.yInterval_units=[-1,1];
+    options=struct('GoalTimeMode','fixedArrival','WrapY',true, ...
+        'MatchTargetVelocity',true);
+    verifyError(testCase,@()planner([],initial,goal,limits,options), ...
+        'planner:ConflictingTargetDerivative');
+end
+
+function testPeriodicWindingTargetRejectsCoincidentImageEndpoint(testCase)
+    initial=state(0,[0,0]);
+    targetMotion=struct('time_s',(0:2:10)', ...
+        'position_units',[zeros(6,1),[0;0.4;0.8;-0.8;-0.4;0]], ...
+        'InterpolationMethod','linear');
+    goal=struct('time_s',10,'targetMotion',targetMotion);
+    limits=struct('xInterval_units',[-6,6],'yInterval_units',[-1,1], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[2,2], ...
+        'maxJerk_units_s3',[4,4]);
+    options=struct('GoalTimeMode','fixedArrival','WrapY',true);
+    verifyError(testCase,@()planner([],initial,goal,limits,options), ...
+        'planTrajectory:CoincidentEndpoints');
+end
+
 function testInitiallyOccupiedFutureGoalUsesArrivalDetour(testCase)
     local=[-0.8,-0.8;0.8,-0.8;0.8,0.8;-0.8,0.8];
     first=local+[4,0];

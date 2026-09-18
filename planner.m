@@ -207,16 +207,21 @@ end
 % Every goal image inside the band is planned as a plain request in the
 % unwrapped frame and accepted against this periodic request.
 if any(wrapAxes)
-    periodicRequest = struct( ...
-        'SuppliedLimits',     suppliedLimits, ...
-        'SuppliedGoalState',  suppliedGoalState, ...
-        'RequestedLimits',    requestedLimits, ...
-        'RequestedGoalState', requestedGoalState);
     result = obstacleAvoidance.input.planPeriodicRequest( ...
-        obstacles, request.initialState, request.goalState, request.limits, ...
-        request.options, periodicRequest, @plannerCore);
+        request, requestContext, ...
+        @(imageRequest, imageRequestContext) planNormalizedRequest( ...
+        imageRequest, imageRequestContext, @plannerCore));
     return
 end
+
+result = planNormalizedRequest(request, requestContext, @plannerCore);
+end
+
+function result = planNormalizedRequest(request, requestContext, plannerCore)
+    % Plan one already-normalized, nonperiodic request.
+
+obstacles    = requestContext.obstacles;
+outerRequest = requestContext.outerRequest;
 
 %% Section 2: Prepare Authoritative Geometry And Motion Coverage
 
@@ -399,7 +404,7 @@ endpointDerivatives = [request.initialState.velocity_units_s, ...
 isRest              = all(endpointDerivatives == 0);
 if request.options.GoalTimeMode == "earliestArrival"
     result = planEarliestArrival(result, scene, request, requestContext, totalTimer, ...
-        isDynamic, earliestTarget, isRest, @plannerCore);
+        isDynamic, earliestTarget, isRest, plannerCore);
     return
 end
 
