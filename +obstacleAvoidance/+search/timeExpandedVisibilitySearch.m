@@ -220,215 +220,20 @@ if isEarliestArrival
     pendingMotionEvents = cell(layerCount, 1);
     stateProposals      = cell(layerCount, 1);
     for layerIndex = 1:layerCount
-        motionEvents = pendingMotionEvents{layerIndex};
-        pendingMotionEvents{layerIndex} = zeros(0, 7);
-        if ~isempty(motionEvents)
-            motionEvents = sortrows(motionEvents, [1, 6]);
-            sourceLayerIndices = unique(motionEvents(:, 1), "stable").';
-            for sourceLayerIndex = sourceLayerIndices
-                eventOffsets = find(motionEvents(:, 1) == sourceLayerIndex);
-                eventIsCertifiedBlocked = ...
-                    layerIndex <= motionEvents(eventOffsets, 7);
-                eventIsClear        = false(numel(eventOffsets), 1);
-                blockingCellIndices = zeros(numel(eventOffsets), 1, "uint32");
-                witnessTimes_s      = NaN(numel(eventOffsets), 1);
-                exactEventOffsets   = find(~eventIsCertifiedBlocked);
-                if ~isempty(exactEventOffsets)
-                    exactRows = eventOffsets(exactEventOffsets);
-                    [exactIsClear, exactBlockingCellIndices, exactWitnessTimes_s] = edgeIsClear( ...
-                        motionEvents(exactRows, 2), motionEvents(exactRows, 3), ...
-                        layerTimes_s(sourceLayerIndex), layerTimes_s(layerIndex));
-                    eventIsClear(exactEventOffsets)        = exactIsClear;
-                    blockingCellIndices(exactEventOffsets) = exactBlockingCellIndices;
-                    witnessTimes_s(exactEventOffsets)      = exactWitnessTimes_s;
-                end
-
-                clearOffsets = eventOffsets(eventIsClear);
-                if ~isempty(clearOffsets)
-                    clearProposals = [ ...
-                        motionEvents(clearOffsets, 1:3), ...
-                        motionEvents(clearOffsets, 5), ...
-                        ones(numel(clearOffsets), 1), ...
-                        motionEvents(clearOffsets, 6)];
-                    stateProposals{layerIndex} = [ ...
-                        stateProposals{layerIndex}; clearProposals];
-                end
-
-                failedEventOffsets = find(~eventIsClear);
-                certifiedSkipCount = certifiedSkipCount + nnz(eventIsCertifiedBlocked);
-                rejectedCount      = rejectedCount + numel(failedEventOffsets);
-                for failureIndex = 1:numel(failedEventOffsets)
-                    eventOffset = failedEventOffsets(failureIndex);
-                    eventRow    = eventOffsets(eventOffset);
-                    if ~eventIsCertifiedBlocked(eventOffset)
-                        blockedLayerCount = certifiedBlockedLayerCount( ...
-                            motionEvents(eventRow, 2), motionEvents(eventRow, 3), ...
-                            sourceLayerIndex, layerIndex, motionEvents(eventRow, 4), ...
-                            blockingCellIndices(eventOffset), witnessTimes_s(eventOffset));
-                        motionEvents(eventRow, 7) = layerIndex + blockedLayerCount - 1;
-                    end
-                    if layerIndex < motionEvents(eventRow, 4)
-                        pendingMotionEvents{layerIndex + 1}(end + 1, :) = ...
-                            motionEvents(eventRow, :);
-                    end
-                end
-            end
-        end
-
-        proposals = stateProposals{layerIndex};
-        if ~isempty(proposals)
-            proposals = sortrows(proposals, [1, 5, 6]);
-            for proposalIndex = 1:size(proposals, 1)
-                [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState( ...
-                    reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, ...
-                    proposals(proposalIndex, 1), proposals(proposalIndex, 2), ...
-                    layerIndex, proposals(proposalIndex, 3), proposals(proposalIndex, 4));
-            end
-        end
-
-        % Once the goal is reached, retain its complete clear wait component.
-        firstGoalLayerIndex = find( ...
-            reachable(1:layerIndex, 2) & goalLayerIsEligible(1:layerIndex), 1, "first");
-        if ~isempty(firstGoalLayerIndex)
-            selectedGoalLayerIndex = double(waitComponentFinalLayerIndex(firstGoalLayerIndex, 2));
-            if selectedGoalLayerIndex == layerCount
-                selectedGoalLayerIndex = firstGoalLayerIndex;
-            end
-            if layerIndex >= selectedGoalLayerIndex
-                break
-            end
+        resolvePendingMotionEvents(layerIndex);
+        applyStateProposals(layerIndex);
+        goalWaitComponentReached = goalComponentIsComplete(layerIndex);
+        if goalWaitComponentReached
+            break
         end
         if layerIndex == layerCount
             break
         end
-
-        currentNodeIndices = find(reachable(layerIndex, :));
-        for currentNodeIndex = reshape(currentNodeIndices, 1, [])
-            expandedCount = expandedCount + 1;
-            if waitIsClear(layerIndex, currentNodeIndex)
-                waitProposal = [layerIndex, currentNodeIndex, currentNodeIndex, ...
-                    0, 0, currentNodeIndex];
-                stateProposals{layerIndex + 1}(end + 1, :) = waitProposal;
-            else
-                rejectedCount = rejectedCount + 1;
-            end
-        end
-
-        [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
-            currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
-            minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-            isWaitComponentStart, waitComponentFinalLayerIndex);
-        rejectedCount = rejectedCount + candidateRejectedCount;
-        targetLayerIndices = unique(motionCandidates(:, 3)).';
-        for targetLayerIndex = targetLayerIndices
-            candidateRows = find(motionCandidates(:, 3) == targetLayerIndex);
-            eventBlock = [ ...
-                repmat(layerIndex, numel(candidateRows), 1), ...
-                motionCandidates(candidateRows, [1, 2, 4, 5]), ...
-                candidateRows, zeros(numel(candidateRows), 1)];
-            pendingMotionEvents{targetLayerIndex} = [ ...
-                pendingMotionEvents{targetLayerIndex}; eventBlock];
-        end
+        scheduleLayerExpansion(layerIndex);
     end
 else
     for layerIndex = 1:layerCount - 1
-        currentNodeIndices = find(reachable(layerIndex, :));
-        for currentNodeIndex = reshape(currentNodeIndices, 1, [])
-            expandedCount = expandedCount + 1;
-            if waitIsClear(layerIndex, currentNodeIndex)
-                [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState( ...
-                    reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, ...
-                    layerIndex, currentNodeIndex, layerIndex + 1, currentNodeIndex, 0);
-            else
-                rejectedCount = rejectedCount + 1;
-            end
-        end
-        [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
-            currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
-            minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-            isWaitComponentStart, waitComponentFinalLayerIndex);
-        rejectedCount        = rejectedCount + candidateRejectedCount;
-        motionCandidateCount = size(motionCandidates, 1);
-        motionIsPending      = true(motionCandidateCount, 1);
-        while any(motionIsPending)
-            queriedTargetLayerIndices = unique(motionCandidates(motionIsPending, 3));
-            for targetLayerIndex = reshape(queriedTargetLayerIndices, 1, [])
-                queryIndices = find(motionIsPending & motionCandidates(:, 3) == targetLayerIndex);
-                trialCost_units = reshape( ...
-                    spatialCost_units(layerIndex, motionCandidates(queryIndices, 1)), [], 1) + ...
-                    motionCandidates(queryIndices, 5);
-                storedCost_units = reshape( ...
-                    spatialCost_units(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
-                isDominated = trialCost_units > storedCost_units + 1e-12;
-                candidateTerminalLayerIndices = ...
-                    nextGoalTerminalLayerIndex(motionCandidates(queryIndices, 3));
-                retainsTerminalProvenance = motionCandidates(queryIndices, 2) == 2 & ...
-                    candidateTerminalLayerIndices > 0 & ...
-                    candidateTerminalLayerIndices <= motionCandidates(queryIndices, 4);
-                isDominated(retainsTerminalProvenance) = false;
-                motionIsPending(queryIndices(isDominated)) = false;
-                rejectedCount = rejectedCount + nnz(isDominated);
-                queryIndices = queryIndices(~isDominated);
-                trialCost_units = trialCost_units(~isDominated);
-                remainingDistance_units = distanceToGoal_units(motionCandidates(queryIndices, 2));
-                cannotImproveGoal = trialCost_units + remainingDistance_units > goalCostBound_units + 1e-12;
-                motionIsPending(queryIndices(cannotImproveGoal)) = false;
-                rejectedCount = rejectedCount + nnz(cannotImproveGoal);
-                queryIndices = queryIndices(~cannotImproveGoal);
-                if isempty(queryIndices)
-                    continue
-                end
-                queryIsClear = edgeIsClear( ...
-                    motionCandidates(queryIndices, 1), motionCandidates(queryIndices, 2), ...
-                    layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
-                clearIndices = queryIndices(queryIsClear);
-                for motionIndex = reshape(clearIndices, 1, [])
-                    [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState( ...
-                        reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, ...
-                        layerIndex, motionCandidates(motionIndex, 1), ...
-                        motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), ...
-                        motionCandidates(motionIndex, 5));
-                end
-                canTerminate = motionCandidates(clearIndices, 2) == 2 & ...
-                    goalCanTerminateAtLayer(motionCandidates(clearIndices, 3));
-                terminalIndices = clearIndices(canTerminate);
-                if ~isempty(terminalIndices)
-                    terminalCosts_units = reshape( ...
-                        spatialCost_units(layerIndex, motionCandidates(terminalIndices, 1)), [], 1) + ...
-                        motionCandidates(terminalIndices, 5);
-                    [trialTerminalCost_units, terminalOffset] = min(terminalCosts_units);
-                    if trialTerminalCost_units < goalCostBound_units - 1e-12
-                        terminalIndex                  = terminalIndices(terminalOffset);
-                        goalCostBound_units             = trialTerminalCost_units;
-                        terminalSourceLayerIndex        = layerIndex;
-                        terminalSourceNodeIndex         = motionCandidates(terminalIndex, 1);
-                        terminalArrivalLayerIndex       = motionCandidates(terminalIndex, 3);
-                    end
-                end
-                rejectedCount = rejectedCount + nnz(~queryIsClear);
-                motionIsPending(queryIndices) = false;
-                advanceIndices = queryIndices( ...
-                    ~queryIsClear & motionCandidates(queryIndices, 3) < motionCandidates(queryIndices, 4));
-                motionCandidates(advanceIndices, 3) = motionCandidates(advanceIndices, 3) + 1;
-                motionIsPending(advanceIndices) = true;
-                clearTransitGoalIndices = queryIndices( ...
-                    queryIsClear & motionCandidates(queryIndices, 2) == 2 & ...
-                    ~goalCanTerminateAtLayer(motionCandidates(queryIndices, 3)));
-                for motionIndex = reshape(clearTransitGoalIndices, 1, [])
-                    currentTargetLayerIndex = motionCandidates(motionIndex, 3);
-                    if currentTargetLayerIndex == layerCount
-                        continue
-                    end
-                    futureTerminalLayerIndex = ...
-                        nextGoalTerminalLayerIndex(currentTargetLayerIndex + 1);
-                    if futureTerminalLayerIndex > 0 && ...
-                            futureTerminalLayerIndex <= motionCandidates(motionIndex, 4)
-                        motionCandidates(motionIndex, 3) = futureTerminalLayerIndex;
-                        motionIsPending(motionIndex)     = true;
-                    end
-                end
-            end
-        end
+        propagateFixedArrivalLayer(layerIndex);
     end
 end
 
@@ -493,6 +298,222 @@ record = struct( ...
     "WaitRouteTime_s",               waitRouteTime_s);
 
 %% Section 3: Local Functions
+
+function resolvePendingMotionEvents(layerIndex)
+    motionEvents = pendingMotionEvents{layerIndex};
+    pendingMotionEvents{layerIndex} = zeros(0, 7);
+    if ~isempty(motionEvents)
+        motionEvents = sortrows(motionEvents, [1, 6]);
+        sourceLayerIndices = unique(motionEvents(:, 1), "stable").';
+        for sourceLayerIndex = sourceLayerIndices
+            eventOffsets = find(motionEvents(:, 1) == sourceLayerIndex);
+            eventIsCertifiedBlocked = ...
+                layerIndex <= motionEvents(eventOffsets, 7);
+            eventIsClear        = false(numel(eventOffsets), 1);
+            blockingCellIndices = zeros(numel(eventOffsets), 1, "uint32");
+            witnessTimes_s      = NaN(numel(eventOffsets), 1);
+            exactEventOffsets   = find(~eventIsCertifiedBlocked);
+            if ~isempty(exactEventOffsets)
+                exactRows = eventOffsets(exactEventOffsets);
+                [exactIsClear, exactBlockingCellIndices, exactWitnessTimes_s] = edgeIsClear( ...
+                    motionEvents(exactRows, 2), motionEvents(exactRows, 3), ...
+                    layerTimes_s(sourceLayerIndex), layerTimes_s(layerIndex));
+                eventIsClear(exactEventOffsets)        = exactIsClear;
+                blockingCellIndices(exactEventOffsets) = exactBlockingCellIndices;
+                witnessTimes_s(exactEventOffsets)      = exactWitnessTimes_s;
+            end
+
+            clearOffsets = eventOffsets(eventIsClear);
+            if ~isempty(clearOffsets)
+                clearProposals = [ ...
+                    motionEvents(clearOffsets, 1:3), ...
+                    motionEvents(clearOffsets, 5), ...
+                    ones(numel(clearOffsets), 1), ...
+                    motionEvents(clearOffsets, 6)];
+                stateProposals{layerIndex} = [ ...
+                    stateProposals{layerIndex}; clearProposals];
+            end
+
+            failedEventOffsets = find(~eventIsClear);
+            certifiedSkipCount = certifiedSkipCount + nnz(eventIsCertifiedBlocked);
+            rejectedCount      = rejectedCount + numel(failedEventOffsets);
+            for failureIndex = 1:numel(failedEventOffsets)
+                eventOffset = failedEventOffsets(failureIndex);
+                eventRow    = eventOffsets(eventOffset);
+                if ~eventIsCertifiedBlocked(eventOffset)
+                    blockedLayerCount = certifiedBlockedLayerCount( ...
+                        motionEvents(eventRow, 2), motionEvents(eventRow, 3), ...
+                        sourceLayerIndex, layerIndex, motionEvents(eventRow, 4), ...
+                        blockingCellIndices(eventOffset), witnessTimes_s(eventOffset));
+                    motionEvents(eventRow, 7) = layerIndex + blockedLayerCount - 1;
+                end
+                if layerIndex < motionEvents(eventRow, 4)
+                    pendingMotionEvents{layerIndex + 1}(end + 1, :) = ...
+                        motionEvents(eventRow, :);
+                end
+            end
+        end
+    end
+end
+
+function applyStateProposals(layerIndex)
+    proposals = stateProposals{layerIndex};
+    if ~isempty(proposals)
+        proposals = sortrows(proposals, [1, 5, 6]);
+        for proposalIndex = 1:size(proposals, 1)
+            [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState( ...
+                reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, ...
+                proposals(proposalIndex, 1), proposals(proposalIndex, 2), ...
+                layerIndex, proposals(proposalIndex, 3), proposals(proposalIndex, 4));
+        end
+    end
+end
+
+function goalWaitComponentReached = goalComponentIsComplete(layerIndex)
+    % Once the goal is reached, retain its complete clear wait component.
+    goalWaitComponentReached = false;
+    firstGoalLayerIndex = find( ...
+        reachable(1:layerIndex, 2) & goalLayerIsEligible(1:layerIndex), 1, "first");
+    if ~isempty(firstGoalLayerIndex)
+        selectedGoalLayerIndex = double(waitComponentFinalLayerIndex(firstGoalLayerIndex, 2));
+        if selectedGoalLayerIndex == layerCount
+            selectedGoalLayerIndex = firstGoalLayerIndex;
+        end
+        if layerIndex >= selectedGoalLayerIndex
+            goalWaitComponentReached = true;
+        end
+    end
+end
+
+function scheduleLayerExpansion(layerIndex)
+    currentNodeIndices = find(reachable(layerIndex, :));
+    for currentNodeIndex = reshape(currentNodeIndices, 1, [])
+        expandedCount = expandedCount + 1;
+        if waitIsClear(layerIndex, currentNodeIndex)
+            waitProposal = [layerIndex, currentNodeIndex, currentNodeIndex, ...
+                0, 0, currentNodeIndex];
+            stateProposals{layerIndex + 1}(end + 1, :) = waitProposal;
+        else
+            rejectedCount = rejectedCount + 1;
+        end
+    end
+
+    [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
+        currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
+        minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
+        isWaitComponentStart, waitComponentFinalLayerIndex);
+    rejectedCount = rejectedCount + candidateRejectedCount;
+    targetLayerIndices = unique(motionCandidates(:, 3)).';
+    for targetLayerIndex = targetLayerIndices
+        candidateRows = find(motionCandidates(:, 3) == targetLayerIndex);
+        eventBlock = [ ...
+            repmat(layerIndex, numel(candidateRows), 1), ...
+            motionCandidates(candidateRows, [1, 2, 4, 5]), ...
+            candidateRows, zeros(numel(candidateRows), 1)];
+        pendingMotionEvents{targetLayerIndex} = [ ...
+            pendingMotionEvents{targetLayerIndex}; eventBlock];
+    end
+end
+
+function propagateFixedArrivalLayer(layerIndex)
+    currentNodeIndices = find(reachable(layerIndex, :));
+    for currentNodeIndex = reshape(currentNodeIndices, 1, [])
+        expandedCount = expandedCount + 1;
+        if waitIsClear(layerIndex, currentNodeIndex)
+            [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState( ...
+                reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, ...
+                layerIndex, currentNodeIndex, layerIndex + 1, currentNodeIndex, 0);
+        else
+            rejectedCount = rejectedCount + 1;
+        end
+    end
+    [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
+        currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
+        minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
+        isWaitComponentStart, waitComponentFinalLayerIndex);
+    rejectedCount        = rejectedCount + candidateRejectedCount;
+    motionCandidateCount = size(motionCandidates, 1);
+    motionIsPending      = true(motionCandidateCount, 1);
+    while any(motionIsPending)
+        queriedTargetLayerIndices = unique(motionCandidates(motionIsPending, 3));
+        for targetLayerIndex = reshape(queriedTargetLayerIndices, 1, [])
+            queryIndices = find(motionIsPending & motionCandidates(:, 3) == targetLayerIndex);
+            trialCost_units = reshape( ...
+                spatialCost_units(layerIndex, motionCandidates(queryIndices, 1)), [], 1) + ...
+                motionCandidates(queryIndices, 5);
+            storedCost_units = reshape( ...
+                spatialCost_units(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
+            isDominated = trialCost_units > storedCost_units + 1e-12;
+            candidateTerminalLayerIndices = ...
+                nextGoalTerminalLayerIndex(motionCandidates(queryIndices, 3));
+            retainsTerminalProvenance = motionCandidates(queryIndices, 2) == 2 & ...
+                candidateTerminalLayerIndices > 0 & ...
+                candidateTerminalLayerIndices <= motionCandidates(queryIndices, 4);
+            isDominated(retainsTerminalProvenance) = false;
+            motionIsPending(queryIndices(isDominated)) = false;
+            rejectedCount = rejectedCount + nnz(isDominated);
+            queryIndices = queryIndices(~isDominated);
+            trialCost_units = trialCost_units(~isDominated);
+            remainingDistance_units = distanceToGoal_units(motionCandidates(queryIndices, 2));
+            cannotImproveGoal = trialCost_units + remainingDistance_units > goalCostBound_units + 1e-12;
+            motionIsPending(queryIndices(cannotImproveGoal)) = false;
+            rejectedCount = rejectedCount + nnz(cannotImproveGoal);
+            queryIndices = queryIndices(~cannotImproveGoal);
+            if isempty(queryIndices)
+                continue
+            end
+            queryIsClear = edgeIsClear( ...
+                motionCandidates(queryIndices, 1), motionCandidates(queryIndices, 2), ...
+                layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
+            clearIndices = queryIndices(queryIsClear);
+            for motionIndex = reshape(clearIndices, 1, [])
+                [reachable, spatialCost_units, parentLayerIndex, parentNodeIndex] = updateTemporalState( ...
+                    reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, ...
+                    layerIndex, motionCandidates(motionIndex, 1), ...
+                    motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), ...
+                    motionCandidates(motionIndex, 5));
+            end
+            canTerminate = motionCandidates(clearIndices, 2) == 2 & ...
+                goalCanTerminateAtLayer(motionCandidates(clearIndices, 3));
+            terminalIndices = clearIndices(canTerminate);
+            if ~isempty(terminalIndices)
+                terminalCosts_units = reshape( ...
+                    spatialCost_units(layerIndex, motionCandidates(terminalIndices, 1)), [], 1) + ...
+                    motionCandidates(terminalIndices, 5);
+                [trialTerminalCost_units, terminalOffset] = min(terminalCosts_units);
+                if trialTerminalCost_units < goalCostBound_units - 1e-12
+                    terminalIndex                  = terminalIndices(terminalOffset);
+                    goalCostBound_units             = trialTerminalCost_units;
+                    terminalSourceLayerIndex        = layerIndex;
+                    terminalSourceNodeIndex         = motionCandidates(terminalIndex, 1);
+                    terminalArrivalLayerIndex       = motionCandidates(terminalIndex, 3);
+                end
+            end
+            rejectedCount = rejectedCount + nnz(~queryIsClear);
+            motionIsPending(queryIndices) = false;
+            advanceIndices = queryIndices( ...
+                ~queryIsClear & motionCandidates(queryIndices, 3) < motionCandidates(queryIndices, 4));
+            motionCandidates(advanceIndices, 3) = motionCandidates(advanceIndices, 3) + 1;
+            motionIsPending(advanceIndices) = true;
+            clearTransitGoalIndices = queryIndices( ...
+                queryIsClear & motionCandidates(queryIndices, 2) == 2 & ...
+                ~goalCanTerminateAtLayer(motionCandidates(queryIndices, 3)));
+            for motionIndex = reshape(clearTransitGoalIndices, 1, [])
+                currentTargetLayerIndex = motionCandidates(motionIndex, 3);
+                if currentTargetLayerIndex == layerCount
+                    continue
+                end
+                futureTerminalLayerIndex = ...
+                    nextGoalTerminalLayerIndex(currentTargetLayerIndex + 1);
+                if futureTerminalLayerIndex > 0 && ...
+                        futureTerminalLayerIndex <= motionCandidates(motionIndex, 4)
+                    motionCandidates(motionIndex, 3) = futureTerminalLayerIndex;
+                    motionIsPending(motionIndex)     = true;
+                end
+            end
+        end
+    end
+end
 
 function [isClear, blockingCellIndices, witnessTimes_s] = ...
         edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
