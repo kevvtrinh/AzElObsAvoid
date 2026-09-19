@@ -609,7 +609,7 @@ function testTimedChallengerValidationRejectionRemainsTerminal(testCase)
         'GoalTimeMode',            request.options.GoalTimeMode, ...
         'FixedArrivalTrialTime_s', 5);
 
-    [rejected, accepted] = obstacleAvoidance.input.tryTimedArrival( ...
+    [rejected, accepted] = obstacleAvoidance.planning.tryTimedArrival( ...
         request, requestContext, scene.preparedObstacles, ...
         repmat(base.Attempts, 0, 1), 0);
 
@@ -716,14 +716,11 @@ function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
         'requestedGoalState',planarGoal, ...
         'outerRequest',{outerRequest});
     scene=struct('preparedObstacles',base.PreparedObstacles);
-    attemptTemplate=base.Attempts(1);
-
-    result=obstacleAvoidance.input.searchArrivalTimes( ...
+    result=obstacleAvoidance.planning.searchArrivalTimes( ...
         request,requestContext,scene,base,base.Attempts, ...
         @(varargin) selectedPlanarRefinement( ...
         testCase,base,request,scene,varargin{:}), ...
-        @(index,kind) createMockAttempt(attemptTemplate,index,kind), ...
-        @(candidate) false,1);
+        1);
 
     verifyTrue(testCase,result.Success,result.Message);
     verifyEqual(testCase,result.ArrivalTime_s,6,'AbsTol',1e-12);
@@ -745,11 +742,10 @@ function testValidatorFailureStopsChronologicalSearch(testCase)
     base.ElapsedTime_s=0;
     base.Attempts=repmat(attemptTemplate,0,1);
     [request,requestContext,scene]=explicitSearchInputs(base);
-    result=obstacleAvoidance.input.searchArrivalTimes( ...
+    result=obstacleAvoidance.planning.searchArrivalTimes( ...
         request,requestContext,scene,base,base.Attempts, ...
         @(varargin) invalidMotionCandidate(base), ...
-        @(index,kind) createMockAttempt(attemptTemplate,index,kind), ...
-        @(candidate) string(candidate.TerminationReason) ~= "invalidMotion",3);
+        3);
 
     verifyFalse(testCase,result.Success);
     verifyEqual(testCase,result.TerminationReason,"invalidMotion");
@@ -917,18 +913,6 @@ function candidate=selectedPlanarRefinement(testCase,base,request,scene, ...
     candidate.Attempts=repmat(base.Attempts,0,1);
     candidate.SolverDiagnostics=struct('Accepted',true);
     candidate.Validation=struct('Passed',true,'Message',"Trajectory is valid.");
-end
-
-function attempt = createMockAttempt(template,index,kind)
-    attempt=template;
-    attempt.Index=index;
-    attempt.Kind=string(kind);
-    attempt.Success=false;
-    attempt.Selected=false;
-    attempt.FallbackEligible=false;
-    attempt.MethodFallbackEligible=false;
-    attempt.MethodFallbackReason="";
-    attempt.ChildAttempts=repmat(struct(),0,1);
 end
 
 function [request,requestContext,scene]=explicitSearchInputs(result)

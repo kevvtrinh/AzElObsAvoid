@@ -455,7 +455,7 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         return
     end
 
-    controlPoint_units = powerToBernstein(positionPower_units);
+    controlPoint_units = bmtpEngine.motion.powerToBernstein(positionPower_units);
     endRegions_units   = cell(0, 1);
     if usesDynamicCells
         endRegions_units = cells.EndRegions_units;
@@ -519,18 +519,4 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
             end
         end
     end
-end
-
-function controlPoint_units = powerToBernstein(powerCoefficient_units)
-    % Convert each ascending-power segment to same-degree Bezier controls.
-    degree    = size(powerCoefficient_units, 3) - 1;
-    transform = zeros(degree + 1);
-    for bernsteinIndex = 0:degree
-        for powerIndex = 0:bernsteinIndex
-            transform(bernsteinIndex + 1, powerIndex + 1) = ...
-                nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
-        end
-    end
-    powerPages         = permute(powerCoefficient_units, [3 1 2]);
-    controlPoint_units = permute(pagemtimes(transform, powerPages), [2 1 3]);
 end

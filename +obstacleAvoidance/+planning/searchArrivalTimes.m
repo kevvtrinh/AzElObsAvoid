@@ -1,10 +1,10 @@
 function result = searchArrivalTimes(request, requestContext, scene, baseResult, ...
-        priorAttempts, plannerCore, attemptFactory, fallbackPolicy, maximumTrialCount)
+        priorAttempts, plannerCore, maximumTrialCount)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.input.searchArrivalTimes( ...
+%   result = obstacleAvoidance.planning.searchArrivalTimes( ...
 %       request, requestContext, scene, baseResult, priorAttempts, ...
-%       plannerCore, attemptFactory, fallbackPolicy, maximumTrialCount)
+%       plannerCore, maximumTrialCount)
 %**************************************************************************
 % PURPOSE
 %   - Search declared chronological fixed-arrival trials.
@@ -23,10 +23,6 @@ function result = searchArrivalTimes(request, requestContext, scene, baseResult,
 %       Planner attempts completed before chronological search.
 %   - plannerCore (function handle)
 %       Private planner implementation carrying the outer request context.
-%   - attemptFactory (function handle)
-%       Creates one planner-level attempt record with the public schema.
-%   - fallbackPolicy (function handle)
-%       Returns true only when another physical arrival clock is admitted.
 %   - maximumTrialCount (positive integer scalar)
 %       Solver attempts available to this search. A validated incumbent may
 %       deliberately use a smaller refinement budget than the public maximum.
@@ -48,7 +44,7 @@ searchTimer       = tic;
 initialState      = request.initialState;
 suppliedGoalState = requestContext.suppliedGoalState;
 trialOptions      = request.options;
-if nargin < 9 || isempty(maximumTrialCount)
+if nargin < 7 || isempty(maximumTrialCount)
     maximumTrialCount = trialOptions.MaxArrivalTrials;
 end
 validateattributes(maximumTrialCount, {'numeric'}, ...
@@ -232,8 +228,8 @@ for candidateIndex = 1:numel(candidateTimes_s)
         'Feasible', endpointFeasible, ...
         'Message',  endpointMessage, ...
         'Reason',   endpointReason);
-    attempt = attemptFactory(numel(attempts) + 1, ...
-        "chronologicalFixedArrival");
+    attempt = obstacleAvoidance.planning.createAttemptRecord( ...
+        numel(attempts) + 1, "chronologicalFixedArrival");
     attempt.TrialTime_s             = trialTime_s;
     attempt.NecessaryArrivalBound_s = trialNecessaryArrivalTime_s;
     attempt.IncumbentArrival_s      = incumbentArrivalTime_s;
@@ -286,7 +282,8 @@ for candidateIndex = 1:numel(candidateTimes_s)
         trialWasSelected = true;
         break
     end
-    attempt.MethodFallbackEligible = fallbackPolicy(candidate);
+    attempt.MethodFallbackEligible = ...
+        obstacleAvoidance.planning.methodFallbackEligible(candidate);
     if string(candidate.TerminationReason) == "noVisibilityRoute" && ...
             isempty(request.goalState.targetMotion)
         % Static geometry and a fixed goal do not change with the clock.
