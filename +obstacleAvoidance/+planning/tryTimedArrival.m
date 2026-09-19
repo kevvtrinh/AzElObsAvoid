@@ -1,13 +1,13 @@
-function [result, accepted] = tryTimedArrival( ...
+function [result, accepted, directMotion] = tryTimedArrival( ...
         request, requestContext, preparedObstacles, attempts, elapsedTime_s, ...
-        maximumArrivalTime_s)
+        directMotion, maximumArrivalTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [result, accepted] = obstacleAvoidance.planning.tryTimedArrival( ...
-%       request, requestContext, preparedObstacles, attempts, elapsedTime_s)
-%   [result, accepted] = obstacleAvoidance.planning.tryTimedArrival( ...
+%   [result, accepted, directMotion] = obstacleAvoidance.planning.tryTimedArrival( ...
+%       request, requestContext, preparedObstacles, attempts, elapsedTime_s, directMotion)
+%   [result, accepted, directMotion] = obstacleAvoidance.planning.tryTimedArrival( ...
 %       request, requestContext, preparedObstacles, attempts, elapsedTime_s, ...
-%       maximumArrivalTime_s)
+%       directMotion, maximumArrivalTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Use timed visibility and BMTP for a fixed-arrival endpoint or a
@@ -25,6 +25,8 @@ function [result, accepted] = tryTimedArrival( ...
 %       Planner-level attempt history to retain.
 %   - elapsedTime_s (nonnegative scalar)
 %       Planner time accumulated before this timed attempt.
+%   - directMotion (scalar struct)
+%       Request-owned direct-motion product, or struct() before construction.
 %   - maximumArrivalTime_s (finite scalar, optional)
 %       Upper search clock for earliest-arrival requests. Omission keeps the
 %       request horizon. Fixed-arrival requests always keep their prescribed
@@ -36,6 +38,8 @@ function [result, accepted] = tryTimedArrival( ...
 %       Success = false. Invalid input throws an error.
 %   - accepted (logical scalar)
 %       True only when the timed candidate passes validation.
+%   - directMotion (scalar struct)
+%       Unchanged input product or the direct motion and certificate for reuse.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -74,7 +78,7 @@ result.AlternativeGuideEligible        = false;
 result.FailureStage                    = "notRun";
 result.FailureKind                     = "notRun";
 
-if nargin < 6 || isempty(maximumArrivalTime_s)
+if nargin < 7 || isempty(maximumArrivalTime_s)
     maximumArrivalTime_s = goalState.time_s;
 end
 validateattributes(maximumArrivalTime_s, {'numeric'}, ...
@@ -164,8 +168,8 @@ else
         preparedObstacles, initialState.time_s, motionGoalState.time_s);
     seed.UsesTimeScopedSolver     = true;
 end
-[candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, ...
-    initialState, motionGoalState, requestContext.requestedLimits, motionOptions);
+[candidate, diagnostics, directMotion] = bmtpEngine.solve(seed, regions_units, coverage, ...
+    initialState, motionGoalState, requestContext.requestedLimits, motionOptions, directMotion);
 if ~candidate.Success
     result = obstacleAvoidance.planning.finalizeCandidate( ...
         preparedObstacles, request, requestContext, ...

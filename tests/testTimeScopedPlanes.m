@@ -541,7 +541,7 @@ function testVariationPassDoesNotConsumeFeasibilityBudget(testCase)
         'BreakTime_s',[0;10]);
 
     [candidate,diagnostics] = bmtpEngine.solve( ...
-        seed,{region_units},coverage,initial,goal,limits,options);
+        seed,{region_units},coverage,initial,goal,limits,options,struct());
 
     verifyTrue(testCase,candidate.Success,candidate.Message);
     verifyEqual(testCase,diagnostics.IterationCount,2);

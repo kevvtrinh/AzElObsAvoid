@@ -255,7 +255,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     unsupportedRequest.options.GoalTimeMode="earliestArrival";
     unsupportedRequest.goalState.velocity_units_s=[0.1,0];
     [unsupported,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        unsupportedRequest,requestContext,preparedObstacles,attempts,elapsedTime_s);
+        unsupportedRequest,requestContext,preparedObstacles,attempts,elapsedTime_s,struct());
     verifyFalse(testCase,accepted);
     verifyEqual(testCase,unsupported.TerminationReason,"unsupportedTimedRequest");
     verifyEqual(testCase,unsupported.Message, ...
@@ -273,7 +273,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     freeWindowRequest=request;
     freeWindowRequest.options.GoalTimeMode="earliestArrival";
     [freeWindow,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        freeWindowRequest,requestContext,preparedObstacles,attempts,elapsedTime_s);
+        freeWindowRequest,requestContext,preparedObstacles,attempts,elapsedTime_s,struct());
     assertTrue(testCase,accepted,freeWindow.Message);
     verifyEqual(testCase,freeWindow.Message, ...
         "The first reachable goal window produced an independently validated free-clock BMTP motion.");
@@ -297,7 +297,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     rawContext.outerRequest=createOuterRequest(rawRequest,rawContext,30, ...
         rawRequest.goalState.time_s);
     [rawFailure,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        rawRequest,rawContext,rawObstacles,attempts,elapsedTime_s);
+        rawRequest,rawContext,rawObstacles,attempts,elapsedTime_s,struct());
     verifyFalse(testCase,accepted);
     verifyEqual(testCase,rawFailure.TerminationReason,"timedMotionInfeasible");
     verifyEqual(testCase,rawFailure.Message, ...
@@ -313,7 +313,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     rejectedContext=requestContext;
     rejectedContext.outerRequest=createOuterRequest(request,requestContext,6,5);
     [rejected,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        request,rejectedContext,preparedObstacles,attempts,elapsedTime_s);
+        request,rejectedContext,preparedObstacles,attempts,elapsedTime_s,struct());
     verifyFalse(testCase,accepted);
     verifyTrue(testCase,rejected.SolverDiagnostics.Accepted);
     verifyEqual(testCase,rejected.TerminationReason,"invalidMotion");

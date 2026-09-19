@@ -611,7 +611,7 @@ function testTimedChallengerValidationRejectionRemainsTerminal(testCase)
 
     [rejected, accepted] = obstacleAvoidance.planning.tryTimedArrival( ...
         request, requestContext, scene.preparedObstacles, ...
-        repmat(base.Attempts, 0, 1), 0);
+        repmat(base.Attempts, 0, 1), 0, struct());
 
     verifyFalse(testCase, accepted);
     verifyFalse(testCase, rejected.Success);
