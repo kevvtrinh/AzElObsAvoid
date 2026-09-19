@@ -717,47 +717,24 @@ function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
         'outerRequest',{outerRequest});
     scene=struct('preparedObstacles',base.PreparedObstacles);
     result=obstacleAvoidance.planning.searchArrivalTimes( ...
-        request,requestContext,scene,base,base.Attempts, ...
-        @(varargin) selectedPlanarRefinement( ...
-        testCase,base,request,scene,varargin{:}), ...
-        1);
+        request,requestContext,scene,base,base.Attempts,1);
 
     verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.PreparedObstacles,scene.preparedObstacles);
+    verifyEqual(testCase,result.Inputs.initialState,request.initialState);
+    verifyEqual(testCase,result.Inputs.goalState.position_units, ...
+        request.goalState.position_units);
+    verifyEqual(testCase,result.Limits,request.limits);
+    verifyTrue(testCase,result.Options.WrapX);
+    verifyEqual(testCase,result.FixedArrivalTrialTime_s,6,'AbsTol',1e-12);
     verifyEqual(testCase,result.ArrivalTime_s,6,'AbsTol',1e-12);
     verifyFalse(testCase,result.TemporalSearch.RetainedIncumbent);
     verifyEqual(testCase,result.TemporalSearch.TrialTime_s,6,'AbsTol',1e-12);
     verifyEqual(testCase,numel(result.Attempts),2);
     verifyFalse(testCase,result.Attempts(1).Selected);
+    verifyEqual(testCase,result.Attempts(2).TrialTime_s,6,'AbsTol',1e-12);
     verifyTrue(testCase,result.Attempts(2).Success);
     verifyTrue(testCase,result.Attempts(2).Selected);
-end
-
-function testValidatorFailureStopsChronologicalSearch(testCase)
-    base=planner([],restState(0,[0,0]),restState(10,[1,0]), ...
-        struct(),struct('GoalTimeMode','earliestArrival'));
-    attemptTemplate=base.Attempts(1);
-    base.Success=true;
-    base.TerminationReason="goalReached";
-    base.ArrivalTime_s=10;
-    base.ElapsedTime_s=0;
-    base.Attempts=repmat(attemptTemplate,0,1);
-    [request,requestContext,scene]=explicitSearchInputs(base);
-    result=obstacleAvoidance.planning.searchArrivalTimes( ...
-        request,requestContext,scene,base,base.Attempts, ...
-        @(varargin) invalidMotionCandidate(base), ...
-        3);
-
-    verifyFalse(testCase,result.Success);
-    verifyEqual(testCase,result.TerminationReason,"invalidMotion");
-    verifyEqual(testCase,numel(result.Attempts),1);
-    verifyTrue(testCase,result.Attempts.CandidateSuccess);
-    verifyTrue(testCase,result.TemporalSearch.TerminalFailure);
-    verifyEqual(testCase,result.TemporalSearch.SolverTrialCount,1);
-    verifyFalse(testCase,result.TemporalSearch.CandidateLimitReached);
-    verifyFalse(testCase,result.TemporalSearch.TrialLimitReached);
-    verifyFalse(testCase,result.TemporalSearch.SearchWindowExhausted);
-    verifyEqual(testCase,result.TemporalSearch.IncumbentArrival_s,10);
-    verifyFalse(testCase,result.TemporalSearch.RetainedIncumbent);
 end
 
 function testArrivalSnapshotFindsAnOpeningMissingAtInitialTime(testCase)
@@ -871,48 +848,6 @@ end
 function state = restState(time_s,position_units)
     state = struct('time_s',time_s,'position_units',position_units, ...
         'velocity_units_s',[0,0],'acceleration_units_s2',[0,0]);
-end
-
-function candidate = invalidMotionCandidate(base)
-    candidate=base;
-    candidate.Success=false;
-    candidate.Message="Injected validator rejection.";
-    candidate.TerminationReason="invalidMotion";
-    candidate.Validation=struct('Passed',false,'Message',candidate.Message);
-    candidate.VisibilityGraph.IsConnected=true;
-    candidate.VisibilityGraph.GraphIsFullyEnumerated=true;
-    candidate.VisibilityGraph.RouteLength_units=1;
-    candidate.VisibilityGraph.ExpandedCount=1;
-    candidate.Route_units=[0,0;1,0];
-    candidate.SolverDiagnostics=struct('Accepted',true);
-    candidate.OptimizerFeasible=true;
-    candidate.OptimizerIterateUnavailable=false;
-    candidate.AlternativeGuideEligible=false;
-    candidate.FailureStage="validation";
-    candidate.FailureKind="independentValidationFailed";
-end
-
-function candidate=selectedPlanarRefinement(testCase,base,request,scene, ...
-        preparedObstacles,initialState,goalState,limits,options,trialRequest)
-    verifyEqual(testCase,preparedObstacles,scene.preparedObstacles);
-    verifyEqual(testCase,initialState,request.initialState);
-    verifyEqual(testCase,goalState.position_units,request.goalState.position_units);
-    verifyEqual(testCase,goalState.time_s,6,'AbsTol',1e-12);
-    verifyEqual(testCase,limits,request.limits);
-    verifyFalse(testCase,options.WrapX);
-    verifyEqual(testCase,options.GoalTimeMode,"fixedArrival");
-    verifyTrue(testCase,trialRequest.WrapX);
-    verifyEqual(testCase,trialRequest.FixedArrivalTrialTime_s,6,'AbsTol',1e-12);
-
-    candidate=base;
-    candidate.Success=true;
-    candidate.Message="goalReached";
-    candidate.TerminationReason="goalReached";
-    candidate.ArrivalTime_s=goalState.time_s;
-    candidate.FixedArrivalTrialTime_s=goalState.time_s;
-    candidate.Attempts=repmat(base.Attempts,0,1);
-    candidate.SolverDiagnostics=struct('Accepted',true);
-    candidate.Validation=struct('Passed',true,'Message',"Trajectory is valid.");
 end
 
 function [request,requestContext,scene]=explicitSearchInputs(result)

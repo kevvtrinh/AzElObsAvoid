@@ -1,8 +1,8 @@
-function result = planPeriodicRequest(request, requestContext, imagePlanner)
+function result = planPeriodicRequest(request, requestContext)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.planPeriodicRequest( ...
-%       request, requestContext, imagePlanner)
+%       request, requestContext)
 %**************************************************************************
 % PURPOSE
 %   - Plan a request with wrapped axes as plain requests in the unwrapped
@@ -20,8 +20,6 @@ function result = planPeriodicRequest(request, requestContext, imagePlanner)
 %       lifted target, and its wrapped intervals are the reach band.
 %   - requestContext (scalar struct)
 %       Original obstacles and supplied/requested provenance.
-%   - imagePlanner (function handle)
-%       Private planner implementation for an already-derived image request.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -132,7 +130,8 @@ for candidateIndex = 1:candidateCount
         'requestedGoalState', imageRequest.goalState, ...
         'outerRequest',       outerRequest);
     wasPlanned(candidateIndex) = true;
-    candidate = imagePlanner(imageRequest, imageRequestContext);
+    candidate = obstacleAvoidance.planning.planNormalizedRequest( ...
+        imageRequest, imageRequestContext);
     reasons(candidateIndex) = candidate.TerminationReason;
     if candidate.Success
         if isEarliest

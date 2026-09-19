@@ -1,10 +1,10 @@
 function result = searchArrivalTimes(request, requestContext, scene, baseResult, ...
-        priorAttempts, plannerCore, maximumTrialCount)
+        priorAttempts, maximumTrialCount)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.searchArrivalTimes( ...
 %       request, requestContext, scene, baseResult, priorAttempts, ...
-%       plannerCore, maximumTrialCount)
+%       maximumTrialCount)
 %**************************************************************************
 % PURPOSE
 %   - Search declared chronological fixed-arrival trials.
@@ -21,8 +21,6 @@ function result = searchArrivalTimes(request, requestContext, scene, baseResult,
 %       Outcome retained on exhaustion, including any valid incumbent.
 %   - priorAttempts (struct array)
 %       Planner attempts completed before chronological search.
-%   - plannerCore (function handle)
-%       Private planner implementation carrying the outer request context.
 %   - maximumTrialCount (positive integer scalar)
 %       Solver attempts available to this search. A validated incumbent may
 %       deliberately use a smaller refinement budget than the public maximum.
@@ -44,7 +42,7 @@ searchTimer       = tic;
 initialState      = request.initialState;
 suppliedGoalState = requestContext.suppliedGoalState;
 trialOptions      = request.options;
-if nargin < 7 || isempty(maximumTrialCount)
+if nargin < 6 || isempty(maximumTrialCount)
     maximumTrialCount = trialOptions.MaxArrivalTrials;
 end
 validateattributes(maximumTrialCount, {'numeric'}, ...
@@ -236,7 +234,8 @@ for candidateIndex = 1:numel(candidateTimes_s)
     attempt.SolverAttempted         = true;
     attemptTimer                    = tic;
     try
-        candidate = plannerCore(scene.preparedObstacles, initialState, trialGoalState, ...
+        candidate = obstacleAvoidance.planning.planRequest( ...
+            scene.preparedObstacles, initialState, trialGoalState, ...
             request.limits, trialOptions, trialRequest);
     catch exception
         failureIsExpected = string(exception.identifier) == ...
