@@ -281,7 +281,7 @@ function testFinalCertificateRechecksNeighborDirections(testCase)
         'InitialState',struct('time_s',0),'IsRest',true);
     points = [-2,0;-2,0;2,0;0,0];
     prepared = struct('CertifiedControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
-        'SegmentTime_s',ones(4,1));
+        'SegmentTime_s',ones(4,1),'FinalTime_s',4);
     certificate = bmtpEngine.validation.checkFinalMotion(request,prepared,1e-8,1e-6);
     verifyFalse(testCase,certificate.Passed);
     verifyEqual(testCase,certificate.VerifiedPairCount,3);

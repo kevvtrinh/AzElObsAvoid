@@ -11,7 +11,8 @@ function setupOnce(testCase)
     root=fileparts(fileparts(mfilename('fullpath'))); addpath(root,fullfile(root,'trajectory'));
     testCase.TestData.Request=struct('Regions_units',{{[2,-1;3,-1;3,1;2,1]}}, ...
         'Coverage',struct('Passed',true),'InitialState',struct('time_s',0));
-    testCase.TestData.Motion=struct('CertifiedControlPoint_units',zeros(2,6,2),'SegmentTime_s',[1;1]);
+    testCase.TestData.Motion=struct('CertifiedControlPoint_units',zeros(2,6,2),'SegmentTime_s',[1;1], ...
+        'FinalTime_s',2);
 end
 function testUnchangedCurveReusesCompleteCertificate(testCase)
     request=testCase.TestData.Request; motion=testCase.TestData.Motion;

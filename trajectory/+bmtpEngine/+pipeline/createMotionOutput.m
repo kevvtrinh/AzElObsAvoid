@@ -24,7 +24,8 @@ function candidate = createMotionOutput(candidate, request, preparedMotion)
 
 %% Section 1: Convert The Prepared Net To A Sampled Polynomial
 polynomial = bmtpEngine.motion.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
-    preparedMotion.SegmentTime_s, request.InitialState.time_s, preparedMotion.PrescribedPower_units);
+    preparedMotion.SegmentTime_s, request.InitialState.time_s, preparedMotion.PrescribedPower_units, ...
+    preparedMotion.FinalTime_s);
 sampledMotion = samplePolynomial(polynomial, request.Options.SampleTime_s);
 
 %% Section 2: Measure Arrival, Path Length, And Jerk Cost

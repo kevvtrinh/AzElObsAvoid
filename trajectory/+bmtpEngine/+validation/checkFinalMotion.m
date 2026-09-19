@@ -50,13 +50,14 @@ end
 % all-region mask for both spans.
 regionActiveBySegment = true(size(preparedMotion.CertifiedControlPoint_units, 1), ...
     numel(request.Regions_units));
+spanBreaks_s      = request.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s)];
+spanBreaks_s(end) = preparedMotion.FinalTime_s;
 if isfield(request.Coverage, 'ActiveTimeInterval_s')
     intervals_s = request.Coverage.ActiveTimeInterval_s;
-    starts_s    = request.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s(1:end - 1))];
-    ends_s      = starts_s + preparedMotion.SegmentTime_s;
+    starts_s    = spanBreaks_s(1:end - 1);
+    ends_s      = spanBreaks_s(2:end);
     regionActiveBySegment = starts_s < intervals_s(:, 2).' & ends_s > intervals_s(:, 1).';
 end
-spanBreaks_s = request.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s)];
 separatingLineGeometry = cell(numel(request.Regions_units), 1);
 if isfield(request, 'SeparatingLineGeometry')
     separatingLineGeometry = request.SeparatingLineGeometry;
@@ -69,7 +70,8 @@ if isfield(preparedMotion, 'ControlPoint_units')
     % Fixed physical boundary derivatives prevent post-solve dilation. Reject
     % an over-limit analytic proposal here so the shared optimizer can run.
     polynomial = bmtpEngine.motion.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
-        preparedMotion.SegmentTime_s, request.InitialState.time_s, preparedMotion.PrescribedPower_units);
+        preparedMotion.SegmentTime_s, request.InitialState.time_s, preparedMotion.PrescribedPower_units, ...
+        preparedMotion.FinalTime_s);
     derivativePowers = {polynomial.velocityPower_units_s, polynomial.accelerationPower_units_s2, ...
         polynomial.jerkPower_units_s3};
     derivativeBounds = [request.Limits.maxVelocity_units_s; request.Limits.maxAcceleration_units_s2; ...

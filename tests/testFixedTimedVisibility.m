@@ -29,6 +29,51 @@ function testPrescribedArrivalAndContinuousMotion(testCase)
     verifyLessThan(testCase,size(result.Route_units,1),9);
 end
 
+function testMovingTargetEndsAtExactPrescribedClock(testCase)
+    goalTime_s = 13.984378262112314;
+    initial = struct('time_s',0.45999999999999996,'position_units',[-4,0]);
+    targetMotion = struct( ...
+        'time_s',[initial.time_s;goalTime_s], ...
+        'position_units',[4,0;5,0]);
+    goal = struct('time_s',goalTime_s,'targetMotion',targetMotion);
+    limits = struct( ...
+        'xInterval_units',[-20,20], ...
+        'yInterval_units',[-8,8], ...
+        'maxVelocity_units_s',[3,3], ...
+        'maxAcceleration_units_s2',[2,2], ...
+        'maxJerk_units_s3',[4,4]);
+    options = struct('GoalTimeMode','fixedArrival','WrapX',true);
+
+    result = planner([],initial,goal,limits,options);
+
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.ArrivalTime_s,goal.time_s);
+    verifyEqual(testCase,result.Polynomial.FinalTime_s,goal.time_s);
+    verifyEqual(testCase,result.time_s(end),goal.time_s);
+end
+
+function testStaticGoalUsesExactPrescribedClock(testCase)
+    % This clock pair reproduces one ulp late when the arrival is rebuilt
+    % from the start time plus summed durations.
+    initial = struct('time_s',0.45999999999999996,'position_units',[0,0]);
+    goal = struct('time_s',13.984378262112314,'position_units',[5,1]);
+    limits = struct( ...
+        'xInterval_units',[-1,6], ...
+        'yInterval_units',[-2,2], ...
+        'maxVelocity_units_s',[2,2], ...
+        'maxAcceleration_units_s2',[2,2], ...
+        'maxJerk_units_s3',[4,4]);
+
+    result = planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+
+    assertTrue(testCase,result.Success,result.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+    verifyEqual(testCase,result.ArrivalTime_s,goal.time_s);
+    verifyEqual(testCase,result.Polynomial.FinalTime_s,goal.time_s);
+    verifyEqual(testCase,result.time_s(end),goal.time_s);
+end
+
 function testNoSilentSpatialFallback(testCase)
     data=testCase.TestData;
     wall=struct('Vertices_units',[2,-3;3,-3;3,3;2,3]);
