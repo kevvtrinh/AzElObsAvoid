@@ -1,7 +1,7 @@
 function isWithinRange = certifyPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
 %% Section 0: Header & Readme
 % SYNTAX
-%   isWithinRange = obstacleAvoidance.validation.certifyPolynomialRange( ...
+%   isWithinRange = bmtpEngine.validation.certifyPolynomialRange( ...
 %       powerCoefficient, lowerBound, upperBound, tolerance)
 %**************************************************************************
 % PURPOSE

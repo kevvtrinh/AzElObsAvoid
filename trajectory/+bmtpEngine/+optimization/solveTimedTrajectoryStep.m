@@ -277,8 +277,10 @@ function soc = createTravelBoundCones(variableCount, travelBoundIndex, segmentCo
             boundIndex = boundIndex + 1;
             coneA      = zeros(2, variableCount);
             for axisIndex = 1:2
-                firstIndex  = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree);
-                secondIndex = controlIndexOf(segmentIndex, controlIndex + 1, axisIndex, degree);
+                firstIndex = bmtpEngine.optimization.controlIndexOf( ...
+                    segmentIndex, controlIndex, axisIndex, degree);
+                secondIndex = bmtpEngine.optimization.controlIndexOf( ...
+                    segmentIndex, controlIndex + 1, axisIndex, degree);
                 coneA(axisIndex, [firstIndex secondIndex]) = [-1 1];
             end
             coneC = zeros(variableCount, 1);
@@ -286,9 +288,4 @@ function soc = createTravelBoundCones(variableCount, travelBoundIndex, segmentCo
             soc(boundIndex) = secondordercone(coneA, zeros(2, 1), coneC, 0);
         end
     end
-end
-
-function index = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree)
-    % Map trajectory controls into the conic decision vector.
-    index = ((segmentIndex - 1) * (degree + 1) + controlIndex) * 2 + axisIndex;
 end

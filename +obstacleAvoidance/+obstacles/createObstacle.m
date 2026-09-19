@@ -394,10 +394,10 @@ function [retained, changedArea_units2] = removeCrossingZigzags(points_units)
         otherEndFromFirst_units = otherEnd_units - first_units;
         firstFromOther_units    = first_units - other_units;
         lastFromOther_units     = last_units - other_units;
-        a = cross2d(direction_units, otherFromFirst_units);
-        b = cross2d(direction_units, otherEndFromFirst_units);
-        c = cross2d(otherDirection_units, firstFromOther_units);
-        d = cross2d(otherDirection_units, lastFromOther_units);
+        a = obstacleAvoidance.geometry.cross2d(direction_units, otherFromFirst_units);
+        b = obstacleAvoidance.geometry.cross2d(direction_units, otherEndFromFirst_units);
+        c = obstacleAvoidance.geometry.cross2d(otherDirection_units, firstFromOther_units);
+        d = obstacleAvoidance.geometry.cross2d(otherDirection_units, lastFromOther_units);
         crossing = sign(a) .* sign(b) < 0 & sign(c) .* sign(d) < 0;
         pairs = [firstIndices(crossing), secondIndices(crossing)];
         if isempty(pairs)
@@ -522,11 +522,6 @@ function [protectedX_units, protectedY_units] = inflateSlice(x_units, y_units, s
     lastFinite = find(isfinite(protectedX_units) & isfinite(protectedY_units), 1, "last");
     protectedX_units = protectedX_units(1:lastFinite);
     protectedY_units = protectedY_units(1:lastFinite);
-end
-
-function value = cross2d(first_units, second_units)
-    % Return row-wise signed two-dimensional cross products.
-    value = first_units(:, 1) .* second_units(:, 2) - first_units(:, 2) .* second_units(:, 1);
 end
 
 function requireCondition(condition, identifier, message, varargin)

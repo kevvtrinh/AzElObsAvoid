@@ -240,8 +240,10 @@ if fixedClock
         for controlIndex = 1:degree
             lengthConeIndex = (segmentIndex - 1) * degree + controlIndex;
             coneA = sparse(2, variableCount);
-            coneA(:, controlIndexOf(segmentIndex, controlIndex, 1:2, degree)) = eye(2);
-            coneA(:, controlIndexOf(segmentIndex, controlIndex - 1, 1:2, degree)) = -eye(2);
+            coneA(:, bmtpEngine.optimization.controlIndexOf( ...
+                segmentIndex, controlIndex, 1:2, degree)) = eye(2);
+            coneA(:, bmtpEngine.optimization.controlIndexOf( ...
+                segmentIndex, controlIndex - 1, 1:2, degree)) = -eye(2);
             coneD = sparse(variableCount, 1);
             coneD(lengthIndex(lengthConeIndex)) = 1;
             lengthCones(lengthConeIndex) = secondordercone( ...
@@ -436,9 +438,4 @@ function [x, exitFlag, output] = solveConic( ...
             x = center + transform * x;
         end
     end
-end
-
-function index = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree)
-    % Map trajectory controls into the conic decision vector.
-    index = ((segmentIndex - 1) * (degree + 1) + controlIndex) * 2 + axisIndex;
 end

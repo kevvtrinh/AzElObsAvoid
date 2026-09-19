@@ -501,9 +501,7 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
             result.TerminationReason = "noVisibilityRoute";
             result.FailureStage      = attempt.FailureStage;
             result.FailureKind       = attempt.FailureKind;
-            result.Attempts          = attempt;
-            result.ElapsedTime_s     = toc(totalTimer);
-            result = finishEarliestArrival(result, attempt, capabilities, ...
+            result = finishEarliestArrival(result, attempt, capabilities, totalTimer, ...
                 necessaryArrivalTime_s);
             return
         end
@@ -523,15 +521,11 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
         attempt.ElapsedTime_s = toc(attemptTimer);
         if candidateResult.Success
             attempt.Selected = true;
-            candidateResult.Attempts = attempt;
-            candidateResult.ElapsedTime_s = toc(totalTimer);
-            result = finishEarliestArrival(candidateResult, attempt, capabilities, ...
+            result = finishEarliestArrival(candidateResult, attempt, capabilities, totalTimer, ...
                 necessaryArrivalTime_s);
             return
         end
-        candidateResult.Attempts = attempt;
-        candidateResult.ElapsedTime_s = toc(totalTimer);
-        result = finishEarliestArrival(candidateResult, attempt, capabilities, ...
+        result = finishEarliestArrival(candidateResult, attempt, capabilities, totalTimer, ...
             necessaryArrivalTime_s);
         return
     end
@@ -570,9 +564,7 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
         attempt.ElapsedTime_s = toc(attemptTimer);
 
         if candidate.Success && ~departureResult.Success
-            departureResult.Attempts = attempt;
-            departureResult.ElapsedTime_s = toc(totalTimer);
-            result = finishEarliestArrival(departureResult, attempt, capabilities, ...
+            result = finishEarliestArrival(departureResult, attempt, capabilities, totalTimer, ...
                 necessaryArrivalTime_s);
             return
         elseif departureResult.Success
@@ -584,9 +576,7 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
             if departureResult.ArrivalTime_s <= necessaryArrivalTime_s + ...
                     request.options.ArrivalTimeTolerance_s
                 attempts(1).Selected = true;
-                departureResult.Attempts = attempts;
-                departureResult.ElapsedTime_s = toc(totalTimer);
-                result = finishEarliestArrival(departureResult, attempts, capabilities, ...
+                result = finishEarliestArrival(departureResult, attempts, capabilities, totalTimer, ...
                     necessaryArrivalTime_s);
                 return
             end
@@ -597,9 +587,7 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
             if attempt.MethodFallbackEligible
                 attempts(end + 1, 1) = attempt;
             else
-                departureResult.Attempts = attempt;
-                departureResult.ElapsedTime_s = toc(totalTimer);
-                result = finishEarliestArrival(departureResult, attempt, capabilities, ...
+                result = finishEarliestArrival(departureResult, attempt, capabilities, totalTimer, ...
                     necessaryArrivalTime_s);
                 return
             end
@@ -641,18 +629,14 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
                     attempts(end).Selected = true;
                     result = timedResult;
                 end
-                result.Attempts = attempts;
-                result.ElapsedTime_s = toc(totalTimer);
-                result = finishEarliestArrival(result, attempts, capabilities, ...
+                result = finishEarliestArrival(result, attempts, capabilities, totalTimer, ...
                     necessaryArrivalTime_s);
                 return
             end
 
             if string(timedResult.TerminationReason) == "invalidMotion"
                 attempts(end + 1, 1)      = timedAttempt;
-                timedResult.Attempts      = attempts;
-                timedResult.ElapsedTime_s = toc(totalTimer);
-                result = finishEarliestArrival(timedResult, attempts, capabilities, ...
+                result = finishEarliestArrival(timedResult, attempts, capabilities, totalTimer, ...
                     necessaryArrivalTime_s);
                 return
             end
@@ -685,15 +669,11 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
                 attempts(end + 1, 1) = timedAttempt;
                 if incumbentAccepted
                     attempts(incumbentAttemptIndex).Selected = true;
-                    incumbentResult.Attempts      = attempts;
-                    incumbentResult.ElapsedTime_s = toc(totalTimer);
-                    result = finishEarliestArrival(incumbentResult, attempts, ...
-                        capabilities, necessaryArrivalTime_s);
+                    result = finishEarliestArrival(incumbentResult, attempts, capabilities, ...
+                        totalTimer, necessaryArrivalTime_s);
                     return
                 end
-                timedResult.Attempts = attempts;
-                timedResult.ElapsedTime_s = toc(totalTimer);
-                result = finishEarliestArrival(timedResult, attempts, capabilities, ...
+                result = finishEarliestArrival(timedResult, attempts, capabilities, totalTimer, ...
                     necessaryArrivalTime_s);
                 return
             end
@@ -715,18 +695,15 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
             request.options.IncumbentRefinementTrialLimit);
         if chronologicalTrialLimit == 0
             attempts(incumbentAttemptIndex).Selected = true;
-            incumbentResult.Attempts = attempts;
-            incumbentResult.ElapsedTime_s = toc(totalTimer);
-            result = finishEarliestArrival(incumbentResult, attempts, ...
-                capabilities, necessaryArrivalTime_s);
+            result = finishEarliestArrival(incumbentResult, attempts, capabilities, ...
+                totalTimer, necessaryArrivalTime_s);
             return
         end
     end
     result = obstacleAvoidance.input.searchArrivalTimes( ...
         request, requestContext, scene, searchBase, attempts, plannerCore, ...
         @createAttemptRecord, @methodFallbackEligible, chronologicalTrialLimit);
-    result.ElapsedTime_s = toc(totalTimer);
-    result = finishEarliestArrival(result, result.Attempts, capabilities, ...
+    result = finishEarliestArrival(result, result.Attempts, capabilities, totalTimer, ...
         necessaryArrivalTime_s);
 end
 
@@ -808,10 +785,11 @@ function eligible = methodFallbackEligible(candidateResult)
     end
 end
 
-function result = finishEarliestArrival(result, attempts, capabilities, ...
+function result = finishEarliestArrival(result, attempts, capabilities, totalTimer, ...
         necessaryArrivalTime_s)
     % Publish consistent selection evidence for every earliest-arrival path.
-    result.Attempts = attempts;
+    result.Attempts      = attempts;
+    result.ElapsedTime_s = toc(totalTimer);
     selectedAttemptIndex = find([attempts.Selected], 1, 'last');
     if isempty(selectedAttemptIndex)
         selectedAttemptIndex = 0;
