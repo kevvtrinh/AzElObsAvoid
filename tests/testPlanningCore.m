@@ -207,6 +207,28 @@ function testNoPath(testCase)
     verifyEqual(testCase,earliest.Attempts.FailureKind,"noSpatialRoute");
 end
 
+function testSweptFringeBlocksTerminalReachability(testCase)
+    % The swept enclosure hulls carried triangles with margin squares, so it
+    % reaches past every protected sample. A fixed goal that is free of the
+    % samples but inside that fringe must still be proven unreachable before
+    % any planning stage runs.
+    lower = [-1,-1;1,-1;1,1;-1,1];
+    upper = [-1,-1;1,-1;0.5,1;-1,1];
+    obstacle = obstacleAvoidance.obstacles.createObstacle('swept fringe',[0;10], ...
+        {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},1, ...
+        struct('vertexCorrespondence','sourceIndex'));
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,10],true);
+    goal = struct('time_s',10,'position_units',[2.3,0]);
+    verifyTrue(testCase,all(cellfun(@max,prepared.x_units) < goal.position_units(1)));
+    verifyTrue(testCase,prepared.InternalPreparation.IntervalUsesSweptCells(1));
+    initial = struct('time_s',0,'position_units',[-5,0]);
+    limits = struct('xInterval_units',[-8,8],'yInterval_units',[-8,8], ...
+        'maxVelocity_units_s',[3,3],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
+    result = planner(obstacle,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    verifyFalse(testCase,result.Success);
+    verifyEqual(testCase,result.TerminationReason,"terminalReachabilityBlocked");
+end
+
 function testInvalidInputs(testCase)
     initial = testCase.TestData.Initial; initial.position_units = [NaN 0];
     verifyError(testCase,@() planner([],initial,testCase.TestData.Goal), 'planTrajectory:InvalidState');

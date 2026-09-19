@@ -123,7 +123,8 @@ end
 %% Section 3: Local Functions
 
 function reachabilityIsBlocked = terminalReachabilityIsBlocked(obstacles, initialState, goalState, limits)
-    % A convex obstacle containing the complete backward-reachable box proves infeasibility.
+    % A convex obstacle region containing the complete backward-reachable box
+    % at its time proves that no jerk-limited approach can reach the goal.
     reachabilityIsBlocked = false;
     finalTime_s         = goalState.time_s;
     previousEventTime_s = initialState.time_s;
@@ -138,56 +139,90 @@ function reachabilityIsBlocked = terminalReachabilityIsBlocked(obstacles, initia
     if localDuration_s <= 0
         return
     end
-    candidateDurations_s = unique([localDuration_s * 2.^-(0:16), ...
-        linspace(localDuration_s / 256, localDuration_s, 256)]);
-    for duration_s = reshape(candidateDurations_s, 1, [])
-        center_units = goalState.position_units - goalState.velocity_units_s * duration_s + ...
-            0.5 * goalState.acceleration_units_s2 * duration_s^2;
-        radius_units = backwardPositionRadius(duration_s, goalState.acceleration_units_s2, ...
-            limits.maxAcceleration_units_s2, limits.maxJerk_units_s3);
-        corners_units = center_units + [-radius_units(1), -radius_units(2); -radius_units(1), radius_units(2); ...
-            radius_units(1), -radius_units(2); radius_units(1), radius_units(2)];
-        reachableMinimum_units = min(corners_units, [], 1);
-        reachableMaximum_units = max(corners_units, [], 1);
-        obstacleCanContainReachableBox = false;
-        for obstacleIndex = 1:numel(obstacles)
-            shape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-                obstacles(obstacleIndex), finalTime_s - duration_s);
-            vertices_units = shape.Vertices;
-            vertices_units = vertices_units(all(isfinite(vertices_units), 2), :);
-            if ~isempty(vertices_units) && ...
-                    all(min(vertices_units, [], 1) <= reachableMinimum_units) && ...
-                    all(max(vertices_units, [], 1) >= reachableMaximum_units)
-                obstacleCanContainReachableBox = true;
-                break
-            end
+
+    % --- Backward-Reachable Boxes For Every Candidate Duration ---
+    durations_s   = reshape(unique([localDuration_s * 2.^-(0:16), ...
+        linspace(localDuration_s / 256, localDuration_s, 256)]), [], 1);
+    centers_units = goalState.position_units - goalState.velocity_units_s .* durations_s + ...
+        0.5 * goalState.acceleration_units_s2 .* durations_s.^2;
+    radii_units   = backwardPositionRadius(durations_s, goalState.acceleration_units_s2, ...
+        limits.maxAcceleration_units_s2, limits.maxJerk_units_s3);
+    cornerSigns   = [-1, -1; -1, 1; 1, -1; 1, 1];
+    corners_units = reshape(centers_units, [], 1, 2) + ...
+        reshape(cornerSigns, 1, 4, 2) .* reshape(radii_units, [], 1, 2);
+    reachableMinimum_units = reshape(min(corners_units, [], 2), [], 2);
+    reachableMaximum_units = reshape(max(corners_units, [], 2), [], 2);
+
+    % --- Obstacles Whose Complete History Can Contain A Box ---
+    % Every geometry the exact test below can read comes from the protected
+    % samples, the interval union shapes, or the interval start regions, so
+    % their joint extents, gathered once, name the only obstacles whose
+    % regions can contain a box at any time.
+    obstacleCount        = numel(obstacles);
+    historyMinimum_units = Inf(obstacleCount, 2);
+    historyMaximum_units = -Inf(obstacleCount, 2);
+    for obstacleIndex = 1:obstacleCount
+        vertices_units = historyVertices(obstacles(obstacleIndex));
+        if ~isempty(vertices_units)
+            historyMinimum_units(obstacleIndex, :) = min(vertices_units, [], 1);
+            historyMaximum_units(obstacleIndex, :) = max(vertices_units, [], 1);
         end
-        if ~obstacleCanContainReachableBox
-            continue
-        end
-        scene = obstacleAvoidance.obstacles.snapshot(obstacles, finalTime_s - duration_s);
-        for sceneIndex = 1:numel(scene)
-            for regionIndex = 1:numel(scene(sceneIndex).Regions_units)
-                region_units = scene(sceneIndex).Regions_units{regionIndex};
-                [inside, onBoundary] = inpolygon(corners_units(:, 1), corners_units(:, 2), ...
-                    region_units(:, 1), region_units(:, 2));
-                if all(inside | onBoundary)
-                    reachabilityIsBlocked = true;
-                    return
-                end
+    end
+    boxIsCoverable = ...
+        all(reshape(historyMinimum_units, 1, [], 2) <= reshape(reachableMinimum_units, [], 1, 2), 3) & ...
+        all(reshape(historyMaximum_units, 1, [], 2) >= reshape(reachableMaximum_units, [], 1, 2), 3);
+    [durationIndices, obstacleIndices] = find(boxIsCoverable);
+
+    % --- Exact Containment Test For Each Surviving Duration And Obstacle ---
+    for pairIndex = 1:numel(durationIndices)
+        durationIndex     = durationIndices(pairIndex);
+        scene             = obstacleAvoidance.obstacles.snapshot( ...
+            obstacles(obstacleIndices(pairIndex)), finalTime_s - durations_s(durationIndex));
+        regions_units     = vertcat(scene.Regions_units);
+        pairCorners_units = reshape(corners_units(durationIndex, :, :), 4, 2);
+        for regionIndex = 1:numel(regions_units)
+            region_units = regions_units{regionIndex};
+            [inside, onBoundary] = inpolygon(pairCorners_units(:, 1), pairCorners_units(:, 2), ...
+                region_units(:, 1), region_units(:, 2));
+            if all(inside | onBoundary)
+                reachabilityIsBlocked = true;
+                return
             end
         end
     end
 end
 
-function radius_units = backwardPositionRadius(duration_s, finalAcceleration_units_s2, accelerationLimit_units_s2, jerkLimit_units_s3)
+function vertices_units = historyVertices(obstacle)
+    % Gather every finite vertex the prepared obstacle can present at any
+    % time: protected samples, interval union shapes, and interval start regions.
+    preparation = obstacle.InternalPreparation;
+    sampleSets  = cellfun(@(x, y) [double(x(:)), double(y(:))], ...
+        obstacle.x_units(:), obstacle.y_units(:), 'UniformOutput', false);
+    unionSets   = cellfun(@intervalShapeVertices, preparation.IntervalUnionShapes(:), ...
+        'UniformOutput', false);
+    regionSets  = vertcat(preparation.IntervalStartRegions_units{:});
+    if isempty(regionSets)
+        regionSets = cell(0, 1);
+    end
+    vertices_units = vertcat(sampleSets{:}, unionSets{:}, regionSets{:});
+    vertices_units = vertices_units(all(isfinite(vertices_units), 2), :);
+end
+
+function vertices_units = intervalShapeVertices(shape)
+    % An interval without a union model holds an empty placeholder.
+    vertices_units = zeros(0, 2);
+    if isa(shape, 'polyshape')
+        vertices_units = shape.Vertices;
+    end
+end
+
+function radius_units = backwardPositionRadius(durations_s, finalAcceleration_units_s2, accelerationLimit_units_s2, jerkLimit_units_s3)
     % Ignore velocity limits to retain a sound outer bound; acceleration tightens long intervals.
-    rampDuration_s         = accelerationLimit_units_s2 ./ jerkLimit_units_s3;
-    radius_units           = jerkLimit_units_s3 * duration_s^3 / 6;
-    accelerationIsLimited  = finalAcceleration_units_s2 == 0 & duration_s > rampDuration_s;
-    limitedAcceleration_units_s2 = accelerationLimit_units_s2(accelerationIsLimited);
-    limitedJerk_units_s3          = jerkLimit_units_s3(accelerationIsLimited);
-    radius_units(accelerationIsLimited) = 0.5 * limitedAcceleration_units_s2 * duration_s^2 - ...
-        limitedAcceleration_units_s2.^2 * duration_s ./ (2 * limitedJerk_units_s3) + ...
-        limitedAcceleration_units_s2.^3 ./ (6 * limitedJerk_units_s3.^2);
+    rampDuration_s        = accelerationLimit_units_s2 ./ jerkLimit_units_s3;
+    radius_units          = jerkLimit_units_s3 .* durations_s.^3 / 6;
+    accelerationIsLimited = finalAcceleration_units_s2 == 0 & durations_s > rampDuration_s;
+    limitedRadius_units   = 0.5 * accelerationLimit_units_s2 .* durations_s.^2 - ...
+        accelerationLimit_units_s2.^2 .* durations_s ./ (2 * jerkLimit_units_s3) + ...
+        accelerationLimit_units_s2.^3 ./ (6 * jerkLimit_units_s3.^2);
+    radius_units(accelerationIsLimited) = limitedRadius_units(accelerationIsLimited);
 end
