@@ -1,13 +1,10 @@
 function result = finalizeCandidate(preparedObstacles, request, requestContext, ...
-        visibilityGraph, attempts, elapsedTime_s, usesTimedResultSchema, ...
-        validationDeclarations, candidate, route_units, diagnostics)
+        visibilityGraph, priorResult, candidate, diagnostics, declaration)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = ...
-%       obstacleAvoidance.planning.finalizeCandidate( ...
-%       preparedObstacles, request, requestContext, visibilityGraph, attempts, ...
-%       elapsedTime_s, usesTimedResultSchema, validationDeclarations, ...
-%       candidate, route_units, diagnostics)
+%   result = obstacleAvoidance.planning.finalizeCandidate( ...
+%       preparedObstacles, request, requestContext, visibilityGraph, ...
+%       priorResult, candidate, diagnostics, declaration)
 %**************************************************************************
 % PURPOSE
 %   - Assemble one complete planner record from explicit request, geometry,
@@ -23,21 +20,18 @@ function result = finalizeCandidate(preparedObstacles, request, requestContext, 
 %       Original obstacles, supplied/requested provenance, and optional
 %       outer-request context.
 %   - visibilityGraph (scalar struct)
-%       Spatial or timed guide associated with the candidate.
-%   - attempts (struct array)
-%       Planner-level attempt history to retain.
-%   - elapsedTime_s (nonnegative scalar)
-%       Planner time accumulated before candidate assembly.
-%   - usesTimedResultSchema (logical scalar)
-%       True when the timed result requires its stable outcome field ordering.
-%   - validationDeclarations (scalar struct)
-%       Optional fixed-clock or free-window fields needed by validation.
+%       Spatial or timed guide associated with the candidate; its
+%       Route_units is the route the candidate was seeded from.
+%   - priorResult (scalar struct)
+%       The planner record so far; its Attempts and ElapsedTime_s carry
+%       into the assembled record.
 %   - candidate (scalar struct)
 %       BMTP motion candidate.
-%   - route_units (N-by-2 numeric array)
-%       Selected route positions.
 %   - diagnostics (scalar struct)
 %       Solver diagnostic record.
+%   - declaration (scalar struct)
+%       Fields the validator must see beside the candidate (a fixed trial
+%       clock or a free goal window), or struct() when there are none.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -51,6 +45,10 @@ function result = finalizeCandidate(preparedObstacles, request, requestContext, 
 
 %% Section 1: Choose The Acceptance Declaration
 
+attempts               = priorResult.Attempts;
+elapsedTime_s          = priorResult.ElapsedTime_s;
+route_units            = visibilityGraph.Route_units;
+validationDeclarations = declaration;
 acceptanceDeclaration = struct( ...
     'request',        request, ...
     'requestContext', requestContext);
@@ -81,18 +79,16 @@ result = obstacleAvoidance.planning.createEmptyResult( ...
     preparedObstacles, acceptanceDeclaration.request, ...
     acceptanceDeclaration.requestContext, visibilityGraph, attempts, elapsedTime_s);
 
-% Timed planning declares these stable outcome fields before a BMTP candidate
-% exists. Preserve that ordering when assembling the candidate record.
-if usesTimedResultSchema
-    result.MotionLength_units                  = Inf;
-    result.IntegratedSquaredJerk_units2_s5     = Inf;
-    result.MaximumConstraintViolation          = Inf;
-    result.OptimizerFeasible                    = false;
-    result.OptimizerIterateUnavailable          = false;
-    result.AlternativeGuideEligible             = false;
-    result.FailureStage                         = "notRun";
-    result.FailureKind                          = "notRun";
-end
+% Every record declares its outcome fields before the candidate fills them,
+% so the field order does not depend on which method produced the candidate.
+result.MotionLength_units              = Inf;
+result.IntegratedSquaredJerk_units2_s5 = Inf;
+result.MaximumConstraintViolation      = Inf;
+result.OptimizerFeasible               = false;
+result.OptimizerIterateUnavailable     = false;
+result.AlternativeGuideEligible        = false;
+result.FailureStage                    = "notRun";
+result.FailureKind                     = "notRun";
 
 for fieldName = reshape(string(fieldnames(candidate)), 1, [])
     result.(fieldName) = candidate.(fieldName);
