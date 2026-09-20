@@ -1,11 +1,13 @@
-function eligible = methodFallbackEligible(candidateResult)
+function eligible = nextMethodAllowed(candidateResult)
 %% Section 0: Header & Readme
 % SYNTAX
-%   eligible = obstacleAvoidance.planning.methodFallbackEligible(candidateResult)
+%   eligible = obstacleAvoidance.planning.nextMethodAllowed(candidateResult)
 %**************************************************************************
 % PURPOSE
-%   - Decide whether a typed method-local miss admits another planning
-%     method without treating an acceptance defect as recoverable.
+%   - The planner tries its methods in a fixed order. When one method fails,
+%     this decides whether the next method may run. Only a failure that is
+%     local to the method (no route, no feasible motion) hands on; a defect
+%     in acceptance stops the sequence, so a later method cannot hide it.
 %**************************************************************************
 % INPUTS
 %   - candidateResult (scalar struct)
@@ -13,13 +15,13 @@ function eligible = methodFallbackEligible(candidateResult)
 %**************************************************************************
 % OUTPUTS
 %   - eligible (logical scalar)
-%       True only when the planner's fallback policy admits another method.
+%       True only when the next method in the sequence may run.
 %**************************************************************************
 % UNITS
 %   - Unitless policy decision.
 %**************************************************************************
 
-%% Section 1: Apply The Fallback Policy
+%% Section 1: Decide Whether The Next Method May Run
 
 % Admit another method only for a typed method-local miss or bounded
 % optimization exhaustion. Unknown and acceptance-defect outcomes stop.

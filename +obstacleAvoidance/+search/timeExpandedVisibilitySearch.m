@@ -735,7 +735,7 @@ function [candidates, rejectedCount] = buildCandidateBatch( ...
         reshape(earliestTime_s, 1, nodeCount, sourceCount), 1);
     firstFeasibleLayerIndices(isnan(earliestTime_s)) = layerCount + 1;
     % Every non-self motion has positive physical duration. Keeping its first
-    % target strictly after the source makes the chronological event buckets a
+    % target strictly after the source makes the time-ordered event buckets a
     % true DAG, including when the velocity bound falls below roundoff slack.
     firstFeasibleLayerIndices = max(firstFeasibleLayerIndices, sourceLayerIndex + 1);
     candidateCanStart = reshape(isWaitComponentStart, layerCount, nodeCount, 1) & ...

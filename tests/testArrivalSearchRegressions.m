@@ -2,7 +2,7 @@ function tests = testArrivalSearchRegressions
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testArrivalSearchRegressions.m')
 % PURPOSE: Exercise late feasible arrivals, free-clock selection against
-%   waiting motions, and chronological fixed-arrival recovery.
+%   waiting motions, and arrival-time fixed-arrival recovery.
 % INPUTS: MATLAB unit test framework and deterministic public planner inputs.
 % OUTPUTS: Independent validation and arrival-search regression checks.
 % UNITS: Coordinate units, seconds, and physical derivatives.
@@ -212,9 +212,9 @@ function testLongRequestUsesBudgetAfterPhysicalBound(testCase)
     result = planner([wall;remote],initial,goal,limits,struct('GoalTimeMode','earliestArrival','MaxArrivalTrials',40));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyGreaterThan(testCase,result.TemporalSearch.NecessaryArrivalBound_s,60);
+    verifyGreaterThan(testCase,result.TemporalSearch.EarliestPossibleArrival_s,60);
     verifyGreaterThanOrEqual(testCase,result.TemporalSearch.TrialTime_s, ...
-        result.TemporalSearch.NecessaryArrivalBound_s-result.Options.ArrivalTimeTolerance_s);
+        result.TemporalSearch.EarliestPossibleArrival_s-result.Options.ArrivalTimeTolerance_s);
     verifyLessThanOrEqual(testCase,numel(result.TemporalSearch.TrialTime_s),40);
     % The exact static-only reference arrives at 64 s. The moving obstacle is
     % remote, so the unified timed profile must stay within the 1% gate.
@@ -253,7 +253,7 @@ function testMovingTargetPrescreenPreservesSolverBudget(testCase)
         numel(result.TemporalSearch.TrialTime_s));
 end
 
-function testOffGridTargetBoundaryRetainsChronologicalPriority(testCase)
+function testOffGridTargetBoundaryRetainsArrivalTimePriority(testCase)
     % Exact target sample times remain candidates even when they are not on
     % the regular arrival grid or at the horizon.
     targetMotion = struct( ...
@@ -479,8 +479,8 @@ function testDisconnectedSnapshotRetainsValidatedWaitHonestly(testCase)
     verifyEqual(testCase,[result.Attempts.Kind], ...
         ["analyticDeparture","timedVisibility"]);
     verifyTrue(testCase,result.Attempts(1).Selected);
-    verifyTrue(testCase,result.Attempts(2).MethodFallbackEligible);
-    verifyFalse(testCase,result.EarliestArrival.ChronologicalSearchUsed);
+    verifyTrue(testCase,result.Attempts(2).NextMethodAllowed);
+    verifyFalse(testCase,result.EarliestArrival.ArrivalTimeSearchUsed);
 end
 
 function testMovingGeometryDoesNotUseInitialRouteAsGlobalBound(testCase)
@@ -499,7 +499,7 @@ function testMovingGeometryDoesNotUseInitialRouteAsGlobalBound(testCase)
     verifyTrue(testCase,result.Attempts(1).Selected);
 end
 
-function testFailedWrappedTimedChallengerRetainsValidatedIncumbent(testCase)
+function testFailedWrappedTimedTimedSearchRetainsValidatedBestSoFar(testCase)
     result = exampleOpeningUShapedObstacle(struct( ...
         'PlotOutputs', false, 'Verbose', false, 'WrapX', true));
 
@@ -516,30 +516,30 @@ function testFailedWrappedTimedChallengerRetainsValidatedIncumbent(testCase)
     verifyEqual(testCase, result.Attempts(2).FailureKind, ...
         "optimizerIterateUnavailable");
     verifyTrue(testCase, result.Attempts(2).OptimizerIterateUnavailable);
-    verifyFalse(testCase, result.Attempts(2).MethodFallbackEligible);
+    verifyFalse(testCase, result.Attempts(2).NextMethodAllowed);
     verifyEqual(testCase, result.Attempts(2).SolverExitFlag, -10);
     verifySubstring(testCase, result.Attempts(2).Message, "numerically unstable");
 
-    challenger = result.SolverDiagnostics.TimedChallenger;
-    verifyFalse(testCase, challenger.Success);
-    verifyEqual(testCase, challenger.TerminationReason, "timedMotionInfeasible");
-    verifyEqual(testCase, challenger.FailureStage, "numericalSolver");
-    verifyEqual(testCase, challenger.FailureKind, "optimizerIterateUnavailable");
-    verifyTrue(testCase, challenger.OptimizerIterateUnavailable);
-    verifyEqual(testCase, challenger.SolverDiagnostics.LastTrajectoryExitFlag, -10);
-    verifySubstring(testCase, challenger.Message, "numerically unstable");
-    verifyEqual(testCase, challenger.VisibilityGraph.SearchKind, ...
+    timedSearch = result.SolverDiagnostics.TimedSearchAttempt;
+    verifyFalse(testCase, timedSearch.Success);
+    verifyEqual(testCase, timedSearch.TerminationReason, "timedMotionInfeasible");
+    verifyEqual(testCase, timedSearch.FailureStage, "numericalSolver");
+    verifyEqual(testCase, timedSearch.FailureKind, "optimizerIterateUnavailable");
+    verifyTrue(testCase, timedSearch.OptimizerIterateUnavailable);
+    verifyEqual(testCase, timedSearch.SolverDiagnostics.LastTrajectoryExitFlag, -10);
+    verifySubstring(testCase, timedSearch.Message, "numerically unstable");
+    verifyEqual(testCase, timedSearch.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
-    verifyTrue(testCase, isfield(challenger.VisibilityGraph, 'TimedSearch'));
-    verifyNotEmpty(testCase, challenger.VisibilityGraph.RouteTime_s);
-    verifyEqual(testCase, challenger.Route_units, ...
-        challenger.VisibilityGraph.Route_units);
+    verifyTrue(testCase, isfield(timedSearch.VisibilityGraph, 'TimedSearch'));
+    verifyNotEmpty(testCase, timedSearch.VisibilityGraph.RouteTime_s);
+    verifyEqual(testCase, timedSearch.Route_units, ...
+        timedSearch.VisibilityGraph.Route_units);
     verifyEqual(testCase, result.VisibilityGraph.SearchKind, ...
         "c3DepartureSchedule");
     verifyEqual(testCase, result.Route_units, [0, 0; 0, -10], 'AbsTol', 1e-12);
 end
 
-function testFailedScaledBarrierChallengerRetainsValidatedIncumbent(testCase)
+function testFailedScaledBarrierTimedSearchRetainsValidatedBestSoFar(testCase)
     barrierX_units = [-0.2; -0.2; 0.2; 0.2];
     barrierY_units = [-3; 3; 3; -3];
     obstacleTime_s = [0; 6; 6.5; 12];
@@ -566,7 +566,7 @@ function testFailedScaledBarrierChallengerRetainsValidatedIncumbent(testCase)
         'GoalTimeMode',                  'earliestArrival', ...
         'WrapX',                         true, ...
         'TemporalResolution_s',          0.5, ...
-        'IncumbentRefinementTrialLimit', 0);
+        'BestSoFarRefinementTrialLimit', 0);
 
     result = planner(obstacles, restState(0, [-5, 0]), ...
         restState(12, [5, 0]), limits, options);
@@ -581,28 +581,28 @@ function testFailedScaledBarrierChallengerRetainsValidatedIncumbent(testCase)
     verifyEqual(testCase, result.Attempts(2).FailureStage, "numericalSolver");
     verifyEqual(testCase, result.Attempts(2).FailureKind, ...
         "optimizerIterateUnavailable");
-    verifyFalse(testCase, result.Attempts(2).MethodFallbackEligible);
+    verifyFalse(testCase, result.Attempts(2).NextMethodAllowed);
     verifyEqual(testCase, result.Attempts(2).SolverExitFlag, -10);
     verifySubstring(testCase, result.Attempts(2).Message, "numerically unstable");
 
-    challenger = result.SolverDiagnostics.TimedChallenger;
-    verifyEqual(testCase, challenger.VisibilityGraph.SearchKind, ...
+    timedSearch = result.SolverDiagnostics.TimedSearchAttempt;
+    verifyEqual(testCase, timedSearch.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
-    verifyNotEmpty(testCase, challenger.VisibilityGraph.RouteTime_s);
-    verifyEqual(testCase, challenger.Route_units, ...
-        challenger.VisibilityGraph.Route_units);
+    verifyNotEmpty(testCase, timedSearch.VisibilityGraph.RouteTime_s);
+    verifyEqual(testCase, timedSearch.Route_units, ...
+        timedSearch.VisibilityGraph.Route_units);
 end
 
-function testTimedChallengerValidationRejectionRemainsTerminal(testCase)
+function testTimedTimedSearchValidationRejectionRemainsTerminal(testCase)
     base = planner([], restState(0, [0, 0]), restState(6, [4, 0]), ...
         fastLimits([-3, 3]), struct('GoalTimeMode', 'fixedArrival'));
     [request, requestContext, scene] = explicitSearchInputs(base);
-    outerRequest = obstacleAvoidance.planning.createOuterRequest(request, requestContext);
-    outerRequest.WrapX                   = true;
-    outerRequest.WrapY                   = false;
-    outerRequest.GoalTime_s              = 6;
-    outerRequest.FixedArrivalTrialTime_s = 5;
-    requestContext.outerRequest          = outerRequest;
+    parentRequest = obstacleAvoidance.planning.createParentRequest(request, requestContext);
+    parentRequest.WrapX                   = true;
+    parentRequest.WrapY                   = false;
+    parentRequest.GoalTime_s              = 6;
+    parentRequest.FixedArrivalTrialTime_s = 5;
+    requestContext.parentRequest          = parentRequest;
 
     [rejected, accepted] = obstacleAvoidance.planning.tryTimedArrival( ...
         request, requestContext, scene.preparedObstacles, ...
@@ -617,9 +617,9 @@ function testTimedChallengerValidationRejectionRemainsTerminal(testCase)
         "failed independent validation");
 end
 
-function testIncumbentRefinementBudgetIsExplicit(testCase)
+function testBestSoFarRefinementBudgetIsExplicit(testCase)
     options = struct('PlotOutputs',false,'Verbose',false, ...
-        'MaxArrivalTrials',40,'IncumbentRefinementTrialLimit',1);
+        'MaxArrivalTrials',40,'BestSoFarRefinementTrialLimit',1);
     result = exampleMovingBarrierWait(options);
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
@@ -627,13 +627,13 @@ function testIncumbentRefinementBudgetIsExplicit(testCase)
     verifyEqual(testCase,result.TemporalSearch.MaximumTrialCount,1);
     verifyLessThanOrEqual(testCase,result.TemporalSearch.SolverTrialCount,1);
     verifyTrue(testCase,result.TemporalSearch.TrialLimitReached);
-    verifyTrue(testCase,result.EarliestArrival.ChronologicalSearchUsed);
-    chronologicalIndices=find([result.Attempts.Kind] == ...
-        "chronologicalFixedArrival");
-    verifyNotEmpty(testCase,chronologicalIndices);
+    verifyTrue(testCase,result.EarliestArrival.ArrivalTimeSearchUsed);
+    arrivalTimeTrialIndices=find([result.Attempts.Kind] == ...
+        "arrivalTimeTrial");
+    verifyNotEmpty(testCase,arrivalTimeTrialIndices);
 end
 
-function testWrappedIncumbentRefinementRetainsValidatedDeparture(testCase)
+function testWrappedBestSoFarRefinementRetainsValidatedDeparture(testCase)
     x=[-0.2;-0.2;0.2;0.2];
     y=[-3;3;3;-3];
     obstacleTimes_s=[0;6;6.5;12];
@@ -647,7 +647,7 @@ function testWrappedIncumbentRefinementRetainsValidatedDeparture(testCase)
         'yInterval_units',[-3,3],'maxVelocity_units_s',[2,2], ...
         'maxAcceleration_units_s2',[1,1],'maxJerk_units_s3',[2,2]);
     options=struct('GoalTimeMode','earliestArrival','WrapX',true, ...
-        'TemporalResolution_s',0.5,'IncumbentRefinementTrialLimit',1);
+        'TemporalResolution_s',0.5,'BestSoFarRefinementTrialLimit',1);
 
     result=planner(obstacle,initial,goal,limits,options);
 
@@ -655,10 +655,10 @@ function testWrappedIncumbentRefinementRetainsValidatedDeparture(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,10.1400889258125,'AbsTol',1e-8);
     verifyFalse(testCase,isfield(result,'FixedArrivalTrialTime_s'));
-    verifyTrue(testCase,result.TemporalSearch.RetainedIncumbent);
+    verifyTrue(testCase,result.TemporalSearch.BestSoFar);
     verifyEqual(testCase,result.TemporalSearch.TrialTime_s,7.5,'AbsTol',1e-12);
     verifyEqual(testCase,[result.Attempts.Kind], ...
-        ["analyticDeparture","timedVisibility","chronologicalFixedArrival"]);
+        ["analyticDeparture","timedVisibility","arrivalTimeTrial"]);
     verifyTrue(testCase,result.Attempts(1).Success);
     verifyTrue(testCase,result.Attempts(1).Selected);
     verifyFalse(testCase,result.Attempts(3).Success);
@@ -669,7 +669,7 @@ function testWrappedIncumbentRefinementRetainsValidatedDeparture(testCase)
     verifyEqual(testCase,result.Limits.xInterval_units,[-29,19]);
 end
 
-function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
+function testPlanarRequestSelectsRefinementOverWrappedBestSoFar(testCase)
     initial=restState(0,[179,0]);
     goal=restState(12,[-179,0]);
     publicLimits=fastLimits([-3,3]);
@@ -683,19 +683,19 @@ function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
     base.Attempts(1).Selected=true;
     base.ElapsedTime_s=0;
 
-    planarOptions=base.Options;
-    planarOptions.WrapX=false;
-    planarOptions.WrapY=false;
-    planarOptions.TemporalResolution_s=6;
+    unwrappedOptions=base.Options;
+    unwrappedOptions.WrapX=false;
+    unwrappedOptions.WrapY=false;
+    unwrappedOptions.TemporalResolution_s=6;
     planarGoal=base.Inputs.goalState;
     request=struct( ...
         'initialState',base.Inputs.initialState, ...
         'goalState',planarGoal, ...
         'limits',base.Limits, ...
-        'options',planarOptions);
-    % The outer request is the public wrapped request; the inner context
-    % below is its planar image.
-    outerRequest=obstacleAvoidance.planning.createOuterRequest( ...
+        'options',unwrappedOptions);
+    % The parent request is the public wrapped request; the inner context
+    % below is its unwrapped copy.
+    parentRequest=obstacleAvoidance.planning.createParentRequest( ...
         struct('goalState',goal,'options',base.Options), ...
         struct('obstacles',{base.Inputs.obstacles}, ...
         'suppliedLimits',publicLimits, ...
@@ -708,7 +708,7 @@ function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
         'requestedLimits',base.Limits, ...
         'suppliedGoalState',planarGoal, ...
         'requestedGoalState',planarGoal, ...
-        'outerRequest',{outerRequest});
+        'parentRequest',{parentRequest});
     snapshot=obstacleAvoidance.obstacles.snapshot( ...
         base.PreparedObstacles,request.initialState.time_s);
     scene=struct('preparedObstacles',base.PreparedObstacles, ...
@@ -726,7 +726,7 @@ function testPlanarRequestSelectsRefinementOverWrappedIncumbent(testCase)
     verifyTrue(testCase,result.Options.WrapX);
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,6,'AbsTol',1e-12);
     verifyEqual(testCase,result.ArrivalTime_s,6,'AbsTol',1e-12);
-    verifyFalse(testCase,result.TemporalSearch.RetainedIncumbent);
+    verifyFalse(testCase,result.TemporalSearch.BestSoFar);
     verifyEqual(testCase,result.TemporalSearch.TrialTime_s,6,'AbsTol',1e-12);
     verifyEqual(testCase,numel(result.Attempts),2);
     verifyFalse(testCase,result.Attempts(1).Selected);
@@ -783,7 +783,7 @@ function testTimedSearchFindsRouteAfterWholeCurtainDeparts(testCase)
         "timeExpandedVisibilityGraph");
 end
 
-function testChallengedDelayedChordIncumbentIsRetained(testCase)
+function testChallengedDelayedChordBestSoFarIsRetained(testCase)
     box=[-0.6,-1.5;0.6,-1.5;0.6,1.5;-0.6,1.5];
     obstacleTime_s=[0;5.5;6.5;15];
     obstacle=obstacleAvoidance.obstacles.createObstacle('moving box', ...
@@ -860,7 +860,7 @@ function [request,requestContext,scene]=explicitSearchInputs(result)
         'requestedLimits',result.RequestedLimits, ...
         'suppliedGoalState',result.SuppliedGoalState, ...
         'requestedGoalState',result.RequestedGoalState, ...
-        'outerRequest',{[]});
+        'parentRequest',{[]});
     % The search hands every trial the initial-snapshot skeleton, so the
     % scene carries it exactly as the planner's own scene product does.
     snapshot=obstacleAvoidance.obstacles.snapshot( ...

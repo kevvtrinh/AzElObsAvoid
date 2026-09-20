@@ -74,7 +74,7 @@ function testStaticGoalUsesExactPrescribedClock(testCase)
     verifyEqual(testCase,result.time_s(end),goal.time_s);
 end
 
-function testNoSilentSpatialFallback(testCase)
+function testNoSilentSpatialNextMethod(testCase)
     data=testCase.TestData;
     wall=struct('Vertices_units',[2,-3;3,-3;3,3;2,3]);
     result=planner(wall,data.Initial,data.Goal,data.Limits,data.Options);
@@ -154,7 +154,7 @@ function testMovingCrossingRetainsCertifiedEndpointJerk(testCase)
         limits.maxJerk_units_s3+result.Options.ConstraintTolerance);
 end
 
-function testArrivalSnapshotAvoidsTimedFallback(testCase)
+function testArrivalSnapshotAvoidsTimedSearch(testCase)
     scenario=createRandomAzimuthScenario(26,true);
     scenario.Options.SpatialProbeIterationLimit=2;
     result=planner(scenario.Obstacles,scenario.InitialState, ...
@@ -164,15 +164,15 @@ function testArrivalSnapshotAvoidsTimedFallback(testCase)
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
         "arrivalSpatialSnapshot");
     verifyEqual(testCase,numel(result.Attempts),2);
-    verifyEqual(testCase,[result.Attempts.IsHeuristic],[true,true]);
+    verifyEqual(testCase,[result.Attempts.IsShortcut],[true,true]);
     verifyEqual(testCase,[result.Attempts.IterationLimit],[2,2]);
     verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,2);
     verifyEqual(testCase,result.Attempts(1).FailureKind,"iterationLimit");
-    verifyTrue(testCase,result.Attempts(1).FallbackEligible);
+    verifyTrue(testCase,result.Attempts(1).NextAttemptAllowed);
     verifyGreaterThan(testCase,size(result.Route_units,1),2);
 end
 
-function testTimedFallbackCrossesARecurrentCurtain(testCase)
+function testTimedSearchCrossesARecurrentCurtain(testCase)
     wall=[-0.2,-7;0.2,-7;0.2,7;-0.2,7];
     moved=wall+[0,14];
     obstacle=obstacleAvoidance.obstacles.createObstacle('recurrent curtain', ...
@@ -201,7 +201,7 @@ function testTimedFallbackCrossesARecurrentCurtain(testCase)
     verifyFalse(testCase,any([result.Attempts(1:2).SolverAttempted]));
 end
 
-function testFailedTimedFallbackDoesNotLeakSpatialState(testCase)
+function testFailedTimedSearchDoesNotLeakSpatialState(testCase)
     wall=[-0.2,-7;0.2,-7;0.2,7;-0.2,7];
     shifted=wall+[0.1,0];
     obstacle=obstacleAvoidance.obstacles.createObstacle('persistent curtain', ...
@@ -239,7 +239,7 @@ function testFailedTimedFallbackDoesNotLeakSpatialState(testCase)
     verifyFalse(testCase,result.OptimizerIterateUnavailable);
     verifyFalse(testCase,result.AlternativeGuideEligible);
     verifyFalse(testCase,isfield(result,'EarliestArrival'));
-    verifyFalse(testCase,isfield(result,'PeriodicImages'));
+    verifyFalse(testCase,isfield(result,'WrappedGoalCopies'));
 end
 
 function testTimedResultFieldOrderDoesNotDependOnTheRouteTaken(testCase)
@@ -285,7 +285,7 @@ end
 
 function exerciseFreshTimedOutcomeSchema(testCase)
     % Exercise every timed construction path that is not already pinned by
-    % the two production fallback cases above.
+    % the two production next method cases above.
     initial=struct('time_s',0,'position_units',[0,0]);
     goal=struct('time_s',6,'position_units',[4,0]);
     limits=struct('xInterval_units',[-2,6],'yInterval_units',[-3,3], ...
@@ -313,7 +313,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyEqual(testCase,fieldnames(unsupported),timedFailureFieldNames());
     verifyEqual(testCase,fieldnames(unsupported.VisibilityGraph),timedGraphFieldNames());
     verifyFalse(testCase,isfield(unsupported,'EarliestArrival'));
-    verifyFalse(testCase,isfield(unsupported,'PeriodicImages'));
+    verifyFalse(testCase,isfield(unsupported,'WrappedGoalCopies'));
 
     freeWindowRequest=request;
     freeWindowRequest.options.GoalTimeMode="earliestArrival";
@@ -328,7 +328,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyEqual(testCase,freeWindow.TrajectoryCoverageEndTime_s,6);
     verifyFalse(testCase,isfield(freeWindow,'FixedArrivalTrialTime_s'));
     verifyFalse(testCase,isfield(freeWindow,'EarliestArrival'));
-    verifyFalse(testCase,isfield(freeWindow,'PeriodicImages'));
+    verifyFalse(testCase,isfield(freeWindow,'WrappedGoalCopies'));
 
     rawLimits=struct('xInterval_units',[-2,2],'yInterval_units',[-2,2], ...
         'maxVelocity_units_s',[20,20],'maxAcceleration_units_s2',[1,1], ...
@@ -339,7 +339,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     [rawRequest,rawContext,rawObstacles]=explicitTimedInputs(rawBase);
     rawRequest.goalState.time_s=obstacleAvoidance.input.minimumTravelTime( ...
         rawRequest.initialState,rawRequest.goalState,rawRequest.limits);
-    rawContext.outerRequest=createTrialOuterRequest(rawRequest,rawContext,30, ...
+    rawContext.parentRequest=createTrialParentRequest(rawRequest,rawContext,30, ...
         rawRequest.goalState.time_s);
     [rawFailure,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
         rawRequest,rawContext,rawObstacles,attempts,elapsedTime_s,struct());
@@ -353,10 +353,10 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyEqual(testCase,rawFailure.FailureKind,"trajectorySubproblemInfeasible");
     verifyFalse(testCase,rawFailure.SolverDiagnostics.Accepted);
     verifyFalse(testCase,rawFailure.Options.WrapX);
-    verifyTrue(testCase,isfield(rawFailure,'OuterRequest'));
+    verifyTrue(testCase,isfield(rawFailure,'ParentRequest'));
 
     rejectedContext=requestContext;
-    rejectedContext.outerRequest=createTrialOuterRequest(request,requestContext,6,5);
+    rejectedContext.parentRequest=createTrialParentRequest(request,requestContext,6,5);
     [rejected,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
         request,rejectedContext,preparedObstacles,attempts,elapsedTime_s,struct());
     verifyFalse(testCase,accepted);
@@ -369,7 +369,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
         "One or more independent core trajectory checks failed.");
     verifyEqual(testCase,rejected.FixedArrivalTrialTime_s,5);
     verifyTrue(testCase,rejected.Options.WrapX);
-    verifyFalse(testCase,isfield(rejected,'OuterRequest'));
+    verifyFalse(testCase,isfield(rejected,'ParentRequest'));
 end
 
 function [request,requestContext,preparedObstacles]=explicitTimedInputs(result)
@@ -386,17 +386,17 @@ function [request,requestContext,preparedObstacles]=explicitTimedInputs(result)
         'requestedLimits',result.RequestedLimits, ...
         'suppliedGoalState',result.SuppliedGoalState, ...
         'requestedGoalState',result.RequestedGoalState, ...
-        'outerRequest',{[]});
+        'parentRequest',{[]});
     preparedObstacles=result.PreparedObstacles;
 end
 
-function outerRequest=createTrialOuterRequest(request,requestContext,goalTime_s,trialTime_s)
-    % Declare a distinct outer request so acceptance ownership is observable.
-    outerRequest=obstacleAvoidance.planning.createOuterRequest(request,requestContext);
-    outerRequest.WrapX=true;
-    outerRequest.WrapY=false;
-    outerRequest.GoalTime_s=goalTime_s;
-    outerRequest.FixedArrivalTrialTime_s=trialTime_s;
+function parentRequest=createTrialParentRequest(request,requestContext,goalTime_s,trialTime_s)
+    % Declare a distinct parent request so acceptance ownership is observable.
+    parentRequest=obstacleAvoidance.planning.createParentRequest(request,requestContext);
+    parentRequest.WrapX=true;
+    parentRequest.WrapY=false;
+    parentRequest.GoalTime_s=goalTime_s;
+    parentRequest.FixedArrivalTrialTime_s=trialTime_s;
 end
 
 function names=timedFailureFieldNames()

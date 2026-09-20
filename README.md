@@ -50,28 +50,30 @@ infeasibility. Every stage is recorded in `result.Attempts`, including its
 declared iteration limit, typed failure, selection, and child-attempt evidence.
 A validator rejection terminates as a defect; it never starts another attempt.
 
-Earliest-arrival requests pass through one capability-based coordinator. Static
-fixed-position rest-to-rest requests use the exact spatial graph and
-variable-clock BMTP. Dynamic fixed-position rest-to-rest requests first test the
-physical direct-departure family, retain any validated motion as an incumbent,
-then run one source-independent variable-clock timed challenger only below that
-incumbent. Moving targets and non-rest endpoint requests skip unsupported
-families and go directly to chronological fixed-clock trials. A typed
-search/timing/proposal miss may admit the next method; validation, geometric
-certification, reconstruction, numerical, and unknown failures are terminal.
+Earliest-arrival requests pass through one coordinator that runs the planning
+methods in a fixed order. Static fixed-position rest-to-rest requests use the
+exact spatial graph and variable-clock BMTP. Dynamic fixed-position rest-to-rest
+requests first try the direct-departure family, keep any validated motion as the
+best plan so far, then run one variable-clock timed search that may only beat
+that plan. Moving targets and non-rest endpoint requests skip the families that
+cannot handle their endpoint physics and go straight to arrival-time trials, each
+a fixed-clock request on its own clock. A typed search, timing, or proposal miss
+lets the next method run; validation, geometric proof, reconstruction,
+numerical, and unknown failures end the sequence.
 A complete continuous curve that passes workspace, continuity, and geometry
 checks but exceeds derivative limits is a clock-local timing miss, not a
 weakened certificate.
 
-By default, a validated dynamic incumbent is retained after the timed challenger
-fails instead of launching an unbounded chronological search. The result reports
-the unsearched interval and does not claim global optimality. Callers may spend
-an explicit, bounded `IncumbentRefinementTrialLimit` to search earlier clocks
-without changing the public validator or discarding the incumbent. Every route,
-motion, and clock attempt is recorded in `result.Attempts`; chronological parent
-attempts retain their fixed-arrival child evidence. `EarliestArrival` records
-capabilities, the selected attempt, the incumbent, the bounded-search state,
-and whether the necessary lower bound was actually attained.
+By default, a validated best plan so far is kept when the timed search fails,
+instead of launching an unbounded arrival-time search. The result reports the
+unsearched interval and does not claim global optimality. Callers may spend an
+explicit, bounded `BestSoFarRefinementTrialLimit` of arrival-time trials to look
+for earlier clocks, without changing the public validator or discarding the plan
+already found. Every route, motion, and clock attempt is recorded in
+`result.Attempts`; an arrival-time parent attempt keeps its fixed-arrival child
+evidence. `EarliestArrival` records the capabilities, the selected attempt, the
+best plan so far, the bounded-search state, and whether the earliest possible
+arrival was actually attained.
 
 There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
 repairs, connectivity-recovery passes, fixture-specific seeds, hidden
@@ -128,19 +130,20 @@ Public planner options are:
 - `MaxArrivalTrials`: maximum fixed-clock planner solves
 - `MaxArrivalCandidates`: maximum regular-grid clocks screened; exact declared
   obstacle, target, and horizon boundaries inside that grid window are retained
-- `IncumbentRefinementTrialLimit`: maximum chronological fixed-clock solves
-  allowed below a validated dynamic incumbent after the timed challenger fails
+- `BestSoFarRefinementTrialLimit`: how many arrival-time trials may try to
+  beat a validated best plan so far after the timed search fails
   (default `0`; never exceeds `MaxArrivalTrials`)
 
 Unknown options issue one warning and do not change planner behavior. A
-wrapped axis is planned in the unwrapped frame inside the reach band of the
-request: obstacles are represented by exact translated images at every period
-offset that meets the band, a moving target is lifted by continuity from the
-initial position, and every goal image inside the band is planned as a plain
-request and accepted against the periodic request in the one acceptance gate
-(earliest arrival first, or shortest motion for a fixed arrival). The
-validator rebuilds the images, the lift, and the goal image from the supplied
-request. Returned positions stay in the unwrapped frame.
+wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped coordinates
+inside the range the vehicle can reach in the time given: every obstacle is
+copied one full turn up and down, a moving target's path is unwrapped so it
+never jumps at the seam, and every copy of the goal inside that range is
+planned as an ordinary request and accepted against the wrapped request in the
+one acceptance gate (earliest arrival first, or shortest motion for a fixed
+arrival). The validator rebuilds the obstacle copies, the unwrapped target path,
+and the goal copy from the supplied request. Returned positions stay in
+unwrapped coordinates.
 
 ## Outputs and validation
 

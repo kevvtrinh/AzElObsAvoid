@@ -5,14 +5,14 @@ function result = planNormalizedRequest(request, requestContext)
 %       request, requestContext)
 %**************************************************************************
 % PURPOSE
-%   - Plan one normalized, nonperiodic request through geometry preparation,
+%   - Plan one normalized, unwrapped request through geometry preparation,
 %     exact visibility search, BMTP motion generation, and validation.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
 %       Normalized planner states, limits, and options.
 %   - requestContext (scalar struct)
-%       Original inputs, provenance, and optional outer request.
+%       Original inputs, provenance, and optional parent request.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -24,7 +24,7 @@ function result = planNormalizedRequest(request, requestContext)
 %**************************************************************************
 
 obstacles    = requestContext.obstacles;
-outerRequest = requestContext.outerRequest;
+parentRequest = requestContext.parentRequest;
 
 %% Section 2: Prepare Authoritative Geometry And Motion Coverage
 
@@ -107,11 +107,11 @@ end
 
 snapshot = obstacleAvoidance.obstacles.snapshot( ...
     scene.preparedObstacles, request.initialState.time_s, ~isDynamic);
-% A derived trial carries the outer request's prescreen pass. Wrapped
+% A derived trial carries the parent request's prescreen pass. Wrapped
 % recursion and any normalization difference fall through unless this
-% complete key matches; a top-level request has no outer request.
+% complete key matches; a top-level request has no parent request.
 reuseEndpointValidation = false;
-if ~isempty(outerRequest) && outerRequest.EndpointValidation.Feasible
+if ~isempty(parentRequest) && parentRequest.EndpointValidation.Feasible
     endpointValidationOptions = struct( ...
         'GoalTimeMode',           request.options.GoalTimeMode, ...
         'WrapX',                  request.options.WrapX, ...
@@ -134,12 +134,12 @@ if ~isempty(outerRequest) && outerRequest.EndpointValidation.Feasible
     endpointValidationKey.GoalState         = goalEndpointState;
     endpointValidationKey.Limits            = request.limits;
     endpointValidationKey.Options           = endpointValidationOptions;
-    reuseEndpointValidation = isequaln(outerRequest.EndpointValidation.Key, endpointValidationKey);
+    reuseEndpointValidation = isequaln(parentRequest.EndpointValidation.Key, endpointValidationKey);
 end
 if reuseEndpointValidation
-    endpointFeasible = outerRequest.EndpointValidation.Feasible;
-    endpointMessage  = outerRequest.EndpointValidation.Message;
-    endpointReason   = outerRequest.EndpointValidation.Reason;
+    endpointFeasible = parentRequest.EndpointValidation.Feasible;
+    endpointMessage  = parentRequest.EndpointValidation.Message;
+    endpointReason   = parentRequest.EndpointValidation.Reason;
 else
     [endpointFeasible, endpointMessage, endpointReason] = ...
         obstacleAvoidance.input.validatePlannerEndpoints( ...
@@ -154,17 +154,17 @@ if ~endpointFeasible
 end
 
 % The initial-snapshot skeleton classifies every boundary vertex pair once.
-% A chronological trial plans the same prepared geometry at the same initial
+% An arrival-time trial plans the same prepared geometry at the same initial
 % time, so it receives the product under this key instead of rebuilding it.
 skeletonKey = struct( ...
     'PreparedObstacles',   {scene.preparedObstacles}, ...
     'SnapshotTime_s',      request.initialState.time_s, ...
     'Limits',              request.limits, ...
     'ConstraintTolerance', request.options.ConstraintTolerance);
-reuseSkeleton = ~isempty(outerRequest) && ...
-    isequaln(outerRequest.InitialSkeleton.Key, skeletonKey);
+reuseSkeleton = ~isempty(parentRequest) && ...
+    isequaln(parentRequest.InitialSkeleton.Key, skeletonKey);
 if reuseSkeleton
-    skeleton = outerRequest.InitialSkeleton.Skeleton;
+    skeleton = parentRequest.InitialSkeleton.Skeleton;
 else
     skeleton = obstacleAvoidance.search.createVisibilitySkeleton( ...
         snapshot, request.limits, request.options);
@@ -269,10 +269,10 @@ end
 
 function result = planEarliestArrival(result, scene, request, requestContext, totalTimer, ...
         isDynamic, earliestTarget, isRest)
-    % Keep one truthful method cascade with a fixed stage order. Every stage
+    % Keep one truthful method method sequence with a fixed stage order. Every stage
     % receives the search product of the stages before it and returns it
-    % advanced: a validated candidate is an incumbent, only a public-validator
-    % pass can be selected, and an acceptance defect ends the cascade instead
+    % advanced: a validated candidate is an best plan so far, only a public-validator
+    % pass can be selected, and an acceptance defect ends the method sequence instead
     % of being hidden by a later method. One exit publishes the selection
     % evidence for every path.
     fixedRestGoal = ~earliestTarget && isRest;
@@ -280,48 +280,48 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
         'StaticSpatialBmtp',       ~isDynamic && fixedRestGoal, ...
         'DepartureFamily',         isDynamic && fixedRestGoal, ...
         'TimedVariableClockBmtp',  isDynamic && fixedRestGoal, ...
-        'ChronologicalFixedClock', earliestTarget || ~isRest || isDynamic);
-    necessaryArrivalTime_s = NaN;
+        'ArrivalTimeTrials', earliestTarget || ~isRest || isDynamic);
+    earliestPossibleArrival_s = NaN;
     if ~earliestTarget
-        necessaryArrivalTime_s = request.initialState.time_s + ...
+        earliestPossibleArrival_s = request.initialState.time_s + ...
             obstacleAvoidance.input.minimumTravelTime( ...
             request.initialState, request.goalState, request.limits);
     end
     search = struct( ...
         'Result',                result, ...
         'Attempts',              repmat(obstacleAvoidance.planning.createAttemptRecord(0, ""), 0, 1), ...
-        'IncumbentAttemptIndex', 0, ...
+        'BestSoFarAttemptIndex', 0, ...
         'Done',                  false);
     if capabilities.StaticSpatialBmtp
         search = runStaticSpatialStage(search, scene, request, requestContext, ...
-            necessaryArrivalTime_s);
+            earliestPossibleArrival_s);
     end
     if ~search.Done && capabilities.DepartureFamily
         search = runDepartureStage(search, scene, request, requestContext, ...
-            necessaryArrivalTime_s);
+            earliestPossibleArrival_s);
     end
     if ~search.Done && capabilities.TimedVariableClockBmtp
-        search = runTimedChallengerStage(search, scene, request, requestContext, ...
-            totalTimer, necessaryArrivalTime_s);
+        search = runTimedSearchStage(search, scene, request, requestContext, ...
+            totalTimer, earliestPossibleArrival_s);
     end
-    if ~search.Done && capabilities.ChronologicalFixedClock
-        search = runChronologicalStage(search, scene, request, requestContext, totalTimer);
+    if ~search.Done && capabilities.ArrivalTimeTrials
+        search = runArrivalTimeTrialStage(search, scene, request, requestContext, totalTimer);
     end
     result = finishEarliestArrival(search.Result, search.Attempts, capabilities, ...
-        totalTimer, necessaryArrivalTime_s);
+        totalTimer, earliestPossibleArrival_s);
 end
 
 function search = runStaticSpatialStage(search, scene, request, requestContext, ...
-        necessaryArrivalTime_s)
+        earliestPossibleArrival_s)
     % Static fixed-position rest requests use one exact spatial proposal, and
-    % that proposal is the whole cascade.
+    % that proposal is the whole method sequence.
     attemptTimer = tic;
     result       = search.Result;
     graph        = getVisibilityGraph(scene.skeleton, request.initialState.position_units, ...
         request.goalState.position_units, "initialSpatialSnapshot");
     result.VisibilityGraph = graph;
     attempt = obstacleAvoidance.planning.createAttemptRecord(1, "spatialVisibility");
-    attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
+    attempt.EarliestPossibleArrival_s = earliestPossibleArrival_s;
     attempt.GraphConnected          = graph.IsConnected;
     attempt.GraphIsFullyEnumerated  = graph.GraphIsFullyEnumerated;
     attempt.RouteNodeCount          = size(graph.Route_units, 1);
@@ -356,18 +356,18 @@ function search = runStaticSpatialStage(search, scene, request, requestContext, 
 end
 
 function search = runDepartureStage(search, scene, request, requestContext, ...
-        necessaryArrivalTime_s)
+        earliestPossibleArrival_s)
     % Dynamic fixed-position rest requests try the direct departure family
-    % first. A validated departure becomes the incumbent and ends the cascade
-    % when it already meets the necessary arrival bound; a fallback-eligible
-    % failure hands the cascade on; any other outcome ends it.
+    % first. A validated departure becomes the best plan so far and ends the method sequence
+    % when it already meets the earliest possible arrival; a allowed to hand on
+    % failure hands the method sequence on; any other outcome ends it.
     attemptTimer = tic;
     result       = search.Result;
     route_units  = [request.initialState.position_units; request.goalState.position_units];
     seed         = struct('position_units', route_units, 'tau', [0; 1]);
     attempt = obstacleAvoidance.planning.createAttemptRecord(1, "analyticDeparture");
-    attempt.IsHeuristic             = true;
-    attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
+    attempt.IsShortcut             = true;
+    attempt.EarliestPossibleArrival_s = earliestPossibleArrival_s;
     attempt.GraphConnected          = true;
     attempt.RouteNodeCount          = 2;
     attempt.RouteLength_units       = norm(diff(route_units, 1, 1));
@@ -386,39 +386,39 @@ function search = runDepartureStage(search, scene, request, requestContext, ...
     attempt = populateMotionAttempt(attempt, departureResult, candidate, diagnostics);
     attempt.ElapsedTime_s = toc(attemptTimer);
     if departureResult.Success
-        attempt.IncumbentArrival_s   = departureResult.ArrivalTime_s;
+        attempt.BestSoFarArrival_s   = departureResult.ArrivalTime_s;
         attempt.Selected             = departureResult.ArrivalTime_s <= ...
-            necessaryArrivalTime_s + request.options.ArrivalTimeTolerance_s;
+            earliestPossibleArrival_s + request.options.ArrivalTimeTolerance_s;
         search.Result                = departureResult;
-        search.IncumbentAttemptIndex = 1;
+        search.BestSoFarAttemptIndex = 1;
         search.Done                  = attempt.Selected;
     elseif candidate.Success
         % The engine accepted a motion the public validator rejected.
         search.Result = departureResult;
         search.Done   = true;
     else
-        attempt.MethodFallbackEligible = ...
-            obstacleAvoidance.planning.methodFallbackEligible(departureResult);
-        attempt.MethodFallbackReason   = attempt.FailureKind;
-        attempt.FallbackEligible       = attempt.MethodFallbackEligible;
-        if ~attempt.MethodFallbackEligible
+        attempt.NextMethodAllowed = ...
+            obstacleAvoidance.planning.nextMethodAllowed(departureResult);
+        attempt.NextMethodReason   = attempt.FailureKind;
+        attempt.NextAttemptAllowed       = attempt.NextMethodAllowed;
+        if ~attempt.NextMethodAllowed
             search.Result = departureResult;
         end
-        search.Done = ~attempt.MethodFallbackEligible;
+        search.Done = ~attempt.NextMethodAllowed;
     end
     search.Attempts(end + 1, 1) = attempt;
 end
 
-function search = runTimedChallengerStage(search, scene, request, requestContext, ...
-        totalTimer, necessaryArrivalTime_s)
-    % One time-expanded variable-clock challenger, bounded by the incumbent
-    % arrival when there is one. An accepted challenger settles the selection;
-    % an invalid motion ends the cascade; a fallback-eligible failure hands the
-    % cascade on; any other failure keeps the incumbent or ends the cascade.
-    hasIncumbent         = search.IncumbentAttemptIndex > 0;
+function search = runTimedSearchStage(search, scene, request, requestContext, ...
+        totalTimer, earliestPossibleArrival_s)
+    % One time-expanded variable-clock timed search attempt, bounded by the best plan so far
+    % arrival when there is one. An accepted timed search attempt settles the selection;
+    % an invalid motion ends the method sequence; a allowed to hand on failure hands the
+    % method sequence on; any other failure keeps the best plan so far or ends the method sequence.
+    hasBestSoFar         = search.BestSoFarAttemptIndex > 0;
     tolerance_s          = request.options.ArrivalTimeTolerance_s;
     maximumArrivalTime_s = request.goalState.time_s;
-    if hasIncumbent
+    if hasBestSoFar
         maximumArrivalTime_s = min(maximumArrivalTime_s, search.Result.ArrivalTime_s - tolerance_s);
     end
     if maximumArrivalTime_s <= request.initialState.time_s + tolerance_s
@@ -430,15 +430,15 @@ function search = runTimedChallengerStage(search, scene, request, requestContext
         priorElapsedTime_s, struct(), maximumArrivalTime_s);
     attempt = createTimedAttemptRecord(numel(search.Attempts) + 1, ...
         timedResult, timedAccepted, priorElapsedTime_s);
-    attempt.NecessaryArrivalBound_s = necessaryArrivalTime_s;
-    if hasIncumbent
-        attempt.IncumbentArrival_s = search.Result.ArrivalTime_s;
+    attempt.EarliestPossibleArrival_s = earliestPossibleArrival_s;
+    if hasBestSoFar
+        attempt.BestSoFarArrival_s = search.Result.ArrivalTime_s;
     end
     if timedAccepted
-        incumbentIsNoLater = hasIncumbent && ...
+        bestSoFarIsNoLater = hasBestSoFar && ...
             search.Result.ArrivalTime_s <= timedResult.ArrivalTime_s + tolerance_s;
-        if incumbentIsNoLater
-            search.Attempts(search.IncumbentAttemptIndex).Selected = true;
+        if bestSoFarIsNoLater
+            search.Attempts(search.BestSoFarAttemptIndex).Selected = true;
         else
             attempt.Selected = true;
             search.Result    = timedResult;
@@ -448,12 +448,12 @@ function search = runTimedChallengerStage(search, scene, request, requestContext
         search.Result = timedResult;
         search.Done   = true;
     else
-        attempt.MethodFallbackEligible = ...
-            obstacleAvoidance.planning.methodFallbackEligible(timedResult);
-        attempt.MethodFallbackReason   = attempt.FailureKind;
-        attempt.FallbackEligible       = attempt.MethodFallbackEligible;
-        if hasIncumbent
-            search.Result.SolverDiagnostics.TimedChallenger = struct( ...
+        attempt.NextMethodAllowed = ...
+            obstacleAvoidance.planning.nextMethodAllowed(timedResult);
+        attempt.NextMethodReason   = attempt.FailureKind;
+        attempt.NextAttemptAllowed       = attempt.NextMethodAllowed;
+        if hasBestSoFar
+            search.Result.SolverDiagnostics.TimedSearchAttempt = struct( ...
                 'AttemptIndex',                  attempt.Index, ...
                 'Success',                       false, ...
                 'TerminationReason',             string(timedResult.TerminationReason), ...
@@ -461,33 +461,33 @@ function search = runTimedChallengerStage(search, scene, request, requestContext
                 'FailureStage',                  attempt.FailureStage, ...
                 'FailureKind',                   attempt.FailureKind, ...
                 'OptimizerIterateUnavailable',   attempt.OptimizerIterateUnavailable, ...
-                'MethodFallbackEligible',        attempt.MethodFallbackEligible, ...
+                'NextMethodAllowed',        attempt.NextMethodAllowed, ...
                 'VisibilityGraph',               timedResult.VisibilityGraph, ...
                 'Route_units',                   timedResult.Route_units, ...
                 'SolverDiagnostics',             timedResult.SolverDiagnostics);
-            if ~attempt.MethodFallbackEligible
+            if ~attempt.NextMethodAllowed
                 attempt.Message        = string(timedResult.Message);
                 attempt.SolverExitFlag = readDiagnosticScalar( ...
                     timedResult.SolverDiagnostics, "LastTrajectoryExitFlag", NaN);
-                search.Attempts(search.IncumbentAttemptIndex).Selected = true;
+                search.Attempts(search.BestSoFarAttemptIndex).Selected = true;
             end
         else
             search.Result = timedResult;
         end
-        search.Done = ~attempt.MethodFallbackEligible;
+        search.Done = ~attempt.NextMethodAllowed;
     end
     search.Attempts(end + 1, 1) = attempt;
 end
 
-function search = runChronologicalStage(search, scene, request, requestContext, totalTimer)
-    % Chronological fixed-clock search: the primary method for moving targets
-    % and non-rest endpoints, and the refinement of a dynamic incumbent within
+function search = runArrivalTimeTrialStage(search, scene, request, requestContext, totalTimer)
+    % Arrival-time search: the primary method for moving targets
+    % and non-rest endpoints, and the refinement of a dynamic best plan so far within
     % its own trial budget.
     trialLimit = request.options.MaxArrivalTrials;
-    if search.IncumbentAttemptIndex > 0
-        trialLimit = min(trialLimit, request.options.IncumbentRefinementTrialLimit);
+    if search.BestSoFarAttemptIndex > 0
+        trialLimit = min(trialLimit, request.options.BestSoFarRefinementTrialLimit);
         if trialLimit == 0
-            search.Attempts(search.IncumbentAttemptIndex).Selected = true;
+            search.Attempts(search.BestSoFarAttemptIndex).Selected = true;
             search.Done = true;
             return
         end
@@ -553,7 +553,7 @@ function attempt = createTimedAttemptRecord(index, timedResult, timedAccepted, .
 end
 
 function result = finishEarliestArrival(result, attempts, capabilities, totalTimer, ...
-        necessaryArrivalTime_s)
+        earliestPossibleArrival_s)
     % Publish consistent selection evidence for every earliest-arrival path.
     result.Attempts      = attempts;
     result.ElapsedTime_s = toc(totalTimer);
@@ -561,35 +561,35 @@ function result = finishEarliestArrival(result, attempts, capabilities, totalTim
     if isempty(selectedAttemptIndex)
         selectedAttemptIndex = 0;
     end
-    incumbentArrivalTime_s = NaN;
+    bestSoFarArrivalTime_s = NaN;
     if selectedAttemptIndex > 0 && ...
             isfinite(attempts(selectedAttemptIndex).CandidateArrival_s)
-        incumbentArrivalTime_s = attempts(selectedAttemptIndex).CandidateArrival_s;
+        bestSoFarArrivalTime_s = attempts(selectedAttemptIndex).CandidateArrival_s;
     end
-    globalEarliestProven = result.Success && isfinite(necessaryArrivalTime_s) && ...
-        result.ArrivalTime_s <= necessaryArrivalTime_s + ...
+    globalEarliestProven = result.Success && isfinite(earliestPossibleArrival_s) && ...
+        result.ArrivalTime_s <= earliestPossibleArrival_s + ...
         result.Options.ArrivalTimeTolerance_s;
     unsearchedInterval_s = [NaN, NaN];
-    if result.Success && ~globalEarliestProven && isfinite(necessaryArrivalTime_s)
+    if result.Success && ~globalEarliestProven && isfinite(earliestPossibleArrival_s)
         unsearchedUpperTime_s = result.ArrivalTime_s - ...
             result.Options.ArrivalTimeTolerance_s;
-        if unsearchedUpperTime_s > necessaryArrivalTime_s
-            unsearchedInterval_s = [necessaryArrivalTime_s, unsearchedUpperTime_s];
+        if unsearchedUpperTime_s > earliestPossibleArrival_s
+            unsearchedInterval_s = [earliestPossibleArrival_s, unsearchedUpperTime_s];
         end
     end
-    chronologicalSearchUsed = false;
+    arrivalTimeSearchUsed = false;
     if ~isempty(attempts)
-        chronologicalSearchUsed = any([attempts.Kind] == ...
-            "chronologicalFixedArrival");
+        arrivalTimeSearchUsed = any([attempts.Kind] == ...
+            "arrivalTimeTrial");
     end
     result.EarliestArrival = struct( ...
         'Capabilities',             capabilities, ...
-        'NecessaryArrivalBound_s',  necessaryArrivalTime_s, ...
-        'IncumbentArrival_s',       incumbentArrivalTime_s, ...
+        'EarliestPossibleArrival_s',  earliestPossibleArrival_s, ...
+        'BestSoFarArrival_s',       bestSoFarArrivalTime_s, ...
         'SelectedAttemptIndex',     selectedAttemptIndex, ...
         'GlobalEarliestProven',     globalEarliestProven, ...
         'UnsearchedInterval_s',     unsearchedInterval_s, ...
-        'ChronologicalSearchUsed',  chronologicalSearchUsed, ...
+        'ArrivalTimeSearchUsed',  arrivalTimeSearchUsed, ...
         'AttemptCount',             numel(attempts));
     if isfield(result, 'TemporalSearch')
         result.TemporalSearch.GlobalEarliestProven = globalEarliestProven;
@@ -600,7 +600,7 @@ end
 function result = planFixedArrivalDynamic(result, scene, request, requestContext, totalTimer)
     % Two cheap exact-snapshot guides are deterministic shortcuts. Their
     % bounded failures never prove infeasibility; eligible failures advance
-    % to the next guide and ultimately to one clean timed fallback.
+    % to the next guide and ultimately to one clean timed next method.
     snapshotProbeIterationLimit = request.options.SpatialProbeIterationLimit;
     snapshotKinds = ["initialSpatialSnapshot", "arrivalSpatialSnapshot"];
     snapshotTimes_s = [request.initialState.time_s, request.goalState.time_s];
@@ -612,7 +612,7 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
         attemptTimer = tic;
         attempt = obstacleAvoidance.planning.createAttemptRecord( ...
             snapshotIndex, "spatialVisibility");
-        attempt.IsHeuristic       = true;
+        attempt.IsShortcut       = true;
         attempt.IterationLimit    = snapshotProbeIterationLimit;
         attempt.GraphSnapshotTime_s = snapshotTimes_s(snapshotIndex);
 
@@ -633,11 +633,11 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
         attempt.ExpandedCount          = graph.ExpandedCount;
 
         if ~graph.IsConnected
-            attempt.FallbackEligible = true;
+            attempt.NextAttemptAllowed = true;
         elseif ~isempty(previousRoute_units) && isequaln(graph.Route_units, previousRoute_units)
             % Identical routes produce identical BMTP requests because the
             % full time-cell coverage, not the snapshot label, is solved.
-            attempt.FallbackEligible = true;
+            attempt.NextAttemptAllowed = true;
         else
             route_units      = graph.Route_units;
             previousRoute_units = route_units;
@@ -681,7 +681,7 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
                 result = candidateResult;
                 return
             elseif attempt.AlternativeGuideEligible
-                attempt.FallbackEligible = true;
+                attempt.NextAttemptAllowed = true;
                 result                   = candidateResult;
             else
                 attempt.ElapsedTime_s = toc(attemptTimer);
@@ -695,7 +695,7 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
         attempts(end + 1, 1)  = attempt; %#ok<AGROW>
     end
 
-    % The timed fallback starts from a clean motion and graph record. It is
+    % The timed next method starts from a clean motion and graph record. It is
     % the only non-snapshot proposal and runs with the normal solver budget.
     priorElapsedTime_s = toc(totalTimer);
     [timedResult, timedAccepted, ~] = obstacleAvoidance.planning.tryTimedArrival( ...

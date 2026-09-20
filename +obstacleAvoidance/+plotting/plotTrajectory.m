@@ -99,10 +99,10 @@ handles         = createEmptyHandles(options);
 % clock is that trial's, not the horizon the caller asked about. Plot the
 % requested horizon when the record still carries it.
 plotHorizon_s = result.Inputs.goalState.time_s;
-% Only a failed derived request keeps its outer request; widen the window
+% Only a failed child request keeps its parent request; widen the window
 % to the outer clock and never shrink it.
-if ~result.Success && isfield(result, 'OuterRequest')
-    outerHorizon_s = result.OuterRequest.GoalTime_s;
+if ~result.Success && isfield(result, 'ParentRequest')
+    outerHorizon_s = result.ParentRequest.GoalTime_s;
     if isnumeric(outerHorizon_s) && isscalar(outerHorizon_s) && ...
             isreal(outerHorizon_s) && isfinite(outerHorizon_s)
         plotHorizon_s = max(plotHorizon_s, double(outerHorizon_s));
@@ -261,7 +261,7 @@ end
 %% Section 6: Local Functions
 
 function configureSpatialAxes(axesHandle, result)
-    % Fit ordinary scenes; keep periodic views in the requested workspace.
+    % Fit ordinary scenes; keep wrapped views in the requested workspace.
     hold(axesHandle, "on");
     grid(axesHandle, "on");
     box(axesHandle, "on");

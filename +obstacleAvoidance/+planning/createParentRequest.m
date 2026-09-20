@@ -1,26 +1,29 @@
-function outerRequest = createOuterRequest(request, requestContext)
+function parentRequest = createParentRequest(request, requestContext)
 %% Section 0: Header & Readme
 % SYNTAX
-%   outerRequest = obstacleAvoidance.planning.createOuterRequest( ...
+%   parentRequest = obstacleAvoidance.planning.createParentRequest( ...
 %       request, requestContext)
 %**************************************************************************
 % PURPOSE
-%   - Declare the outer request a derived trial plans under: the supplied
-%     and requested inputs and wrap options its acceptance declaration
-%     must carry, the fixed-arrival trial clock (NaN until a chronological
-%     trial sets it), and the two products a trial may reuse instead of
-%     rebuilding, each declared empty here and filled by the trial's
-%     producer under a key the trial rebuilds for itself.
+%   - Some requests are answered by planning other requests: a wrapped
+%     request as unwrapped copies, an earliest-arrival search as a series of
+%     fixed-arrival trials. Each inner run carries this record of the
+%     request the user actually made, so its result is declared against the
+%     original inputs and wrap options rather than the trial's own.
+%   - It also carries the trial clock (NaN until an arrival-time trial sets
+%     it) and two products a trial may reuse instead of rebuilding, the
+%     endpoint check and the vertex visibility, declared empty here and
+%     filled by the trial's producer under a key the trial rebuilds itself.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
-%       Normalized planner states, limits, and options of the outer request.
+%       Normalized planner states, limits, and options of the parent request.
 %   - requestContext (scalar struct)
-%       Original inputs and provenance of the outer request.
+%       Original inputs and provenance of the parent request.
 %**************************************************************************
 % OUTPUTS
-%   - outerRequest (scalar struct)
-%       Private provenance for a derived request, one declared shape. A
+%   - parentRequest (scalar struct)
+%       The record a child request plans under, always the same shape. A
 %       NaN FixedArrivalTrialTime_s means no trial clock; an empty Key,
 %       and for the validation Feasible = false, means no product to reuse.
 %**************************************************************************
@@ -28,9 +31,9 @@ function outerRequest = createOuterRequest(request, requestContext)
 %   - Time is seconds and positions are coordinate units.
 %**************************************************************************
 
-%% Section 1: Declare The Outer Request
+%% Section 1: Declare The Parent Request
 
-outerRequest = struct( ...
+parentRequest = struct( ...
     'SuppliedLimits',          requestContext.suppliedLimits, ...
     'SuppliedGoalState',       requestContext.suppliedGoalState, ...
     'RequestedLimits',         requestContext.requestedLimits, ...

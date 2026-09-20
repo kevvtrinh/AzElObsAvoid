@@ -246,7 +246,7 @@ if isfield(result, 'FixedArrivalTrialTime_s')
         abs(result.FixedArrivalTrialTime_s - polynomial.FinalTime_s) <= timeTolerance_s;
 end
 
-% A wrapped axis is planned inside the reach band of the whole request.
+% A wrapped axis is planned inside the reachable range of the whole request.
 wrapAxes = [result.Options.WrapX, result.Options.WrapY];
 if isfield(result, 'RequestedLimits')
     for intervalName = ["xInterval_units", "yInterval_units"]
@@ -262,15 +262,15 @@ if isfield(result, 'RequestedLimits')
     end
 end
 
-% The unwrapped goal must be an image of the requested goal inside the band.
-% A lifted target must be the requested target lifted by continuity from the
-% initial position and moved by one period offset.
+% The unwrapped goal must be a copy of the requested goal inside the range the
+% vehicle can reach. An unwrapped target must be the requested target's path
+% unwrapped by continuity from the initial position, shifted by whole turns.
 if isfield(result, 'RequestedGoalState') && any(wrapAxes)
     requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
     bands_units              = [result.Limits.xInterval_units; result.Limits.yInterval_units];
     requestedGoal            = result.RequestedGoalState;
     if isfield(requestedGoal, 'targetMotion') && ~isempty(requestedGoal.targetMotion)
-        liftedTarget = obstacleAvoidance.input.liftPeriodicTarget( ...
+        unwrappedTarget = obstacleAvoidance.input.unwrapTargetPath( ...
             requestedGoal.targetMotion, initialState.position_units, requestedIntervals_units, wrapAxes);
         actualTarget         = result.Inputs.goalState.targetMotion;
         actualPosition_units = double(actualTarget.position_units);
@@ -278,12 +278,12 @@ if isfield(result, 'RequestedGoalState') && any(wrapAxes)
         for axisIndex = find(wrapAxes)
             period_units = diff(requestedIntervals_units(axisIndex, :));
             offset_units(axisIndex) = period_units * round( ...
-                (actualPosition_units(1, axisIndex) - liftedTarget.position_units(1, axisIndex)) / period_units);
+                (actualPosition_units(1, axisIndex) - unwrappedTarget.position_units(1, axisIndex)) / period_units);
         end
         metadataIsConsistent = metadataIsConsistent && ...
-            isequal(size(actualPosition_units), size(liftedTarget.position_units)) && ...
+            isequal(size(actualPosition_units), size(unwrappedTarget.position_units)) && ...
             isequal(double(actualTarget.time_s(:)), double(requestedGoal.targetMotion.time_s(:))) && ...
-            max(abs(actualPosition_units - (liftedTarget.position_units + offset_units)), [], 'all') <= tolerance;
+            max(abs(actualPosition_units - (unwrappedTarget.position_units + offset_units)), [], 'all') <= tolerance;
     else
         for axisIndex = find(wrapAxes)
             period_units = diff(requestedIntervals_units(axisIndex, :));
@@ -368,9 +368,9 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         authoritativeInput = rmfield(authoritativeInput, 'InternalPreparation');
     end
     if (result.Options.WrapX || result.Options.WrapY) && ~isempty(authoritativeInput)
-        % Periodic obstacles are rebuilt as the same translated images the
+        % Wrapped obstacles are rebuilt as the same translated copies the
         % planner used, from the supplied obstacles and the record's band.
-        authoritativeInput = obstacleAvoidance.input.replicatePeriodicObstacles(authoritativeInput, ...
+        authoritativeInput = obstacleAvoidance.input.copyObstaclesAcrossWraps(authoritativeInput, ...
             [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units], ...
             [result.Options.WrapX, result.Options.WrapY], ...
             [result.Limits.xInterval_units; result.Limits.yInterval_units]);

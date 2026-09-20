@@ -9,12 +9,12 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %   - Prepare protected polygon histories and an exact visibility guide,
 %     then construct independently certified C3 quintic BMTP motion.
 %   - Fixed-arrival moving-obstacle requests use bounded initial- and
-%     arrival-snapshot shortcuts, then one time-expanded fallback. Failed
+%     arrival-snapshot shortcuts, then one time-expanded next method. Failed
 %     shortcuts never prove infeasibility, and every accepted motion passes
 %     independent validation.
 %   - Earliest-arrival requests use one capability-driven pipeline: an exact
-%     static BMTP solve, or a departure incumbent followed by one timed
-%     challenger, or chronological fixed-clock trials when required.
+%     static BMTP solve, or a departure best plan so far followed by one timed
+%     timed search attempt, or arrival-time trials when required.
 %**************************************************************************
 % INPUTS
 %   - obstacles (struct array)
@@ -31,13 +31,13 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       residuals; the other options control the arrival mode, sampling,
 %       wrapping, endpoint matching, and search. SpatialProbeIterationLimit
 %       is the explicit BMTP budget for each fixed-arrival snapshot shortcut.
-%       IncumbentRefinementTrialLimit optionally spends bounded chronological
-%       trials below a validated earliest-arrival incumbent; zero skips that
-%       secondary refinement without discarding the incumbent.
-%       A wrapped axis is planned in the unwrapped frame inside the reach
-%       band: obstacle images that meet the band, a target lifted by
-%       continuity, and every goal image in the band planned and accepted
-%       against the periodic request.
+%       BestSoFarRefinementTrialLimit is how many arrival-time trials may
+%       try to beat a valid earliest-arrival plan once one is found; zero
+%       keeps that plan without trying. A wrapped axis (WrapX, WrapY) is
+%       planned in plain unwrapped coordinates: obstacles are copied one
+%       turn up and down, a moving target's path is unwrapped so it never
+%       jumps at the seam, and every goal copy the vehicle can reach in time
+%       is planned and accepted against the wrapped request.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)

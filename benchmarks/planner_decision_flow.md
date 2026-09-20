@@ -32,9 +32,9 @@ that is easy to miss in a top-level read.
 ```mermaid
 flowchart TD
     A["planner(obstacles, initialState, goalState, limits, options)"] --> B["Normalize and validate public inputs"]
-    B --> W{"Periodic axis requested?"}
-    W -- yes --> W1["Create exact reachable obstacle and goal images<br/>lift moving target continuously"]
-    W1 --> W2["Plan plain unwrapped goal images nearest first<br/>prune fixed-goal images only by admissible bounds;<br/>validate each candidate against the periodic request"]
+    B --> W{"Wrapped axis requested?"}
+    W -- yes --> W1["Create exact reachable obstacle and goal copies<br/>unwrap the moving target's path"]
+    W1 --> W2["Plan plain unwrapped goal copies nearest first<br/>prune fixed-goal copies only by admissible bounds;<br/>validate each candidate against the wrapped request"]
     W2 --> W3["Select earliest arrival or shortest fixed motion"]
     W3 --> O
     W -- no --> G["Prepare original and protected geometry once<br/>margin applied exactly once"]
@@ -65,44 +65,44 @@ flowchart TD
         FA -- "typed timing, proposal,<br/>or bounded optimization miss" --> FNEXT{"Another distinct snapshot remains?"}
         FA -- "certification, numerical, or unknown failure" --> FTERM["Terminal typed failure"]
         FNEXT -- yes --> FS
-        FNEXT -- no --> FT["One clean time-expanded visibility fallback<br/>normal BMTP budget"]
+        FNEXT -- no --> FT["One clean time-expanded visibility search as the next method<br/>normal BMTP budget"]
         FT --> FTA{"Result"}
         FTA -- "validated" --> FTSUCCESS["Select timed motion"]
         FTA -- "otherwise" --> FTERM
     end
 
     subgraph EARLY["Earliest-arrival branch ⚠"]
-        EC["⚠ Resolve capabilities once:<br/>static spatial, departure family,<br/>timed variable clock, chronological fixed clock"]
+        EC["⚠ Resolve capabilities once:<br/>static spatial, departure family,<br/>timed variable clock, arrival-time fixed clock"]
         EC --> EK{"Request capability"}
 
         EK -- "static + fixed goal + rest endpoints" --> ES["Exact spatial graph + variable-clock BMTP"]
         ES --> ESA{"Result"}
         ESA -- "validated" --> ESOK["Select static motion"]
-        ESA -- "otherwise" --> ESTOP["Terminal: no unrelated fallback"]
+        ESA -- "otherwise" --> ESTOP["Terminal: no unrelated next method"]
 
         EK -- "dynamic + fixed goal + rest endpoints" --> ED["⚠ Analytic direct-departure family"]
         ED --> EDA{"Result"}
         EDA -- "validator rejected" --> EDEFECT["Terminal invalidMotion defect"]
-        EDA -- "validated" --> EI["⚠ Retain validated incumbent"]
+        EDA -- "validated" --> EI["⚠ Retain validated best plan so far"]
         EDA -- "typed method-local miss" --> ET
         EDA -- "other failure" --> ESTOP
         EI --> ELB{"Necessary arrival lower bound attained<br/>within ArrivalTimeTolerance_s?"}
-        ELB -- yes --> EPROOF["Select incumbent<br/>GlobalEarliestProven = true"]
-        ELB -- no --> ET["⚠ One time-expanded variable-clock challenger<br/>horizon capped below incumbent - tolerance"]
+        ELB -- yes --> EPROOF["Select best plan so far<br/>GlobalEarliestProven = true"]
+        ELB -- no --> ET["⚠ One time-expanded variable-clock timed search attempt<br/>horizon capped below best plan so far - tolerance"]
         ET --> ETA{"Result"}
-        ETA -- "validated" --> ECMP["Compare candidate with incumbent<br/>within tolerance keep departure incumbent"]
+        ETA -- "validated" --> ECMP["Compare candidate with best plan so far<br/>within tolerance keep departure best plan so far"]
         ECMP --> ESELECT["Select policy-preferred validated motion"]
         ETA -- "validator rejected" --> EDEFECT
-        ETA -- "typed method-local miss" --> ER{"Validated incumbent exists?"}
+        ETA -- "typed method-local miss" --> ER{"Validated best plan so far exists?"}
         ETA -- "geometry certification, reconstruction,<br/>numerical, or unknown failure" --> ESTOP
 
         EK -- "moving target or non-rest endpoint" --> CH
         ER -- no --> CH
-        ER -- yes --> RB{"◆ IncumbentRefinementTrialLimit<br/>default 0; capped by MaxArrivalTrials"}
-        RB -- 0 --> KEEP["⚠ Retain incumbent; publish unsearched interval<br/>do not claim global earliest"]
+        ER -- yes --> RB{"◆ BestSoFarRefinementTrialLimit<br/>default 0; capped by MaxArrivalTrials"}
+        RB -- 0 --> KEEP["⚠ Retain best plan so far; publish unsearched interval<br/>do not claim global earliest"]
         RB -- "> 0" --> CH
 
-        CH["⚠ Chronological fixed-clock search"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
+        CH["⚠ Arrival-time search"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
         CG --> CP["⚠ Prescreen endpoint physics and per-clock<br/>minimum travel time before solver"]
         CP -- "rejected cheaply" --> CN{"More candidates and budget?"}
         CP -- "passes" --> CS["Call fixed-arrival planner on that physical clock<br/>store its attempts as child evidence"]
@@ -111,8 +111,8 @@ flowchart TD
         CSA -- "validator or ineligible typed failure" --> CTERM["Terminal failure"]
         CSA -- "typed clock-local miss" --> CN
         CN -- yes --> CP
-        CN -- no --> CX{"Validated incumbent exists?"}
-        CX -- yes --> CRETAIN["Retain incumbent with explicit cap/exhaustion reason"]
+        CN -- no --> CX{"Validated best plan so far exists?"}
+        CX -- yes --> CRETAIN["Retain best plan so far with explicit cap/exhaustion reason"]
         CX -- no --> CFAIL["Return arrivalSearchExhausted"]
         CS -. "◆ solver trials: MaxArrivalTrials = 100 default<br/>separate from candidate cap" .-> CN
     end
@@ -129,7 +129,7 @@ flowchart TD
     COK --> O
     CRETAIN --> O
 
-    VAL["Public independent validator runs inside finalizeCandidate<br/>before Success, incumbent retention, or selection"]
+    VAL["Public independent validator runs inside finalizeCandidate<br/>before Success, best plan so far retention, or selection"]
     VAL -. governs .-> FBA
     VAL -. governs .-> FA
     VAL -. governs .-> FTA
@@ -170,8 +170,8 @@ flowchart TD
 ```
 
 There is no route-generation retry schedule. The two fixed-arrival snapshots
-are distinct physical guides, and the timed fallback is constructed once.
-Chronological arrival trials are different requested clocks rather than retries
+are distinct physical guides, and the timed next method is constructed once.
+Arrival-Time arrival trials are different requested clocks rather than retries
 of one solver state. The ten-step certificate loop refines only the proof mesh
 for one candidate. All acceptance arrows above pass through the same public
 validator; the selected attempt kind reports which physical method won.
@@ -184,11 +184,11 @@ independent validator.
 
 | Case | Runtime (s) | Arrival (s) | Length | Selected source | Attempt path |
 | --- | ---: | ---: | ---: | --- | --- |
-| Zero-delay departure incumbent | 1.295 | 4.631128877 | 4.000000000 | `departureSchedule` | analytic accepted; timed challenger superseded |
-| Delayed departure retained | 0.399 | 10.140088919 | 10.000000000 | `departureSchedule` | analytic accepted; timed typed miss; incumbent retained |
+| Zero-delay departure best plan so far | 1.295 | 4.631128877 | 4.000000000 | `departureSchedule` | analytic accepted; timed timed search attempt superseded |
+| Delayed departure retained | 0.399 | 10.140088919 | 10.000000000 | `departureSchedule` | analytic accepted; timed typed miss; best plan so far retained |
 | Timed homotopy beats departure | 3.303 | 8.553411322 | 12.463061582 | `timeExpandedVisibilityGraph` | analytic superseded; timed accepted |
-| Non-rest chronological clock | 0.389 | 5.000000000 | 4.000000000 | `initialSpatialSnapshot` | six clock-local misses; seventh clock accepted |
-| Moving-target chronological clock | 0.168 | 5.000000000 | 4.609772229 | `initialSpatialSnapshot` | first physical clock accepted |
+| Non-rest arrival-time clock | 0.389 | 5.000000000 | 4.000000000 | `initialSpatialSnapshot` | six clock-local misses; seventh clock accepted |
+| Moving-target arrival-time clock | 0.168 | 5.000000000 | 4.609772229 | `initialSpatialSnapshot` | first physical clock accepted |
 | Static spatial variable clock | 0.031 | 4.631128877 | 4.123105626 | `initialSpatialSnapshot` | exact spatial guide accepted |
 
 Wall times are indicative single-machine measurements. Arrival, length,
@@ -204,7 +204,7 @@ deterministic comparison fields.
 | Terminal reachable set contained by an obstacle | `testPlannerDecisionFlow/testTerminalReachabilityBlocked` | Returns `terminalReachabilityBlocked` | Required sufficient infeasibility proof |
 | Endpoint derivative or workspace violation | `testEndpointDerivativeLimit`, `testEndpointOutsideWorkspace`, `testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning` | Stable endpoint reason before search | Required physical-input boundary |
 | Necessary travel time exceeds fixed horizon | `testPlannerDecisionFlow/testTimeWindowInfeasible` | Returns `timeWindowInfeasible` | Required physical lower bound |
-| Periodic image resolution | `testPeriodicWrapUsesNearestImage`, `testPeriodicYAndDualAxisWrap`, `testPeriodicObstacleImageBlocksTheSeam`, `testPeriodicFarImageBeatsABlockedNearImage`, `testPeriodicMovingTargetIsLiftedAcrossTheSeam` | Plain requests in the unwrapped frame: obstacle images that meet the reach band, a target lifted by continuity, every goal image in the band planned nearest first and the best valid candidate accepted against the periodic request in the one gate | Required coordinate policy |
+| Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in the unwrapped coordinates: obstacle copies that meet the reachable range, a target unwrapped by continuity, every goal copy in the reachable range planned nearest first and the best valid candidate accepted against the wrapped request in the one gate | Required coordinate policy |
 | Fixed direct chord | `testPlanningCore/testDirect` | Minimum-jerk quintic at the prescribed horizon, public validation | Retained analytic specialization |
 | Fixed static detour | `testPlanningCore/testDetourAndTampering`, explicit default detour inputs | Exhaustive exact spatial visibility graph and static BMTP | Retained |
 | Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline`) | The initial exact spatial route certifies in the initial BMTP pass or its first refined pass | Retained as first guide |
@@ -214,12 +214,12 @@ deterministic comparison fields.
 | Static no visibility route | `testPlanningCore/testNoPath`, `exampleNoPath` | Exhaustive graph disconnected; `noVisibilityRoute` | Required exact no-route outcome |
 | Earliest static rest-to-rest direct | `testEarliestStaticDirectUsesAnalyticClock` | Analytic C3 jerk-limited clock and validation | Retained; fastest exact specialization |
 | Earliest static detour | `testStaticActivePairBmtp/testSeparatedSlalomBarriers` | Static active-pair variable-clock BMTP | Retained |
-| Earliest zero-delay C3 chord | `testSparseDynamicZeroWaitDeparture` | The retained analytic C3 profile becomes a validated incumbent. It is objective-terminal only if it attains the necessary arrival lower bound; otherwise the one timed challenger may compete below it | Retained analytic profile with honest proof rule |
-| Earliest delayed C3 chord as incumbent | `testChallengedDelayedChordIncumbentIsRetained`, `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, `testTimedHomotopyPrecedesDelayedDeparture` | A delayed chord is only an incumbent; the single timed profile may replace it only with an earlier independently valid motion. If that challenger has a typed method-local miss, the default refinement budget of zero retains the incumbent and reports the unsearched interval; a caller may explicitly permit bounded chronological refinement | Retained and strengthened fallback |
-| Earliest timed profile beats the incumbent | `exampleMovingCircleNoWrap`, `testCircleDetourBeatsWaiting`, `testTimedHomotopyPrecedesDelayedDeparture` | The variable-clock timed profile arrives at 8.5732 s for the circle and 8.55 s for the rising-circle regression; both beat their delayed direct chords and validate | Retained |
+| Earliest zero-delay C3 chord | `testSparseDynamicZeroWaitDeparture` | The retained analytic C3 profile becomes a validated best plan so far. It is objective-terminal only if it attains the necessary arrival lower bound; otherwise the one timed timed search attempt may compete below it | Retained analytic profile with honest proof rule |
+| Earliest delayed C3 chord as best plan so far | `testChallengedDelayedChordBestSoFarIsRetained`, `exampleMovingBarrierWait`, `exampleOpeningUShapedObstacle`, `testTimedHomotopyPrecedesDelayedDeparture` | A delayed chord is only an best plan so far; the single timed profile may replace it only with an earlier independently valid motion. If that timed search attempt has a typed method-local miss, the default refinement budget of zero retains the best plan so far and reports the unsearched interval; a caller may explicitly permit bounded arrival-time refinement | Retained and strengthened next method |
+| Earliest timed profile beats the best plan so far | `exampleMovingCircleNoWrap`, `testCircleDetourBeatsWaiting`, `testTimedHomotopyPrecedesDelayedDeparture` | The variable-clock timed profile arrives at 8.5732 s for the circle and 8.55 s for the rising-circle regression; both beat their delayed direct chords and validate | Retained |
 | Earliest timed profile with a free goal window | `testTimeScopedPlanes/testSavedMovingDetourEarliestArrival`, random case 1 earliest, `testGoalVisibilityWindows/testPublicPlannerChoosesAReopenedGoalWindow`, `testLongRequestUsesBudgetAfterPhysicalBound` | One source-independent variable-clock profile; the goal's clear-wait window bounds the clock; BMTP, not the seed builder, satisfies derivative limits | Retained; the only timed earliest profile |
-| Earliest chronological search | `testEarliestMovingTargetUsesChronologicalClock`, `testEarliestStaticNonrestUsesPhysicalClockTrials` | Moving targets and non-rest endpoints route directly to fixed-arrival trials because the other families do not support their endpoint physics. Dynamic fixed-rest requests enter only after eligible earlier-method misses and, when an incumbent exists, only within the explicit refinement budget. Each trial is planned on its own clock and accepted against the outer request in the planner's one acceptance gate (`testWrappedNonrestEarliestTrialIsAcceptedOnce`) | Retained; capability-gated incomplete search |
-| Earliest chronological exhaustion | `testArrivalSearchExhausted` | Stable `arrivalSearchExhausted` with explicit unsearched intervals | Required honest outcome |
+| Earliest arrival-time search | `testEarliestMovingTargetUsesArrivalTimeClock`, `testEarliestStaticNonrestUsesPhysicalClockTrials` | Moving targets and non-rest endpoints route directly to fixed-arrival trials because the other families do not support their endpoint physics. Dynamic fixed-rest requests enter only after eligible earlier-method misses and, when an best plan so far exists, only within the explicit refinement budget. Each trial is planned on its own clock and accepted against the parent request in the planner's one acceptance gate (`testWrappedNonrestEarliestTrialIsAcceptedOnce`) | Retained; capability-gated incomplete search |
+| Earliest arrival-time exhaustion | `testArrivalSearchExhausted` | Stable `arrivalSearchExhausted` with explicit unsearched intervals | Required honest outcome |
 
 ## BMTP motion-generation routing
 
@@ -258,10 +258,10 @@ for earliest-arrival requests, not a pure refactor.
 
 - Diagnostic seed labels used for degree and subdivision routing in
   `bmtpEngine.pipeline.createSolveRequest`.
-- The earliest-arrival fixed-clock manufacture and refinement cascade; a free
+- The earliest-arrival fixed-clock manufacture and refinement method sequence; a free
   goal window now uses one variable-clock timed profile.
 - The `directVariableClock` challenge of a delayed chord as a separately
-  labelled seed; the single timed profile is the challenger.
+  labelled seed; the single timed profile is the timed search attempt.
 - The initial-snapshot route length as a global arrival lower bound for moving
   geometry (`InitialRouteTimeBound_s`): later moving geometry can expose a
   shorter route.
@@ -283,7 +283,7 @@ for earliest-arrival requests, not a pure refactor.
   moving half-space residuals are quadratic; all real roots and the intervals
   between them are classified, so a between-sample contact cannot enter BMTP.
 - The quadrupling boundary-offset retry schedule, Delaunay-first spatial graph,
-  connectivity recovery, and exhaustive fallback in timed proposal creation.
+  connectivity recovery, and exhaustive next method in timed proposal creation.
   They were compensating for a capped node selector and did not certify any
   motion. One input-scaled staging-node set now feeds one temporal search.
 - The near-goal wait preference and later-final-transition tie rule. Temporal
@@ -292,7 +292,7 @@ for earliest-arrival requests, not a pure refactor.
 - The seed-label branch in `bmtpEngine.solve`; the delayed-chord family is
   selected from the physical request (direct rest-to-rest earliest request
   with moving cells and no timed guide).
-- The fixed-arrival guide cascade advancing past a solver success that the
+- The fixed-arrival guide method sequence advancing past a solver success that the
   public validator rejected; only solver-level infeasibility admits the next
   guide, and a rejected motion terminates as a defect to diagnose upstream.
   The admitting condition is the typed `candidate.OptimizerIterateUnavailable`
@@ -305,14 +305,14 @@ for earliest-arrival requests, not a pure refactor.
   were built. Fixed in `createWarmStart`.
 - **Contaminated static edge** (180-second static wall): the 13-sample check
   accepted `[-60,0] -> [1.001,-0.501]` through the wall; exact corridor
-  initialization rejected it at segment 8 and chronological search then spent
+  initialization rejected it at segment 8 and arrival-time search then spent
   about 145 s compensating. Fixed with the exact static predicate.
 - **Every wait declared blocked** (saved moving detour earliest): the exact
   static predicate returned "not visible" for every zero-length segment, and
   stationary waits are zero-length segments, so any scene with a static
   obstacle lost all waits. The goal window collapsed to one instant, the seed
   clock was forced to equal the horizon, the first variable-clock SOCP was
-  infeasible, and the planner fell into the chronological cascade (killed
+  infeasible, and the planner fell into the arrival-time method sequence (killed
   after 35 min CPU). Fixed in `checkVisibilitySegments`: a point segment is
   visible exactly when the point is not inside the obstacle. Regression:
   `testArrivalSearchRegressions/testStaticSceneRetainsFreePointWait`.
@@ -334,7 +334,7 @@ for earliest-arrival requests, not a pure refactor.
 | Continuous-time safe-interval rewrite of the temporal search (labels over wait components, aligned departures, Pareto time/cost labels) | Static wall arrival improved only from 65.28 s to 65.08 s; moving circle regressed from 8.60 s to the 12.30 s delayed chord because the Pareto-selected sampled proposal cannot initialize an exact corridor; `testMixedStaticObstacleLifetimes` selected later routes. Not adopted; the sampled moving-edge oracle, not the clock, is the limiting representation |
 | Degree-8 representation for every time-scoped timed seed (keyed on physical timing mode) | Static wall 64.0018 s (production 64.0) but length 126.64 versus 120.00 (+5.5%); saved moving detour 116.44 s; random case 1 70.07 s. Rejected by the one-sided length gate |
 | Layer-midpoint sampling of moving edges | Still missed a true moving-circle contact by about 0.0015 s; denser arbitrary sampling only moves the blind spot |
-| Cap `MaxArrivalTrials` at 5 | Premise no longer holds: with the wait fix the static wall completes in about 1.1 s and the cascade does not recur; the public default is unchanged |
+| Cap `MaxArrivalTrials` at 5 | Premise no longer holds: with the wait fix the static wall completes in about 1.1 s and the method sequence does not recur; the public default is unchanged |
 | Initial-snapshot distance as a global arrival bound | Invalid for moving geometry |
 | Uniform temporal layers plus one more downstream trial | Cannot repair a missed feasible clock interval |
 | Topology rule "start wait plus direct chord" to prove BMTP redundant | BMTP may bend away from the guide; a different speed profile can pass windows a shifted chord cannot |
@@ -360,8 +360,8 @@ exact. Every candidate success passed `obstacleAvoidance.validateTrajectory`.
 | Static wall 180 s | 64 / 120.004361257 | 64.6330611095 / 120.005775814 | **+0.989%** | +0.001% | 29.63 -> 3.58 |
 | Random case 1 earliest | 71.5 / 134.062872866 | 70.7396341437 / 134.141841873 | -1.064% | +0.059% | 25.77 -> 3.87 |
 | Spinning U fixed | 24 / 16.1430599 | 24 / 16.2756944 | 0.000% | +0.822% | n/a -> 20.35 |
-| Moving target chronological | 5 / 4.6097722286 | 5 / 4.6097722286 | 0.000% | 0.000% | 1.56 -> 0.58 |
-| Non-rest endpoint chronological | 5 / 4 | 5 / 4 | 0.000% | 0.000% | 1.62 -> 0.65 |
+| Moving target arrival-time | 5 / 4.6097722286 | 5 / 4.6097722286 | 0.000% | 0.000% | 1.56 -> 0.58 |
+| Non-rest endpoint arrival-time | 5 / 4 | 5 / 4 | 0.000% | 0.000% | 1.62 -> 0.65 |
 | Arrival search exhausted | `arrivalSearchExhausted` | `arrivalSearchExhausted` | n/a | n/a | 0.11 -> 0.02 |
 | Fixed direct | 10 / 4.1231056256 | 10 / 4.1231056256 | 0.000% | 0.000% | 0.10 -> 0.03 |
 | Fixed static detour | 12 / 8.5184605652 | 12 / 8.5184605652 | 0.000% | 0.000% | 1.73 -> 0.76 |
@@ -418,7 +418,7 @@ sub-interval, and label-invariance regressions.
 The 180-second static-wall regression now arrives at 64.6330611 s against the
 64.0 s exact static reference (+0.989%), with path length +0.001%. The source
 fix is a 20-span, source-independent variable-clock mesh; it returns in 3.58 s
-instead of production's 29.6 s chronological cascade. The regression asserts
+instead of production's 29.6 s arrival-time method sequence. The regression asserts
 the real 64.64 s gate rather than the former loose 82.5 s threshold.
 
 ## Remaining limitations
@@ -427,7 +427,7 @@ the real 64.64 s gate rather than the former loose 82.5 s threshold.
   sampled swept boundary. That cover is proposal-only and does not prune the
   exact affine cell collision checks, BMTP constraints, or independent
   validation. There is one node construction and one temporal search: no
-  offset retries, Delaunay graph, connectivity recovery, or fallback pair set.
+  offset retries, Delaunay graph, connectivity recovery, or next method pair set.
 - Temporal arrival layers remain discrete, so a timed proposal does not prove
   global continuous-time earliest arrival. When no analytic lower-bound motion
   applies, the result reports that limitation honestly.
@@ -472,11 +472,11 @@ The moving-circle example also covers `testArrivalSearchRegressions/testCircleDe
 | `testLongRequestUsesBudgetAfterPhysicalBound` | 64.6330611095465 -> 64.6330611095465 | 120.006647995046 -> 120.006647995046 | True -> True | `goalReached` -> `goalReached` |
 | `testArrivalSnapshotFindsAnOpeningMissingAtInitialTime` | 3.74530227425395 -> 3.74530227425395 | 10.2537131532522 -> 10.2537131532522 | True -> True | `goalReached` -> `goalReached` |
 | `testArrivalSnapshotFindsRouteAfterWholeCurtainDeparts` | 4 -> 4 | 10.2471788638104 -> 10.2471788638104 | True -> True | `goalReached` -> `goalReached` |
-| `testChallengedDelayedChordIncumbentIsRetained` | 10.8553556404034 -> 10.8553556404034 | 10.0000000000125 -> 10.0000000000125 | True -> True | `goalReached` -> `goalReached` |
+| `testChallengedDelayedChordBestSoFarIsRetained` | 10.8553556404034 -> 10.8553556404034 | 10.0000000000125 -> 10.0000000000125 | True -> True | `goalReached` -> `goalReached` |
 | `testTimedHomotopyPrecedesDelayedDeparture` | 8.59818435702582 -> 8.59818435702582 | 12.4581035485593 -> 12.4581035485593 | True -> True | `goalReached` -> `goalReached` |
 | `testThinWallCrossingIsNotPromotedBySampling` | 5.51904117006622 -> 5.51904117006622 | 8.06482974577391 -> 8.06482974577391 | True -> True | `goalReached` -> `goalReached` |
 | `testPublicPlannerChoosesAReopenedGoalWindow` | 7.99191771264953 -> 7.99191771264953 | 10.0000000000017 -> 10.0000000000017 | True -> True | `goalReached` -> `goalReached` |
-| `testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame` | 6 -> 6 | 6.98233346438641 -> 6.98233346438641 | True -> True | `goalReached` -> `goalReached` |
+| `testWrappedEarliestTrialsRunInsideTheUnwrappedFrame` | 6 -> 6 | 6.98233346438641 -> 6.98233346438641 | True -> True | `goalReached` -> `goalReached` |
 | `testSparseDynamicZeroWaitDeparture` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
 | `testEquivalentSparseAndDenseHistoriesUseCertifiedDeparture (both source representations)` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
 | `testConcaveCavityEscape` | 15.9371512418793 -> 15.9371512418793 | 31.201402348745 -> 31.201402348745 | True -> True | `goalReached` -> `goalReached` |

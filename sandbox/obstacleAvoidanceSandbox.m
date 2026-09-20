@@ -259,8 +259,8 @@ function handles = createGoalControls(tabHandle, options)
     logHandle                 = uicontrol(statusPanelHandle, "Style", "listbox", "String", {"Planner output will appear here."}, "Units", "normalized", "Position", [0.36 0.08 0.625 0.86], "HorizontalAlignment", "left", "Min", 0, "Max", 2);
     plannerOptionsPanelHandle = uipanel(tabHandle, "Title", "Planner options", "Units", "normalized", "Position", [0.71 0.025 0.275 0.23]);
     controls.GoalTimeModeHandle             = addPopupControl(plannerOptionsPanelHandle, "Goal timing", 0.49, ["Earliest arrival", "Arrive at mission time"], find(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"], 1), "Choose earliest arrival or arrival at the mission horizon.");
-    controls.WrapXHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap x", "Units", "normalized", "Position", [0.05 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapX, "HorizontalAlignment", "left", "TooltipString", "Use periodic x for obstacle-free fixed goals only.");
-    controls.WrapYHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap y", "Units", "normalized", "Position", [0.52 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapY, "HorizontalAlignment", "left", "TooltipString", "Use periodic y for obstacle-free fixed goals only.");
+    controls.WrapXHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap x", "Units", "normalized", "Position", [0.05 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapX, "HorizontalAlignment", "left", "TooltipString", "Use wrapped x for obstacle-free fixed goals only.");
+    controls.WrapYHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap y", "Units", "normalized", "Position", [0.52 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapY, "HorizontalAlignment", "left", "TooltipString", "Use wrapped y for obstacle-free fixed goals only.");
     handles = struct("Tab", tabHandle, ...
         "Axes", axesHandle, ...
         "ControlPanel", controlPanelHandle, ...
@@ -1588,7 +1588,7 @@ function setObstacleConstructorAvailability(modeState, isEnabled)
 end
 
 function goal_units = resolveDisplayGoal(start_units, goal_units, limits, options)
-    % Display the nearest periodic image; planner owns feasibility checks.
+    % Display the nearest wrapped copy; planner owns feasibility checks.
     names = ["xInterval_units", "yInterval_units"];
     for axisIndex = find([options.WrapX options.WrapY])
         period_units = diff(limits.(names(axisIndex)));

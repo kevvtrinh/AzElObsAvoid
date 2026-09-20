@@ -103,7 +103,7 @@ for iterationIndex = 1:maximumIterationCount
         regionActiveBySegment);
     duration_s = sum(trialTimes_s);
     % Sampling only guides optimization. An iterate becomes the feasible
-    % incumbent when every applicable pair holds a certified separating
+    % best iterate so far when every applicable pair holds a certified separating
     % line; a pair the certificate cannot verify is a collision to separate.
     trialCertificate    = struct('Passed', false);
     trialPreparedMotion = struct('Success', false);

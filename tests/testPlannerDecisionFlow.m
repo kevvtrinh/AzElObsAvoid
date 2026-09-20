@@ -133,7 +133,7 @@ function testEarliestStaticNonrestUsesPhysicalClockTrials(testCase)
     verifyFalse(testCase,result.EarliestArrival.Capabilities.TimedVariableClockBmtp);
     verifyGreaterThanOrEqual(testCase,numel(result.Attempts),1);
     verifyTrue(testCase,all([result.Attempts.Kind] == ...
-        "chronologicalFixedArrival"));
+        "arrivalTimeTrial"));
     verifyEqual(testCase,nnz([result.Attempts.Selected]),1);
 end
 
@@ -156,7 +156,7 @@ function testFixedMovingTargetMatchesPchipDerivatives(testCase)
     verifyEqual(testCase,result.acceleration_units_s2(end,:),[0,0],'AbsTol',1e-8);
 end
 
-function testEarliestMovingTargetUsesChronologicalClock(testCase)
+function testEarliestMovingTargetUsesArrivalTimeClock(testCase)
     targetTime_s=(0:2:12).';
     targetMotion=struct('time_s',targetTime_s, ...
         'position_units',[4+0.1*targetTime_s,ones(size(targetTime_s))], ...
@@ -175,7 +175,7 @@ function testEarliestMovingTargetUsesChronologicalClock(testCase)
     verifyFalse(testCase,result.EarliestArrival.Capabilities.TimedVariableClockBmtp);
     verifyGreaterThanOrEqual(testCase,numel(result.Attempts),1);
     verifyTrue(testCase,all([result.Attempts.Kind] == ...
-        "chronologicalFixedArrival"));
+        "arrivalTimeTrial"));
     verifyEqual(testCase,nnz([result.Attempts.Selected]),1);
 end
 
@@ -264,7 +264,7 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyGreaterThan(testCase,numel(result.Attempts),1);
     verifyEqual(testCase,result.Attempts(1).FailureStage,"search");
-    verifyTrue(testCase,result.Attempts(1).MethodFallbackEligible);
+    verifyTrue(testCase,result.Attempts(1).NextMethodAllowed);
     verifyTrue(testCase,any([result.Attempts.Selected]));
 
     fixedInitial=state(0,[-4,0]);
@@ -276,7 +276,7 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     verifyFalse(testCase,fixedResult.Success);
     verifyEqual(testCase,fixedResult.TerminationReason,"noVisibilityRoute");
     verifyEqual(testCase,numel(fixedResult.Attempts),1);
-    verifyFalse(testCase,fixedResult.Attempts.MethodFallbackEligible);
+    verifyFalse(testCase,fixedResult.Attempts.NextMethodAllowed);
     verifyTrue(testCase,fixedResult.TemporalSearch.TerminalFailure);
     verifyEqual(testCase,fixedResult.Options.GoalTimeMode,"fixedArrival");
     verifyFalse(testCase,fixedResult.Options.WrapX);
@@ -290,18 +290,18 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     verifyEqual(testCase,fixedResult.Inputs.obstacles, ...
         obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,4],true));
     verifyEqual(testCase,fixedResult.Inputs.goalState.time_s,4);
-    verifyTrue(testCase,isfield(fixedResult,'OuterRequest'));
-    verifyEqual(testCase,fixedResult.OuterRequest.Obstacles,obstacle);
-    verifyEqual(testCase,fixedResult.OuterRequest.GoalTime_s,fixedGoal.time_s);
+    verifyTrue(testCase,isfield(fixedResult,'ParentRequest'));
+    verifyEqual(testCase,fixedResult.ParentRequest.Obstacles,obstacle);
+    verifyEqual(testCase,fixedResult.ParentRequest.GoalTime_s,fixedGoal.time_s);
     % The supplied goal provenance is a different field from the outer clock;
     % relocating one does not cover the other.
-    verifyEqual(testCase,fixedResult.OuterRequest.SuppliedGoalState,fixedGoal);
-    verifyEqual(testCase,fixedResult.OuterRequest.GoalTimeMode, ...
+    verifyEqual(testCase,fixedResult.ParentRequest.SuppliedGoalState,fixedGoal);
+    verifyEqual(testCase,fixedResult.ParentRequest.GoalTimeMode, ...
         string(fixedOptions.GoalTimeMode));
-    verifyEqual(testCase,fixedResult.OuterRequest.FixedArrivalTrialTime_s,4);
+    verifyEqual(testCase,fixedResult.ParentRequest.FixedArrivalTrialTime_s,4);
 end
 
-function testPeriodicWrapUsesNearestImage(testCase)
+function testWrappedWrapUsesNearestImage(testCase)
     limits=standardLimits();
     limits.xInterval_units=[-180,180];
     initial=state(0,[179,0]);
@@ -316,8 +316,8 @@ function testPeriodicWrapUsesNearestImage(testCase)
 end
 
 function testWrappedNonrestEarliestTrialIsAcceptedOnce(testCase)
-    % A chronological trial is planned on its own clock, so its periodic
-    % reach follows the trial clock. Accepting it against the outer request
+    % An arrival-time trial is planned on its own clock, so its wrapped
+    % reach follows the trial clock. Accepting it against the parent request
     % in one validation must keep the record consistent: before this gate
     % was unified, the trial passed its own validation and a second pass
     % rejected the same motion against the outer horizon.
@@ -341,12 +341,12 @@ function testWrappedNonrestEarliestTrialIsAcceptedOnce(testCase)
     verifyEqual(testCase,result.Limits.xInterval_units,179+[-reach,reach]);
 end
 
-function testPeriodicObstacleImageBlocksTheSeam(testCase)
-    % A wall just inside the negative edge of the periodic interval is, in
-    % the unwrapped frame, the image between the initial position and the
-    % nearest goal image. The planner must detour around that image, the
+function testWrappedObstacleImageBlocksTheSeam(testCase)
+    % A wall just inside the negative edge of the wrapped interval is, in
+    % the unwrapped coordinates, the copy between the initial position and the
+    % nearest goal copy. The planner must detour around that copy, the
     % record must keep the supplied obstacle, and the validator must rebuild
-    % the same image on its own.
+    % the same copy on its own.
     limits=standardLimits();
     limits.xInterval_units=[-180,180];
     obstacle=struct('Vertices_units',[-180,-3;-179.5,-3;-179.5,3;-180,3]);
@@ -356,18 +356,18 @@ function testPeriodicObstacleImageBlocksTheSeam(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.Inputs.obstacles,obstacle);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
-    verifyEqual(testCase,result.PeriodicImages.ObstacleImageCount,1);
+    verifyEqual(testCase,result.WrappedGoalCopies.ObstacleCopyCount,1);
     verifyEqual(testCase,numel(result.PreparedObstacles),1);
     verifyGreaterThanOrEqual(testCase,min(result.PreparedObstacles(1).x_units{1}),180);
     verifyGreaterThan(testCase,result.MotionLength_units,6);
     verifyGreaterThan(testCase,max(abs(result.position_units(:,2))),3);
 end
 
-function testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
+function testWrappedEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
     % A non-rest earliest-arrival request with a wall at the seam reaches the
-    % chronological search inside the unwrapped frame. Each trial is accepted
-    % against the periodic request, so the record keeps the supplied obstacle
-    % and periodic options while the motion detours around the wall's image.
+    % arrival-time search inside the unwrapped coordinates. Each trial is accepted
+    % against the wrapped request, so the record keeps the supplied obstacle
+    % and wrapped options while the motion detours around the wall's copy.
     limits=standardLimits();
     limits.xInterval_units=[-180,180];
     obstacle=struct('Vertices_units',[-180,-3;-179.5,-3;-179.5,3;-180,3]);
@@ -399,7 +399,7 @@ function testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
     verifyEqual(testCase,result.RequestedLimits.xInterval_units,limits.xInterval_units);
     verifyEqual(testCase,result.Limits.xInterval_units,expectedBand_units);
     verifyFalse(testCase,result.Options.WrapY);
-    verifyFalse(testCase,isfield(result,'OuterRequest'));
+    verifyFalse(testCase,isfield(result,'ParentRequest'));
     verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.ArrivalTime_s,expectedTrialTime_s,'AbsTol',1e-12);
@@ -407,7 +407,7 @@ function testPeriodicEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
     verifyEqual(testCase,result.Attempts.TrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
 end
 
-function testPeriodicAllCandidateFailuresDeclareOuterRequest(testCase)
+function testWrappedAllCandidateFailuresDeclareParentRequest(testCase)
     obstacle=struct('Vertices_units',[-1,-5;1,-5;1,5;-1,5]);
     initial=state(0,[-4,0]);
     goal=state(12,[4,0]);
@@ -420,9 +420,9 @@ function testPeriodicAllCandidateFailuresDeclareOuterRequest(testCase)
     reach_units=limits.maxVelocity_units_s(2)*(goal.time_s-initial.time_s);
     expectedBand_units=initial.position_units(2)+[-reach_units,reach_units];
     verifyFailure(testCase,result,"noVisibilityRoute");
-    verifyGreaterThan(testCase,numel(result.PeriodicImages.CandidatePlanned),1);
-    verifyTrue(testCase,all(result.PeriodicImages.CandidatePlanned));
-    verifyFalse(testCase,any(result.PeriodicImages.CandidateTerminationReason == ...
+    verifyGreaterThan(testCase,numel(result.WrappedGoalCopies.CandidatePlanned),1);
+    verifyTrue(testCase,all(result.WrappedGoalCopies.CandidatePlanned));
+    verifyFalse(testCase,any(result.WrappedGoalCopies.CandidateTerminationReason == ...
         "goalReached"));
     verifyEqual(testCase,result.Options.GoalTimeMode,string(options.GoalTimeMode));
     verifyFalse(testCase,result.Options.WrapX);
@@ -434,12 +434,12 @@ function testPeriodicAllCandidateFailuresDeclareOuterRequest(testCase)
     verifyEqual(testCase,result.Limits.yInterval_units,expectedBand_units);
     verifyEqual(testCase,result.Inputs.obstacles,obstacle);
     verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
-    verifyFalse(testCase,isfield(result,'OuterRequest'));
+    verifyFalse(testCase,isfield(result,'ParentRequest'));
 end
 
-function testPeriodicFarImageBeatsABlockedNearImage(testCase)
-    % With a short period every goal image lies inside the band. A tall wall
-    % between the initial position and the nearest image makes the far way
+function testWrappedFarImageBeatsABlockedNearImage(testCase)
+    % With a short period every goal copy lies inside the reachable range. A tall wall
+    % between the initial position and the nearest copy makes the far way
     % round shorter, so the shortest valid candidate must win.
     limits=standardLimits();
     limits.xInterval_units=[-5,5];
@@ -450,20 +450,20 @@ function testPeriodicFarImageBeatsABlockedNearImage(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.RequestedGoalState.position_units,[-4,0]);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[-4,0]);
-    verifyEqual(testCase,result.PeriodicImages.GoalOffset_units,[-10,0]);
+    verifyEqual(testCase,result.WrappedGoalCopies.GoalOffset_units,[-10,0]);
     verifyEqual(testCase,result.MotionLength_units,8,'AbsTol',1e-6);
-    verifyGreaterThan(testCase,nnz(result.PeriodicImages.CandidatePlanned),1);
+    verifyGreaterThan(testCase,nnz(result.WrappedGoalCopies.CandidatePlanned),1);
 
     earliest=planner(wall,state(0,[4,0]),state(10,[-4,0]),limits, ...
         struct('GoalTimeMode','earliestArrival','WrapX',true));
     verifyTrue(testCase,earliest.Success,earliest.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(earliest).Passed);
-    verifyEqual(testCase,earliest.PeriodicImages.GoalOffset_units,[-10,0]);
-    verifyGreaterThan(testCase,nnz(earliest.PeriodicImages.CandidatePlanned),1);
+    verifyEqual(testCase,earliest.WrappedGoalCopies.GoalOffset_units,[-10,0]);
+    verifyGreaterThan(testCase,nnz(earliest.WrappedGoalCopies.CandidatePlanned),1);
     verifyLessThan(testCase,earliest.ArrivalTime_s,10);
 end
 
-function testPeriodicYAndDualAxisWrap(testCase)
+function testWrappedYAndDualAxisWrap(testCase)
     limits=standardLimits();
     limits.xInterval_units=[-180,180];
     limits.yInterval_units=[-90,90];
@@ -479,10 +479,10 @@ function testPeriodicYAndDualAxisWrap(testCase)
     verifyEqual(testCase,bothResult.MotionLength_units,sqrt(8),'AbsTol',1e-8);
 end
 
-function testPeriodicMovingTargetIsLiftedAcrossTheSeam(testCase)
-    % A target that crosses the seam is lifted by continuity, so the
+function testWrappedMovingTargetIsUnwrappedAcrossTheSeam(testCase)
+    % A target that crosses the seam is unwrapped by continuity, so the
     % intercept is planned on a two-unit move and the record keeps the
-    % supplied periodic target for the validator to lift again.
+    % supplied wrapped target for the validator to lift again.
     limits=standardLimits(); limits.yInterval_units=[-90,90];
     targetMotion=struct('time_s',[0;10], ...
         'position_units',[0,89;0,-89],'InterpolationMethod','linear');
@@ -497,7 +497,7 @@ function testPeriodicMovingTargetIsLiftedAcrossTheSeam(testCase)
     verifyEqual(testCase,result.MotionLength_units,6,'AbsTol',1e-6);
 end
 
-function testPeriodicSeamCrossingTargetRejectsStaleMatchedDerivative(testCase)
+function testWrappedSeamCrossingTargetRejectsStaleMatchedDerivative(testCase)
     initial=state(0,[0,0.5]);
     targetMotion=struct('time_s',[0;10], ...
         'position_units',[0,0.9;0,-0.9],'InterpolationMethod','linear');
@@ -509,7 +509,7 @@ function testPeriodicSeamCrossingTargetRejectsStaleMatchedDerivative(testCase)
         'planner:ConflictingTargetDerivative');
 end
 
-function testPeriodicWindingTargetRejectsCoincidentImageEndpoint(testCase)
+function testWrappedWindingTargetRejectsCoincidentImageEndpoint(testCase)
     initial=state(0,[0,0]);
     targetMotion=struct('time_s',(0:2:10)', ...
         'position_units',[zeros(6,1),[0;0.4;0.8;-0.8;-0.4;0]], ...
@@ -553,8 +553,8 @@ function testDisconnectedInitialSnapshotUsesArrivalSnapshot(testCase)
 end
 
 function testWrappedResultCarriesOuterProvenance(testCase)
-    % A wrapped request is planned as plain requests in the unwrapped frame,
-    % so the returned record has to declare the outer request it was accepted
+    % A wrapped request is planned as plain requests in the unwrapped coordinates,
+    % so the returned record has to declare the parent request it was accepted
     % against. Pin every provenance field, because only the requested goal was
     % covered before and the rest is what the acceptance gate reads.
     limits=standardLimits();
@@ -568,19 +568,19 @@ function testWrappedResultCarriesOuterProvenance(testCase)
     verifyEqual(testCase,result.SuppliedGoalState.position_units,[-179,0]);
     verifyEqual(testCase,result.SuppliedGoalState.time_s,10);
 
-    % Requested limits are normalized but still the periodic workspace, while
-    % the effective limits are the unwrapped reach band the images live in.
+    % Requested limits are normalized but still the wrapped workspace, while
+    % the effective limits are the unwrapped reachable range the copies live in.
     verifyEqual(testCase,result.RequestedLimits.xInterval_units,[-180,180]);
     verifyEqual(testCase,result.Limits.xInterval_units,[159,199]);
     verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
 
-    % The effective goal is the selected image, but its clock is the outer
+    % The effective goal is the selected copy, but its clock is the outer
     % horizon. Position and time on this one struct have different owners.
     verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
     verifyEqual(testCase,result.Inputs.goalState.time_s,10);
 
-    % Wrapping and arrival mode are declared as the outer request, not as the
-    % plain unwrapped request each image was actually planned as.
+    % Wrapping and arrival mode are declared as the parent request, not as the
+    % plain unwrapped request each copy was actually planned as.
     verifyTrue(testCase,result.Options.WrapX);
     verifyFalse(testCase,result.Options.WrapY);
     verifyEqual(testCase,string(result.Options.GoalTimeMode),"fixedArrival");
@@ -638,7 +638,7 @@ function testSparseDynamicZeroWaitDeparture(testCase)
     verifyTrue(testCase,result.Attempts(1).Selected);
     verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
     selectedIndex=result.EarliestArrival.SelectedAttemptIndex;
-    verifyEqual(testCase,result.EarliestArrival.IncumbentArrival_s, ...
+    verifyEqual(testCase,result.EarliestArrival.BestSoFarArrival_s, ...
         result.ArrivalTime_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.Attempts(selectedIndex).CandidateArrival_s, ...
         result.ArrivalTime_s,'AbsTol',1e-12);
@@ -768,9 +768,9 @@ function testOptionValidationDecisions(testCase)
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('MaxArrivalCandidates',1.5)),'MATLAB:expectedInteger');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
-        struct('IncumbentRefinementTrialLimit',-1)),'MATLAB:expectedNonnegative');
+        struct('BestSoFarRefinementTrialLimit',-1)),'MATLAB:expectedNonnegative');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
-        struct('IncumbentRefinementTrialLimit',1.5)),'MATLAB:expectedInteger');
+        struct('BestSoFarRefinementTrialLimit',1.5)),'MATLAB:expectedInteger');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
         struct('SpatialProbeIterationLimit',0)),'MATLAB:expectedPositive');
     verifyError(testCase,@()planner([],initial,goal,limits, ...
@@ -779,7 +779,7 @@ function testOptionValidationDecisions(testCase)
     defaulted=planner([],initial,goal,limits,struct('SampleTime_s',[]));
     verifyTrue(testCase,defaulted.Success,defaulted.Message);
     verifyEqual(testCase,defaulted.Options.SampleTime_s,0.05);
-    verifyEqual(testCase,defaulted.Options.IncumbentRefinementTrialLimit,0);
+    verifyEqual(testCase,defaulted.Options.BestSoFarRefinementTrialLimit,0);
     verifyWarning(testCase,@()planner([],initial,goal,limits, ...
         struct('unusedOption',1)),'planTrajectory:UnknownOptions');
 end

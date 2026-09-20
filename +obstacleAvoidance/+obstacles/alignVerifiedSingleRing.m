@@ -255,7 +255,7 @@ end
 function [verified, startRegions_units, endRegions_units] = createVerifiedMovingTriangles( ...
         lower_units, upper_units, lowerShape, upperShape, coordinateScale_units, ...
         topologyMotionVerified)
-    % A triangle mesh is the non-heuristic fallback partition. It is
+    % A triangle mesh is the exact partition used when no shortcut applies. It is
     % accepted only when every mesh point is an original corresponding vertex.
     verified = false;
     startRegions_units = cell(0, 1);

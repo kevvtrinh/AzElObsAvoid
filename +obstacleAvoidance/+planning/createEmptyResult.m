@@ -68,7 +68,7 @@ result.SuppliedLimits     = requestContext.suppliedLimits;
 result.RequestedLimits    = requestContext.requestedLimits;
 result.RequestedGoalState = requestContext.requestedGoalState;
 result.SuppliedGoalState  = requestContext.suppliedGoalState;
-if ~isempty(requestContext.outerRequest)
-    result.OuterRequest = requestContext.outerRequest;
+if ~isempty(requestContext.parentRequest)
+    result.ParentRequest = requestContext.parentRequest;
 end
 end

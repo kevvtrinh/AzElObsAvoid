@@ -1,13 +1,14 @@
-function result = planRequest(obstacles, initialState, goalState, limits, options, outerRequest)
+function result = planRequest(obstacles, initialState, goalState, limits, options, parentRequest)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = obstacleAvoidance.planning.planRequest()
 %   result = obstacleAvoidance.planning.planRequest( ...
-%       obstacles, initialState, goalState, limits, options, outerRequest)
+%       obstacles, initialState, goalState, limits, options, parentRequest)
 %**************************************************************************
 % PURPOSE
-%   - Normalize one planner request and dispatch it through periodic-image
-%     planning or the named nonperiodic planning core.
+%   - Check and normalize one planner request, then plan it: a request with
+%     a wrapped axis goes through the wrapped planner, which plans unwrapped
+%     copies; every other request goes straight to the planning core.
 %**************************************************************************
 % INPUTS
 %   - obstacles (struct array)
@@ -20,9 +21,9 @@ function result = planRequest(obstacles, initialState, goalState, limits, option
 %       Workspace intervals and motion limits.
 %   - options (scalar struct)
 %       Planner option overrides.
-%   - outerRequest (scalar struct or [])
-%       Private provenance for a derived request, built by
-%       obstacleAvoidance.planning.createOuterRequest; [] for a public call.
+%   - parentRequest (scalar struct or [])
+%       Private provenance for a child request, built by
+%       obstacleAvoidance.planning.createParentRequest; [] for a public call.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -111,15 +112,16 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
     end
 end
 
-% A wrapped axis is planned in the unwrapped frame. A moving target is lifted
-% by continuity from the initial position, a fixed goal takes its nearest
-% image, and each wrapped interval becomes the reach band of the request.
+% A wrapped axis is planned in plain unwrapped coordinates. A moving target's
+% path is unwrapped so it never jumps at the seam, a fixed goal takes the copy
+% nearest the start, and each wrapped interval becomes the range the vehicle
+% can reach in the time given.
 wrapAxes = [options.WrapX options.WrapY];
 if any(wrapAxes)
     intervalNames   = ["xInterval_units", "yInterval_units"];
     intervals_units = [limits.xInterval_units; limits.yInterval_units];
     if ~isempty(goalState.targetMotion)
-        goalState.targetMotion   = obstacleAvoidance.input.liftPeriodicTarget( ...
+        goalState.targetMotion   = obstacleAvoidance.input.unwrapTargetPath( ...
             goalState.targetMotion, initialState.position_units, intervals_units, wrapAxes);
         goalState.position_units = obstacleAvoidance.input.targetPositionAtTime( ...
             goalState.targetMotion, goalState.time_s);
@@ -148,7 +150,7 @@ requestContext = struct( ...
     'requestedLimits',    requestedLimits, ...
     'suppliedGoalState',  suppliedGoalState, ...
     'requestedGoalState', requestedGoalState, ...
-    'outerRequest',       {outerRequest});
+    'parentRequest',       {parentRequest});
 
 % A moving target's deadline position only bounds the earliest-arrival
 % search; a fixed goal or a fixed-arrival intercept is a required endpoint.
@@ -160,10 +162,10 @@ if goalIsRequiredEndpoint && endpointsCoincide
     error("planTrajectory:CoincidentEndpoints", "Initial and goal positions must be distinct.");
 end
 
-% Every goal image inside the band is planned as a plain request in the
-% unwrapped frame and accepted against this periodic request.
+% Every goal copy inside the reachable range is planned as a plain request in the
+% unwrapped coordinates and accepted against this wrapped request.
 if any(wrapAxes)
-    result = obstacleAvoidance.planning.planPeriodicRequest(request, requestContext);
+    result = obstacleAvoidance.planning.planWrappedRequest(request, requestContext);
     return
 end
 
@@ -172,7 +174,7 @@ end
 
 
 function [initialState, goalState, limits, options] = createDefaults()
-    % Provide fallback state, limit, and option values for the public planner.
+    % Provide next method state, limit, and option values for the public planner.
     initialState = struct( ...
         "time_s",                0, ...
         "position_units",        [-4 0], ...
@@ -205,7 +207,7 @@ function [initialState, goalState, limits, options] = createDefaults()
         "MatchTargetAcceleration",           false, ...
         "TemporalResolution_s",              0.5, ...
         "SpatialProbeIterationLimit",        2, ...
-        "IncumbentRefinementTrialLimit",     0, ...
+        "BestSoFarRefinementTrialLimit",     0, ...
         "MaxArrivalTrials",                  100, ...
         "MaxArrivalCandidates",              4096);
 end
@@ -331,10 +333,10 @@ function options = resolveOptions(options, defaults)
             {'scalar', 'finite', 'integer', 'positive'});
         options.(optionName) = double(options.(optionName));
     end
-    validateattributes(options.IncumbentRefinementTrialLimit, {'numeric'}, ...
+    validateattributes(options.BestSoFarRefinementTrialLimit, {'numeric'}, ...
         {'scalar', 'finite', 'integer', 'nonnegative'});
-    options.IncumbentRefinementTrialLimit = ...
-        double(options.IncumbentRefinementTrialLimit);
+    options.BestSoFarRefinementTrialLimit = ...
+        double(options.BestSoFarRefinementTrialLimit);
     if options.SpatialProbeIterationLimit > 35
         error("planner:InvalidSpatialProbeIterationLimit", ...
             "SpatialProbeIterationLimit must not exceed the full BMTP limit of 35.");

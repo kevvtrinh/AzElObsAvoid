@@ -5,7 +5,7 @@ function [displayPosition_units, sourceIndex] = createWrappedSpatialPath(positio
 %       obstacleAvoidance.plotting.createWrappedSpatialPath(position_units, intervals_units, wrapAxes)
 %**************************************************************************
 % PURPOSE
-%   - Display a continuous x/y path without drawing across periodic seams.
+%   - Display a continuous x/y path without drawing across wrapped seams.
 %**************************************************************************
 % INPUTS
 %   - position_units (N-by-2 real numeric, or empty)
@@ -13,7 +13,7 @@ function [displayPosition_units, sourceIndex] = createWrappedSpatialPath(positio
 %   - intervals_units (2-by-2 real numeric)
 %       Finite [xLower xUpper; yLower yUpper] display bounds.
 %   - wrapAxes (1-by-2 logical or binary numeric)
-%       [WrapX WrapY] selection of the periodic axes.
+%       [WrapX WrapY] selection of the wrapped axes.
 %**************************************************************************
 % OUTPUTS
 %   - displayPosition_units (M-by-2 real numeric)
@@ -76,7 +76,7 @@ for sampleIndex = 2:size(position_units, 1)
     for pieceIndex = 1:numel(fractions) - 1
         pieceFractions = fractions(pieceIndex:pieceIndex + 1);
         piece          = start_units + pieceFractions * step_units;
-        % The midpoint identifies this piece's periodic cell. Its endpoints
+        % The midpoint identifies this piece's wrapped cell. Its endpoints
         % then lie on the correct sides of any crossed seams.
         midpoint_units     = start_units + mean(pieceFractions) * step_units;
         cellIndex          = floor((midpoint_units(wrapAxes) - lower_units(wrapAxes)) ./ ...

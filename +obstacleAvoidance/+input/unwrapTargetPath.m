@@ -1,40 +1,41 @@
-function targetMotion = liftPeriodicTarget(targetMotion, anchor_units, intervals_units, wrapAxes)
+function targetMotion = unwrapTargetPath(targetMotion, startPosition_units, intervals_units, wrapAxes)
 %% Section 0: Header & Readme
 % SYNTAX
-%   targetMotion = obstacleAvoidance.input.liftPeriodicTarget( ...
-%       targetMotion, anchor_units, intervals_units, wrapAxes)
+%   targetMotion = obstacleAvoidance.input.unwrapTargetPath( ...
+%       targetMotion, startPosition_units, intervals_units, wrapAxes)
 %**************************************************************************
 % PURPOSE
-%   - Lift a sampled target of a periodic workspace to one continuous path
-%     in the unwrapped frame. The first sample takes its image nearest the
-%     anchor and every later sample takes its image nearest the lifted
-%     sample before it, so the declared interpolant never crosses a seam.
+%   - A target sampled in a wrapped workspace can jump from 359 to 0 between
+%     samples. This turns the samples into one continuous path in unwrapped
+%     coordinates: the first sample takes the copy nearest the start
+%     position, and each later sample takes the copy nearest the previous
+%     unwrapped sample, so the path never jumps at the seam.
 %**************************************************************************
 % INPUTS
 %   - targetMotion (scalar struct)
 %       Sampled target with time_s and N-by-2 position_units.
-%   - anchor_units (1-by-2 numeric row)
+%   - startPosition_units (1-by-2 numeric row)
 %       Usually the initial position.
 %   - intervals_units (2-by-2 numeric array)
-%       Periodic workspace intervals [xmin xmax; ymin ymax].
+%       Wrapped workspace intervals [xmin xmax; ymin ymax].
 %   - wrapAxes (1-by-2 logical)
 %       Wrapped axes.
 %**************************************************************************
 % OUTPUTS
 %   - targetMotion (scalar struct)
-%       The same target with lifted position_units; sample times and the
+%       The same target with unwrapped position_units; sample times and the
 %       interpolation method are unchanged.
 %**************************************************************************
 % UNITS
 %   - Coordinate units and seconds.
 %**************************************************************************
 
-%% Section 1: Lift Each Wrapped Axis By Continuity
+%% Section 1: Unwrap Each Wrapped Axis By Continuity
 
 position_units = double(targetMotion.position_units);
 for axisIndex = find(wrapAxes)
     period_units    = diff(intervals_units(axisIndex, :));
-    reference_units = anchor_units(axisIndex);
+    reference_units = startPosition_units(axisIndex);
     for sampleIndex = 1:size(position_units, 1)
         sample_units = position_units(sampleIndex, axisIndex);
         position_units(sampleIndex, axisIndex) = sample_units + ...

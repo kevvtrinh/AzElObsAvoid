@@ -67,7 +67,7 @@ function testStaticZonesWithMovingGoal(testCase)
             verifyEqual(testCase,result.Attempts(1).FailureStage,"timing");
             verifyEqual(testCase,result.Attempts(1).FailureKind, ...
                 "kinematicCertificateUnavailable");
-            verifyTrue(testCase,result.Attempts(1).MethodFallbackEligible);
+            verifyTrue(testCase,result.Attempts(1).NextMethodAllowed);
             verifyTrue(testCase,any([result.Attempts.Selected]));
         end
     end
@@ -88,12 +88,12 @@ function testMovingObstaclesWithMovingGoal(testCase)
     end
 end
 
-function testFixedMovingTargetTimedFallbackMatchesTargetDerivatives(testCase)
+function testFixedMovingTargetTimedSearchMatchesTargetDerivatives(testCase)
     % Pin the physical failure that motivated the core eligibility change.
     % The spatial seed is unavailable; the one exact timed route waits for
     % the crossing obstacle and must retain both matched target derivatives.
-    scenario = timedFallbackRegressionScenario();
-    label    = "fixed moving-target timed fallback";
+    scenario = timedNextMethodRegressionScenario();
+    label    = "fixed moving-target timed search";
     verifyMovingGeometry(testCase, scenario, label);
     verifyTargetOccupancyPattern(testCase, scenario, label);
     verifyTrue(testCase, directRouteIsBlocked(scenario), ...
@@ -105,8 +105,8 @@ function testFixedMovingTargetTimedFallbackMatchesTargetDerivatives(testCase)
         label + ": timed route was not selected.");
     verifyGreaterThanOrEqual(testCase, numel(result.Attempts), 2, ...
         label + ": rejected spatial-guide evidence is missing.");
-    verifyTrue(testCase, any([result.Attempts(1:end - 1).FallbackEligible]), ...
-        label + ": no rejected guide admitted the timed fallback.");
+    verifyTrue(testCase, any([result.Attempts(1:end - 1).NextAttemptAllowed]), ...
+        label + ": no rejected guide admitted the timed search.");
     verifyEqual(testCase, result.Attempts(end).Kind, "timedVisibility");
     [~, targetVelocity_units_s, targetAcceleration_units_s2] = ...
         obstacleAvoidance.input.targetPositionAtTime( ...
@@ -170,7 +170,7 @@ function result = verifyPlannerOutcome(testCase, scenario, label)
         verifyLessThan(testCase, result.Intercept.Time_s, scenario.GoalState.time_s, ...
             label + ": earliest search only returned the horizon.");
         verifyTrue(testCase, isfield(result, 'TemporalSearch'), ...
-            label + ": chronological search diagnostics are missing.");
+            label + ": arrival-time search diagnostics are missing.");
     else
         verifyEqual(testCase, result.Intercept.Time_s, scenario.GoalState.time_s, ...
             'AbsTol', 1e-8, label + ": fixed intercept time changed.");
@@ -239,7 +239,7 @@ function blocked = directRouteIsBlocked(scenario)
     blocked = any(occupied);
 end
 
-function scenario = timedFallbackRegressionScenario()
+function scenario = timedNextMethodRegressionScenario()
     % Freeze one general moving-target/moving-obstacle factory regression.
     missionEndTime_s = 12.6824677531027;
     startVertices_units = [ ...

@@ -54,24 +54,24 @@ function result = finalizeCandidate(preparedObstacles, request, requestContext, 
 acceptanceDeclaration = struct( ...
     'request',        request, ...
     'requestContext', requestContext);
-outerRequest = requestContext.outerRequest;
-if ~isempty(outerRequest) && candidate.Success
-    acceptanceDeclaration.requestContext.outerRequest = [];
-    acceptanceDeclaration.requestContext.suppliedLimits = outerRequest.SuppliedLimits;
-    acceptanceDeclaration.requestContext.suppliedGoalState = outerRequest.SuppliedGoalState;
-    acceptanceDeclaration.requestContext.requestedGoalState = outerRequest.RequestedGoalState;
-    acceptanceDeclaration.requestContext.requestedLimits = outerRequest.RequestedLimits;
-    acceptanceDeclaration.requestContext.obstacles = outerRequest.Obstacles;
-    acceptanceDeclaration.request.options.WrapX = outerRequest.WrapX;
-    acceptanceDeclaration.request.options.WrapY = outerRequest.WrapY;
+parentRequest = requestContext.parentRequest;
+if ~isempty(parentRequest) && candidate.Success
+    acceptanceDeclaration.requestContext.parentRequest = [];
+    acceptanceDeclaration.requestContext.suppliedLimits = parentRequest.SuppliedLimits;
+    acceptanceDeclaration.requestContext.suppliedGoalState = parentRequest.SuppliedGoalState;
+    acceptanceDeclaration.requestContext.requestedGoalState = parentRequest.RequestedGoalState;
+    acceptanceDeclaration.requestContext.requestedLimits = parentRequest.RequestedLimits;
+    acceptanceDeclaration.requestContext.obstacles = parentRequest.Obstacles;
+    acceptanceDeclaration.request.options.WrapX = parentRequest.WrapX;
+    acceptanceDeclaration.request.options.WrapY = parentRequest.WrapY;
     % The declared goal keeps the whole effective inner goal except its clock,
-    % including the selected target lift and resolved derivatives.
-    acceptanceDeclaration.request.goalState.time_s = outerRequest.GoalTime_s;
-    acceptanceDeclaration.request.options.GoalTimeMode = outerRequest.GoalTimeMode;
-    % Only a chronological trial declares the clock it was asked to meet.
-    if ~isnan(outerRequest.FixedArrivalTrialTime_s)
+    % including the selected target unwrapping and resolved derivatives.
+    acceptanceDeclaration.request.goalState.time_s = parentRequest.GoalTime_s;
+    acceptanceDeclaration.request.options.GoalTimeMode = parentRequest.GoalTimeMode;
+    % Only an arrival-time trial declares the clock it was asked to meet.
+    if ~isnan(parentRequest.FixedArrivalTrialTime_s)
         validationDeclarations.FixedArrivalTrialTime_s = ...
-            outerRequest.FixedArrivalTrialTime_s;
+            parentRequest.FixedArrivalTrialTime_s;
     end
 end
 

@@ -93,9 +93,9 @@ function testFixedArrivalCascadeRepairsSpatialSeedFailures(testCase)
         verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
             expectedSources(caseNumber));
         verifyGreaterThanOrEqual(testCase,numel(result.Attempts),2);
-        verifyTrue(testCase,result.Attempts(1).IsHeuristic);
-        verifyTrue(testCase,result.Attempts(1).FallbackEligible);
-        snapshotAttempts=result.Attempts([result.Attempts.IsHeuristic]);
+        verifyTrue(testCase,result.Attempts(1).IsShortcut);
+        verifyTrue(testCase,result.Attempts(1).NextAttemptAllowed);
+        snapshotAttempts=result.Attempts([result.Attempts.IsShortcut]);
         verifyEqual(testCase,[snapshotAttempts.IterationLimit], ...
             2*ones(1,numel(snapshotAttempts)));
         verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-10);

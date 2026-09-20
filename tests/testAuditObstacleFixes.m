@@ -49,7 +49,7 @@ end
 function testThinWallCrossingIsNotPromotedBySampling(testCase)
     % A wall 1e-5 wide lies between the fixed samples of the straight first
     % iterate, so the sampled overlap check reports it clear. Continuous
-    % certification must decide the incumbent and separate the pair.
+    % certification must decide the best plan so far and separate the pair.
     straightControls_units       = zeros(1, 9, 2);
     straightControls_units(1, :, 1) = (0:8) / 8;
     wall_units = [0.0004 -0.1; 0.0005 -0.1; 0.0005 0.1; 0.0004 0.1];

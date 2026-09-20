@@ -7,28 +7,28 @@ function result = searchArrivalTimes(request, requestContext, scene, baseResult,
 %       maximumTrialCount)
 %**************************************************************************
 % PURPOSE
-%   - Search declared chronological fixed-arrival trials.
-%   - Preserve the outer request for the planner's single acceptance gate.
+%   - Search declared arrival-time trials.
+%   - Preserve the parent request for the planner's single acceptance gate.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
-%       Normalized planar request that owns the chronological trials.
+%       Normalized unwrapped request that owns the arrival-time trials.
 %   - requestContext (scalar struct)
-%       Original planar inputs, provenance, and optional outer request.
+%       Original planar inputs, provenance, and optional parent request.
 %   - scene (scalar struct)
-%       Prepared geometry owned by the planar request.
+%       Prepared geometry owned by the unwrapped request.
 %   - baseResult (scalar struct)
-%       Outcome retained on exhaustion, including any valid incumbent.
+%       Outcome retained on exhaustion, including any valid best plan so far.
 %   - priorAttempts (struct array)
-%       Planner attempts completed before chronological search.
+%       Planner attempts completed before arrival-time search.
 %   - maximumTrialCount (positive integer scalar)
-%       Solver attempts available to this search. A validated incumbent may
+%       Solver attempts available to this search. A validated best plan so far may
 %       deliberately use a smaller refinement budget than the public maximum.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
 %       Valid candidate or an honest exhausted-search outcome. Exhaustion
-%       retains a validated incumbent when one exists; otherwise it returns
+%       retains a validated best plan so far when one exists; otherwise it returns
 %       Success = false with TerminationReason "arrivalSearchExhausted".
 %       Invalid input throws an error.
 %**************************************************************************
@@ -62,7 +62,7 @@ if ~isempty(request.goalState.targetMotion)
     horizonTime_s   = min(horizonTime_s, request.goalState.targetMotion.time_s(end));
 end
 
-%% Section 2: Bound The Window By Physics And The Valid Incumbent
+%% Section 2: Bound The Window By Physics And The Valid Best plan so far
 
 earliestTime_s = startTime_s;
 if isempty(request.goalState.targetMotion)
@@ -70,14 +70,14 @@ if isempty(request.goalState.targetMotion)
         initialState, request.goalState, request.limits);
     earliestTime_s = max(earliestTime_s, initialState.time_s + minimumTravelTime_s);
 end
-incumbentArrivalTime_s = NaN;
+bestSoFarArrivalTime_s = NaN;
 if baseResult.Success
-    incumbentArrivalTime_s = baseResult.ArrivalTime_s;
-    horizonTime_s = min(horizonTime_s, incumbentArrivalTime_s - ...
+    bestSoFarArrivalTime_s = baseResult.ArrivalTime_s;
+    horizonTime_s = min(horizonTime_s, bestSoFarArrivalTime_s - ...
         trialOptions.ArrivalTimeTolerance_s);
 end
 
-%% Section 3: Declare The Bounded Chronological Candidate Array
+%% Section 3: Declare The Bounded Arrival-Time Candidate Array
 
 firstStepIndex = max(1, ceil((earliestTime_s - startTime_s - ...
     trialOptions.ArrivalTimeTolerance_s) / resolution_s));
@@ -109,10 +109,10 @@ candidateTimes_s     = unique([gridTimes_s; boundaryTimes_s]);
 candidateTimes_s     = candidateTimes_s(candidateTimes_s <= horizonTime_s);
 
 trialOptions.GoalTimeMode = "fixedArrival";
-if ~isempty(requestContext.outerRequest)
-    outerRequest = requestContext.outerRequest;
+if ~isempty(requestContext.parentRequest)
+    parentRequest = requestContext.parentRequest;
 else
-    outerRequest = obstacleAvoidance.planning.createOuterRequest(request, requestContext);
+    parentRequest = obstacleAvoidance.planning.createParentRequest(request, requestContext);
 end
 
 %% Section 4: Screen Endpoint Physics, Then Spend The Solver Budget
@@ -139,7 +139,7 @@ for candidateIndex = 1:numel(candidateTimes_s)
     endpointGoalState = request.goalState;
     endpointGoalState.time_s = trialTime_s;
     endpointFeasible = false;
-    trialNecessaryArrivalTime_s = initialState.time_s;
+    trialEarliestPossibleArrival_s = initialState.time_s;
     try
         if ~isempty(endpointGoalState.targetMotion)
             if trialOptions.MatchTargetVelocity || trialOptions.MatchTargetAcceleration
@@ -159,14 +159,14 @@ for candidateIndex = 1:numel(candidateTimes_s)
                 endpointGoalState.acceleration_units_s2 = targetAcceleration_units_s2;
             end
         end
-        trialNecessaryArrivalTime_s = initialState.time_s + ...
+        trialEarliestPossibleArrival_s = initialState.time_s + ...
             obstacleAvoidance.input.minimumTravelTime( ...
             initialState, endpointGoalState, request.limits);
         [endpointFeasible, endpointMessage, endpointReason] = ...
             obstacleAvoidance.input.validatePlannerEndpoints( ...
             scene.preparedObstacles, initialState, endpointGoalState, ...
             request.limits, trialOptions);
-        if endpointFeasible && trialTime_s < trialNecessaryArrivalTime_s - ...
+        if endpointFeasible && trialTime_s < trialEarliestPossibleArrival_s - ...
                 trialOptions.ArrivalTimeTolerance_s
             endpointFeasible = false;
         end
@@ -189,7 +189,7 @@ for candidateIndex = 1:numel(candidateTimes_s)
     trialTimes_s(triedCount, 1) = trialTime_s;
     trialGoalState              = suppliedGoalState;
     trialGoalState.time_s       = trialTime_s;
-    trialRequest                = outerRequest;
+    trialRequest                = parentRequest;
     trialRequest.FixedArrivalTrialTime_s = trialTime_s;
     % The recursive core may reuse this pass only after matching every gate
     % input against its independently normalized and prepared request.
@@ -232,10 +232,10 @@ for candidateIndex = 1:numel(candidateTimes_s)
             'ConstraintTolerance', trialOptions.ConstraintTolerance), ...
         'Skeleton', scene.skeleton);
     attempt = obstacleAvoidance.planning.createAttemptRecord( ...
-        numel(attempts) + 1, "chronologicalFixedArrival");
+        numel(attempts) + 1, "arrivalTimeTrial");
     attempt.TrialTime_s             = trialTime_s;
-    attempt.NecessaryArrivalBound_s = trialNecessaryArrivalTime_s;
-    attempt.IncumbentArrival_s      = incumbentArrivalTime_s;
+    attempt.EarliestPossibleArrival_s = trialEarliestPossibleArrival_s;
+    attempt.BestSoFarArrival_s      = bestSoFarArrivalTime_s;
     attempt.SolverAttempted         = true;
     attemptTimer                    = tic;
     try
@@ -248,9 +248,9 @@ for candidateIndex = 1:numel(candidateTimes_s)
         if any(failureIsExpected)
             attempt.FailureStage                 = "endpoint";
             attempt.FailureKind                  = string(exception.identifier);
-            attempt.MethodFallbackEligible      = true;
-            attempt.MethodFallbackReason        = attempt.FailureKind;
-            attempt.FallbackEligible            = true;
+            attempt.NextMethodAllowed      = true;
+            attempt.NextMethodReason        = attempt.FailureKind;
+            attempt.NextAttemptAllowed            = true;
             attempt.ElapsedTime_s               = toc(attemptTimer);
             attempts(end + 1, 1)                = attempt; %#ok<AGROW>
             continue
@@ -286,31 +286,31 @@ for candidateIndex = 1:numel(candidateTimes_s)
         trialWasSelected = true;
         break
     end
-    attempt.MethodFallbackEligible = ...
-        obstacleAvoidance.planning.methodFallbackEligible(candidate);
+    attempt.NextMethodAllowed = ...
+        obstacleAvoidance.planning.nextMethodAllowed(candidate);
     if string(candidate.TerminationReason) == "noVisibilityRoute" && ...
             isempty(request.goalState.targetMotion)
         % Static geometry and a fixed goal do not change with the clock.
         % Repeating the same disconnected exact graph cannot reveal a path.
-        attempt.MethodFallbackEligible = false;
+        attempt.NextMethodAllowed = false;
     end
-    attempt.MethodFallbackReason   = attempt.FailureKind;
-    attempt.FallbackEligible       = attempt.MethodFallbackEligible;
-    if attempt.MethodFallbackEligible
+    attempt.NextMethodReason   = attempt.FailureKind;
+    attempt.NextAttemptAllowed       = attempt.NextMethodAllowed;
+    if attempt.NextMethodAllowed
         attempts(end + 1, 1) = attempt; %#ok<AGROW>
         continue
     end
     attempts(end + 1, 1) = attempt; %#ok<AGROW>
     terminalResult = candidate;
-    % A terminal record declares the clock it attempted. A periodic failure
-    % boundary later applies its own outer request, which carries no trial
+    % A terminal record declares the clock it attempted. A wrapped failure
+    % boundary later applies its own parent request, which carries no trial
     % marker, so publishing it here keeps the declaration through that.
     terminalResult.FixedArrivalTrialTime_s = trialTime_s;
     terminalFailure = true;
     break
 end
 
-%% Section 5: Record The Honest Chronological Search Outcome
+%% Section 5: Record The Honest Arrival-Time Search Outcome
 
 trialTimes_s = trialTimes_s(1:triedCount);
 prescreenedTimes_s = prescreenedTimes_s(1:prescreenCount);
@@ -319,8 +319,8 @@ trialLimitReached = ~trialWasSelected && ~terminalFailure && ...
     nextUnprocessedCandidateIndex > 0;
 searchWindowExhausted = ~trialWasSelected && ~terminalFailure && ...
     ~candidateLimitReached && ~trialLimitReached;
-retainedIncumbent = baseResult.Success && ~trialWasSelected && ~terminalFailure;
-if retainedIncumbent
+bestSoFar = baseResult.Success && ~trialWasSelected && ~terminalFailure;
+if bestSoFar
     acceptedIndices = find([attempts.Success]);
     if ~isempty(acceptedIndices)
         acceptedTimes_s = [attempts(acceptedIndices).CandidateArrival_s];
@@ -349,14 +349,14 @@ result.TemporalSearch = struct( ...
     'SearchWindowExhausted',         searchWindowExhausted, ...
     'TerminalFailure',               terminalFailure, ...
     'GlobalEarliestProven',          false, ...
-    'NecessaryArrivalBound_s',       earliestTime_s, ...
-    'IncumbentArrival_s',            incumbentArrivalTime_s, ...
-    'RetainedIncumbent',             retainedIncumbent, ...
+    'EarliestPossibleArrival_s',       earliestTime_s, ...
+    'BestSoFarArrival_s',            bestSoFarArrivalTime_s, ...
+    'BestSoFar',             bestSoFar, ...
     'AttemptStartIndex',             attemptStartIndex);
 if trialWasSelected
-    result.Message = "A chronological fixed-arrival trial passed independent validation; earlier gaps remain unsearched.";
-elseif retainedIncumbent
-    result.Message = "No earlier declared clock was certified; the validated incumbent was retained.";
+    result.Message = "An arrival-time trial passed independent validation; earlier gaps remain unsearched.";
+elseif bestSoFar
+    result.Message = "No earlier declared clock was certified; the validated best plan so far was kept.";
 elseif ~result.Success && ~terminalFailure
     result.TerminationReason = "arrivalSearchExhausted";
     result.Message = "No declared arrival trial was certified. Unsearched times and solver failures do not prove infeasibility.";
