@@ -8,8 +8,8 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %       geometryModel, hasExactPartition, partitionReused, dependsOnPrevious] = ...
 %       obstacleAvoidance.obstacles.alignVerifiedSingleRing( ...
 %       lowerX_units, lowerY_units, upperX_units, upperY_units, lowerShape, ...
-%       upperShape, reusableStartRegions_units, preserveAlignment, translationOnly)
-%   [...] = obstacleAvoidance.obstacles.alignVerifiedSingleRing(..., deferTranslation)
+%       upperShape, reusableStartRegions_units, preserveAlignment, ...
+%       translationOnly, deferTranslation)
 %**************************************************************************
 % PURPOSE
 %   - Certify one source interval of a moving obstacle: align the two
@@ -22,7 +22,8 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %**************************************************************************
 % INPUTS
 %   - lowerX_units, lowerY_units, upperX_units, upperY_units (numeric vectors)
-%       Protected sample rings at the interval start and end.
+%       Protected sample rings at the interval start and end, NaN-separated
+%       when a sample has several rings.
 %   - lowerShape, upperShape (polyshape)
 %       The same two samples as shapes.
 %   - reusableStartRegions_units (cell column)
@@ -31,7 +32,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %       Keep the given vertex order instead of realigning.
 %   - translationOnly (logical scalar)
 %       Stop after the index-preserving translation check.
-%   - deferTranslation (logical scalar, optional, default false)
+%   - deferTranslation (logical scalar)
 %       Report a translation candidate as depending on the previous
 %       interval instead of resolving it here (batch preparation).
 %**************************************************************************
@@ -54,14 +55,24 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %   - Coordinate units, [x y] columns.
 %**************************************************************************
 
-%% Section 1: Align The Rings And Certify The Motion
+%% Section 1: Validate The Rings And The Certificate Requests
+
+validateattributes(lowerX_units, {'numeric'}, {'real', 'vector'});
+validateattributes(lowerY_units, {'numeric'}, {'real', 'numel', numel(lowerX_units)});
+validateattributes(upperX_units, {'numeric'}, {'real', 'vector'});
+validateattributes(upperY_units, {'numeric'}, {'real', 'numel', numel(upperX_units)});
+validateattributes(lowerShape, {'polyshape'}, {'scalar'});
+validateattributes(upperShape, {'polyshape'}, {'scalar'});
+validateattributes(reusableStartRegions_units, {'cell'}, {});
+validateattributes(preserveAlignment, {'logical'}, {'scalar'});
+validateattributes(translationOnly, {'logical'}, {'scalar'});
+validateattributes(deferTranslation, {'logical'}, {'scalar'});
+
+%% Section 2: Align The Rings And Certify The Motion
 
 % Align rings, then certify either one moving convex region or an exact
 % moving convex partition of the complete interpolated polygon.
 % translationOnly stops after the index-preserving translation check.
-if nargin < 10
-    deferTranslation = false;
-end
 dependsOnPrevious = false;
 lower_units        = [lowerX_units(:), lowerY_units(:)];
 upper_units        = [upperX_units(:), upperY_units(:)];
@@ -177,7 +188,7 @@ startRegions_units = cell(0, 1);
 endRegions_units   = cell(0, 1);
 end
 
-%% Section 2: Local Functions
+%% Section 3: Local Functions
 
 function [verified, exactVerified] = verifiedGlobalAffineMap( ...
         lower_units, upper_units, coordinateScale_units)
