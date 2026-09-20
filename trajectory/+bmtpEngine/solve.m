@@ -1,10 +1,8 @@
-function [candidate, diagnostics, directMotion] = solve( ...
-        seed, regions_units, coverage, initialState, goalState, limits, options, directMotion)
+function [candidate, diagnostics, directMotion] = solve(seed, scene, motionRequest, directMotion)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics, directMotion] = bmtpEngine.solve( ...
-%       seed, regions_units, coverage, initialState, goalState, limits, ...
-%       options, directMotion)
+%       seed, scene, motionRequest, directMotion)
 %**************************************************************************
 % PURPOSE
 %   - Turn one proposed path into a smooth motion that respects motion limits.
@@ -14,22 +12,18 @@ function [candidate, diagnostics, directMotion] = solve( ...
 % INPUTS
 %   - seed (scalar struct)
 %       position_units is N-by-2; tau strictly increases from zero to one.
-%   - regions_units (R-by-1 cell array)
-%       Each cell contains one finite convex N-by-2 exclusion polygon.
-%   - coverage (scalar struct)
-%       Geometry provenance. ExactRegionCount and timed end-region metadata
-%       must be internally consistent. Optional ActiveTimeInterval_s limits
-%       each region to an absolute physical motion-time interval. The public
-%       validator, not this metadata check, establishes supplied
-%       obstacle-coverage completeness.
-%   - initialState (scalar struct)
-%       Normalized initial position, velocity, and acceleration.
-%   - goalState (scalar struct)
-%       Normalized goal position, velocity, and acceleration.
-%   - limits (scalar struct)
-%       Normalized workspace, velocity, acceleration, and jerk bounds.
-%   - options (scalar struct)
-%       Resolved goal-time policy, sampling, work limits, and tolerances.
+%   - scene (scalar struct)
+%       The exclusion geometry: regions_units (R-by-1 cell array, each one
+%       finite convex N-by-2 polygon) and coverage (geometry provenance whose
+%       ExactRegionCount and timed end-region metadata must be internally
+%       consistent; optional ActiveTimeInterval_s limits each region to an
+%       absolute physical motion-time interval). The public validator, not
+%       this metadata check, establishes obstacle-coverage completeness.
+%   - motionRequest (scalar struct)
+%       What to plan: initialState and goalState (normalized position,
+%       velocity, and acceleration with their times), limits (normalized
+%       workspace, velocity, acceleration, and jerk bounds), and options
+%       (resolved goal-time policy, sampling, work limits, and tolerances).
 %   - directMotion (scalar struct)
 %       Request-owned direct-motion product, or struct() before construction.
 %**************************************************************************
@@ -50,9 +44,13 @@ function [candidate, diagnostics, directMotion] = solve( ...
 %% Section 1: Validate And Create The Exclusion Representation
 totalTimer = tic;
 % Validate the request and resolve shared solver settings.
-request = bmtpEngine.pipeline.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
-initialState = request.InitialState;
-goalState    = request.GoalState;
+request = bmtpEngine.pipeline.createSolveRequest(seed, scene, motionRequest);
+initialState  = request.InitialState;
+goalState     = request.GoalState;
+regions_units = request.Regions_units;
+coverage      = request.Coverage;
+limits        = request.Limits;
+options       = request.Options;
 
 % Create a kinematically feasible starting curve from the seed.
 warmStart             = bmtpEngine.pipeline.createWarmStart(request);

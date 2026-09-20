@@ -1,8 +1,7 @@
-function request = createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options)
+function request = createSolveRequest(seed, scene, motionRequest)
 %% Section 0: Header & Readme
 % SYNTAX
-%   request = bmtpEngine.pipeline.createSolveRequest(seed, regions_units, coverage, ...
-%       initialState, goalState, limits, options)
+%   request = bmtpEngine.pipeline.createSolveRequest(seed, scene, motionRequest)
 %**************************************************************************
 % PURPOSE
 %   - Validate BMTP inputs and select the polynomial representation.
@@ -11,18 +10,13 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 % INPUTS
 %   - seed (scalar struct)
 %       Ordered positions, route progress, and optional clock declarations.
-%   - regions_units (column cell array)
-%       Convex exclusion regions.
-%   - coverage (scalar struct)
-%       Supplied geometry and time-coverage evidence.
-%   - initialState (scalar struct)
-%       Initial time, position, velocity, and acceleration.
-%   - goalState (scalar struct)
-%       Goal time, position, velocity, and acceleration.
-%   - limits (scalar struct)
-%       Workspace and per-axis derivative limits.
-%   - options (scalar struct)
-%       Resolved timing, sampling, and clearance controls.
+%   - scene (scalar struct)
+%       regions_units (column cell array of convex exclusion regions) and
+%       coverage (supplied geometry and time-coverage evidence).
+%   - motionRequest (scalar struct)
+%       initialState and goalState (time, position, velocity, and
+%       acceleration), limits (workspace and per-axis derivative limits),
+%       and options (resolved timing, sampling, and clearance controls).
 %**************************************************************************
 % OUTPUTS
 %   - request (scalar struct)
@@ -34,6 +28,19 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 %**************************************************************************
 
 %% Section 1: Check The Engine Inputs
+validateattributes(scene, {'struct'}, {'scalar'});
+validateattributes(motionRequest, {'struct'}, {'scalar'});
+assert(all(isfield(scene, ["regions_units", "coverage"])), 'bmtpEngine:InvalidScene', ...
+    'A scene declares regions_units and coverage.');
+assert(all(isfield(motionRequest, ["initialState", "goalState", "limits", "options"])), ...
+    'bmtpEngine:InvalidMotionRequest', ...
+    'A motion request declares initialState, goalState, limits, and options.');
+regions_units = scene.regions_units;
+coverage      = scene.coverage;
+initialState  = motionRequest.initialState;
+goalState     = motionRequest.goalState;
+limits        = motionRequest.limits;
+options       = motionRequest.options;
 % Validate convex static regions before solving. The caller normalizes both
 % endpoint states completely, so the engine checks the supplied derivatives
 % and never substitutes a missing one.
