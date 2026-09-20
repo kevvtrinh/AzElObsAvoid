@@ -8,11 +8,11 @@ function residualBound_units2 = createResidualBound(coordinateScale_units)
 %     broad phase, and its layer certificate.
 %**************************************************************************
 % INPUTS
-%   - coordinateScale_units (numeric scalar)
-%       Largest coordinate magnitude entering the residuals.
+%   - coordinateScale_units (numeric scalar or column)
+%       Largest coordinate magnitude entering the residuals, one per residual.
 %**************************************************************************
 % OUTPUTS
-%   - residualBound_units2 (numeric scalar)
+%   - residualBound_units2 (same shape as the input)
 %       Slack on a squared-coordinate residual.
 %**************************************************************************
 % UNITS

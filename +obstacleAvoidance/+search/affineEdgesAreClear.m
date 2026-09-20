@@ -33,7 +33,9 @@ function [isClear, blockingCellIndices, witnessTimes_s] = affineEdgesAreClear( .
 %   - blockingCellIndices (N-by-1 uint32)
 %       First blocking cell of each blocked segment, zero when clear.
 %   - witnessTimes_s (N-by-1 numeric)
-%       A clock at which the blocked segment is inside its blocking cell.
+%       Latest clock at which a blocked segment is strictly inside its
+%       blocking cell; NaN when the segment is clear or its contact is
+%       tolerance-only, in which case no layer certificate is issued.
 %**************************************************************************
 % UNITS
 %   - Positions are coordinate units and clocks are seconds.

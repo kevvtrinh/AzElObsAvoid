@@ -14,9 +14,11 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 % PURPOSE
 %   - Certify one source interval of a moving obstacle: align the two
 %     protected sample rings, then prove either one moving convex region or
-%     an exact moving convex partition of the complete interpolated polygon
-%     (the boundary stays simple, the partition keeps exact ring topology,
-%     and every cell stays strictly convex over the whole interval).
+%     an exact moving convex partition of the complete interpolated polygon.
+%     A partition is accepted when every cell stays strictly convex over the
+%     interval, the motion is a positive-determinant global affine map or
+%     keeps the moving boundary simple, and the partition keeps exact ring
+%     topology or the endpoint areas.
 %**************************************************************************
 % INPUTS
 %   - lowerX_units, lowerY_units, upperX_units, upperY_units (numeric vectors)
@@ -26,7 +28,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %   - reusableStartRegions_units (cell column)
 %       End regions of a certified preceding interval, or empty.
 %   - preserveAlignment (logical scalar)
-%       Keep the declared source-index correspondence instead of realigning.
+%       Keep the given vertex order instead of realigning.
 %   - translationOnly (logical scalar)
 %       Stop after the index-preserving translation check.
 %   - deferTranslation (logical scalar, optional, default false)
@@ -35,11 +37,13 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %**************************************************************************
 % OUTPUTS
 %   - verified (logical scalar)
-%       True when a certificate was found.
+%       True when a certificate was found. When false, including the
+%       deferred case, every other output keeps its empty default.
 %   - alignedUpper_units (K-by-2 numeric)
 %       The end ring aligned to the start ring's vertex order.
 %   - startRegions_units, endRegions_units (cell columns)
-%       Convex cells of the certified partition at the interval start and end.
+%       Convex cells of the certified partition at the interval start and
+%       end; empty when the whole ring is the one convex region.
 %   - geometryModel (string)
 %       Name of the certificate that succeeded.
 %   - hasExactPartition, partitionReused, dependsOnPrevious (logical scalars)
@@ -47,7 +51,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %       interval, or must wait for it.
 %**************************************************************************
 % UNITS
-%   - Coordinate units.
+%   - Coordinate units, [x y] columns.
 %**************************************************************************
 
 %% Section 1: Align The Rings And Certify The Motion
