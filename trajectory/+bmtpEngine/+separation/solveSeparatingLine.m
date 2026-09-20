@@ -110,13 +110,13 @@ supportDifference_units = controlPoint_units * normals.' - ...
 gaps_units = -max(supportDifference_units, [], 1);
 
 % Rank supporting directions by the original hull, but retain every direction
-% certified by the exact degree-D by degree-one product used by the verifier.
+% proven by the exact degree-D by degree-one product used by the verifier.
 productGaps_units = -max((1 - beta) .* ...
     [supportDifference_units; zeros(1, size(normals, 1))] + ...
     beta .* [zeros(1, size(normals, 1)); supportDifference_units], [], 1);
-directionIsCertifiable = productGaps_units >= target_units + reserve_units;
-if any(directionIsCertifiable)
-    gaps_units(~directionIsCertifiable) = -Inf;
+directionIsProvable = productGaps_units >= target_units + reserve_units;
+if any(directionIsProvable)
+    gaps_units(~directionIsProvable) = -Inf;
 end
 [gap_units, directionIndex] = max(gaps_units);
 

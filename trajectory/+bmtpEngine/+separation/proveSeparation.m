@@ -1,10 +1,10 @@
-function [offset_units, signedGap_units, verified] = certifySeparation( ...
+function [offset_units, signedGap_units, verified] = proveSeparation( ...
         minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalNorm, ...
         offset_units, roundoff_units, reserve_units, target_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [offset_units, signedGap_units, verified] = ...
-%       bmtpEngine.separation.certifySeparation(minimumObstacleSide_units, ...
+%       bmtpEngine.separation.proveSeparation(minimumObstacleSide_units, ...
 %       maximumTrajectorySide_units, maximumNormalNorm, offset_units, ...
 %       roundoff_units, reserve_units, target_units)
 %**************************************************************************
@@ -31,7 +31,7 @@ function [offset_units, signedGap_units, verified] = certifySeparation( ...
 %   - offset_units (1-by-2 or R-by-2 numeric array)
 %       Endpoint offsets shifted into the admissible correction interval.
 %   - signedGap_units (numeric scalar or R-by-1 array)
-%       Certified obstacle-minus-trajectory gap after that shift.
+%       Proven obstacle-minus-trajectory gap after that shift.
 %   - verified (logical scalar or R-by-1 array)
 %       True only where every acceptance inequality holds together.
 %**************************************************************************
@@ -65,14 +65,14 @@ maximumTrajectorySide_units = maximumTrajectorySide_units + correction_units;
 signedGap_units          = minimumObstacleSide_units - maximumTrajectorySide_units;
 normalNormLimit          = 1 + 2 ^ 20 * eps;
 clearanceTarget_units    = (target_units - reserve_units) / normalNormLimit;
-certifiedClearance_units = (signedGap_units - 2 * reserve_units) ./ max(maximumNormalNorm, realmin);
+provenClearance_units = (signedGap_units - 2 * reserve_units) ./ max(maximumNormalNorm, realmin);
 
 obstacleSideIsValid       = minimumObstacleSide_units >= target_units;
 trajectorySideIsValid     = maximumTrajectorySide_units <= -reserve_units;
 signedGapIsValid          = signedGap_units >= target_units + reserve_units;
-certifiedClearanceIsValid = certifiedClearance_units >= clearanceTarget_units;
+provenClearanceIsValid = provenClearance_units >= clearanceTarget_units;
 normalNormIsValid         = maximumNormalNorm <= normalNormLimit;
 
 verified = obstacleSideIsValid & trajectorySideIsValid & signedGapIsValid & ...
-    certifiedClearanceIsValid & normalNormIsValid;
+    provenClearanceIsValid & normalNormIsValid;
 end

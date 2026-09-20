@@ -1,7 +1,7 @@
 function tests = testAffineCells
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testAffineCells.m')
-% PURPOSE: Certify moving exclusion cells without discarding physical time.
+% PURPOSE: Prove moving exclusion cells without discarding physical time.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Function-based tests.
 % UNITS: Coordinate units and seconds.
@@ -28,7 +28,7 @@ function testEmptyCanonicalSchemaMatchesNonemptyRecord(testCase)
     verifyEqual(testCase, fieldnames(empty), fieldnames(populated));
 end
 
-function testMovingPlaneCertifiesTranslation(testCase)
+function testMovingPlaneProvesTranslation(testCase)
     first = [1.5,-0.5;2.5,-0.5;2.5,0.5;1.5,0.5];
     vertices = cat(3,first,first+[10,0]);
     controls = [(0:8)'*10/8,zeros(9,1)];
@@ -77,7 +77,7 @@ function testCompletePreparationReuseAndSourceChanges(testCase)
     source = obstacleAvoidance.obstacles.createObstacle('translation',[0;5;10], ...
         {box(:,1);box(:,1)+1;box(:,1)+2},repmat({box(:,2)},3,1),0);
     partial = obstacleAvoidance.obstacles.prepareObstacles(source,[0,2]);
-    % A touched redundant span is certified in full, independent of query window.
+    % A touched redundant span is proven in full, independent of query window.
     verifyTrue(testCase,partial.InternalPreparation.SamplePrepared(end));
     verifyEqual(testCase,partial.InternalPreparation.MergedSpanTime_s,[0,10]);
     changedVelocity=source;
@@ -257,14 +257,14 @@ function testAlteredEndpointCoverageRejected(testCase)
         struct('time_s',12,'position_units',[4,0]),struct(),struct());
     verifyTrue(testCase,r.Success,r.Message);
     altered = r;
-    altered.PlaneCertificate.Coverage.EndRegions_units{1}(:,2) = altered.PlaneCertificate.Coverage.EndRegions_units{1}(:,2)+1;
+    altered.SeparationProof.Coverage.EndRegions_units{1}(:,2) = altered.SeparationProof.Coverage.EndRegions_units{1}(:,2)+1;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
     altered = r;
-    altered.PlaneCertificate.Coverage = rmfield(altered.PlaneCertificate.Coverage,'EndRegions_units');
+    altered.SeparationProof.Coverage = rmfield(altered.SeparationProof.Coverage,'EndRegions_units');
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
 
-function testPlaneSearchUsesCertifiedProductHull(testCase)
+function testPlaneSearchUsesProvenProductHull(testCase)
     controls = [ones(9,1),zeros(9,1)]; controls(5,2) = 2;
     vertices = [0.5,1.3;10,1.3;10,3;0.5,3];
     % The original control hull penetrates more in y than x. Its degree-nine
@@ -275,22 +275,22 @@ function testPlaneSearchUsesCertifiedProductHull(testCase)
     verifyTrue(testCase,bmtpEngine.separation.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
 end
 
-function testFinalCertificateRechecksNeighborDirections(testCase)
+function testFinalProofRechecksNeighborDirections(testCase)
     box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     request = struct('Regions_units',{{box}},'Coverage',struct('Passed',true), ...
         'InitialState',struct('time_s',0),'IsRest',true);
     points = [-2,0;-2,0;2,0;0,0];
-    prepared = struct('CertifiedControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
+    prepared = struct('ProvenControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
         'SegmentTime_s',ones(4,1),'FinalTime_s',4);
-    certificate = bmtpEngine.validation.checkFinalMotion(request,prepared,1e-8,1e-6);
-    verifyFalse(testCase,certificate.Passed);
-    verifyEqual(testCase,certificate.VerifiedPairCount,3);
-    verifyEqual(testCase,certificate.ReusedPairCount,1);
-    verifyTrue(testCase,certificate.Planes(3).Verified);
-    verifyFalse(testCase,certificate.Planes(4).Verified);
+    proof = bmtpEngine.validation.checkFinalMotion(request,prepared,1e-8,1e-6);
+    verifyFalse(testCase,proof.Passed);
+    verifyEqual(testCase,proof.VerifiedPairCount,3);
+    verifyEqual(testCase,proof.ReusedPairCount,1);
+    verifyTrue(testCase,proof.Planes(3).Verified);
+    verifyFalse(testCase,proof.Planes(4).Verified);
     for k = 1:3
-        checked = bmtpEngine.separation.verifySeparatingLine(certificate.Planes(k), ...
-            squeeze(prepared.CertifiedControlPoint_units(k,:,:)),box,1e-8,1e-6);
+        checked = bmtpEngine.separation.verifySeparatingLine(proof.Planes(k), ...
+            squeeze(prepared.ProvenControlPoint_units(k,:,:)),box,1e-8,1e-6);
         verifyTrue(testCase,checked.Verified);
     end
 end

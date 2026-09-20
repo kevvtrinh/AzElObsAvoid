@@ -77,7 +77,7 @@ end
 x_units                = double(obstacle.x_units{lowerSampleIndex}(:));
 y_units                = double(obstacle.y_units{lowerSampleIndex}(:));
 topologyIsInterpolated = true;
-usesSweptCells         = false;
+usesMovingCells         = false;
 if lowerSampleIndex == upperSampleIndex
     speed_units_s = preparation.SampleSpeedBound_units_s(lowerSampleIndex);
     if ~geometryOnly
@@ -107,13 +107,13 @@ elseif preparation.IntervalIsUnsupported(lowerSampleIndex)
     error('preparedShapeAtTime:UnsupportedContinuousDeformation', ...
         'The obstacle interval has no verified exact continuous geometry model.');
 elseif preparation.IntervalIsStationary(lowerSampleIndex) || ...
-        preparation.IntervalUsesSweptCells(lowerSampleIndex) || ...
+        preparation.IntervalUsesMovingCells(lowerSampleIndex) || ...
         preparation.IntervalUsesEndpointHull(lowerSampleIndex)
     shape = preparation.IntervalUnionShapes{lowerSampleIndex};
     [x_units, y_units] = boundary(shape);
     speed_units_s          = 0;
     topologyIsInterpolated = false;
-    usesSweptCells         = preparation.IntervalUsesSweptCells(lowerSampleIndex);
+    usesMovingCells         = preparation.IntervalUsesMovingCells(lowerSampleIndex);
 else
     error('preparedShapeAtTime:UnknownGeometryModel', ...
         'The prepared obstacle interval has an unknown geometry model.');
@@ -127,14 +127,14 @@ if nargout < 2
     return;
 end
 geometry = boundaryGeometry( ...
-    x_units, y_units, speed_units_s, topologyIsInterpolated, usesSweptCells, ...
+    x_units, y_units, speed_units_s, topologyIsInterpolated, usesMovingCells, ...
     lowerSampleIndex, classifyBoundary);
 end
 
 %% Section 3: Local Functions
 
 function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
-        topologyIsInterpolated, usesSweptCells, lowerSampleIndex, classifyBoundary)
+        topologyIsInterpolated, usesMovingCells, lowerSampleIndex, classifyBoundary)
     % Classify one ordered boundary without changing its vertices or ring order.
     finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
@@ -166,6 +166,6 @@ function geometry = boundaryGeometry(x_units, y_units, speed_units_s, ...
         "IsConvex",                  isConvex, ...
         "OutwardSign",               outwardSign, ...
         "TopologyIsInterpolated",    topologyIsInterpolated, ...
-        "UsesSweptCells",            usesSweptCells, ...
+        "UsesMovingCells",            usesMovingCells, ...
         "LowerSampleIndex",          lowerSampleIndex);
 end

@@ -23,7 +23,7 @@ function [planes, activePairs, complete, statistics] = createTimeScopedPlanes( .
 %**************************************************************************
 % OUTPUTS
 %   - planes (S-by-R struct array)
-%       Plane certificates for every segment-region pair.
+%       Plane proofs for every segment-region pair.
 %   - activePairs (S-by-R logical matrix)
 %       True for pairs whose physical intervals overlap.
 %   - complete (logical scalar)

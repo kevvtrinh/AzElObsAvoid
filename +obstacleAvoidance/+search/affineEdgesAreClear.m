@@ -1,9 +1,9 @@
-function [isClear, blockingCellIndices, witnessTimes_s] = affineEdgesAreClear( ...
+function [isClear, blockingCellIndices, collisionTimes_s] = affineEdgesAreClear( ...
     first_units, second_units, firstNodeIndices, secondNodeIndices, ...
     first_s, second_s, cells, pairCache, cellIsCounterclockwise)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [isClear, blockingCellIndices, witnessTimes_s] = ...
+%   [isClear, blockingCellIndices, collisionTimes_s] = ...
 %       obstacleAvoidance.search.affineEdgesAreClear(first_units, second_units, ...
 %       firstNodeIndices, secondNodeIndices, first_s, second_s, cells, ...
 %       pairCache, cellIsCounterclockwise)
@@ -11,7 +11,7 @@ function [isClear, blockingCellIndices, witnessTimes_s] = affineEdgesAreClear( .
 % PURPOSE
 %   - Decide exactly whether straight segments traversed over one clock
 %     interval stay clear of every affine moving convex cell, and for a
-%     blocked segment name the first blocking cell and a witness time.
+%     blocked segment name the first blocking cell and a collision time.
 %**************************************************************************
 % INPUTS
 %   - first_units, second_units (N-by-2 numeric)
@@ -32,16 +32,16 @@ function [isClear, blockingCellIndices, witnessTimes_s] = affineEdgesAreClear( .
 %       True when the segment never touches any cell.
 %   - blockingCellIndices (N-by-1 uint32)
 %       First blocking cell of each blocked segment, zero when clear.
-%   - witnessTimes_s (N-by-1 numeric)
+%   - collisionTimes_s (N-by-1 numeric)
 %       Latest clock at which a blocked segment is strictly inside its
 %       blocking cell; NaN when the segment is clear or its contact is
-%       tolerance-only, in which case no layer certificate is issued.
+%       tolerance-only, in which case no layer proof is issued.
 %**************************************************************************
 % UNITS
 %   - Positions are coordinate units and clocks are seconds.
 %**************************************************************************
 
-%% Section 1: Certify Every Segment Against The Affine Cells
+%% Section 1: Prove Every Segment Against The Affine Cells
 
 % A path point and every vertex of a time cell are affine in time. Each
 % convex half-space residual is therefore quadratic; its real roots
@@ -49,12 +49,12 @@ function [isClear, blockingCellIndices, witnessTimes_s] = affineEdgesAreClear( .
 edgeCount           = size(first_units, 1);
 isClear             = true(edgeCount, 1);
 blockingCellIndices = zeros(edgeCount, 1, "uint32");
-witnessTimes_s      = NaN(edgeCount, 1);
+collisionTimes_s      = NaN(edgeCount, 1);
 if edgeCount == 0 || isempty(cells.Regions_units)
     return
 end
 if edgeCount == 1
-    [isClear, blockingCellIndices, witnessTimes_s] = affineSingleEdgeIsClear( ...
+    [isClear, blockingCellIndices, collisionTimes_s] = affineSingleEdgeIsClear( ...
         first_units, second_units, firstNodeIndices, secondNodeIndices, ...
         first_s, second_s, cells, pairCache, cellIsCounterclockwise);
     return
@@ -154,31 +154,31 @@ for blockIndex = 1:numel(firstBlockOffsets)
     overlapRegionStart_units = regionStart_units + cellStartFraction .* regionDelta_units;
     overlapRegionEnd_units   = regionStart_units + cellEndFraction .* regionDelta_units;
     if isscalar(candidateIndices)
-        [pointTouchesCell, witnessClock] = affinePointTouchesConvexScalar( ...
+        [pointTouchesCell, collisionClock] = affinePointTouchesConvexScalar( ...
             pathStart_units, pathEnd_units, overlapRegionStart_units, ...
             overlapRegionEnd_units, cellIsCounterclockwise(cellIndex));
     else
-        [pointTouchesCell, witnessClock] = affinePointsTouchConvex( ...
+        [pointTouchesCell, collisionClock] = affinePointsTouchConvex( ...
             pathStart_units, pathEnd_units, overlapRegionStart_units, ...
             overlapRegionEnd_units, cellIsCounterclockwise(cellIndex));
     end
     blockedIndices = candidateIndices(pointTouchesCell);
     isClear(blockedIndices) = false;
     blockingCellIndices(blockedIndices) = uint32(cellIndex);
-    witnessTimes_s(blockedIndices) = overlapStart_s + ...
-        witnessClock(pointTouchesCell) .* (overlapEnd_s - overlapStart_s);
+    collisionTimes_s(blockedIndices) = overlapStart_s + ...
+        collisionClock(pointTouchesCell) .* (overlapEnd_s - overlapStart_s);
 end
 end
 
 %% Section 2: Local Functions
 
-function [isClear, blockingCellIndex, witnessTime_s] = affineSingleEdgeIsClear( ...
+function [isClear, blockingCellIndex, collisionTime_s] = affineSingleEdgeIsClear( ...
         first_units, second_units, firstNodeIndex, secondNodeIndex, ...
         first_s, second_s, cells, pairCache, cellIsCounterclockwise)
     % Preserve the exact batch predicate while avoiding block assembly for one edge.
     isClear           = true;
     blockingCellIndex = uint32(0);
-    witnessTime_s     = NaN;
+    collisionTime_s     = NaN;
     [pairCellIndices, qEnter, qExit, activeStart_s, activeEnd_s] = ...
         pairCellCandidates(firstNodeIndex, secondNodeIndex, pairCache);
     if isempty(pairCellIndices)
@@ -240,13 +240,13 @@ function [isClear, blockingCellIndex, witnessTime_s] = affineSingleEdgeIsClear( 
         regionDelta_units = cells.EndRegions_units{cellIndex} - regionStart_units;
         overlapRegionStart_units = regionStart_units + cellStartFraction .* regionDelta_units;
         overlapRegionEnd_units   = regionStart_units + cellEndFraction .* regionDelta_units;
-        [pointTouchesCell, witnessClock] = affinePointTouchesConvexScalar( ...
+        [pointTouchesCell, collisionClock] = affinePointTouchesConvexScalar( ...
             pathStart_units, pathEnd_units, overlapRegionStart_units, overlapRegionEnd_units, ...
             cellIsCounterclockwise(cellIndex));
         if pointTouchesCell
             isClear           = false;
             blockingCellIndex = uint32(cellIndex);
-            witnessTime_s     = overlapStart_s + witnessClock * (overlapEnd_s - overlapStart_s);
+            collisionTime_s     = overlapStart_s + collisionClock * (overlapEnd_s - overlapStart_s);
             return
         end
     end
@@ -254,8 +254,8 @@ end
 
 function [cellIndices, qEnter, qExit, activeStart_s, activeEnd_s] = ...
         pairCellCandidates(firstNodeIndex, secondNodeIndex, cache)
-    % Return a materialized entry or calculate that exact entry on demand.
-    if cache.IsMaterialized
+    % Return a precomputed entry or calculate that exact entry on demand.
+    if cache.IsPrecomputed
         pairIndex    = firstNodeIndex + cache.NodeCount * (secondNodeIndex - 1);
         cellIndices  = cache.CellIndices{pairIndex};
         qEnter       = cache.QEnter{pairIndex};
@@ -271,7 +271,7 @@ function [cellIndices, qEnter, qExit, activeStart_s, activeEnd_s] = ...
         cache.CellLower_units, cache.CellUpper_units, cache.ActiveIntervals_s);
 end
 
-function [pointTouchesCell, strictWitnessClock] = affinePointsTouchConvex( ...
+function [pointTouchesCell, strictCollisionClock] = affinePointsTouchConvex( ...
         pointStart_units, pointEnd_units, regionStart_units, regionEnd_units, ...
         isCounterclockwise)
     % Test path points against one affine moving convex cell in one batch.
@@ -280,12 +280,12 @@ function [pointTouchesCell, strictWitnessClock] = affinePointsTouchConvex( ...
     % point-by-point arithmetic and residual tolerance.
     pointCount       = size(pointStart_units, 1);
     pointTouchesCell = false(pointCount, 1);
-    strictWitnessClock = NaN(pointCount, 1);
+    strictCollisionClock = NaN(pointCount, 1);
     if pointCount == 0
         return
     end
     if pointCount == 1
-        [pointTouchesCell, strictWitnessClock] = affinePointTouchesConvexScalar( ...
+        [pointTouchesCell, strictCollisionClock] = affinePointTouchesConvexScalar( ...
             pointStart_units, pointEnd_units, regionStart_units, regionEnd_units, ...
             isCounterclockwise);
         return
@@ -351,8 +351,8 @@ function [pointTouchesCell, strictWitnessClock] = affinePointsTouchConvex( ...
         strictProbeClocks = probes(pointIndex, strictByPointAndProbe(pointIndex, :));
         if ~isempty(strictProbeClocks)
             % For a later arrival the path point at a fixed physical time
-            % moves toward its source. The latest strict witness therefore
-            % gives the longest conservative retry certificate along the same
+            % moves toward its source. The latest strict collision time therefore
+            % gives the longest conservative retry proof along the same
             % directed segment; the collision predicate itself is unchanged.
             lowerClock = max(strictProbeClocks);
             finiteCuts = cuts(pointIndex, isfinite(cuts(pointIndex, :)));
@@ -377,12 +377,12 @@ function [pointTouchesCell, strictWitnessClock] = affinePointsTouchConvex( ...
                     end
                 end
             end
-            strictWitnessClock(pointIndex) = lowerClock;
+            strictCollisionClock(pointIndex) = lowerClock;
         end
     end
 end
 
-function [pointTouchesCell, strictWitnessClock] = affinePointTouchesConvexScalar( ...
+function [pointTouchesCell, strictCollisionClock] = affinePointTouchesConvexScalar( ...
         pointStart_units, pointEnd_units, regionStart_units, regionEnd_units, ...
         isCounterclockwise)
     % Keep the overwhelmingly common one-edge predicate in two dimensions;
@@ -416,11 +416,11 @@ function [pointTouchesCell, strictWitnessClock] = affinePointTouchesConvexScalar
         constant_units2  = -constant_units2;
     end
     pointTouchesCell   = false;
-    strictWitnessClock = NaN;
+    strictCollisionClock = NaN;
     endResidual_units2 = quadratic_units2 + linear_units2 + constant_units2;
     if all(endResidual_units2 > 16 * residualTolerance_units2)
         pointTouchesCell   = true;
-        strictWitnessClock = 1;
+        strictCollisionClock = 1;
         return
     end
 
@@ -489,5 +489,5 @@ function [pointTouchesCell, strictWitnessClock] = affinePointTouchesConvexScalar
             end
         end
     end
-    strictWitnessClock = lowerClock;
+    strictCollisionClock = lowerClock;
 end

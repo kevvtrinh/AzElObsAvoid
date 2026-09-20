@@ -137,7 +137,7 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
     % the C3 continuity imposed by the trajectory problem.
     % A small normalized solver residual can otherwise be amplified by the
     % inverse square of a short span's duration. This changes the returned curve;
-    % all derivative bounds and collision certificates are rebuilt afterward.
+    % all derivative bounds and collision proofs are rebuilt afterward.
     for derivativeOrder = 0:3
         left   = endpointTargets(1:end - 1, :, derivativeOrder + 1) ./ ...
             segmentTime_s(1:end - 1) .^ derivativeOrder;
@@ -170,7 +170,7 @@ end
 function controls_units = projectQuinticContinuity(controls_units, durations_s)
     % A global linear projection enforces C3 joins while preserving endpoint
     % p/v/a. Unlike independent span endpoint repair, these equations fit in
-    % the quintic spline space. The modified curve is certified afterward.
+    % the quintic spline space. The modified curve is proven afterward.
     segmentCount = size(controls_units, 1);
     differenceCoefficients = {1, [-1, 1], [1, -2, 1], [-1, 3, -3, 1]};
     rowCount               = 6 + 4 * (segmentCount - 1);

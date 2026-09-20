@@ -6,7 +6,7 @@ function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units,
 %**************************************************************************
 % PURPOSE
 %   - Bound one degree-one separating line with direct Bernstein products,
-%     then apply the shared bmtpEngine.separation.certifySeparation decision.
+%     then apply the shared bmtpEngine.separation.proveSeparation decision.
 %**************************************************************************
 % INPUTS
 %   - plane (scalar struct)
@@ -22,7 +22,7 @@ function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units,
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
-%       Corrected offsets, certified signed gap, and verification state.
+%       Corrected offsets, proven signed gap, and verification state.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, reserve, and gap are coordinate units;
@@ -76,7 +76,7 @@ if target_units - minimumObstacleSide_units <= -reserve_units - maximumTrajector
     scale_units             = max([1; finiteCoordinates_units]);
     roundoff_units = 16 * eps(scale_units);
 end
-[plane.Offset_units, plane.SignedGap_units, plane.Verified] = bmtpEngine.separation.certifySeparation( ...
+[plane.Offset_units, plane.SignedGap_units, plane.Verified] = bmtpEngine.separation.proveSeparation( ...
     minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalNorm, ...
     plane.Offset_units, roundoff_units, reserve_units, target_units);
 end

@@ -1,7 +1,7 @@
 function tests = testPolynomialSubdivision
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testPolynomialSubdivision.m')
-% PURPOSE: Check that certificate subdivision preserves the exported motion
+% PURPOSE: Check that proof subdivision preserves the exported motion
 %   after endpoint/continuity repair, including unequal spans and nonmidpoint cuts.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Independent validation and physical p/v/a/jerk preservation checks.
@@ -39,22 +39,22 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         for span=1:3
             controls_units(span,:,:)=bmtpEngine.motion.restrictBezier(whole,breaks(span:span+1).');
         end
-        % The quintic export repairs this residual. Later certification must
+        % The quintic export repairs this residual. Later proof must
         % preserve that repaired curve instead of projecting these controls again.
         if degree==5, controls_units(2,1,1)=controls_units(2,1,1)+1e-6; end
         source=bmtpEngine.pipeline.prepareFinalMotion(request,controls_units,durations_s);
         sourcePolynomial=bmtpEngine.motion.createPowerPolynomial(source.ControlPoint_units, ...
             source.SegmentTime_s,0,source.PrescribedPower_units);
         original=bmtpEngine.pipeline.createMotionOutput(base,request,source);
-        original.PlaneCertificate=bmtpEngine.validation.checkFinalMotion(request,source,reserve_units,target_units);
+        original.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,source,reserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
-        changed=bmtpEngine.pipeline.prepareFinalMotion(request,source.CertifiedControlPoint_units, ...
+        changed=bmtpEngine.pipeline.prepareFinalMotion(request,source.ProvenControlPoint_units, ...
             source.SegmentTime_s,sourcePolynomial.positionPower_units, ...
             repelem([true;false;true],2),repelem([0.31;0.5;0.73],2));
         changedPolynomial=bmtpEngine.motion.createPowerPolynomial(changed.ControlPoint_units, ...
             changed.SegmentTime_s,0,changed.PrescribedPower_units);
         output=bmtpEngine.pipeline.createMotionOutput(base,request,changed);
-        output.PlaneCertificate=bmtpEngine.validation.checkFinalMotion(request,changed,reserve_units,target_units);
+        output.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,changed,reserve_units,target_units);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(output).Passed);
         sampleTime_s=linspace(initial.time_s,goal.time_s,401).';
         [~,p,v,a,j]=bmtpEngine.motion.evaluatePolynomial(sourcePolynomial,sampleTime_s);

@@ -1,16 +1,16 @@
-function [supported, shape, regions_units, counts, timing_s] = createSweptCorrespondingCells( ...
+function [supported, shape, regions_units, counts, timing_s] = createMovingCells( ...
     lower_units, upper_units, safetyMargin_units, usesSourceIndex)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [supported, shape, regions_units, counts, timing_s] = ...
-%       obstacleAvoidance.obstacles.createSweptCorrespondingCells( ...
+%       obstacleAvoidance.obstacles.createMovingCells( ...
 %       lower_units, upper_units, safetyMargin_units)
 %   [supported, shape, regions_units, counts, timing_s] = ...
-%       obstacleAvoidance.obstacles.createSweptCorrespondingCells( ...
+%       obstacleAvoidance.obstacles.createMovingCells( ...
 %       lower_units, upper_units, safetyMargin_units, usesSourceIndex)
 %**************************************************************************
 % PURPOSE
-%   - Build a conservative swept enclosure for corresponding obstacle rings.
+%   - Build a conservative moving-cell enclosure for corresponding obstacle rings.
 %**************************************************************************
 % INPUTS
 %   - lower_units (N-by-2 numeric array)
@@ -18,15 +18,15 @@ function [supported, shape, regions_units, counts, timing_s] = createSweptCorres
 %   - upper_units (N-by-2 numeric array)
 %       Original ring at the interval end, matching lower_units.
 %   - safetyMargin_units (nonnegative numeric scalar)
-%       Margin included in the conservative swept enclosure.
+%       Margin included in the conservative moving-cell enclosure.
 %   - usesSourceIndex (logical scalar, optional; default false)
 %       Whether incoming vertex indices already define correspondence.
 %**************************************************************************
 % OUTPUTS
 %   - supported (logical scalar)
-%       True when the source rings admit a swept enclosure.
+%       True when the source rings admit a moving-cell enclosure.
 %   - shape (polyshape)
-%       Union of the conservative swept cells, or empty when unsupported.
+%       Union of the conservative moving cells, or empty when unsupported.
 %   - regions_units (cell array)
 %       Convex regions that exactly repartition shape.
 %   - counts (1-by-2 numeric row)
@@ -106,9 +106,9 @@ timing_s(2) = toc(stageTimer);
 %% Section 4: Union The Sweeps
 
 stageTimer = tic;
-sweptUnion = balancedUnion(sweeps);
+movingCellUnion = balancedUnion(sweeps);
 timing_s(3) = toc(stageTimer);
-if isempty(sweptUnion.Vertices)
+if isempty(movingCellUnion.Vertices)
     return;
 end
 
@@ -120,16 +120,16 @@ stageTimer = tic;
 % more conservative, so the budget trades routes for tractability, never
 % validity. It mirrors the visibility search's pair-work budget.
 cellBudget       = 256;
-extent_units     = max(sweptUnion.Vertices, [], 1) - min(sweptUnion.Vertices, [], 1);
+extent_units     = max(movingCellUnion.Vertices, [], 1) - min(movingCellUnion.Vertices, [], 1);
 resolution_units = max([max(vecnorm(upper_units - lower_units, 2, 2)) + 2 * halfWidth_units, ...
     sqrt(prod(max(extent_units, eps)) / cellBudget)]);
 if resolution_units <= 0
     % No vertex moved and no margin applies: the union is the sample itself.
-    shape = sweptUnion;
+    shape = movingCellUnion;
     regions_units = obstacleAvoidance.geometry.convexRegions(shape);
 else
-    minimum_units = min(sweptUnion.Vertices, [], 1);
-    maximum_units = max(sweptUnion.Vertices, [], 1);
+    minimum_units = min(movingCellUnion.Vertices, [], 1);
+    maximum_units = max(movingCellUnion.Vertices, [], 1);
     columnCount = max(1, ceil((maximum_units(1) - minimum_units(1)) / resolution_units));
     rowCount = max(1, ceil((maximum_units(2) - minimum_units(2)) / resolution_units));
     regions_units = cell(0, 1);
@@ -139,7 +139,7 @@ else
             yRange_units = minimum_units(2) + [rowIndex - 1, rowIndex] * resolution_units;
             squareShape = polyshape([xRange_units(1), yRange_units(1); xRange_units(2), yRange_units(1); ...
                 xRange_units(2), yRange_units(2); xRange_units(1), yRange_units(2)]);
-            pieceShape = intersect(sweptUnion, squareShape);
+            pieceShape = intersect(movingCellUnion, squareShape);
             if isempty(pieceShape.Vertices) || area(pieceShape) <= 0
                 continue;
             end

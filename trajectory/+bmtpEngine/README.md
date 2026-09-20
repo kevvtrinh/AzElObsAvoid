@@ -5,7 +5,7 @@ the implementation by the stage that owns each responsibility:
 
 - `+pipeline` builds the solve request, warm start, prepared motion, and public
   motion output. It also owns timed refinement between the initial solve and
-  final certification.
+  final proof.
 - `+motion` constructs and evaluates jerk-limited Bezier/power-polynomial
   motion, including endpoint controls, subdivision, and duration estimates.
 - `+optimization` assembles and runs the conic trajectory programs. It owns

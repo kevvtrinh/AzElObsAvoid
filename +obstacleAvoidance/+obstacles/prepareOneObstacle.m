@@ -71,15 +71,15 @@ if isempty(previous)
         'IntervalGeometryModel',                      strings(intervalCount, 1), ...
         'IntervalHasExactPartition',                  false(intervalCount, 1), ...
         'IntervalIsStationary',                       false(intervalCount, 1), ...
-        'IntervalUsesSweptCells',                     false(intervalCount, 1), ...
+        'IntervalUsesMovingCells',                     false(intervalCount, 1), ...
         'IntervalUsesEndpointHull',                   false(intervalCount, 1), ...
         'IntervalIsUnsupported',                      false(intervalCount, 1), ...
         'IntervalPartitionReused',                    false(intervalCount, 1), ...
-        'IntervalSweptCellCount',                     zeros(intervalCount, 2), ...
-        'IntervalSweptTiming_s',                      zeros(intervalCount, 4), ...
-        'IntervalSweptUncoveredProtectedArea_units2', zeros(intervalCount, 2), ...
+        'IntervalMovingCellCount',                     zeros(intervalCount, 2), ...
+        'IntervalMovingCellTiming_s',                      zeros(intervalCount, 4), ...
+        'IntervalMovingCellUncoveredProtectedArea_units2', zeros(intervalCount, 2), ...
         'IntervalEndpointHullAddedArea_units2',       zeros(intervalCount, 1), ...
-        'IntervalCertificationReason',                strings(intervalCount, 1), ...
+        'IntervalProofReason',                strings(intervalCount, 1), ...
         'SpanStartSampleIndex',                       (1:intervalCount).', ...
         'SpanEndSampleIndex',                         (2:sampleCount).', ...
         'MergedIntervalCount',                        0, ...
@@ -120,7 +120,7 @@ end
 
 %% Section 3: Prepare Each Newly Requested Source Interval Once
 
-% Only isolated candidate intervals have fixed endpoints before certification.
+% Only isolated candidate intervals have fixed endpoints before proof.
 % A rejected merged span changes its successors, so all spans stay sequential.
 newIntervalIndices   = find(neededIntervals & ~preparation.IntervalPrepared);
 isolatedIntervals    = preparation.CandidateSpanEndSampleIndex == (2:sampleCount).' & ...
@@ -195,7 +195,7 @@ end
 
 preparation.SampleSpeedBound_units_s = max([0; preparation.IntervalSpeedBound_units_s], ...
     [preparation.IntervalSpeedBound_units_s; 0]);
-enclosureIntervalIndices = find(preparation.IntervalUsesSweptCells | ...
+enclosureIntervalIndices = find(preparation.IntervalUsesMovingCells | ...
     preparation.IntervalUsesEndpointHull);
 preparation.SampleSpeedBound_units_s(unique( ...
     [enclosureIntervalIndices; enclosureIntervalIndices + 1])) = Inf;
@@ -217,7 +217,7 @@ end
 
 function preparation = prepareSourceInterval(preparation, obstacle, intervalIndex, ...
         sampleProducts, intervalProducts, protectedKeepsIndex, translationOnly)
-    % Certify one requested source interval, or the merged span it starts,
+    % Prove one requested source interval, or the merged span it starts,
     % and record its geometry model on every interval it covers.
     time_s = obstacle.time_s;
     finalSampleIndex = preparation.CandidateSpanEndSampleIndex(intervalIndex);
@@ -237,7 +237,7 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
     % A declared source-index correspondence describes the original rings.
     % Protected rings are only those rings when no margin was applied;
     % buffered rings carry no index correspondence, so they admit only the
-    % translation certificate, and every other motion uses the original rings.
+    % translation proof, and every other motion uses the original rings.
     usesSourceIndex   = obstacle.UsesSourceIndex;
     preserveAlignment = protectedKeepsIndex || finalSampleIndex > intervalIndex + 1;
     product = intervalProducts{intervalIndex};
@@ -274,10 +274,10 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
             reusableStartRegions_units, protectedKeepsIndex, translationOnly, false);
     end
     intervalIsStationary        = false;
-    intervalUsesSweptCells      = false;
+    intervalUsesMovingCells      = false;
     intervalUsesEndpointHull    = false;
     intervalIsUnsupported       = false;
-    intervalCertificationReason = "";
+    intervalProofReason = "";
     preparation.MatchingTopology(intervalIndex) = matched;
     preparation.IntervalPartitionReused(intervalIndex) = partitionReused;
     if matched
@@ -304,26 +304,26 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
                 obstacle.originalY_units{intervalIndex}];
             upperOriginal_units = [obstacle.originalX_units{finalSampleIndex}, ...
                 obstacle.originalY_units{finalSampleIndex}];
-            [sweptSupported, sweptShape, sweptRegions_units, counts, timing_s] = ...
-                obstacleAvoidance.obstacles.createSweptCorrespondingCells( ...
+            [movingCellsSupported, movingCellShape, movingCellRegions_units, counts, timing_s] = ...
+                obstacleAvoidance.obstacles.createMovingCells( ...
                 lowerOriginal_units, upperOriginal_units, ...
                 obstacle.safetyMargin_units, usesSourceIndex);
-            if sweptSupported
-                % Certify both authoritative protected samples against the
-                % prescribed swept enclosure without replacing either sample.
-                uncoveredArea_units2 = [area(subtract(firstShape, sweptShape)), ...
-                    area(subtract(lastShape, sweptShape))];
-                preparation.IntervalSweptUncoveredProtectedArea_units2(intervalIndex, :) = ...
+            if movingCellsSupported
+                % Prove both authoritative protected samples against the
+                % prescribed moving-cell enclosure without replacing either sample.
+                uncoveredArea_units2 = [area(subtract(firstShape, movingCellShape)), ...
+                    area(subtract(lastShape, movingCellShape))];
+                preparation.IntervalMovingCellUncoveredProtectedArea_units2(intervalIndex, :) = ...
                     uncoveredArea_units2;
                 areaTolerance_units2 = 4096 * eps(max([1, area(firstShape), area(lastShape)]));
-                sweptSupported = all(uncoveredArea_units2 <= areaTolerance_units2);
+                movingCellsSupported = all(uncoveredArea_units2 <= areaTolerance_units2);
             end
-            if sweptSupported
-                shape         = sweptShape;
-                geometryModel = "sweptCorrespondingConvexCells";
-                preparation.IntervalStartRegions_units{intervalIndex} = sweptRegions_units;
-                preparation.IntervalEndRegions_units{intervalIndex}   = sweptRegions_units;
-                intervalUsesSweptCells = true;
+            if movingCellsSupported
+                shape         = movingCellShape;
+                geometryModel = "movingConvexCells";
+                preparation.IntervalStartRegions_units{intervalIndex} = movingCellRegions_units;
+                preparation.IntervalEndRegions_units{intervalIndex}   = movingCellRegions_units;
+                intervalUsesMovingCells = true;
             else
                 lowerProtected_units = [lowerX_units, lowerY_units];
                 upperProtected_units = [upperX_units, upperY_units];
@@ -340,12 +340,12 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
                 else
                     shape                       = polyshape();
                     geometryModel               = "unsupportedContinuousDeformation";
-                    intervalCertificationReason = "degenerateEndpointGeometry";
+                    intervalProofReason = "degenerateEndpointGeometry";
                     intervalIsUnsupported       = true;
                 end
             end
-            preparation.IntervalSweptCellCount(intervalIndex, :) = counts;
-            preparation.IntervalSweptTiming_s(intervalIndex, :)  = timing_s;
+            preparation.IntervalMovingCellCount(intervalIndex, :) = counts;
+            preparation.IntervalMovingCellTiming_s(intervalIndex, :)  = timing_s;
         end
         preparation.IntervalUnionShapes{intervalIndex} = shape;
         preparation.IntervalSpeedBound_units_s(intervalIndex) = 0;
@@ -355,7 +355,7 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
     end
     classifiedIntervalIndices = intervalIndex;
     if finalSampleIndex > intervalIndex + 1
-        % One certified partition restricts to every source subinterval with
+        % One proven partition restricts to every source subinterval with
         % identical face indices. Source samples themselves remain authoritative.
         spanDelta_units = [preparation.DeltaX_units{intervalIndex}, ...
             preparation.DeltaY_units{intervalIndex}];
@@ -387,11 +387,11 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
     preparation.IntervalGeometryModel(classifiedIntervalIndices)     = geometryModel;
     preparation.IntervalHasExactPartition(classifiedIntervalIndices) = hasExactPartition;
     preparation.IntervalIsStationary(classifiedIntervalIndices)      = intervalIsStationary;
-    preparation.IntervalUsesSweptCells(classifiedIntervalIndices)    = intervalUsesSweptCells;
+    preparation.IntervalUsesMovingCells(classifiedIntervalIndices)    = intervalUsesMovingCells;
     preparation.IntervalUsesEndpointHull(classifiedIntervalIndices)  = intervalUsesEndpointHull;
     preparation.IntervalIsUnsupported(classifiedIntervalIndices)     = intervalIsUnsupported;
-    preparation.IntervalCertificationReason(classifiedIntervalIndices) = ...
-        intervalCertificationReason;
+    preparation.IntervalProofReason(classifiedIntervalIndices) = ...
+        intervalProofReason;
     preparation.IntervalPrepared(intervalIndex) = true;
 end
 
@@ -491,7 +491,7 @@ end
 
 function finalSampleIndices = affineSpanEnds(obstacle, usesSourceIndex)
     % Equal velocities plus unchanged per-interval alignment propose spans.
-    % The main stage certifies the entire span with one shared face partition.
+    % The main stage proves the entire span with one shared face partition.
     % A declared source-index correspondence needs no alignment check.
     time_s             = obstacle.time_s;
     intervalCount      = numel(time_s) - 1;

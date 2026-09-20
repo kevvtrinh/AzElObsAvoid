@@ -7,7 +7,7 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Prepare protected polygon histories and an exact visibility guide,
-%     then construct independently certified C3 quintic BMTP motion.
+%     then construct independently proven C3 quintic BMTP motion.
 %   - Fixed-arrival moving-obstacle requests use bounded initial- and
 %     arrival-snapshot shortcuts, then one time-expanded next method. Failed
 %     shortcuts never prove infeasibility, and every accepted motion passes

@@ -6,7 +6,7 @@ function planes = verifyStaticSeparatingLines(planes, controlPoint_units, region
 %**************************************************************************
 % PURPOSE
 %   - Batch the scalar Bernstein plane bounds for static cells, then apply
-%     the same bmtpEngine.separation.certifySeparation decision as the scalar verifier.
+%     the same bmtpEngine.separation.proveSeparation decision as the scalar verifier.
 %**************************************************************************
 % INPUTS
 %   - planes (R-element struct array)
@@ -78,7 +78,7 @@ scale_units = accumarray(regionIndexByVertex, max(abs(vertices_units), [], 2), .
     [regionCount, 1], @max);
 scale_units = max([scale_units, max(abs(offsets_units), [], 2), ...
     repmat(max(1, max(abs(controlPoint_units), [], 'all')), regionCount, 1)], [], 2);
-[offsets_units, signedGap_units, verified] = bmtpEngine.separation.certifySeparation( ...
+[offsets_units, signedGap_units, verified] = bmtpEngine.separation.proveSeparation( ...
     minimumObstacle_units, maximumTrajectory_units, maximumNormalNorm, ...
     offsets_units, 16 * eps(scale_units), reserve_units, target_units);
 

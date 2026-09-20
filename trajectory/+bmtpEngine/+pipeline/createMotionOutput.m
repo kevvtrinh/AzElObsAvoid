@@ -12,7 +12,7 @@ function candidate = createMotionOutput(candidate, request, preparedMotion)
 %   - request (scalar struct)
 %       Checked request supplying the initial clock and sample time.
 %   - preparedMotion (scalar struct)
-%       Final prepared control net and its motion certificate.
+%       Final prepared control net and its motion proof.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar struct)
@@ -41,7 +41,7 @@ for segmentIndex = 1:polynomial.SegmentCount
         integral(speedAtTauHandle, 0, 1, 'AbsTol', 1e-11, 'RelTol', 1e-11);
 end
 candidate.IntegratedSquaredJerk_units2_s5 = integratedSquaredJerk(polynomial);
-candidate.MaximumConstraintViolation      = preparedMotion.MotionCertificate.MaximumViolation;
+candidate.MaximumConstraintViolation      = preparedMotion.MotionProof.MaximumViolation;
 
 %% Section 3: Transfer The Sampled Histories And The Polynomial
 for fieldName = ["time_s", "position_units", "velocity_units_s", ...

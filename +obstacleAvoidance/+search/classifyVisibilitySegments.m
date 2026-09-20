@@ -1,8 +1,8 @@
-function clear = classifyVisibilitySegments(skeleton, nodes_units, cones, firstNode, secondNodes)
+function clear = classifyVisibilitySegments(vertexVisibility, nodes_units, cones, firstNode, secondNodes)
 %% Section 0: Header & Readme
 % SYNTAX
 %   clear = obstacleAvoidance.search.classifyVisibilitySegments( ...
-%       skeleton, nodes_units, cones, firstNode, secondNodes)
+%       vertex visibility, nodes_units, cones, firstNode, secondNodes)
 %**************************************************************************
 % PURPOSE
 %   - Decide exactly which segments from one node to a set of nodes stay
@@ -11,8 +11,8 @@ function clear = classifyVisibilitySegments(skeleton, nodes_units, cones, firstN
 %     partition midpoint is tested for interior occupancy.
 %**************************************************************************
 % INPUTS
-%   - skeleton (scalar struct)
-%       Occupied union and boundary edges from createVisibilitySkeleton.
+%   - vertexVisibility (scalar struct)
+%       Occupied union and boundary edges from createVertexVisibility.
 %   - nodes_units (N-by-2 numeric array)
 %       Node positions that firstNode and secondNodes index.
 %   - cones (scalar struct)
@@ -32,16 +32,16 @@ function clear = classifyVisibilitySegments(skeleton, nodes_units, cones, firstN
 
 %% Section 1: Reject Inward Departures, Then Test Every Contact Partition
 
-locallyBlocked = entersObstacle(firstNode, secondNodes, nodes_units, cones, skeleton.Tolerance_units);
+locallyBlocked = entersObstacle(firstNode, secondNodes, nodes_units, cones, vertexVisibility.Tolerance_units);
 checkIndex     = find(~locallyBlocked);
 clear          = false(size(secondNodes));
 [checked, queryPoints_units, queryOwner] = segmentIntervals( ...
     nodes_units(firstNode, :), nodes_units(secondNodes(checkIndex), :), ...
-    skeleton.EdgeStart_units, skeleton.EdgeEnd_units, skeleton.EdgeVector_units, ...
-    skeleton.EdgeBounds_units, skeleton.ParallelTolerance_units2, skeleton.Tolerance_units);
+    vertexVisibility.EdgeStart_units, vertexVisibility.EdgeEnd_units, vertexVisibility.EdgeVector_units, ...
+    vertexVisibility.EdgeBounds_units, vertexVisibility.ParallelTolerance_units2, vertexVisibility.Tolerance_units);
 if ~isempty(queryOwner)
     [inside, on] = inpolygon(queryPoints_units(:, 1), queryPoints_units(:, 2), ...
-        skeleton.Boundary_units(:, 1), skeleton.Boundary_units(:, 2));
+        vertexVisibility.Boundary_units(:, 1), vertexVisibility.Boundary_units(:, 2));
     checked(queryOwner(inside & ~on)) = false;
 end
 clear(checkIndex) = checked;

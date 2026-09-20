@@ -9,7 +9,7 @@ function nodes_units = createTimedVisibilityNodes(shape, start_units, goal_units
 %**************************************************************************
 % INPUTS
 %   - shape (scalar polyshape)
-%       Sampled swept proposal geometry.
+%       Sampled moving-cell proposal geometry.
 %   - start_units (1-by-2 numeric row)
 %       Request start position.
 %   - goal_units (1-by-2 numeric row)

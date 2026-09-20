@@ -5,7 +5,7 @@ function residualBound_units2 = createResidualBound(coordinateScale_units)
 %**************************************************************************
 % PURPOSE
 %   - The one algebraic slack shared by the exact affine predicate, its
-%     broad phase, and its layer certificate.
+%     broad phase, and its layer proof.
 %**************************************************************************
 % INPUTS
 %   - coordinateScale_units (numeric scalar or column)

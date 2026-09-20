@@ -28,7 +28,7 @@ end
 
 function testCoverageMetadataCannotExcludeTheMotion(testCase)
     % A record whose declared coverage ends at the start time carries an
-    % empty dynamic certificate; the straight motion crosses the square.
+    % empty dynamic proof; the straight motion crosses the square.
     result = testCase.TestData.Result;
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
 
@@ -38,14 +38,14 @@ function testCoverageMetadataCannotExcludeTheMotion(testCase)
     tampered = result;
     tampered.Inputs.obstacles                     = obstacle;
     tampered.TrajectoryCoverageEndTime_s          = result.Inputs.initialState.time_s;
-    tampered.PlaneCertificate.Coverage            = struct( ...
+    tampered.SeparationProof.Coverage            = struct( ...
         'Passed',               true, ...
         'ExactRegionCount',     0, ...
         'ActiveTimeInterval_s', zeros(0, 2), ...
         'EndRegions_units',     {cell(0, 1)});
     validation = obstacleAvoidance.validateTrajectory(tampered);
     verifyFalse(testCase, validation.Passed);
-    verifyFalse(testCase, validation.PlaneCertificateValid);
+    verifyFalse(testCase, validation.SeparationProofValid);
 end
 
 function testContinuityProjectionMayOnlyAbsorbRoundoff(testCase)

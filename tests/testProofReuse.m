@@ -1,7 +1,7 @@
-function tests = testCertificateReuse
+function tests = testProofReuse
 %% Section 0: Header & Readme
-% SYNTAX: results = runtests('tests/testCertificateReuse.m')
-% PURPOSE: Verify exact certificate reuse and invalidation after source edits.
+% SYNTAX: results = runtests('tests/testProofReuse.m')
+% PURPOSE: Verify exact proof reuse and invalidation after source edits.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Reuse, changed geometry, changed curve, and changed clearance checks.
 % UNITS: Coordinate units and seconds.
@@ -11,10 +11,10 @@ function setupOnce(testCase)
     root=fileparts(fileparts(mfilename('fullpath'))); addpath(root,fullfile(root,'trajectory'));
     testCase.TestData.Request=struct('Regions_units',{{[2,-1;3,-1;3,1;2,1]}}, ...
         'Coverage',struct('Passed',true),'InitialState',struct('time_s',0));
-    testCase.TestData.Motion=struct('CertifiedControlPoint_units',zeros(2,6,2),'SegmentTime_s',[1;1], ...
+    testCase.TestData.Motion=struct('ProvenControlPoint_units',zeros(2,6,2),'SegmentTime_s',[1;1], ...
         'FinalTime_s',2);
 end
-function testUnchangedCurveReusesCompleteCertificate(testCase)
+function testUnchangedCurveReusesCompleteProof(testCase)
     request=testCase.TestData.Request; motion=testCase.TestData.Motion;
     [first,cache]=bmtpEngine.validation.checkFinalMotion(request,motion,1e-8,1e-7);
     second=bmtpEngine.validation.checkFinalMotion(request,motion,1e-8,1e-7,cache);
@@ -26,9 +26,9 @@ function testSourceAndCurveChangesInvalidateReuse(testCase)
     request=testCase.TestData.Request; motion=testCase.TestData.Motion;
     [~,cache]=bmtpEngine.validation.checkFinalMotion(request,motion,1e-8,1e-7);
     changed=request; changed.Regions_units={[-1,-1;1,-1;1,1;-1,1]};
-    certificate=bmtpEngine.validation.checkFinalMotion(changed,motion,1e-8,1e-7,cache);
-    verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
-    motion.CertifiedControlPoint_units(:,:,1)=2.5;
-    certificate=bmtpEngine.validation.checkFinalMotion(request,motion,1e-8,1e-7,cache);
-    verifyFalse(testCase,certificate.Passed); verifyEqual(testCase,certificate.CachedPairCount,0);
+    proof=bmtpEngine.validation.checkFinalMotion(changed,motion,1e-8,1e-7,cache);
+    verifyFalse(testCase,proof.Passed); verifyEqual(testCase,proof.CachedPairCount,0);
+    motion.ProvenControlPoint_units(:,:,1)=2.5;
+    proof=bmtpEngine.validation.checkFinalMotion(request,motion,1e-8,1e-7,cache);
+    verifyFalse(testCase,proof.Passed); verifyEqual(testCase,proof.CachedPairCount,0);
 end

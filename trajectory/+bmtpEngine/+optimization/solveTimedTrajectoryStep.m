@@ -60,7 +60,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %       Original coneprog status.
 %   - output (scalar struct)
 %       Solver status, diagnostics, and measured time. Finite fixed-clock -7
-%       iterates are proposals requiring final independent certification.
+%       iterates are proposals requiring final independent proof.
 %   - constraintBase (scalar struct)
 %       Invariant constraint arrays for reuse with the same formulation.
 %**************************************************************************
@@ -205,7 +205,7 @@ while true
 
     % Snapshot the last usable proposal before adding rows it has never
     % solved. A later numerical failure cannot erase this truthful record;
-    % the caller still independently certifies it before any retention.
+    % the caller still independently proves it before any retention.
     returnedX                              = attemptX;
     returnedExitFlag                       = attemptExitFlag;
     returnedOutput                         = attemptOutput;
@@ -246,7 +246,7 @@ output.TerminatedAfterRetainedIterate = returnedSolveIndex > 0 && ...
     returnedSolveIndex < solveCount;
 output.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);
 % An optimality stall does not establish physical infeasibility. Every finite
-% retained iterate remains only a proposal for independent certification.
+% retained iterate remains only a proposal for independent proof.
 if ~bmtpEngine.optimization.hasUsableConicIterate(x, exitFlag)
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s      = NaN;

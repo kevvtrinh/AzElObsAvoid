@@ -30,7 +30,7 @@ the pre-repair ring. Added area must not be described as removed area. The
 repair does not replace a concave ring with its convex hull. Equal zigzags
 at every sample preserve equal counts and index correspondence; different
 repairs can destroy correspondence. Three distinct vertices alone still do
-not certify a valid polygon.
+not prove a valid polygon.
 
 Original and protected histories follow the same normalization rules and stay
 distinct. An absolute safety margin is rebuilt from original geometry, never
@@ -51,9 +51,9 @@ boundary must remain simple over the complete interval. The partition union is
 therefore the interpolated polygon, not its convex hull. Geometrically equivalent
 endpoint samples may use an exact static model.
 
-When an exact continuous face certificate is unavailable, single original
+When an exact continuous face proof is unavailable, single original
 rings with equal counts and a source-vertex triangulation may use
-`sweptCorrespondingConvexCells`. Protected buffered rings need not correspond.
+`movingCellCorrespondingConvexCells`. Protected buffered rings need not correspond.
 The original rings use the declared vertex correspondence (below). Every
 triangle of the lower original sample's constrained triangulation is carried
 to the upper sample by that correspondence, and the convex hull of its lower
@@ -63,7 +63,7 @@ at every hull vertex: the constructor protects samples with
 `polybuffer(...,'JointType','square')`, and a square join of distance `d`
 reaches at most `d*sqrt(2)` from any source point, so that square contains
 it. Every triangle is kept. A balanced Boolean union of the hulls is the
-interval's swept union.
+interval's moving-cell union.
 
 For any triangle point carried by its barycentric map, `(1-tau)*a+tau*b`
 lies in `conv(startTriangle union endTriangle)`. The complete conforming map
@@ -75,7 +75,7 @@ over-approximation determined by vertex displacement and by the
 square-versus-buffer margin. It is not an exact moving polygon and is never
 reported as interpolated topology.
 
-The swept union is then covered at the interval's own resolution so that
+The moving-cell union is then covered at the interval's own resolution so that
 coastline-scale detail does not multiply solver cells: the union is clipped
 to grid squares of side equal to the interval's largest vertex displacement
 plus the margin square, and each clipped piece is replaced by the convex
@@ -91,14 +91,14 @@ rule as exact intervals), so point queries and cells agree exactly and the
 cell count follows the enclosure's shape rather than the grid.
 
 Preparation still independently checks both authoritative protected sample
-shapes against the swept enclosure, using the existing endpoint area-certificate
+shapes against the moving-cell enclosure, using the existing endpoint area-proof
 roundoff tolerance. Failure discards that candidate geometry and records the
-uncovered areas in `IntervalSweptUncoveredProtectedArea_units2`. It does not
-enlarge the prescribed swept cells, shrink protection, or replace the samples.
-Failed swept coverage, unequal original counts, and an unavailable single-ring
+uncovered areas in `IntervalMovingCellUncoveredProtectedArea_units2`. It does not
+enlarge the prescribed moving cells, shrink protection, or replace the samples.
+Failed moving-cell coverage, unequal original counts, and an unavailable single-ring
 source map proceed to the endpoint-hull model below.
 
-As a final resort after both the exact partition and corresponding swept-cell
+As a final resort after both the exact partition and corresponding moving-cell-cell
 models are unavailable, an interval with at least one nonempty endpoint uses
 `endpointConvexHull`: one convex hull of every finite vertex of both protected
 samples. No ring identity or overlap-based correspondence is assumed. For any
@@ -112,16 +112,16 @@ neighboring interval. The endpoint-hull fallback requires each nonempty ring
 to have at least three distinct vertices and a positive-area hull. In
 particular, when both endpoints are degenerate and an earlier model is
 unavailable, this fallback rejects the interval with
-`IntervalCertificationReason` equal to `degenerateEndpointGeometry` and the
+`IntervalProofReason` equal to `degenerateEndpointGeometry` and the
 stable planner outcome `unsupportedObstacleInterpolation`. Earlier models keep
 their existing acceptance rules. Both-empty intervals retain the existing
 empty stationary model.
 
 The hull is identical at both interval ends, but authoritative sample geometry
 is unchanged at sample times. `IntervalUsesEndpointHull` is the typed behavior
-flag; `MatchingTopology`, `IntervalHasExactPartition`, `IntervalUsesSweptCells`,
+flag; `MatchingTopology`, `IntervalHasExactPartition`, `IntervalUsesMovingCells`,
 `IntervalIsStationary`, and `IntervalIsUnsupported` are all false for this
-model. A successful enclosure leaves `IntervalCertificationReason` empty.
+model. A successful enclosure leaves `IntervalProofReason` empty.
 `createTimeCells` consumes the typed flag and emits the same single convex
 region at both cell endpoints.
 Preparation records `IntervalEndpointHullAddedArea_units2`, hull area minus
@@ -141,7 +141,7 @@ record therefore reports `sourceIndex` and has `UsesSourceIndex` true. This
 prevents correlation from undoing a supplied rotation by a cyclic index shift.
 The retained name reports provenance and does not select later behavior.
 
-For a certified swept interval, cells are static over its absolute active
+For a proven moving-cell interval, cells are static over its absolute active
 interval, interior point queries return their union and union-boundary edges,
 `TopologyIsInterpolated` is false, and the interior speed bound is zero.
 Sample-time queries retain the normalized protected sample, with an infinite
@@ -152,7 +152,7 @@ checks the stationary union over the traversed part of its lifetime. Plots,
 snapshots, occupancy queries, time cells, and independent source-rebuilt
 validation all use this same interpretation. Preparation records candidate
 face counts before/after union and partition/hull/union/repartition timings
-in `IntervalSweptCellCount` and `IntervalSweptTiming_s`, including rejected
+in `IntervalMovingCellCount` and `IntervalMovingCellTiming_s`, including rejected
 candidates; timing and provenance never select planner behavior.
 
 Preparation also canonicalizes redundant corresponding keyframes without
@@ -161,13 +161,13 @@ componentwise within `64*eps(coordinateScale)` coordinate units per second,
 with unchanged per-source-interval alignment. The current reduction requires
 that alignment to preserve the supplied index order. Crucially, it does not
 realign the distant span endpoints: that can select a different motion.
-One exact certificate and shared face-index partition must hold over the
-complete span; its restrictions certify every constituent interval with the
-same partition. A span without that certificate is not merged. The supplied
+One exact proof and shared face-index partition must hold over the
+complete span; its restrictions prove every constituent interval with the
+same partition. A span without that proof is not merged. The supplied
 sample geometry remains authoritative at each retained sample time.
 
 `IntervalGeometryModel` retains the reported model name. Preparation also emits
-`IntervalHasExactPartition`, `IntervalIsStationary`, `IntervalUsesSweptCells`,
+`IntervalHasExactPartition`, `IntervalIsStationary`, `IntervalUsesMovingCells`,
 `IntervalUsesEndpointHull`, and `IntervalIsUnsupported`; geometry, search,
 and planner branches consume those logical facts rather than the reported name.
 Exact partition and conservative enclosure consumers read
@@ -175,7 +175,7 @@ Exact partition and conservative enclosure consumers read
 
 `MergedSpanTime_s` and `MergedIntervalCount` expose the preparation-only
 reduction. `RejectedMergeSpanSampleIndex` records spans
-without a shared exact partition. Cells use certified span boundaries and
+without a shared exact partition. Cells use proven span boundaries and
 interior queries use the merged affine motion; search time layers keep every
 supplied keyframe, exactly as for unmerged histories. Source
 interval model and coverage arrays remain indexed by the supplied history.
@@ -204,5 +204,5 @@ correspondence skips alignment. Numerically tied shifts
 are selected at a fixed physical anchor so cyclic starting indices do not
 choose a different interpolation. There is no exhaustive-shift fallback.
 Correspondence still needs a continuous convex or conforming-partition
-certificate. Unsupported deformation is reported explicitly. Correlation alone
-is not a motion or occupancy certificate.
+proof. Unsupported deformation is reported explicitly. Correlation alone
+is not a motion or occupancy proof.

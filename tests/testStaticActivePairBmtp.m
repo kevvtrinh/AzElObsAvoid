@@ -89,7 +89,7 @@ function testStaticMeshIgnoresCollinearSeedVertices(testCase)
         firstWarm.SegmentTime_s,'AbsTol',1e-12);
 end
 
-function testReturnedActivePlanesCertifyReturnedControls(testCase)
+function testReturnedActivePlanesProveReturnedControls(testCase)
     [request, warmStart, diagnostics, target_units, reserve_units] = ...
         createStaticAlternatingFixture("earliestArrival");
     [result, diagnostics] = bmtpEngine.optimization.solveActivePairTrajectory( ...
@@ -116,7 +116,7 @@ function testReturnedActivePlanesCertifyReturnedControls(testCase)
     verifyEqual(testCase, diagnostics.FinalCollisionPairCount, 0);
 end
 
-function testRowProofReturnsPlanesThatCertifyReturnedControls(testCase)
+function testRowProofReturnsPlanesThatProveReturnedControls(testCase)
     % The constraint-row proof accepts a motion without per-pair verification;
     % every returned plane must still separate the returned controls exactly.
     [request, warmStart, diagnostics, target_units, reserve_units] = ...
@@ -197,8 +197,8 @@ function [request, warmStart, diagnostics, target_units, reserve_units] = ...
         'FinalCollisionPairCount', 0, ...
         'PlaneSocpCount',          0, ...
         'SolverMessage',           "");
-    reserve_units = normalized.PlaneCertificate.RoundoffReserve_units;
-    target_units  = normalized.PlaneCertificate.RequiredGap_units - reserve_units;
+    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
 end
 
 function verifyValidatedStaticBmtp(testCase,result)

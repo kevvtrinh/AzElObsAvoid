@@ -9,7 +9,7 @@ function figureHandles = plotTrajectoryGallery(results, labels, figureVisible)
 %   - Compare returned planner motions in pages of sixteen spatial plots.
 %   - Moving protected geometry is shown at the request start, midpoint, and
 %     end; these snapshots illustrate motion and are not a collision
-%     certificate. Interior swept-model snapshots draw the shared prepared
+%     proof. Interior moving-cell-model snapshots draw the shared prepared
 %     cell union.
 %**************************************************************************
 % INPUTS

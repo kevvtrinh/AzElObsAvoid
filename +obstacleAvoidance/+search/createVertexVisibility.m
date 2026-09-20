@@ -1,7 +1,7 @@
-function skeleton = createVisibilitySkeleton(scene, limits, options)
+function vertexVisibility = createVertexVisibility(scene, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene, limits, options)
+%   vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Classify exact visibility between every pair of protected boundary
@@ -17,7 +17,7 @@ function skeleton = createVisibilitySkeleton(scene, limits, options)
 %       Numerical tolerance options.
 %**************************************************************************
 % OUTPUTS
-%   - skeleton (scalar struct)
+%   - vertexVisibility (scalar struct)
 %       Occupied union, boundary edges with their occupied sides, the
 %       in-workspace vertices with their corner cones, and every accepted
 %       and rejected vertex pair. Invalid input throws an error.
@@ -39,7 +39,7 @@ boundary_units   = shape.Vertices;
 vertices_units   = boundary_units(all(isfinite(boundary_units), 2), :);
 inWorkspace = vertices_units(:, 1) > limits.xInterval_units(1) & vertices_units(:, 1) < limits.xInterval_units(2) & ...
     vertices_units(:, 2) > limits.yInterval_units(1) & vertices_units(:, 2) < limits.yInterval_units(2);
-skeleton = struct( ...
+vertexVisibility = struct( ...
     'Shape',                    shape, ...
     'Boundary_units',           boundary_units, ...
     'EdgeStart_units',          edgeStart_units, ...
@@ -55,8 +55,8 @@ skeleton = struct( ...
 
 %% Section 2: Classify Every Vertex Pair
 
-vertexCount          = size(skeleton.Vertices_units, 1);
-skeleton.VertexCones = obstacleAvoidance.search.createNodeCones(skeleton, skeleton.Vertices_units);
+vertexCount          = size(vertexVisibility.Vertices_units, 1);
+vertexVisibility.VertexCones = obstacleAvoidance.search.createNodeCones(vertexVisibility, vertexVisibility.Vertices_units);
 maximumPairCount     = vertexCount * (vertexCount - 1) / 2;
 accepted             = zeros(maximumPairCount, 2);
 rejected             = zeros(maximumPairCount, 2);
@@ -65,7 +65,7 @@ rejectedCount        = 0;
 for firstVertex = 1:vertexCount - 1
     secondVertex = (firstVertex + 1:vertexCount).';
     clear        = obstacleAvoidance.search.classifyVisibilitySegments( ...
-        skeleton, skeleton.Vertices_units, skeleton.VertexCones, firstVertex, secondVertex);
+        vertexVisibility, vertexVisibility.Vertices_units, vertexVisibility.VertexCones, firstVertex, secondVertex);
     acceptedVertex = secondVertex(clear);
     acceptedRows   = acceptedCount + (1:numel(acceptedVertex));
     accepted(acceptedRows, :) = [repmat(firstVertex, numel(acceptedVertex), 1), acceptedVertex];
@@ -75,8 +75,8 @@ for firstVertex = 1:vertexCount - 1
     rejected(rejectedRows, :) = [repmat(firstVertex, numel(rejectedVertex), 1), rejectedVertex];
     rejectedCount  = rejectedCount + numel(rejectedVertex);
 end
-skeleton.VertexPairAccepted = accepted(1:acceptedCount, :);
-skeleton.VertexPairRejected = rejected(1:rejectedCount, :);
+vertexVisibility.VertexPairAccepted = accepted(1:acceptedCount, :);
+vertexVisibility.VertexPairRejected = rejected(1:rejectedCount, :);
 end
 
 %% Section 3: Local Functions

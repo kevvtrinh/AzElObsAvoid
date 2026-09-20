@@ -8,11 +8,11 @@ Each route receives the same BMTP implementation. The caller does not choose a
 method, and no example identity changes this decision.
 
 Each proposal boundary comes from the solver's own evidence. Successful spatial
-requests in the random suite either certify on the initial mesh or after the
+requests in the random suite either prove on the initial mesh or after the
 first refinement. The four hard requests still contain unresolved curve-region
 pairs after that refinement and formerly repeat the same homotopy for all 35
 iterations. Their timed visibility routes choose the other side of the moving
-obstacle, then certify in one or two iterations. The rejected spatial attempt is
+obstacle, then prove in one or two iterations. The rejected spatial attempt is
 retained in `VisibilityGraph.SpatialSeedDiagnostics` whenever the timed guide is
 selected.
 
@@ -70,6 +70,6 @@ The compact benchmark uses random case 1 and the saved moving detour for the
 spatial-proof path, plus random case 26 with a static obstacle for the timed-guide
 path. The Vietnam boundary fixture is intentionally excluded from this
 compact benchmark because of its size; its changing source boundary now
-carries an exact certified correspondence and is covered by
+carries an exact proven correspondence and is covered by
 `testVietnamBoundary` and the maintained example harness
 (see `benchmarks/vietnam_boundary.md`).

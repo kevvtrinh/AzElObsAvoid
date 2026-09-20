@@ -39,7 +39,7 @@ function [result, accepted, directMotion] = tryTimedArrival( ...
 %   - accepted (logical scalar)
 %       True only when the timed candidate passes validation.
 %   - directMotion (scalar struct)
-%       Unchanged input product or the direct motion and certificate for reuse.
+%       Unchanged input product or the direct motion and proof for reuse.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.

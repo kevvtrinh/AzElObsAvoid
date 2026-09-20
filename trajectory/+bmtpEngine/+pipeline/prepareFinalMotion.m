@@ -8,7 +8,7 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %**************************************************************************
 % PURPOSE
 %   - Impose physical endpoint states, split the selected curve, and retain
-%     its physical clock for continuous derivative certification.
+%     its physical clock for continuous derivative proof.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
@@ -22,7 +22,7 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %       Selected per-segment durations.
 %   - prescribedPower_units (S-by-2-by-(D+1) numeric array, optional)
 %       Normalized analytic axis coefficients, preserved exactly through
-%       subdivision and independently certified.
+%       subdivision and independently proven.
 %   - splitMask (S-by-1 logical array, optional)
 %       Spans to subdivide; defaults to every span.
 %   - splitFraction (S-by-1 numeric array, optional)
@@ -30,7 +30,7 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %**************************************************************************
 % OUTPUTS
 %   - preparedMotion (scalar struct)
-%       Prepared controls, time, timing certificate, and expected failure.
+%       Prepared controls, time, timing proof, and expected failure.
 %       An infeasible horizon, or a C3 join projection that would move a
 %       control beyond the join-repair tolerance, is reported as
 %       Success = false, not thrown.
@@ -102,9 +102,9 @@ segmentTime_s = refinedTime_s;
 
 exportPolynomial            = bmtpEngine.motion.createPowerPolynomial( ...
     controlPoint_units, segmentTime_s, 0, prescribedPower_units);
-certifiedControlPoint_units = bmtpEngine.motion.powerToBernstein(exportPolynomial.positionPower_units);
+provenControlPoint_units = bmtpEngine.motion.powerToBernstein(exportPolynomial.positionPower_units);
 requiredTime_s = max(bmtpEngine.motion.findRequiredSegmentTime(controlPoint_units, request.Limits), ...
-    bmtpEngine.motion.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
+    bmtpEngine.motion.findRequiredSegmentTime(provenControlPoint_units, request.Limits));
 % Control hull bounds are sufficient, not necessary. The exported polynomial
 % is checked continuously against the actual physical limits before success.
 isFixedArrival = request.Options.GoalTimeMode == "fixedArrival";
@@ -152,26 +152,26 @@ if projectionRepairsMotion
     terminationReason = "continuityProjectionExceedsTolerance";
 elseif ~horizonIsFeasible
     reasons  = ["timeWindowInfeasible", "fixedArrivalInfeasible"];
-    messages = ["The certified motion exceeds the goal horizon.", ...
-        "The certified minimum exceeds the fixed arrival."];
+    messages = ["The proven motion exceeds the goal horizon.", ...
+        "The proven minimum exceeds the fixed arrival."];
     message           = messages(1 + isFixedArrival);
     terminationReason = reasons(1 + isFixedArrival);
 end
 
 %% Section 6: Return The Prepared Representation
 
-motionCertificate = createMotionCertificate(segmentTime_s, requiredTime_s);
+motionProof = createMotionProof(segmentTime_s, requiredTime_s);
 preparedMotion    = struct( ...
     "Success",                     success, ...
     "Message",                     message, ...
     "TerminationReason",           terminationReason, ...
     "ControlPoint_units",          controlPoint_units, ...
-    "CertifiedControlPoint_units", certifiedControlPoint_units, ...
+    "ProvenControlPoint_units", provenControlPoint_units, ...
     "SegmentTime_s",               segmentTime_s, ...
     "FinalTime_s",                 finalTime_s, ...
     "RequiredSegmentTime_s",       requiredTime_s, ...
     "DilationScale",               dilationScale, ...
-    "MotionCertificate",           motionCertificate, ...
+    "MotionProof",           motionProof, ...
     "ContinuityProjectionDisplacement_units", projectionDisplacement_units);
 preparedMotion.PrescribedPower_units = prescribedPower_units;
 end
@@ -198,7 +198,7 @@ function subdivided_units = subdivideControls(controlPoint_units, splitMask, spl
     end
 end
 
-function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
+function motion = createMotionProof(segmentTime_s, requiredTime_s)
     % This is a sufficient control-hull diagnostic, not the final physical test.
     motion = struct( ...
         "Passed",           all(segmentTime_s >= requiredTime_s), ...

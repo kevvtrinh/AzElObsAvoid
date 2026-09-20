@@ -36,7 +36,7 @@ MATLAB with Java and Optimization Toolbox is required.
   velocity, acceleration, jerk, final status, and independent validation.
 - Play or scrub the mission. After arrival, the vehicle marker stays at its
   terminal position while obstacle playback continues; this extension is a
-  display convention, not an additional certified trajectory.
+  display convention, not an additional proven trajectory.
 - Enable the graph/guide overlays, or use **Start replay** and **Super deep
   dive** to inspect the current core's preparation, graph, motion, and checks.
 
@@ -139,7 +139,7 @@ obstacles[]
 The graph overlay contains actual returned nodes and examined connections.
 Unexamined connections remain implicit; they are not classified as blocked.
 The core does not record expansion order or frontier identities. For moving
-scenes the spatial guide alone cannot certify collision freedom over time.
+scenes the spatial guide alone cannot prove collision freedom over time.
 The geometric guide can remain available after a failed solve. No cleanup seed
 counts, candidate-selection histories, or exclusive stage times are fabricated.
 The walkthrough reports the actual C3, endpoint, derivative, history, and plane
@@ -165,7 +165,7 @@ with `Success=false`; malformed requests return bounded error responses.
 - A result loaded without its matching editable request is inspection-only
   when it contains obstacle histories. Reset to author a fresh scene.
 - External topology-changing histories may be rendered using the nearer
-  keyframe. MATLAB's protected geometry and independent certification remain
+  keyframe. MATLAB's protected geometry and independent proof remain
   authoritative; browser interpolation does not validate collision freedom.
 - The editor keeps vehicle endpoint velocity and acceleration at zero. Goal
   motion controls author a constant-velocity target history; richer target

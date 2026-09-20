@@ -170,15 +170,15 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
         'Planes',             repmat(plane, 3, 1), ...
         'TaggedPairs',        false(3, 1));
     diagnostics = struct('ConicSolver', bmtpEngine.optimization.accumulateConicDiagnostics());
-    reserve_units = normalized.PlaneCertificate.RoundoffReserve_units;
-    target_units  = normalized.PlaneCertificate.RequiredGap_units - reserve_units;
+    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
     [refined, diagnostics] = bmtpEngine.pipeline.refineTimedTravel( ...
         request, alternating, diagnostics, target_units, reserve_units);
     verifyTrue(testCase, diagnostics.TravelRefinementAccepted);
     verifyGreaterThan(testCase, diagnostics.TaggedPairCount, 0);
     verifyLessThan(testCase, diagnostics.TravelRefinementFinalLength_units, ...
         diagnostics.TravelRefinementInitialLength_units);
-    prepared = struct('CertifiedControlPoint_units', refined.ControlPoint_units, ...
+    prepared = struct('ProvenControlPoint_units', refined.ControlPoint_units, ...
         'SegmentTime_s', refined.SegmentTime_s(:), ...
         'FinalTime_s', request.InitialState.time_s + sum(refined.SegmentTime_s));
     verifyTrue(testCase, bmtpEngine.validation.checkFinalMotion( ...
@@ -222,7 +222,7 @@ function testSingleSpanTimedMotionIsIndependentlyValid(testCase)
             [~,reserve_units] = bmtpEngine.validation.createCoordinateTolerances(controls,limits.xInterval_units,limits.yInterval_units);
             target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
             result = bmtpEngine.pipeline.createMotionOutput(result,request,prepared);
-            result.PlaneCertificate = bmtpEngine.validation.checkFinalMotion(request,prepared,reserve_units,target_units);
+            result.SeparationProof = bmtpEngine.validation.checkFinalMotion(request,prepared,reserve_units,target_units);
             assertTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         end
     end
@@ -594,7 +594,7 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     verifyEqual(testCase,result.velocity_units_s([1,end],:),[0.15,0;0.1,0],'AbsTol',1e-8);
     verifyLessThan(testCase,result.Polynomial.SegmentCount,80);
     % Eighty identical-velocity source intervals are one exact affine cell.
-    verifyEqual(testCase,result.PlaneCertificate.SolverRegionCount,1);
+    verifyEqual(testCase,result.SeparationProof.SolverRegionCount,1);
     verifyEqual(testCase,result.PreparedObstacles.InternalPreparation.MergedIntervalCount,79);
     verifyGreaterThan(testCase,result.SolverDiagnostics.TrajectorySocpCount,0);
 end
@@ -770,8 +770,8 @@ function [request, warmStart, diagnostics, target_units, reserve_units] = ...
         'FinalCollisionPairCount', 0, ...
         'SolverMessage',           "", ...
         'ConicSolver',             bmtpEngine.optimization.accumulateConicDiagnostics());
-    reserve_units = normalized.PlaneCertificate.RoundoffReserve_units;
-    target_units  = normalized.PlaneCertificate.RequiredGap_units - reserve_units;
+    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
 end
 
 function [request, warmStart, diagnostics, target_units, reserve_units] = ...
@@ -813,6 +813,6 @@ function [request, warmStart, diagnostics, target_units, reserve_units] = ...
         'FinalCollisionPairCount', 0, ...
         'PlaneSocpCount',          0, ...
         'SolverMessage',           "");
-    reserve_units = normalized.PlaneCertificate.RoundoffReserve_units;
-    target_units  = normalized.PlaneCertificate.RequiredGap_units - reserve_units;
+    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
 end

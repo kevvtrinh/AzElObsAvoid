@@ -34,7 +34,7 @@ function [route_units, routeTime_s, record] = createTimedRouteProposal(obstacles
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Build The Sampled Swept Proposal
+%% Section 1: Build The Sampled Moving-Cell Proposal
 
 sampleTimes_s  = obstacleAvoidance.search.createTimeLayers(obstacles, initialState.time_s, goalState.time_s);
 shapeParts     = cell(numel(sampleTimes_s) * numel(obstacles), 1);
@@ -107,8 +107,8 @@ end
 
 function nodes_units = createStationaryIntervalNodes( ...
         obstacles, startTime_s, endTime_s, limits, candidateOffset_units)
-    % A swept union can hide a persistent obstacle boundary inside another
-    % obstacle's swept area. Retain every exact stationary-interval boundary
+    % A moving-cell union can hide a persistent obstacle boundary inside another
+    % obstacle's moving-cell area. Retain every exact stationary-interval boundary
     % so the time-expanded graph can enumerate those later-visible detours.
     nodes_units = zeros(0, 2);
     for obstacleIndex = 1:numel(obstacles)

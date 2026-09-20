@@ -93,9 +93,9 @@ function testPassingAnalyticProbeStillChecksEveryCollisionPair(testCase)
         struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyGreaterThan(testCase,result.PlaneCertificate.AllPairCount,0);
-    verifyEqual(testCase,result.PlaneCertificate.VerifiedPairCount, ...
-        result.PlaneCertificate.AllPairCount);
+    verifyGreaterThan(testCase,result.SeparationProof.AllPairCount,0);
+    verifyEqual(testCase,result.SeparationProof.VerifiedPairCount, ...
+        result.SeparationProof.AllPairCount);
 end
 
 function testTimeWindowInfeasible(testCase)
@@ -595,7 +595,7 @@ function testCoverageFieldsMatchTheScenePath(testCase)
     staticResult=planner([],state(0,[-4,0]),state(12,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,staticResult.Success,staticResult.Message);
-    verifyEqual(testCase,fieldnames(staticResult.PlaneCertificate.Coverage), ...
+    verifyEqual(testCase,fieldnames(staticResult.SeparationProof.Coverage), ...
         {'ExactRegionCount'});
 
     box=[-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
@@ -607,14 +607,14 @@ function testCoverageFieldsMatchTheScenePath(testCase)
     fixedResult=planner(mover,state(0,[0,0]),state(20,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,fixedResult.Success,fixedResult.Message);
-    verifyEqual(testCase,fieldnames(fixedResult.PlaneCertificate.Coverage), ...
+    verifyEqual(testCase,fieldnames(fixedResult.SeparationProof.Coverage), ...
         {'ExactRegionCount';'ActiveTimeInterval_s';'EndRegions_units';'BreakTime_s'});
 
     % BreakTime_s is the one that separates two dynamic runs from each other.
     earliestResult=planner(mover,state(0,[0,0]),state(20,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','earliestArrival'));
     verifyTrue(testCase,earliestResult.Success,earliestResult.Message);
-    verifyEqual(testCase,fieldnames(earliestResult.PlaneCertificate.Coverage), ...
+    verifyEqual(testCase,fieldnames(earliestResult.SeparationProof.Coverage), ...
         {'ExactRegionCount';'ActiveTimeInterval_s';'EndRegions_units'});
 end
 
@@ -644,7 +644,7 @@ function testSparseDynamicZeroWaitDeparture(testCase)
         result.ArrivalTime_s,'AbsTol',1e-12);
 end
 
-function testEquivalentSparseAndDenseHistoriesUseCertifiedDeparture(testCase)
+function testEquivalentSparseAndDenseHistoriesUseProvenDeparture(testCase)
     initial=state(0,[0,0]);
     goal=state(3.6,[4,0]);
     limits=standardLimits();

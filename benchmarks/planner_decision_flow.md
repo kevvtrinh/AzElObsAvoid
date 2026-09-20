@@ -38,7 +38,7 @@ flowchart TD
     W2 --> W3["Select earliest arrival or shortest fixed motion"]
     W3 --> O
     W -- no --> G["Prepare original and protected geometry once<br/>margin applied exactly once"]
-    G --> U{"Every overlapping obstacle span<br/>has certified continuous geometry?"}
+    G --> U{"Every overlapping obstacle span<br/>has proven continuous geometry?"}
     U -- no --> TU["Return unsupportedObstacleInterpolation"]
     U -- yes --> E{"Endpoints and reachable set feasible?"}
     E -- no --> TE["Return stable endpoint or reachability reason"]
@@ -51,7 +51,7 @@ flowchart TD
         F1 --> F2{"Connected?"}
         F2 -- no --> FN["Return noVisibilityRoute"]
         F2 -- yes --> FB["BMTP on prescribed clock"]
-        FB --> FBA{"Result after solver, certificate,<br/>and public acceptance gate"}
+        FB --> FBA{"Result after solver, proof,<br/>and public acceptance gate"}
         FBA -- "validated" --> O
         FBA -- "otherwise" --> FTERM
 
@@ -63,7 +63,7 @@ flowchart TD
         FA -- "validated" --> FSUCCESS["Select snapshot motion"]
         FA -- "validator rejected" --> FDEFECT["Terminal invalidMotion defect"]
         FA -- "typed timing, proposal,<br/>or bounded optimization miss" --> FNEXT{"Another distinct snapshot remains?"}
-        FA -- "certification, numerical, or unknown failure" --> FTERM["Terminal typed failure"]
+        FA -- "proof, numerical, or unknown failure" --> FTERM["Terminal typed failure"]
         FNEXT -- yes --> FS
         FNEXT -- no --> FT["One clean time-expanded visibility search as the next method<br/>normal BMTP budget"]
         FT --> FTA{"Result"}
@@ -94,7 +94,7 @@ flowchart TD
         ECMP --> ESELECT["Select policy-preferred validated motion"]
         ETA -- "validator rejected" --> EDEFECT
         ETA -- "typed method-local miss" --> ER{"Validated best plan so far exists?"}
-        ETA -- "geometry certification, reconstruction,<br/>numerical, or unknown failure" --> ESTOP
+        ETA -- "geometry proof, reconstruction,<br/>numerical, or unknown failure" --> ESTOP
 
         EK -- "moving target or non-rest endpoint" --> CH
         ER -- no --> CH
@@ -154,10 +154,10 @@ flowchart TD
     H -. bounds .-> ES
     H -. bounds .-> ET
 
-    HC["◆ Internal certificate proof-mesh refinement cap = 10<br/>refines proof spans only; never geometry or tolerance"]
-    HC -. certifies .-> FB
-    HC -. certifies .-> ES
-    HC -. certifies .-> ET
+    HC["◆ Internal proof proof-mesh refinement cap = 10<br/>refines proof spans only; never geometry or tolerance"]
+    HC -. proves .-> FB
+    HC -. proves .-> ES
+    HC -. proves .-> ET
 
     HT["◆ Timed proposal budgets:<br/>boundary-pair work budget = 1e6;<br/>9 uniform layers plus every event and midpoint;<br/>variable-clock mesh = max(20, guide edges × split count)"]
     HT -. bounds proposal only .-> FT
@@ -172,7 +172,7 @@ flowchart TD
 There is no route-generation retry schedule. The two fixed-arrival snapshots
 are distinct physical guides, and the timed next method is constructed once.
 Arrival-Time arrival trials are different requested clocks rather than retries
-of one solver state. The ten-step certificate loop refines only the proof mesh
+of one solver state. The ten-step proof loop refines only the proof mesh
 for one candidate. All acceptance arrows above pass through the same public
 validator; the selected attempt kind reports which physical method won.
 
@@ -199,7 +199,7 @@ deterministic comparison fields.
 
 | Decision | Representative fixture | Evidence checked | Disposition |
 | --- | --- | --- | --- |
-| Unsupported continuous obstacle interpolation | `testBoundedCorrespondence/testUnsupportedGeometryReturnsStablePlannerOutcome` | Returns `unsupportedObstacleInterpolation` before search; no convex hull or weakened geometry. `exampleVietnamBoundarySlew` and `exampleMovingDeformingUSOutlineVisibility` left this branch when exact spans and swept corresponding cells were added (see `benchmarks/vietnam_boundary.md`) | Required safety boundary |
+| Unsupported continuous obstacle interpolation | `testBoundedCorrespondence/testUnsupportedGeometryReturnsStablePlannerOutcome` | Returns `unsupportedObstacleInterpolation` before search; no convex hull or weakened geometry. `exampleVietnamBoundarySlew` and `exampleMovingDeformingUSOutlineVisibility` left this branch when exact spans and moving cells were added (see `benchmarks/vietnam_boundary.md`) | Required safety boundary |
 | Endpoint occupied | `testPlannerDecisionFlow/testInitialEndpointBlocked` | Returns `endpointBlocked` with no motion | Required safety boundary |
 | Terminal reachable set contained by an obstacle | `testPlannerDecisionFlow/testTerminalReachabilityBlocked` | Returns `terminalReachabilityBlocked` | Required sufficient infeasibility proof |
 | Endpoint derivative or workspace violation | `testEndpointDerivativeLimit`, `testEndpointOutsideWorkspace`, `testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning` | Stable endpoint reason before search | Required physical-input boundary |
@@ -207,9 +207,9 @@ deterministic comparison fields.
 | Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in the unwrapped coordinates: obstacle copies that meet the reachable range, a target unwrapped by continuity, every goal copy in the reachable range planned nearest first and the best valid candidate accepted against the wrapped request in the one gate | Required coordinate policy |
 | Fixed direct chord | `testPlanningCore/testDirect` | Minimum-jerk quintic at the prescribed horizon, public validation | Retained analytic specialization |
 | Fixed static detour | `testPlanningCore/testDetourAndTampering`, explicit default detour inputs | Exhaustive exact spatial visibility graph and static BMTP | Retained |
-| Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline`) | The initial exact spatial route certifies in the initial BMTP pass or its first refined pass | Retained as first guide |
+| Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline`) | The initial exact spatial route proves in the initial BMTP pass or its first refined pass | Retained as first guide |
 | Fixed dynamic arrival-snapshot proof | random case 26 with static obstacle, `exampleSpinningUAtStartAndGoal`, `testArrivalSearchRegressions/testArrivalSnapshotFindsAnOpeningMissingAtInitialTime` | A distinct exact route on the arrival-time snapshot is tried only when the initial proof failed and the arrival route differs; identical routes are never solved twice | Retained; second physical guide |
-| Fixed dynamic timed guide | `testFixedTimedVisibility/testPersistentSpatialPairsUseTimedSeed` | One time-expanded route on the fixed clock, only after both spatial guides fail to certify | Retained; third physical guide |
+| Fixed dynamic timed guide | `testFixedTimedVisibility/testPersistentSpatialPairsUseTimedSeed` | One time-expanded route on the fixed clock, only after both spatial guides fail to prove | Retained; third physical guide |
 | Fixed dynamic initially blocked or disconnected snapshot | `testInitiallyOccupiedFutureGoalUsesTemporalSeed`, `testDisconnectedDynamicSnapshotUsesTemporalSeed` | A temporal direct seed is checked against exact timed cells and public validation | Retained; a static no-route cannot reject a future opening |
 | Static no visibility route | `testPlanningCore/testNoPath`, `exampleNoPath` | Exhaustive graph disconnected; `noVisibilityRoute` | Required exact no-route outcome |
 | Earliest static rest-to-rest direct | `testEarliestStaticDirectUsesAnalyticClock` | Analytic C3 jerk-limited clock and validation | Retained; fastest exact specialization |
@@ -226,13 +226,13 @@ deterministic comparison fields.
 | Motion path | Representative fixture | Why it remains distinct |
 | --- | --- | --- |
 | Complete polynomial seed | `testCompletePolynomialEdgeAdapterIsLossless` | Preserves an already constructed physical clock and full C3 jet exactly |
-| Analytic fixed quintic | fixed direct tests | Avoids optimization when the direct polynomial already certifies |
+| Analytic fixed quintic | fixed direct tests | Avoids optimization when the direct polynomial already proves |
 | Analytic earliest C3 chord | static direct and zero-delay departure tests | Computes the physical minimum direct rest-to-rest clock |
 | Analytic delayed C3 chord | moving barrier and opening-U tests | Represents a complete stationary wait plus direct motion without resampling |
 | Static active-pair alternating BMTP | static detour tests | Duration changes do not alter obstacle-time overlap |
 | Fixed-clock all-pair alternating BMTP | fixed static and dynamic tests | Absolute overlap is fixed; a variable-clock solver is unnecessary |
 | Variable-clock timed BMTP | moving circle, saved moving detour earliest, static wall, random case 1 earliest | Every duration change alters active obstacle cells and must rebuild overlap |
-| Exact certificate refinement | polygonal and moving-obstacle tests | Subdivision changes only the proof mesh, never geometry, tolerance, or motion |
+| Exact proof refinement | polygonal and moving-obstacle tests | Subdivision changes only the proof mesh, never geometry, tolerance, or motion |
 | Public independent validation | every success fixture | The only acceptance gate; optimizer status alone never succeeds |
 
 The polynomial representation is selected from the physical request only:
@@ -284,7 +284,7 @@ for earliest-arrival requests, not a pure refactor.
   between them are classified, so a between-sample contact cannot enter BMTP.
 - The quadrupling boundary-offset retry schedule, Delaunay-first spatial graph,
   connectivity recovery, and exhaustive next method in timed proposal creation.
-  They were compensating for a capped node selector and did not certify any
+  They were compensating for a capped node selector and did not prove any
   motion. One input-scaled staging-node set now feeds one temporal search.
 - The near-goal wait preference and later-final-transition tie rule. Temporal
   states now retain the shortest spatial ancestry and first-discovered exact
@@ -339,7 +339,7 @@ for earliest-arrival requests, not a pure refactor.
 | Uniform temporal layers plus one more downstream trial | Cannot repair a missed feasible clock interval |
 | Topology rule "start wait plus direct chord" to prove BMTP redundant | BMTP may bend away from the guide; a different speed profile can pass windows a shifted chord cannot |
 | Always manufacturing a fixed BMTP motion before free-clock refinement | Saved moving fixture spent 183.4 s and still failed; the single variable-clock profile succeeds in seconds |
-| Continuing a fixed-horizon certificate to earlier clocks | The old plane set omits pairs that become active at the new clock |
+| Continuing a fixed-horizon proof to earlier clocks | The old plane set omits pairs that become active at the new clock |
 
 ## Identical-input comparison against production (cb7b27d)
 
@@ -388,7 +388,7 @@ Since that audit, `exampleVietnamBoundarySlew` and
 40.5138437, both independently valid). The branch that returns
 `unsupportedObstacleInterpolation` is unchanged and still covered by
 `testUnsupportedGeometryReturnsStablePlannerOutcome`; the support came from
-exact merged keyframe spans and conservative swept corresponding cells, as
+exact merged keyframe spans and conservative moving cells, as
 recorded in `benchmarks/vietnam_boundary.md` and
 `obstacle_history_contract.md`.
 
@@ -424,7 +424,7 @@ the real 64.64 s gate rather than the former loose 82.5 s threshold.
 ## Remaining limitations
 
 - Timed proposal nodes still come from a deterministic bounded cover of the
-  sampled swept boundary. That cover is proposal-only and does not prune the
+  sampled moving-cell boundary. That cover is proposal-only and does not prune the
   exact affine cell collision checks, BMTP constraints, or independent
   validation. There is one node construction and one temporal search: no
   offset retries, Delaunay graph, connectivity recovery, or next method pair set.
@@ -478,7 +478,7 @@ The moving-circle example also covers `testArrivalSearchRegressions/testCircleDe
 | `testPublicPlannerChoosesAReopenedGoalWindow` | 7.99191771264953 -> 7.99191771264953 | 10.0000000000017 -> 10.0000000000017 | True -> True | `goalReached` -> `goalReached` |
 | `testWrappedEarliestTrialsRunInsideTheUnwrappedFrame` | 6 -> 6 | 6.98233346438641 -> 6.98233346438641 | True -> True | `goalReached` -> `goalReached` |
 | `testSparseDynamicZeroWaitDeparture` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
-| `testEquivalentSparseAndDenseHistoriesUseCertifiedDeparture (both source representations)` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
+| `testEquivalentSparseAndDenseHistoriesUseProvenDeparture (both source representations)` | 3.60000000157464 -> 3.60000000157464 | 4.00000000000025 -> 4.00000000000025 | True -> True | `goalReached` -> `goalReached` |
 | `testConcaveCavityEscape` | 15.9371512418793 -> 15.9371512418793 | 31.201402348745 -> 31.201402348745 | True -> True | `goalReached` -> `goalReached` |
 | `testSeparatedSlalomBarriers` | 15.5426409514971 -> 15.5426409514971 | 26.4433503014662 -> 26.4433503014662 | True -> True | `goalReached` -> `goalReached` |
 | `testSavedMovingDetourEarliestArrival` | 118.664309567898 -> 118.664309567898 | 232.527473324254 -> 232.527473324254 | True -> True | `goalReached` -> `goalReached` |

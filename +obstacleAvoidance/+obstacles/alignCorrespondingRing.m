@@ -52,7 +52,7 @@ anchorIndex         = anchorChoices(anchorChoice);
 bestSquaredCost     = Inf;
 
 % Circular correlation evaluates every cyclic alignment in O(N log N).
-% Only the two selected shifts are materialized.
+% Only the two selected shifts are precomputed.
 for orientationIndex = 1:2
     orientedUpper_units         = upper_units;
     orientedCenteredUpper_units = centeredUpper_units;

@@ -12,7 +12,7 @@ addpath(root, fullfile(root, 'trajectory'), fullfile(root, 'examples'));
 reference = readcell(fullfile(root, 'benchmarks', 'bmtp_emptycore_benchmark.xlsx'));
 reference = reference(6:end, :);
 % The deforming U.S. example is expected to succeed on its 100-vertex
-% outline with exact swept-cell intervals. Its historical quality columns
+% outline with exact moving-cell-cell intervals. Its historical quality columns
 % predate that support and the vertex cap; they are reported, not gated.
 % Keep the historical rotating-field row and add the structurally different
 % dense moving case without borrowing unrelated reference measurements.

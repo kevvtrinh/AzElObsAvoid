@@ -8,7 +8,7 @@ function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, region
 % PURPOSE
 %   - Identify sampled Bezier span and convex-region overlaps that require
 %     separating-line updates during optimization. The sampled result is
-%     never a final acceptance certificate.
+%     never a final acceptance proof.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -33,7 +33,7 @@ function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, region
 %% Section 1: Check Sampled Span And Region Overlaps
 
 % This stage owns its span sampling resolution. It guides optimization only;
-% continuous separating-plane certification remains the acceptance test.
+% continuous separating-plane proof remains the acceptance test.
 sampleCount    = 1201;
 segmentCount   = size(controlPoint_units, 1);
 collisionPairs = false(segmentCount, numel(regions_units));

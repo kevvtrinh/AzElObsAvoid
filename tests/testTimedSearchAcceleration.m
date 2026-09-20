@@ -4,14 +4,14 @@ function tests = testTimedSearchAcceleration
 %   results = runtests('tests/testTimedSearchAcceleration.m')
 %**************************************************************************
 % PURPOSE
-%   - Verify conservative space-time filtering and certified retry skips.
+%   - Verify conservative space-time filtering and proven retry skips.
 %   - Preserve exact contact, direction, timing, and search diagnostics.
 %**************************************************************************
 % INPUTS
 %   - MATLAB function-based unit test framework.
 %**************************************************************************
 % OUTPUTS
-%   - Broad-phase and collision-certificate regression results.
+%   - Broad-phase and collision-proof regression results.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -68,11 +68,11 @@ function testExactMovingContactStaysBlockedInBothDirections(testCase)
     verifyEmpty(testCase, forwardRouteTime_s);
     verifyEmpty(testCase, reverseRoute_units);
     verifyEmpty(testCase, reverseRouteTime_s);
-    verifyEqual(testCase, forwardRecord.CertifiedSkippedTransitionCount, 0);
-    verifyEqual(testCase, reverseRecord.CertifiedSkippedTransitionCount, 0);
+    verifyEqual(testCase, forwardRecord.ProvenSkippedTransitionCount, 0);
+    verifyEqual(testCase, reverseRecord.ProvenSkippedTransitionCount, 0);
 end
 
-function testStrictInteriorWitnessSkipsOnlyBlockedArrivals(testCase)
+function testStrictInteriorCollisionSkipsOnlyBlockedArrivals(testCase)
     obstacle = createDeformingBar("blocking bar", 4, 6, -0.5, 0, 10);
     sampleTimes_s = (0:0.1:10).';
     [route_units, routeTime_s, record] = runSearch( ...
@@ -80,12 +80,12 @@ function testStrictInteriorWitnessSkipsOnlyBlockedArrivals(testCase)
 
     verifyEmpty(testCase, route_units);
     verifyEmpty(testCase, routeTime_s);
-    verifyGreaterThan(testCase, record.CertifiedSkippedTransitionCount, 0);
+    verifyGreaterThan(testCase, record.ProvenSkippedTransitionCount, 0);
     verifyGreaterThanOrEqual(testCase, record.RejectedTransitionCount, ...
-        record.CertifiedSkippedTransitionCount);
+        record.ProvenSkippedTransitionCount);
 end
 
-function testCertificateStopsAtTheFirstClearArrival(testCase)
+function testProofStopsAtTheFirstClearArrival(testCase)
     obstacle = createDeformingBar("departing bar", 4, 6, -0.5, 0, 2);
     sampleTimes_s = (0:0.1:10).';
     [route_units, routeTime_s, record] = runSearch( ...
@@ -93,7 +93,7 @@ function testCertificateStopsAtTheFirstClearArrival(testCase)
 
     verifyEqual(testCase, route_units(end, :), [10, 0], 'AbsTol', 1e-12);
     verifyEqual(testCase, routeTime_s(end), 3.6, 'AbsTol', 1e-12);
-    verifyGreaterThan(testCase, record.CertifiedSkippedTransitionCount, 0);
+    verifyGreaterThan(testCase, record.ProvenSkippedTransitionCount, 0);
 end
 
 function testSharpCornerToleranceOvershootStaysBlocked(testCase)

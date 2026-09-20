@@ -24,7 +24,7 @@ function [result, diagnostics] = refineTimedTravel(request, alternatingResult, d
 % OUTPUTS
 %   - result (scalar struct)
 %       Selected controls and segment time. A refinement that does not
-%       improve or certify leaves the alternating result unchanged.
+%       improve or prove leaves the alternating result unchanged.
 %   - diagnostics (scalar struct)
 %       Updated active-pair count and travel-refinement measurements.
 %**************************************************************************
@@ -89,15 +89,15 @@ for refinementIndex = 1:8
         break
     end
     physicalSegmentTime_s = refinedSegmentTime_s(:);
-    refinedMotion = struct('CertifiedControlPoint_units', refinedControl_units, ...
+    refinedMotion = struct('ProvenControlPoint_units', refinedControl_units, ...
         'ControlPoint_units', refinedControl_units, ...
         'SegmentTime_s', physicalSegmentTime_s, ...
         'FinalTime_s', request.InitialState.time_s + sum(physicalSegmentTime_s), ...
         'PrescribedPower_units', []);
-    refinedCertificate = bmtpEngine.validation.checkFinalMotion(request, ...
+    refinedProof = bmtpEngine.validation.checkFinalMotion(request, ...
         refinedMotion, roundoffReserve_units, obstacleTarget_units);
-    refinedCollisionPairs = ~reshape([refinedCertificate.Planes.Verified], ...
-        size(refinedCertificate.Planes)) & refinedCertificate.RegionActiveBySegment;
+    refinedCollisionPairs = ~reshape([refinedProof.Planes.Verified], ...
+        size(refinedProof.Planes)) & refinedProof.RegionActiveBySegment;
     if any(refinedCollisionPairs, "all")
         [rebuiltPlanes, ~, complete] = ...
             bmtpEngine.separation.createTimeScopedPlanes(baseControl_units, ...
@@ -110,7 +110,7 @@ for refinementIndex = 1:8
         travelPlanes = rebuiltPlanes;
         continue
     end
-    if ~refinedCertificate.Passed
+    if ~refinedProof.Passed
         break
     end
     refinedLength_units = controlPolygonLength(refinedControl_units);
@@ -120,8 +120,8 @@ for refinementIndex = 1:8
     if refinementIsBetter
         selectedControl_units    = refinedControl_units;
         selectedSegmentTime_s    = refinedSegmentTime_s;
-        selectedPlanes           = refinedCertificate.Planes;
-        selectedPairs            = refinedCertificate.RegionActiveBySegment;
+        selectedPlanes           = refinedProof.Planes;
+        selectedPairs            = refinedProof.RegionActiveBySegment;
         selectedSolverMessage    = "A travel-shortened time-scoped feasible iterate was retained.";
         selectedLength_units     = refinedLength_units;
         travelRefinementAccepted = true;

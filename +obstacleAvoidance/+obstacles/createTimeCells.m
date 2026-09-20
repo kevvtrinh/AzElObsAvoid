@@ -60,7 +60,7 @@ for obstacleIndex = 1:numel(obstacles)
             shape                 = preparation.SampleShapes{firstIntervalIndex};
             intervalRegions_units = obstacleAvoidance.geometry.convexRegions(shape);
             intervalEndRegions_units = intervalRegions_units;
-        elseif preparation.IntervalUsesSweptCells(firstIntervalIndex)
+        elseif preparation.IntervalUsesMovingCells(firstIntervalIndex)
             intervalRegions_units    = preparation.IntervalStartRegions_units{firstIntervalIndex};
             intervalEndRegions_units = intervalRegions_units;
         elseif preparation.IntervalUsesEndpointHull(firstIntervalIndex)

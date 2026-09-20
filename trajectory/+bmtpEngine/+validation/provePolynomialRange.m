@@ -1,11 +1,11 @@
-function isWithinRange = certifyPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
+function isWithinRange = provePolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
 %% Section 0: Header & Readme
 % SYNTAX
-%   isWithinRange = bmtpEngine.validation.certifyPolynomialRange( ...
+%   isWithinRange = bmtpEngine.validation.provePolynomialRange( ...
 %       powerCoefficient, lowerBound, upperBound, tolerance)
 %**************************************************************************
 % PURPOSE
-%   - Certify a scalar polynomial range on normalized time [0, 1].
+%   - Prove a scalar polynomial range on normalized time [0, 1].
 %   - Resolve easy intervals with Bernstein hulls before using stationary
 %     points for cases that remain ambiguous after subdivision.
 %**************************************************************************
@@ -29,7 +29,7 @@ function isWithinRange = certifyPolynomialRange(powerCoefficient, lowerBound, up
 %     Polynomial time is dimensionless normalized time on [0, 1].
 %**************************************************************************
 
-%% Section 1: Try Certified Bernstein Range Tests
+%% Section 1: Try Proven Bernstein Range Tests
 
 powerCoefficient     = double(powerCoefficient(:));
 lastCoefficientIndex = find(powerCoefficient ~= 0, 1, "last");
@@ -37,11 +37,11 @@ if isempty(lastCoefficientIndex)
     lastCoefficientIndex = 1;
 end
 powerCoefficient    = powerCoefficient(1:lastCoefficientIndex);
-certifiedLowerBound = lowerBound - tolerance;
-certifiedUpperBound = upperBound + tolerance;
+provenLowerBound = lowerBound - tolerance;
+provenUpperBound = upperBound + tolerance;
 
 endpointValues       = [powerCoefficient(1); sum(powerCoefficient)];
-endpointIsOutOfRange = any(endpointValues < certifiedLowerBound | endpointValues > certifiedUpperBound);
+endpointIsOutOfRange = any(endpointValues < provenLowerBound | endpointValues > provenUpperBound);
 if endpointIsOutOfRange
     isWithinRange = false;
     return
@@ -55,7 +55,7 @@ bernsteinControl = convertPowerToBernstein(powerCoefficient);
 % Try two subdivisions before falling back to polynomial extrema.
 maximumSubdivisionDepth = 2;
 decision                = classifyBernsteinRange( ...
-    bernsteinControl, certifiedLowerBound, certifiedUpperBound, maximumSubdivisionDepth);
+    bernsteinControl, provenLowerBound, provenUpperBound, maximumSubdivisionDepth);
 if decision ~= 0
     isWithinRange = decision > 0;
     return
@@ -64,7 +64,7 @@ end
 %% Section 2: Resolve Ambiguity At Stationary Points
 
 isWithinRange = stationaryPointsWithinBounds( ...
-    powerCoefficient, certifiedLowerBound, certifiedUpperBound);
+    powerCoefficient, provenLowerBound, provenUpperBound);
 end
 
 %% Section 3: Local Functions

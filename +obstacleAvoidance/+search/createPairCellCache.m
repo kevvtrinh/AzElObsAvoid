@@ -7,7 +7,7 @@ function cache = createPairCellCache( ...
 %**************************************************************************
 % PURPOSE
 %   - Record, for every directed node pair, which cell boxes its segment
-%     can meet and over which segment parameter interval, materialized
+%     can meet and over which segment parameter interval, precomputed
 %     eagerly for small products and calculated on demand otherwise.
 %**************************************************************************
 % INPUTS
@@ -21,26 +21,26 @@ function cache = createPairCellCache( ...
 % OUTPUTS
 %   - cache (scalar struct)
 %       Pair entries and the inputs needed to compute one on demand;
-%       IsMaterialized says which.
+%       IsPrecomputed says which.
 %**************************************************************************
 % UNITS
 %   - Positions are coordinate units and clocks are seconds.
 %**************************************************************************
 
-%% Section 1: Materialize The Pair Entries When The Product Is Small
+%% Section 1: Precompute The Pair Entries When The Product Is Small
 
 % Closed segment/box parameter intervals for directed node pairs. Bound
 % eager storage; larger products use the identical calculation on demand.
 nodeCount   = size(nodePosition_units, 1);
 cellCount   = size(cellLower_units, 1);
 pairCount   = nodeCount ^ 2;
-maximumMaterializedPairCount     = 65536;
-maximumMaterializedPairCellTests = 4e6;
-materialize = pairCount <= maximumMaterializedPairCount && ...
-    pairCount * cellCount <= maximumMaterializedPairCellTests;
+maximumPrecomputedPairCount     = 65536;
+maximumPrecomputedPairCellTests = 4e6;
+precompute = pairCount <= maximumPrecomputedPairCount && ...
+    pairCount * cellCount <= maximumPrecomputedPairCellTests;
 cache = struct( ...
     'NodeCount',         nodeCount, ...
-    'IsMaterialized',    materialize, ...
+    'IsPrecomputed',    precompute, ...
     'NodePosition_units', nodePosition_units, ...
     'CellLower_units',   cellLower_units, ...
     'CellUpper_units',   cellUpper_units, ...
@@ -50,7 +50,7 @@ cache = struct( ...
     'QExit',             {cell(0, 1)}, ...
     'ActiveStart_s',     {cell(0, 1)}, ...
     'ActiveEnd_s',       {cell(0, 1)});
-if ~materialize
+if ~precompute
     return
 end
 

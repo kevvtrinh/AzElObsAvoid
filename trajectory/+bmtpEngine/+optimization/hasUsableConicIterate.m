@@ -14,7 +14,7 @@ function usable = hasUsableConicIterate(values, exitFlag)
 %**************************************************************************
 % OUTPUTS
 %   - usable (logical scalar)
-%       True when independent certification may run on this iterate.
+%       True when independent proof may run on this iterate.
 %**************************************************************************
 % UNITS
 %   - Inherited from values.

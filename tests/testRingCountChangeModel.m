@@ -132,7 +132,7 @@ function testDegenerateEndpointRemainsUnsupported(testCase)
     prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     verifyTrue(testCase, prepared.InternalPreparation.IntervalIsUnsupported);
     verifyFalse(testCase, prepared.InternalPreparation.IntervalUsesEndpointHull);
-    verifyEqual(testCase, prepared.InternalPreparation.IntervalCertificationReason, ...
+    verifyEqual(testCase, prepared.InternalPreparation.IntervalProofReason, ...
         "degenerateEndpointGeometry");
 end
 
@@ -194,11 +194,11 @@ function verifyEndpointHullModel(testCase, preparation)
     verifyTrue(testCase, preparation.IntervalUsesEndpointHull(1));
     verifyFalse(testCase, preparation.MatchingTopology(1));
     verifyFalse(testCase, preparation.IntervalHasExactPartition(1));
-    verifyFalse(testCase, preparation.IntervalUsesSweptCells(1));
+    verifyFalse(testCase, preparation.IntervalUsesMovingCells(1));
     verifyFalse(testCase, preparation.IntervalIsStationary(1));
     verifyFalse(testCase, preparation.IntervalIsUnsupported(1));
     verifyEqual(testCase, preparation.IntervalGeometryModel(1), "endpointConvexHull");
-    verifyEqual(testCase, preparation.IntervalCertificationReason(1), "");
+    verifyEqual(testCase, preparation.IntervalProofReason(1), "");
 end
 
 function covered = groupIsCovered(regions_units, vertices_units)

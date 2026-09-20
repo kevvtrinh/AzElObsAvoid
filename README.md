@@ -14,7 +14,7 @@ return `Success=false` with stable `Message` and `TerminationReason` fields.
 MATLAB R2024b and Optimization Toolbox are the behavioral reference. Parallel
 Computing Toolbox is optional: large obstacle interval preparations use at most four
 available background workers when the pool is idle. The serial path remains
-the reference for geometry, certificates, and cache semantics. Add only the
+the reference for geometry, proofs, and cache semantics. Add only the
 root and BMTP package parent to the path:
 
 ```matlab
@@ -30,7 +30,7 @@ validate request
   -> prepare original and protected geometry once
   -> build the applicable exact visibility proposal
   -> generate one BMTP motion for that proposal and clock
-  -> continuously certify geometry, dynamics, and C3 continuity
+  -> continuously prove geometry, dynamics, and C3 continuity
   -> run the public independent validator
   -> return one stable result
 ```
@@ -62,7 +62,7 @@ lets the next method run; validation, geometric proof, reconstruction,
 numerical, and unknown failures end the sequence.
 A complete continuous curve that passes workspace, continuity, and geometry
 checks but exceeds derivative limits is a clock-local timing miss, not a
-weakened certificate.
+weakened proof.
 
 By default, a validated best plan so far is kept when the timed search fails,
 instead of launching an unbounded arrival-time search. The result reports the
@@ -149,7 +149,7 @@ unwrapped coordinates.
 
 Successful results contain sampled position, velocity, acceleration, and jerk;
 the authoritative piecewise polynomial; the selected route and visibility
-evidence; prepared geometry; BMTP diagnostics; continuous plane certificates;
+evidence; prepared geometry; BMTP diagnostics; continuous plane proofs;
 and the independent validation record.
 
 Validate and plot without rerunning planning:

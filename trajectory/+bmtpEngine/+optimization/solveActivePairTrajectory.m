@@ -24,7 +24,7 @@ function [result, diagnostics] = solveActivePairTrajectory(request, warmStart, d
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Best sampled-clear controls and any accepted certified travel
+%       Best sampled-clear controls and any accepted proven travel
 %       refinement. Expected infeasibility returns Success = false.
 %   - diagnostics (scalar struct)
 %       Updated conic, plane, collision-pair, and refinement measurements.
@@ -47,7 +47,7 @@ bestControl_units                      = zeros(0, request.Degree + 1, 2);
 bestTimes_s                            = NaN;
 bestDuration_s                         = Inf;
 bestPreparedMotion                     = struct('Success', false);
-bestCertificate                        = struct('Passed', false);
+bestProof                        = struct('Passed', false);
 taggedPairs                            = false(segmentCount, regionCount);
 emptyPlane                             = bmtpEngine.separation.createEmptyPlane();
 planes                                 = repmat(emptyPlane, segmentCount, regionCount);
@@ -103,17 +103,17 @@ for iterationIndex = 1:maximumIterationCount
         regionActiveBySegment);
     duration_s = sum(trialTimes_s);
     % Sampling only guides optimization. An iterate becomes the feasible
-    % best iterate so far when every applicable pair holds a certified separating
-    % line; a pair the certificate cannot verify is a collision to separate.
-    trialCertificate    = struct('Passed', false);
+    % best iterate so far when every applicable pair holds a proven separating
+    % line; a pair the proof cannot verify is a collision to separate.
+    trialProof    = struct('Passed', false);
     trialPreparedMotion = struct('Success', false);
     if ~any(collisionPairs, 'all')
-        [trialCertificate, trialPreparedMotion] = certifyTravelCandidate( ...
+        [trialProof, trialPreparedMotion] = proveTravelCandidate( ...
             request, trialControl_units, trialTimes_s, reserve_units, target_units);
-        certificateIsDecisive = trialPreparedMotion.Success && trialCertificate.WorkspacePassed && ...
-            trialCertificate.DynamicsPassed && trialCertificate.ContinuityPassed;
-        if certificateIsDecisive
-            collisionPairs = uncertifiedPairsBySegment(trialCertificate, ...
+        proofIsDecisive = trialPreparedMotion.Success && trialProof.WorkspacePassed && ...
+            trialProof.DynamicsPassed && trialProof.ContinuityPassed;
+        if proofIsDecisive
+            collisionPairs = unprovenPairsBySegment(trialProof, ...
                 trialPreparedMotion.SegmentTime_s, trialTimes_s, regionActiveBySegment);
         end
     end
@@ -128,14 +128,14 @@ for iterationIndex = 1:maximumIterationCount
             bestTimes_s                = trialTimes_s;
             bestDuration_s             = duration_s;
             bestPreparedMotion         = struct('Success', false);
-            bestCertificate            = struct('Passed', false);
+            bestProof            = struct('Passed', false);
             bestPlanes                 = trajectoryPlanes;
             bestTaggedPairs            = reshape([bestPlanes.Active], size(bestPlanes));
             bestSolverMessage          = "A complete active-pair feasible iterate was retained.";
             trialWasRetained           = true;
-            if trialCertificate.Passed
+            if trialProof.Passed
                 bestPreparedMotion = trialPreparedMotion;
-                bestCertificate    = trialCertificate;
+                bestProof    = trialProof;
             end
         end
         improvementReachedTolerance = isfinite(retainedImprovement_s) && ...
@@ -208,13 +208,13 @@ if ~isempty(bestControl_units)
         if ~any(overlaps, 'all')
             originalLength_units = sum(vecnorm(diff(bestControl_units, 1, 2), 2, 3), 'all');
             shortLength_units    = sum(vecnorm(diff(shortControl_units, 1, 2), 2, 3), 'all');
-            [shortCertificate, shortPreparedMotion] = certifyTravelCandidate( ...
+            [shortProof, shortPreparedMotion] = proveTravelCandidate( ...
                 request, shortControl_units, shortTimes_s, reserve_units, target_units);
-            if shortLength_units <= originalLength_units && shortCertificate.Passed
+            if shortLength_units <= originalLength_units && shortProof.Passed
                 bestControl_units                  = shortControl_units;
                 bestTimes_s                        = shortTimes_s;
                 bestPreparedMotion                 = shortPreparedMotion;
-                bestCertificate                    = shortCertificate;
+                bestProof                    = shortProof;
                 diagnostics.TravelRefinementAccepted = true;
             end
         end
@@ -234,13 +234,13 @@ if ~isempty(bestControl_units)
     failureStage             = "";
     failureKind              = "";
     alternativeGuideEligible = false;
-    if bestCertificate.Passed
+    if bestProof.Passed
         selectedControl_units      = bestPreparedMotion.ControlPoint_units;
         selectedTimes_s            = bestPreparedMotion.SegmentTime_s;
-        selectedPlanes             = bestCertificate.Planes;
-        selectedPairs              = bestCertificate.RegionActiveBySegment;
-        selectedCollisionPairCount = bestCertificate.AllPairCount - ...
-            bestCertificate.VerifiedPairCount;
+        selectedPlanes             = bestProof.Planes;
+        selectedPairs              = bestProof.RegionActiveBySegment;
+        selectedCollisionPairCount = bestProof.AllPairCount - ...
+            bestProof.VerifiedPairCount;
     end
 end
 diagnostics.ApplicablePairCount     = nnz(selectedPairs);
@@ -258,17 +258,17 @@ result = struct( ...
     'Planes',             selectedPlanes, ...
     'TaggedPairs',        selectedPairs, ...
     'PreparedMotion',     bestPreparedMotion, ...
-    'Certificate',        bestCertificate);
+    'Proof',        bestProof);
 end
 
 %% Section 5: Local Functions
 
-function collisionPairs = uncertifiedPairsBySegment(certificate, spanTime_s, segmentTime_s, regionActiveBySegment)
-    % Map every unverified certified-span pair back to its optimizer segment.
+function collisionPairs = unprovenPairsBySegment(proof, spanTime_s, segmentTime_s, regionActiveBySegment)
+    % Map every unverified proven-span pair back to its optimizer segment.
     % Spans partition the segments in order; a uniform dilation of the span
     % clock preserves each span's fraction of the total motion time.
-    failedPairs         = ~reshape([certificate.Planes.Verified], size(certificate.Planes)) & ...
-        certificate.RegionActiveBySegment;
+    failedPairs         = ~reshape([proof.Planes.Verified], size(proof.Planes)) & ...
+        proof.RegionActiveBySegment;
     collisionPairs      = false(size(regionActiveBySegment));
     segmentEndFraction  = cumsum(segmentTime_s(:)) / sum(segmentTime_s);
     spanEndFraction     = cumsum(spanTime_s(:)) / sum(spanTime_s);
@@ -280,26 +280,26 @@ function collisionPairs = uncertifiedPairsBySegment(certificate, spanTime_s, seg
     collisionPairs = collisionPairs & regionActiveBySegment;
 end
 
-function [certificate, preparedMotion] = certifyTravelCandidate(request, controls_units, ...
+function [proof, preparedMotion] = proveTravelCandidate(request, controls_units, ...
         times_s, reserve_units, target_units)
-    % Prepare and independently certify a shortened fixed-clock candidate.
+    % Prepare and independently prove a shortened fixed-clock candidate.
     preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, times_s);
-    [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion( ...
+    [proof, proofCache] = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, reserve_units, target_units);
     for refinementIndex = 1:10
-        if certificate.Passed || ~certificate.WorkspacePassed || ...
-                ~certificate.DynamicsPassed || ~certificate.ContinuityPassed
+        if proof.Passed || ~proof.WorkspacePassed || ...
+                ~proof.DynamicsPassed || ~proof.ContinuityPassed
             break
         end
-        failedPairs = ~reshape([certificate.Planes.Verified], size(certificate.Planes)) & ...
-            certificate.RegionActiveBySegment;
+        failedPairs = ~reshape([proof.Planes.Verified], size(proof.Planes)) & ...
+            proof.RegionActiveBySegment;
         splitMask = any(failedPairs, 2);
         if ~any(splitMask)
             break
         end
         preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, preparedMotion.ControlPoint_units, ...
             preparedMotion.SegmentTime_s, preparedMotion.PrescribedPower_units, splitMask);
-        [certificate, certificateCache] = bmtpEngine.validation.checkFinalMotion( ...
-            request, preparedMotion, reserve_units, target_units, certificateCache);
+        [proof, proofCache] = bmtpEngine.validation.checkFinalMotion( ...
+            request, preparedMotion, reserve_units, target_units, proofCache);
     end
 end

@@ -12,7 +12,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %       translationOnly, deferTranslation)
 %**************************************************************************
 % PURPOSE
-%   - Certify one source interval of a moving obstacle: align the two
+%   - Prove one source interval of a moving obstacle: align the two
 %     protected sample rings, then prove either one moving convex region or
 %     an exact moving convex partition of the complete interpolated polygon.
 %     A partition is accepted when every cell stays strictly convex over the
@@ -27,7 +27,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %   - lowerShape, upperShape (polyshape)
 %       The same two samples as shapes.
 %   - reusableStartRegions_units (cell column)
-%       End regions of a certified preceding interval, or empty.
+%       End regions of a proven preceding interval, or empty.
 %   - preserveAlignment (logical scalar)
 %       Keep the given vertex order instead of realigning.
 %   - translationOnly (logical scalar)
@@ -38,15 +38,15 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %**************************************************************************
 % OUTPUTS
 %   - verified (logical scalar)
-%       True when a certificate was found. When false, including the
+%       True when a proof was found. When false, including the
 %       deferred case, every other output keeps its empty default.
 %   - alignedUpper_units (K-by-2 numeric)
 %       The end ring aligned to the start ring's vertex order.
 %   - startRegions_units, endRegions_units (cell columns)
-%       Convex cells of the certified partition at the interval start and
+%       Convex cells of the proven partition at the interval start and
 %       end; empty when the whole ring is the one convex region.
 %   - geometryModel (string)
-%       Name of the certificate that succeeded.
+%       Name of the proof that succeeded.
 %   - hasExactPartition, partitionReused, dependsOnPrevious (logical scalars)
 %       Whether the partition is exact, was reused from the preceding
 %       interval, or must wait for it.
@@ -55,7 +55,7 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %   - Coordinate units, [x y] columns.
 %**************************************************************************
 
-%% Section 1: Validate The Rings And The Certificate Requests
+%% Section 1: Validate The Rings And The Proof Requests
 
 validateattributes(lowerX_units, {'numeric'}, {'real', 'vector'});
 validateattributes(lowerY_units, {'numeric'}, {'real', 'numel', numel(lowerX_units)});
@@ -68,9 +68,9 @@ validateattributes(preserveAlignment, {'logical'}, {'scalar'});
 validateattributes(translationOnly, {'logical'}, {'scalar'});
 validateattributes(deferTranslation, {'logical'}, {'scalar'});
 
-%% Section 2: Align The Rings And Certify The Motion
+%% Section 2: Align The Rings And Prove The Motion
 
-% Align rings, then certify either one moving convex region or an exact
+% Align rings, then prove either one moving convex region or an exact
 % moving convex partition of the complete interpolated polygon.
 % translationOnly stops after the index-preserving translation check.
 dependsOnPrevious = false;
@@ -290,7 +290,7 @@ function verified = partitionMatchesEndpointShapes( ...
         startRegions_units, endRegions_units, sourceIndexRegions, ...
         lower_units, upper_units, lowerShape, upperShape, topologyMotionVerified)
     % Endpoint Boolean equality catches mapping or triangulation changes
-    % before the continuous face certificates are trusted.
+    % before the continuous face proofs are trusted.
     if topologyMotionVerified && partitionHasExactRingTopology( ...
             sourceIndexRegions, lower_units, upper_units, lowerShape, upperShape)
         verified = true;
@@ -308,7 +308,7 @@ function verified = partitionHasExactRingTopology( ...
         sourceIndexRegions, lower_units, upper_units, lowerShape, upperShape)
     % For an unsimplified simple ring, a partition is carried exactly when
     % every outer edge is one source edge and every interior edge is shared
-    % once in each direction. Strict face-motion and boundary certificates
+    % once in each direction. Strict face-motion and boundary proofs
     % are applied by the caller after this endpoint topology check.
     vertexCount = size(lower_units, 1);
     verified = isequal(size(lower_units), size(upper_units)) && ...
@@ -403,7 +403,7 @@ function verified = movingBoundaryRemainsSimple(lower_units, upper_units, coordi
     positionTolerance_units     = 4096 * eps(coordinateScale_units);
 
     % Each endpoint is affine in time. These bounds contain every point on
-    % each moving edge throughout the interval, so disjoint ranges certify
+    % each moving edge throughout the interval, so disjoint ranges prove
     % separation without solving any orientation polynomial.
     nextIndex         = [2:vertexCount, 1];
     edgeMinimum_units = min(min(lower_units, lower_units(nextIndex, :)), ...

@@ -129,7 +129,7 @@ function testRejectsInvalidGeneratorInputs(testCase)
 end
 
 function result = verifyPlannerOutcome(testCase, scenario, label)
-    % Check the public stable outcome and independently certify every success.
+    % Check the public stable outcome and independently prove every success.
     result = planner(scenario.Obstacles, scenario.InitialState, ...
         scenario.GoalState, scenario.Limits, scenario.Options);
     verifyEqual(testCase, result.Success, scenario.ExpectedSuccess, ...

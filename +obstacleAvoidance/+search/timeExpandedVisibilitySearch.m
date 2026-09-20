@@ -120,7 +120,7 @@ for staticObstacleIndex = 1:staticCount
         staticActive_s(staticObstacleIndex, :) = [obstacle.time_s(1), obstacle.time_s(end)];
     end
 end
-% Swept corresponding intervals are stationary geometry on their own
+% Moving-cell intervals are stationary geometry on their own
 % absolute lifetimes. Check their cached union boundary as one exact region.
 [stationaryShapes, stationaryStarts_units, stationaryEnds_units, stationaryActive_s, dynamicCells] = ...
     stationaryGeometryCells(dynamicObstacles, dynamicCells);
@@ -205,7 +205,7 @@ parentLayerIndex        = zeros(layerCount, nodeCount, "uint32");
 parentNodeIndex         = zeros(layerCount, nodeCount, "uint32");
 reachable(1, 1)         = nodeIsFree(1, 1);
 spatialCost_units(1, 1) = 0;
-[rejectedCount, expandedCount, certifiedSkipCount] = deal(0);
+[rejectedCount, expandedCount, provenSkipCount] = deal(0);
 goalCostBound_units             = Inf;
 terminalSourceLayerIndex        = 0;
 terminalSourceNodeIndex         = 0;
@@ -216,7 +216,7 @@ if isEarliestArrival
     % candidate to the end of the request before advancing the source layer.
     % This changes no layer or edge verdict and avoids speculative checks after
     % the first reachable goal. Event columns are [source layer, source node,
-    % target node, final layer, edge length, source-local order, certified end].
+    % target node, final layer, edge length, source-local order, proven end].
     pendingMotionEvents = cell(layerCount, 1);
     stateProposals      = cell(layerCount, 1);
     for layerIndex = 1:layerCount
@@ -289,7 +289,7 @@ end
 record = struct( ...
     "NodeCount",                     nodeCount, ...
     "RejectedTransitionCount",       rejectedCount, ...
-    "CertifiedSkippedTransitionCount", certifiedSkipCount, ...
+    "ProvenSkippedTransitionCount", provenSkipCount, ...
     "ExpandedCount",                 expandedCount, ...
     "SelectedGoalWindowStartTime_s", selectedGoalWindowStartTime_s, ...
     "SelectedGoalWindowEndTime_s",   selectedGoalWindowEndTime_s, ...
@@ -307,20 +307,20 @@ function resolvePendingMotionEvents(layerIndex)
         sourceLayerIndices = unique(motionEvents(:, 1), "stable").';
         for sourceLayerIndex = sourceLayerIndices
             eventOffsets = find(motionEvents(:, 1) == sourceLayerIndex);
-            eventIsCertifiedBlocked = ...
+            eventIsProvenBlocked = ...
                 layerIndex <= motionEvents(eventOffsets, 7);
             eventIsClear        = false(numel(eventOffsets), 1);
             blockingCellIndices = zeros(numel(eventOffsets), 1, "uint32");
-            witnessTimes_s      = NaN(numel(eventOffsets), 1);
-            exactEventOffsets   = find(~eventIsCertifiedBlocked);
+            collisionTimes_s      = NaN(numel(eventOffsets), 1);
+            exactEventOffsets   = find(~eventIsProvenBlocked);
             if ~isempty(exactEventOffsets)
                 exactRows = eventOffsets(exactEventOffsets);
-                [exactIsClear, exactBlockingCellIndices, exactWitnessTimes_s] = edgeIsClear( ...
+                [exactIsClear, exactBlockingCellIndices, exactCollisionTimes_s] = edgeIsClear( ...
                     motionEvents(exactRows, 2), motionEvents(exactRows, 3), ...
                     layerTimes_s(sourceLayerIndex), layerTimes_s(layerIndex));
                 eventIsClear(exactEventOffsets)        = exactIsClear;
                 blockingCellIndices(exactEventOffsets) = exactBlockingCellIndices;
-                witnessTimes_s(exactEventOffsets)      = exactWitnessTimes_s;
+                collisionTimes_s(exactEventOffsets)      = exactCollisionTimes_s;
             end
 
             clearOffsets = eventOffsets(eventIsClear);
@@ -335,16 +335,16 @@ function resolvePendingMotionEvents(layerIndex)
             end
 
             failedEventOffsets = find(~eventIsClear);
-            certifiedSkipCount = certifiedSkipCount + nnz(eventIsCertifiedBlocked);
+            provenSkipCount = provenSkipCount + nnz(eventIsProvenBlocked);
             rejectedCount      = rejectedCount + numel(failedEventOffsets);
             for failureIndex = 1:numel(failedEventOffsets)
                 eventOffset = failedEventOffsets(failureIndex);
                 eventRow    = eventOffsets(eventOffset);
-                if ~eventIsCertifiedBlocked(eventOffset)
-                    blockedLayerCount = certifiedBlockedLayerCount( ...
+                if ~eventIsProvenBlocked(eventOffset)
+                    blockedLayerCount = provenBlockedLayerCount( ...
                         motionEvents(eventRow, 2), motionEvents(eventRow, 3), ...
                         sourceLayerIndex, layerIndex, motionEvents(eventRow, 4), ...
-                        blockingCellIndices(eventOffset), witnessTimes_s(eventOffset));
+                        blockingCellIndices(eventOffset), collisionTimes_s(eventOffset));
                     motionEvents(eventRow, 7) = layerIndex + blockedLayerCount - 1;
                 end
                 if layerIndex < motionEvents(eventRow, 4)
@@ -515,7 +515,7 @@ function propagateFixedArrivalLayer(layerIndex)
     end
 end
 
-function [isClear, blockingCellIndices, witnessTimes_s] = ...
+function [isClear, blockingCellIndices, collisionTimes_s] = ...
         edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
     % Check the complete segment clock against exact static geometry and every
     % affine moving convex cell. A zero-length edge is a stationary point path.
@@ -526,7 +526,7 @@ function [isClear, blockingCellIndices, witnessTimes_s] = ...
     edgeCount         = numel(firstNodeIndices);
     isClear           = true(edgeCount, 1);
     blockingCellIndices = zeros(edgeCount, 1, "uint32");
-    witnessTimes_s      = NaN(edgeCount, 1);
+    collisionTimes_s      = NaN(edgeCount, 1);
 
     % Exact check against every time-invariant obstacle over the sub-segment
     % traversed while that obstacle exists. A zero-length wait reduces to
@@ -574,25 +574,25 @@ function [isClear, blockingCellIndices, witnessTimes_s] = ...
         return
     end
     candidateIndices = find(isClear);
-    [dynamicIsClear, dynamicBlockingCellIndices, dynamicWitnessTimes_s] = ...
+    [dynamicIsClear, dynamicBlockingCellIndices, dynamicCollisionTimes_s] = ...
         obstacleAvoidance.search.affineEdgesAreClear( ...
         first_units(candidateIndices, :), second_units(candidateIndices, :), ...
         firstNodeIndices(candidateIndices), secondNodeIndices(candidateIndices), ...
         first_s, second_s, dynamicCells, dynamicPairCache, dynamicCellIsCounterclockwise);
     isClear(candidateIndices)             = dynamicIsClear;
     blockingCellIndices(candidateIndices) = dynamicBlockingCellIndices;
-    witnessTimes_s(candidateIndices)      = dynamicWitnessTimes_s;
+    collisionTimes_s(candidateIndices)      = dynamicCollisionTimes_s;
 end
 
-function blockedLayerCount = certifiedBlockedLayerCount( ...
+function blockedLayerCount = provenBlockedLayerCount( ...
         sourceNodeIndex, targetNodeIndex, sourceLayerIndex, targetLayerIndex, ...
-        finalTargetLayerIndex, cellIndex, witnessTime_s)
+        finalTargetLayerIndex, cellIndex, collisionTime_s)
     % A strict interior point at one physical time proves a contiguous prefix
     % of later arrival clocks colliding with the same affine convex cell. The
     % positive residual reserve excludes tolerance-only contact. Any uncertain
     % geometry falls back to the original one-layer retry.
     blockedLayerCount = 1;
-    if cellIndex == 0 || ~isfinite(witnessTime_s)
+    if cellIndex == 0 || ~isfinite(collisionTime_s)
         return
     end
     cellIndex = double(cellIndex);
@@ -603,16 +603,16 @@ function blockedLayerCount = certifiedBlockedLayerCount( ...
 
     sourceTime_s = layerTimes_s(sourceLayerIndex);
     arrivalTimes_s = layerTimes_s(targetLayerIndex:finalTargetLayerIndex);
-    if witnessTime_s < sourceTime_s || witnessTime_s > arrivalTimes_s(1)
+    if collisionTime_s < sourceTime_s || collisionTime_s > arrivalTimes_s(1)
         return
     end
 
     active_s = dynamicCells.ActiveTimeInterval_s(cellIndex, :);
     cellDuration_s = diff(active_s);
-    if ~(cellDuration_s > 0) || witnessTime_s < active_s(1) || witnessTime_s > active_s(2)
+    if ~(cellDuration_s > 0) || collisionTime_s < active_s(1) || collisionTime_s > active_s(2)
         return
     end
-    cellClock = (witnessTime_s - active_s(1)) / cellDuration_s;
+    cellClock = (collisionTime_s - active_s(1)) / cellDuration_s;
     regionStart_units = dynamicCells.Regions_units{cellIndex};
     region_units = regionStart_units + cellClock .* ...
         (dynamicCells.EndRegions_units{cellIndex} - regionStart_units);
@@ -625,8 +625,8 @@ function blockedLayerCount = certifiedBlockedLayerCount( ...
 
     source_units = nodePosition_units(sourceNodeIndex, :);
     target_units = nodePosition_units(targetNodeIndex, :);
-    witnessOffset_s = witnessTime_s - sourceTime_s;
-    firstPathClock  = witnessOffset_s / (arrivalTimes_s(1) - sourceTime_s);
+    collisionOffset_s = collisionTime_s - sourceTime_s;
+    firstPathClock  = collisionOffset_s / (arrivalTimes_s(1) - sourceTime_s);
     if ~isfinite(firstPathClock)
         return
     end
@@ -639,8 +639,8 @@ function blockedLayerCount = certifiedBlockedLayerCount( ...
         edge_units(:, 2) .* displacement_units(1);
     coordinateScale_units = max([1; abs(region_units(:)); ...
         abs(source_units(:)); abs(target_units(:))]);
-    certificateBound_units2 = 16 * obstacleAvoidance.search.createResidualBound(coordinateScale_units);
-    if abs(signedArea_units2) <= certificateBound_units2
+    proofBound_units2 = 16 * obstacleAvoidance.search.createResidualBound(coordinateScale_units);
+    if abs(signedArea_units2) <= proofBound_units2
         return
     end
 
@@ -649,11 +649,11 @@ function blockedLayerCount = certifiedBlockedLayerCount( ...
     signedClock_units2    = orientationSign * residualClock_units2;
     firstResidual_units2 = signedConstant_units2 + ...
         firstPathClock .* signedClock_units2;
-    if any(firstResidual_units2 <= certificateBound_units2)
+    if any(firstResidual_units2 <= proofBound_units2)
         return
     end
 
-    % At the fixed witness time, the path clock decreases monotonically as
+    % At the fixed collision time, the path clock decreases monotonically as
     % arrival is delayed. Only a positive clock coefficient can therefore
     % lose strictness. Its exact threshold supplies the complete blocked
     % arrival prefix without repeatedly probing every half-space.
@@ -663,22 +663,22 @@ function blockedLayerCount = certifiedBlockedLayerCount( ...
         return
     end
     criticalPathClock = max( ...
-        (certificateBound_units2 - signedConstant_units2(canLoseStrictness)) ./ ...
+        (proofBound_units2 - signedConstant_units2(canLoseStrictness)) ./ ...
         signedClock_units2(canLoseStrictness));
-    if criticalPathClock <= 0 || witnessOffset_s == 0
+    if criticalPathClock <= 0 || collisionOffset_s == 0
         blockedLayerCount = numel(arrivalTimes_s);
         return
     end
-    firstFailedArrival_s = sourceTime_s + witnessOffset_s / criticalPathClock;
+    firstFailedArrival_s = sourceTime_s + collisionOffset_s / criticalPathClock;
     finalStrictOffset = min(numel(arrivalTimes_s), ...
         obstacleAvoidance.search.sortedUpperBound(arrivalTimes_s, firstFailedArrival_s));
     finalStrictOffset = max(1, finalStrictOffset);
     while finalStrictOffset > 1
-        trialClock = witnessOffset_s / ...
+        trialClock = collisionOffset_s / ...
             (arrivalTimes_s(finalStrictOffset) - sourceTime_s);
         trialResidual_units2 = signedConstant_units2 + ...
             trialClock .* signedClock_units2;
-        if all(trialResidual_units2 > certificateBound_units2)
+        if all(trialResidual_units2 > proofBound_units2)
             break
         end
         finalStrictOffset = finalStrictOffset - 1;
@@ -812,7 +812,7 @@ end
 
 function [shapes, starts_units, ends_units, active_s, cells] = ...
         stationaryGeometryCells(obstacles, cells)
-    % Move exact swept-union intervals into the stationary geometry arrays.
+    % Move exact moving-cell-union intervals into the stationary geometry arrays.
     shapes         = cell(0, 1);
     starts_units   = cell(0, 1);
     ends_units     = cell(0, 1);
@@ -822,8 +822,8 @@ function [shapes, starts_units, ends_units, active_s, cells] = ...
     for obstacleIndex = 1:numel(obstacles)
         obstacle    = obstacles(obstacleIndex);
         preparation = obstacle.InternalPreparation;
-        sweptIntervalIndices = find(preparation.IntervalUsesSweptCells);
-        for intervalIndex = reshape(sweptIntervalIndices, 1, [])
+        movingCellIntervalIndices = find(preparation.IntervalUsesMovingCells);
+        for intervalIndex = reshape(movingCellIntervalIndices, 1, [])
             interval_s = obstacle.time_s(intervalIndex:intervalIndex + 1).';
             cellIsSelected = cells.SourceObstacleIndex == obstacleIndex & ...
                 cells.ActiveTimeInterval_s(:, 1) >= interval_s(1) & ...

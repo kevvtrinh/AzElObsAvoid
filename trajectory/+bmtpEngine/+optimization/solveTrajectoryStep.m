@@ -155,7 +155,7 @@ end
 constraintLimits = limits;
 % A finite stalled cone iterate can carry a constraint residual larger than
 % floating-point roundoff. Keep jerk controls strictly inside their physical
-% bounds so exact endpoint reconstruction remains certifiable.
+% bounds so exact endpoint reconstruction remains provable.
 if ~intrinsicVariation
     constraintLimits.maxJerk_units_s3 = ...
         limits.maxJerk_units_s3 .* (1 - sqrt(eps));
@@ -312,7 +312,7 @@ output.IntrinsicJerkVariation          = intrinsicVariation;
 if fixedClock && ~isempty(x)
     output.MaximumClearanceSlack_units = max(x(slackIndices));
 end
-% A stalled finite iterate remains a proposal, never a feasibility certificate.
+% A stalled finite iterate remains a proposal, never a feasibility proof.
 % Independent physical checks decide whether it can become returned motion.
 if ~bmtpEngine.optimization.hasUsableConicIterate(x, exitFlag)
     controlPoint_units = zeros(0, degree + 1, 2);

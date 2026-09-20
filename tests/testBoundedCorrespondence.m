@@ -95,7 +95,7 @@ function testConcaveDeformationUsesExactMovingPartition(testCase)
     verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
         "linearCorrespondingConvexPartition");
     verifyTrue(testCase,prepared.InternalPreparation.IntervalHasExactPartition);
-    verifyFalse(testCase,prepared.InternalPreparation.IntervalUsesSweptCells);
+    verifyFalse(testCase,prepared.InternalPreparation.IntervalUsesMovingCells);
     verifyFalse(testCase,prepared.InternalPreparation.IntervalIsUnsupported);
     cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
     verifyGreaterThan(testCase,numel(cells.Regions_units),1);
@@ -171,7 +171,7 @@ function testContainmentClassificationMatchesBooleanReference(testCase)
             verifyFalse(testCase, preparation.IntervalIsUnsupported);
             verifyFalse(testCase, preparation.MatchingTopology);
             verifyFalse(testCase, preparation.IntervalHasExactPartition);
-            verifyFalse(testCase, preparation.IntervalUsesSweptCells);
+            verifyFalse(testCase, preparation.IntervalUsesMovingCells);
         end
     end
 end
@@ -260,7 +260,7 @@ function testProperCrossingZigzagHasDeclaredRepair(testCase)
     verifyEqual(testCase,bow.NormalizationDiagnostics.RemovedRegionCount,[1,1]);
 end
 
-function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
+function testMovingCellsContainUnprovableCorrespondingRing(testCase)
     [lower, upper] = thinNotchFixture();
     for margin_units=[0,0.1]
         source=obstacleAvoidance.obstacles.createObstacle('thin notch',[0;1], ...
@@ -268,9 +268,9 @@ function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
         prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
         preparation=prepared.InternalPreparation;
         if margin_units==0
-            verifyEqual(testCase,preparation.IntervalGeometryModel,"sweptCorrespondingConvexCells");
+            verifyEqual(testCase,preparation.IntervalGeometryModel,"movingConvexCells");
             verifyFalse(testCase,preparation.MatchingTopology);
-            verifyTrue(testCase,preparation.IntervalUsesSweptCells);
+            verifyTrue(testCase,preparation.IntervalUsesMovingCells);
             verifyFalse(testCase,preparation.IntervalIsUnsupported);
             cells=obstacleAvoidance.obstacles.createTimeCells(prepared,0,1);
             verifyEqual(testCase,cells.Regions_units,cells.EndRegions_units);
@@ -278,7 +278,7 @@ function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
         else
             % Protection can itself remove a thin notch and admit an exact
             % model. Exercise the prescribed cell-level margin independently.
-            [supported,enclosure]=obstacleAvoidance.obstacles.createSweptCorrespondingCells(lower,upper,margin_units);
+            [supported,enclosure]=obstacleAvoidance.obstacles.createMovingCells(lower,upper,margin_units);
             verifyTrue(testCase,supported);
         end
         aligned=obstacleAvoidance.obstacles.alignCorrespondingRing(lower,upper);
@@ -298,14 +298,14 @@ function testSweptCellsContainUncertifiableCorrespondingRing(testCase)
     end
 end
 
-function testSweptCellsDoNotBecomeAnExactTranslationPartition(testCase)
+function testMovingCellsDoNotBecomeAnExactTranslationPartition(testCase)
     [first, second] = thinNotchFixture();
     third=second+[1,0];
     source=obstacleAvoidance.obstacles.createObstacle('mixed models',[0;1;2], ...
         {first(:,1);second(:,1);third(:,1)},{first(:,2);second(:,2);third(:,2)},0);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
     verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
-        ["sweptCorrespondingConvexCells";"linearCorrespondingConvexPartition"]);
+        ["movingConvexCells";"linearCorrespondingConvexPartition"]);
     verifyFalse(testCase,prepared.InternalPreparation.IntervalPartitionReused(2));
     actual=unionRegions(prepared.InternalPreparation.IntervalStartRegions_units{2});
     verifyLessThan(testCase,area(xor(actual,polyshape(second,'Simplify',false))),1e-12);
@@ -330,8 +330,8 @@ function testRootTwoMarginSquaresContainSquareJoinProtection(testCase)
             verifyLessThanOrEqual(testCase,uncovered_units2,1e-12);
         end
     end
-    % The certified endpoint containment therefore passes for a protected
-    % corresponding ring that has no exact affine certificate.
+    % The proven endpoint containment therefore passes for a protected
+    % corresponding ring that has no exact affine proof.
     lower=[0,0;4,0;4,4;2,4;2,4-1e-13;1,4;0,4];
     upper=lower; upper(5,1)=2.2; upper(2,1)=4.2;
     source=obstacleAvoidance.obstacles.createObstacle('square-join certificate',[0;1], ...
@@ -339,9 +339,9 @@ function testRootTwoMarginSquaresContainSquareJoinProtection(testCase)
     prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
     preparation=prepared.InternalPreparation;
     verifyNotEqual(testCase,preparation.IntervalGeometryModel,"unsupportedContinuousDeformation");
-    verifyNotEqual(testCase,preparation.IntervalCertificationReason,"sweptEnvelopeExcludesProtectedSample");
-    if preparation.IntervalGeometryModel=="sweptCorrespondingConvexCells"
-        verifyLessThanOrEqual(testCase,max(preparation.IntervalSweptUncoveredProtectedArea_units2), ...
+    verifyNotEqual(testCase,preparation.IntervalProofReason,"movingCellsExcludeProtectedSample");
+    if preparation.IntervalGeometryModel=="movingConvexCells"
+        verifyLessThanOrEqual(testCase,max(preparation.IntervalMovingCellUncoveredProtectedArea_units2), ...
             4096*eps(max(1,area(preparation.SampleShapes{1}))));
         enclosure=unionRegions(preparation.IntervalStartRegions_units{1});
         for tau=[0,0.5,1]
@@ -357,7 +357,7 @@ function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
     % A dense near-circular ring rotated by six degrees per sample is
     % ambiguous to circular correlation (a cyclic index shift undoes the
     % rotation), but the moving-obstacle constructor transformed one source
-    % ring, so it declares index correspondence and the swept cells must
+    % ring, so it declares index correspondence and the moving cells must
     % contain the index-interpolated polygon, not the correlated one.
     angle_rad=(0:359).'*(pi/180);
     radius_units=1+0.1*cos(3*angle_rad);
@@ -378,15 +378,15 @@ function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
     verifyTrue(testCase,prepared.UsesSourceIndex);
     verifyTrue(testCase,preparation.IntervalPrepared(1));
     % Buffered protected rings carry no index order, so the only faithful
-    % model here is the swept enclosure built from the original rings.
-    verifyEqual(testCase,preparation.IntervalGeometryModel(1),"sweptCorrespondingConvexCells");
+    % model here is the moving-cell enclosure built from the original rings.
+    verifyEqual(testCase,preparation.IntervalGeometryModel(1),"movingConvexCells");
     [enclosure,geometry]=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,0.5);
     for tau=[0.25,0.5,0.75]
         polygon=polybuffer(polyshape((1-tau)*lower+tau*upper,'Simplify',false),0.05,'JointType','square');
         verifyLessThan(testCase,area(subtract(polygon,enclosure)),1e-10);
     end
     verifyFalse(testCase,geometry.TopologyIsInterpolated && ...
-        preparation.IntervalGeometryModel(1)=="sweptCorrespondingConvexCells");
+        preparation.IntervalGeometryModel(1)=="movingConvexCells");
 end
 
 function testReportedModelMutationDoesNotSelectBehavior(testCase)
@@ -397,12 +397,12 @@ function testReportedModelMutationDoesNotSelectBehavior(testCase)
         {lower_units(:, 1); upper_units(:, 1)}, ...
         {lower_units(:, 2); upper_units(:, 2)}, 0);
     prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
-    verifyTrue(testCase, prepared.InternalPreparation.IntervalUsesSweptCells);
+    verifyTrue(testCase, prepared.InternalPreparation.IntervalUsesMovingCells);
 
     mutated = prepared;
     mutated.vertexCorrespondence = "nonsense";
     mutated.InternalPreparation.IntervalGeometryModel(:) = "nonsense";
-    mutated.InternalPreparation.IntervalCertificationReason(:) = "nonsense";
+    mutated.InternalPreparation.IntervalProofReason(:) = "nonsense";
 
     referenceCells = obstacleAvoidance.obstacles.createTimeCells(prepared, 0, 1);
     mutatedCells   = obstacleAvoidance.obstacles.createTimeCells(mutated, 0, 1);
@@ -482,7 +482,7 @@ function prepared=preparePair(lower,upper)
 end
 
 function [lower_units, upper_units] = thinNotchFixture()
-    % Return the shared uncertifiable corresponding-ring regression fixture.
+    % Return the shared unprovable corresponding-ring regression fixture.
     lower_units = [
         0, 0
         4, 0

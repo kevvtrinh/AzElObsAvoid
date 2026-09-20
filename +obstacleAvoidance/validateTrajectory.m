@@ -15,7 +15,7 @@ function validation = validateTrajectory(result)
 %**************************************************************************
 % OUTPUTS
 %   - validation (scalar struct)
-%       Stable pass/fail record with individual certificate status. A failed
+%       Stable pass/fail record with individual proof status. A failed
 %       or incomplete result returns Passed = false with an explanatory
 %       Message rather than throwing.
 %**************************************************************************
@@ -39,7 +39,7 @@ validation.PositionWithinLimits      = false;
 validation.VelocityWithinLimits      = false;
 validation.AccelerationWithinLimits  = false;
 validation.JerkWithinLimits          = false;
-validation.PlaneCertificateValid     = false;
+validation.SeparationProofValid     = false;
 validation.MaximumDynamicsResidual   = Inf;
 validation.MaximumContinuityResidual = Inf;
 validation.MaximumHistoryResidual    = Inf;
@@ -47,7 +47,7 @@ if ~isstruct(result) || ~isscalar(result) || ~isfield(result, "Success") || ~res
     return
 end
 requiredFields = {'Polynomial', 'time_s', 'position_units', 'velocity_units_s', ...
-    'acceleration_units_s2', 'jerk_units_s3', 'PlaneCertificate', ...
+    'acceleration_units_s2', 'jerk_units_s3', 'SeparationProof', ...
     'PreparedObstacles', 'Inputs', 'Limits', 'Options', 'Route_units', ...
     'ArrivalTime_s', 'TrajectoryDuration_s'};
 if ~all(isfield(result, requiredFields))
@@ -169,7 +169,7 @@ for segmentIndex = 1:segmentCount
             boundIndex   = derivativeOrder + 1;
             coefficients = reshape(powerArrays{boundIndex}(segmentIndex, axisIndex, :), [], 1);
             withinLimits(boundIndex) = withinLimits(boundIndex) && ...
-                bmtpEngine.validation.certifyPolynomialRange(coefficients, ...
+                bmtpEngine.validation.provePolynomialRange(coefficients, ...
                 lowerBounds{boundIndex}(axisIndex), upperBounds{boundIndex}(axisIndex), tolerance);
         end
     end
@@ -312,7 +312,7 @@ validation.OutputMetadataConsistent = metadataIsConsistent;
 validation.EndpointStatesMatched    = timeMatched && ...
     max(abs([initialPolynomialState terminalPolynomialState] - expectedEndpointState)) <= tolerance;
 
-%% Section 4: Check Returned Histories And Collision Certificate
+%% Section 4: Check Returned Histories And Collision Proof
 
 [~, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = ...
     bmtpEngine.motion.evaluatePolynomial(polynomial, result.time_s);
@@ -332,14 +332,14 @@ if historyMatches
     validation.MaximumHistoryResidual  = max(abs(historyResidual), [], "all");
     validation.SampledHistoriesMatched = validation.MaximumHistoryResidual <= tolerance;
 end
-validation.PlaneCertificateValid = verifyPlaneCertificate(result, powerArrays{1});
+validation.SeparationProofValid = verifySeparationProof(result, powerArrays{1});
 
 %% Section 5: Finalize The Independent Decision
 
 validation.Passed = validation.OutputMetadataConsistent && validation.PolynomialValid && ...
     validation.SegmentTimingConsistent && validation.InterSegmentContinuous && ...
     validation.EndpointStatesMatched && validation.SampledHistoriesMatched && ...
-    validation.DynamicsConsistent && all(withinLimits) && validation.PlaneCertificateValid;
+    validation.DynamicsConsistent && all(withinLimits) && validation.SeparationProofValid;
 if validation.Passed
     validation.Message = "Independent polynomial, limit, endpoint, history, and collision checks passed.";
 else
@@ -349,17 +349,17 @@ end
 
 %% Section 6: Local Functions
 
-function certificateIsValid = verifyPlaneCertificate(result, positionPower_units)
+function proofIsValid = verifySeparationProof(result, positionPower_units)
     % Rebuild Bezier controls and directly recheck every active separating plane.
-    % Shared source preparation reconstructs merged spans and conservative swept
-    % cells; certificate equality and all acceptance tolerances remain unchanged.
-    certificate    = result.PlaneCertificate;
+    % Shared source preparation reconstructs merged spans and conservative moving
+    % cells; proof equality and all acceptance tolerances remain unchanged.
+    proof    = result.SeparationProof;
     requiredFields = {'Passed', 'Regions_units', 'Planes', 'RegionActiveBySegment', ...
         'RequiredGap_units', 'RoundoffReserve_units', 'AllPairCount', ...
         'VerifiedPairCount', 'ExactRegionCount', 'SolverRegionCount'};
-    certificateIsValid = isstruct(certificate) && isscalar(certificate) && ...
-        all(isfield(certificate, requiredFields));
-    if ~certificateIsValid
+    proofIsValid = isstruct(proof) && isscalar(proof) && ...
+        all(isfield(proof, requiredFields));
+    if ~proofIsValid
         return
     end
 
@@ -389,7 +389,7 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         coverageEnd_s < motionEnd_s - result.Options.ArrivalTimeTolerance_s || ...
         result.Inputs.initialState.time_s > motionStart_s + result.Options.ArrivalTimeTolerance_s;
     if coverageExcludesMotion
-        certificateIsValid = false;
+        proofIsValid = false;
         return
     end
     authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput, ...
@@ -404,12 +404,12 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
     endpointsAreOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(authoritativeObstacles, ...
         endpoints_units(:, 1), endpoints_units(:, 2), endpointTimes_s);
     if any(endpointsAreOccupied)
-        certificateIsValid = false;
+        proofIsValid = false;
         return
     end
 
-    usesDynamicCells = isfield(certificate, 'Coverage') && ...
-        isfield(certificate.Coverage, 'ActiveTimeInterval_s');
+    usesDynamicCells = isfield(proof, 'Coverage') && ...
+        isfield(proof.Coverage, 'ActiveTimeInterval_s');
     if usesDynamicCells
         cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
             result.Inputs.initialState.time_s, coverageEnd_s);
@@ -417,11 +417,11 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         starts_s       = result.Polynomial.SegmentStartTime_s;
         ends_s         = starts_s + result.Polynomial.SegmentDuration_s;
         expectedActive = starts_s < cells.ActiveTimeInterval_s(:, 2).' & ends_s > cells.ActiveTimeInterval_s(:, 1).';
-        coverageDiffers = ~isequal(certificate.Coverage.ActiveTimeInterval_s, cells.ActiveTimeInterval_s) || ...
-            ~isfield(certificate.Coverage, 'EndRegions_units') || ...
-            ~isequal(certificate.Coverage.EndRegions_units, cells.EndRegions_units);
+        coverageDiffers = ~isequal(proof.Coverage.ActiveTimeInterval_s, cells.ActiveTimeInterval_s) || ...
+            ~isfield(proof.Coverage, 'EndRegions_units') || ...
+            ~isequal(proof.Coverage.EndRegions_units, cells.EndRegions_units);
         if coverageDiffers
-            certificateIsValid = false;
+            proofIsValid = false;
             return
         end
     else
@@ -433,25 +433,25 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
         end
         expectedActive = true(size(positionPower_units, 1), numel(regions_units));
 
-        % Static certificates cannot certify changing geometry or activity.
+        % Static proofs cannot prove changing geometry or activity.
         for obstacleIndex = 1:numel(authoritativeObstacles)
             obstacle = authoritativeObstacles(obstacleIndex);
             spanIsUncovered = numel(obstacle.time_s) > 1 && ...
                 (result.time_s(1) < obstacle.time_s(1) || result.time_s(end) > obstacle.time_s(end));
             if ~obstacle.InternalPreparation.IsTimeInvariant || spanIsUncovered
-                certificateIsValid = false;
+                proofIsValid = false;
                 return
             end
         end
     end
 
-    activePairs        = certificate.RegionActiveBySegment;
+    activePairs        = proof.RegionActiveBySegment;
     expectedPairCount  = nnz(expectedActive);
-    certificateIsValid = certificate.Passed && isequaln(certificate.Regions_units, regions_units) && ...
-        isequal(activePairs, expectedActive) && isequal(size(activePairs), size(certificate.Planes)) && ...
-        certificate.AllPairCount == expectedPairCount && certificate.VerifiedPairCount == expectedPairCount && ...
-        certificate.ExactRegionCount == numel(regions_units) && certificate.SolverRegionCount == numel(regions_units);
-    if ~certificateIsValid
+    proofIsValid = proof.Passed && isequaln(proof.Regions_units, regions_units) && ...
+        isequal(activePairs, expectedActive) && isequal(size(activePairs), size(proof.Planes)) && ...
+        proof.AllPairCount == expectedPairCount && proof.VerifiedPairCount == expectedPairCount && ...
+        proof.ExactRegionCount == numel(regions_units) && proof.SolverRegionCount == numel(regions_units);
+    if ~proofIsValid
         return
     end
 
@@ -463,10 +463,10 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
     [~, reserve_units] = bmtpEngine.validation.createCoordinateTolerances(result.Route_units, ...
         result.Limits.xInterval_units, result.Limits.yInterval_units, regions_units, endRegions_units);
     target_units = (1 + 2^20 * eps) * result.Options.CollisionClearanceTolerance_units + reserve_units;
-    toleranceDiffers = ~isequal(certificate.RoundoffReserve_units, reserve_units) || ...
-        ~isequal(certificate.RequiredGap_units, target_units + reserve_units);
+    toleranceDiffers = ~isequal(proof.RoundoffReserve_units, reserve_units) || ...
+        ~isequal(proof.RequiredGap_units, target_units + reserve_units);
     if toleranceDiffers
-        certificateIsValid = false;
+        proofIsValid = false;
         return
     end
 
@@ -475,10 +475,10 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
             % Recheck every independently rebuilt static cell in one batch.
             % The coefficient products, gap, and roundoff conditions match
             % the scalar verifier used for affine time-dependent geometry.
-            verifiedPlanes = bmtpEngine.separation.verifyStaticSeparatingLines(certificate.Planes(segmentIndex, :), ...
+            verifiedPlanes = bmtpEngine.separation.verifyStaticSeparatingLines(proof.Planes(segmentIndex, :), ...
                 squeeze(controlPoint_units(segmentIndex, :, :)), regions_units, reserve_units, target_units);
             if ~all([verifiedPlanes.Verified])
-                certificateIsValid = false;
+                proofIsValid = false;
                 return
             end
             continue
@@ -510,11 +510,11 @@ function certificateIsValid = verifyPlaneCertificate(result, positionPower_units
                 lastRegions_units{localRegionIndex}  = vertices_units(:, :, end);
             end
             verifiedPlanes = bmtpEngine.separation.verifyMovingSeparatingLines( ...
-                certificate.Planes(segmentIndex, groupRegionIndices), ...
+                proof.Planes(segmentIndex, groupRegionIndices), ...
                 restricted_units, firstRegions_units, lastRegions_units, ...
                 reserve_units, target_units);
             if ~all([verifiedPlanes.Verified])
-                certificateIsValid = false;
+                proofIsValid = false;
                 return
             end
         end

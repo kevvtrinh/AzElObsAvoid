@@ -21,9 +21,9 @@ function testMovingObstacle220Quality(testCase)
     referenceLength_units=121.503236303671;
     verifyLessThanOrEqual(testCase,abs( ...
         result.MotionLength_units/referenceLength_units-1),0.01);
-    verifyGreaterThan(testCase,result.PlaneCertificate.MinimumSignedGap_units,0);
+    verifyGreaterThan(testCase,result.SeparationProof.MinimumSignedGap_units,0);
     verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyGreaterThan(testCase,result.PlaneCertificate.CachedGeometryPairCount,0);
+    verifyGreaterThan(testCase,result.SeparationProof.CachedGeometryPairCount,0);
     verifyGreaterThan(testCase,result.SolverDiagnostics.FullPlaneUpdateSkippedCount,0);
     verifyGreaterThan(testCase, ...
         result.SolverDiagnostics.ConstraintRowPairVerificationCount,0);

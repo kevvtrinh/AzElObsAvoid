@@ -28,7 +28,7 @@ generation, independent validation, and plots of those returned core results.
   stages around it.
 - Before changing a downstream solver or validator, reproduce the failure by hand
   at each stage boundary and distinguish proposal, timing, kinematic, clearance,
-  certification, and selection failures. Preserve the physical inputs while doing
+  proof, and selection failures. Preserve the physical inputs while doing
   so; diagnostic labels and provenance must never change planner behavior.
 - Use BMTP for motion generation. Keep any future heuristic out until identical,
   deterministic benchmarks demonstrate a necessary benefit without a correctness

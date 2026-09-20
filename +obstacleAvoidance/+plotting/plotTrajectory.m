@@ -112,7 +112,7 @@ plotTimeRange_s = [result.Inputs.initialState.time_s, plotHorizon_s];
 obstacles       = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles, plotTimeRange_s);
 originalObstacles = obstacles;
 if options.ShowWorkspace || options.ShowVisibilityGraphs || options.ShowAnimation || options.SaveAnimationGif
-    % The shared evaluator draws swept-cell unions inside their intervals.
+    % The shared evaluator draws moving-cell-cell unions inside their intervals.
     % Reuse protected geometry verbatim. Cache the original histories once
     % for display, without constructing or applying another safety margin.
     for obstacleIndex = 1:numel(originalObstacles)

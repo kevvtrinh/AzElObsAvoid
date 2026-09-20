@@ -28,7 +28,7 @@ function [result, diagnostics] = solveAlternatingTrajectory( ...
 %       constraint planes the returned motion satisfied. A plane's gap is the
 %       one measured when it was built or last verified; a motion accepted by
 %       the constraint-row proof keeps those planes unchanged, and the final
-%       motion is certified again independently. An expected infeasible solve
+%       motion is proven again independently. An expected infeasible solve
 %       returns Success = false with empty controls. Invalid input throws an
 %       error.
 %   - diagnostics (scalar struct)
@@ -121,7 +121,7 @@ if allPlanesActive
             output.MaximumClearanceSlack_units + ...
             max(0, output.MaximumPlaneConstraintResidual) <= roundoffReserve_units;
         if rowProofComplete
-            % Every plane's obstacle side was fixed and certified when it was
+            % Every plane's obstacle side was fixed and proven when it was
             % constructed. Zero-reserve elastic slack plus complete exact row
             % separation proves the trajectory side for every pair directly,
             % so no per-pair verification runs and the planes keep the gaps

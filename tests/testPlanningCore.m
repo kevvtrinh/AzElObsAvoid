@@ -85,7 +85,7 @@ function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
             baseResult.Limits, baseResult.Options);
         preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controlPoint_units, ...
             request.MotionHorizon_s + clockOffset_s);
-        output = createCertifiedOutput(baseResult, request, preparedMotion);
+        output = createProvenOutput(baseResult, request, preparedMotion);
         validation = obstacleAvoidance.validateTrajectory(output);
 
         verifyEqual(testCase, preparedMotion.Success, expectedAcceptance(settingIndex));
@@ -131,7 +131,7 @@ function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
             altered.Inputs.initialState.time_s = ...
                 altered.Inputs.initialState.time_s + clockOffset_s;
             validation = obstacleAvoidance.validateTrajectory(altered);
-            verifyFalse(testCase, validation.PlaneCertificateValid);
+            verifyFalse(testCase, validation.SeparationProofValid);
         end
     end
 end
@@ -190,7 +190,7 @@ function testDetourAndTampering(testCase)
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
     altered = r; altered.Polynomial.jerkPower_units_s3(1,1,1) = 1e4;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
-    altered = r; altered.PlaneCertificate.Regions_units = {};
+    altered = r; altered.SeparationProof.Regions_units = {};
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
 
@@ -207,8 +207,8 @@ function testNoPath(testCase)
     verifyEqual(testCase,earliest.Attempts.FailureKind,"noSpatialRoute");
 end
 
-function testSweptFringeBlocksTerminalReachability(testCase)
-    % The swept enclosure hulls carried triangles with margin squares, so it
+function testMovingCellFringeBlocksTerminalReachability(testCase)
+    % The moving-cell enclosure hulls carried triangles with margin squares, so it
     % reaches past every protected sample. A fixed goal that is free of the
     % samples but inside that fringe must still be proven unreachable before
     % any planning stage runs.
@@ -220,7 +220,7 @@ function testSweptFringeBlocksTerminalReachability(testCase)
     prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,10],true);
     goal = struct('time_s',10,'position_units',[2.3,0]);
     verifyTrue(testCase,all(cellfun(@max,prepared.x_units) < goal.position_units(1)));
-    verifyTrue(testCase,prepared.InternalPreparation.IntervalUsesSweptCells(1));
+    verifyTrue(testCase,prepared.InternalPreparation.IntervalUsesMovingCells(1));
     initial = struct('time_s',0,'position_units',[-5,0]);
     limits = struct('xInterval_units',[-8,8],'yInterval_units',[-8,8], ...
         'maxVelocity_units_s',[3,3],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
@@ -249,10 +249,10 @@ function testHoleAndDisconnectedRegions(testCase)
     shape = subtract(outer,inner);
     scene = struct('ProtectedShape',shape);
     opts = struct('ConstraintTolerance',1e-8);
-    skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene,testCase.TestData.Limits,opts);
-    graph = obstacleAvoidance.search.createVisibilityGraph(skeleton,[-0.5 0],[0.5 0]);
+    vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,testCase.TestData.Limits,opts);
+    graph = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,[-0.5 0],[0.5 0]);
     verifyEqual(testCase,graph.RouteLength_units,1,'AbsTol',1e-12);
-    graph = obstacleAvoidance.search.createVisibilityGraph(skeleton,[0 0],[4 0]);
+    graph = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,[0 0],[4 0]);
     verifyFalse(testCase,graph.IsConnected);
 end
 
@@ -270,8 +270,8 @@ function testVisibilityMatchesExhaustiveReference(testCase)
         end
         initial_units = [-9,rand*2-1]; goal_units = [9,rand*2-1];
         reference = createVisibilityGraphBaseline(scene,initial_units,goal_units,limits,options);
-        skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene,limits,options);
-        actual = obstacleAvoidance.search.createVisibilityGraph(skeleton,initial_units,goal_units);
+        vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,initial_units,goal_units);
         verifyEqual(testCase,actual.IsConnected,reference.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
         verifyTrue(testCase,actual.GraphIsFullyEnumerated);
@@ -296,8 +296,8 @@ function testBatchedContactsHolesAndConcavities(testCase)
     expectedLength_units = [16+sqrt(29);sqrt(2);18;14;14];
     for k = 1:numel(shapes)
         scene = struct('ProtectedShape',shapes{k},'ProtectedVertices_units',shapes{k}.Vertices);
-        skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene,limits,options);
-        actual = obstacleAvoidance.search.createVisibilityGraph(skeleton,starts(k,:),goals(k,:));
+        vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,starts(k,:),goals(k,:));
         verifyTrue(testCase,actual.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,expectedLength_units(k),'AbsTol',1e-8);
     end
@@ -318,8 +318,8 @@ function testReflectedAndTranslatedConcavities(testCase)
                 vertices=shapes{k}.Vertices*rotation+offset;
                 shape=polyshape(vertices(:,1),vertices(:,2));
                 scene=struct('ProtectedShape',shape);
-                skeleton=obstacleAvoidance.search.createVisibilitySkeleton(scene,limits,struct('ConstraintTolerance',1e-8));
-                graph=obstacleAvoidance.search.createVisibilityGraph(skeleton,starts(k,:)*rotation+offset, ...
+                vertexVisibility=obstacleAvoidance.search.createVertexVisibility(scene,limits,struct('ConstraintTolerance',1e-8));
+                graph=obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,starts(k,:)*rotation+offset, ...
                     goals(k,:)*rotation+offset);
                 verifyTrue(testCase,graph.IsConnected);
                 verifyEqual(testCase,graph.RouteLength_units,lengths(k),'AbsTol',1e-8);
@@ -328,12 +328,12 @@ function testReflectedAndTranslatedConcavities(testCase)
     end
 end
 
-function output = createCertifiedOutput(baseResult, request, preparedMotion)
+function output = createProvenOutput(baseResult, request, preparedMotion)
     % Build an adversarial validator fixture without stale planner decisions.
-    reserve_units = baseResult.PlaneCertificate.RoundoffReserve_units;
-    target_units  = baseResult.PlaneCertificate.RequiredGap_units - reserve_units;
-    output = rmfield(baseResult, {'Validation', 'SolverDiagnostics', 'PlaneCertificate'});
+    reserve_units = baseResult.SeparationProof.RoundoffReserve_units;
+    target_units  = baseResult.SeparationProof.RequiredGap_units - reserve_units;
+    output = rmfield(baseResult, {'Validation', 'SolverDiagnostics', 'SeparationProof'});
     output = bmtpEngine.pipeline.createMotionOutput(output, request, preparedMotion);
-    output.PlaneCertificate = bmtpEngine.validation.checkFinalMotion( ...
+    output.SeparationProof = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, reserve_units, target_units);
 end
