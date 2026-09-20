@@ -20,7 +20,8 @@ function outerRequest = createOuterRequest(request, requestContext)
 % OUTPUTS
 %   - outerRequest (scalar struct)
 %       Private provenance for a derived request. EndpointValidation and
-%       InitialSkeleton are always present; an empty Key means no product.
+%       InitialSkeleton are always present; an empty Key, and for the
+%       validation Feasible = false, means no product to reuse.
 %**************************************************************************
 % UNITS
 %   - Time is seconds and positions are coordinate units.

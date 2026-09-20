@@ -21,7 +21,8 @@ function result = planRequest(obstacles, initialState, goalState, limits, option
 %   - options (scalar struct)
 %       Planner option overrides.
 %   - outerRequest (scalar struct or [])
-%       Private provenance for a derived request.
+%       Private provenance for a derived request, built by
+%       obstacleAvoidance.planning.createOuterRequest; [] for a public call.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)

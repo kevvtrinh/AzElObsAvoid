@@ -99,11 +99,9 @@ handles         = createEmptyHandles(options);
 % clock is that trial's, not the horizon the caller asked about. Plot the
 % requested horizon when the record still carries it.
 plotHorizon_s = result.Inputs.goalState.time_s;
-% Only a failure keeps an outer request, and its clock is optional metadata,
-% so accept it only when it is a usable scalar time, and never shrink the window.
-if ~result.Success && isfield(result, 'OuterRequest') && ...
-        isstruct(result.OuterRequest) && isscalar(result.OuterRequest) && ...
-        isfield(result.OuterRequest, 'GoalTime_s')
+% Only a failed derived request keeps its outer request; widen the window
+% to the outer clock and never shrink it.
+if ~result.Success && isfield(result, 'OuterRequest')
     outerHorizon_s = result.OuterRequest.GoalTime_s;
     if isnumeric(outerHorizon_s) && isscalar(outerHorizon_s) && ...
             isreal(outerHorizon_s) && isfinite(outerHorizon_s)

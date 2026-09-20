@@ -63,9 +63,7 @@ if ~isempty(outerRequest) && candidate.Success
     if isfield(outerRequest, 'RequestedLimits')
         acceptanceDeclaration.requestContext.requestedLimits = outerRequest.RequestedLimits;
     end
-    if isfield(outerRequest, 'Obstacles')
-        acceptanceDeclaration.requestContext.obstacles = outerRequest.Obstacles;
-    end
+    acceptanceDeclaration.requestContext.obstacles = outerRequest.Obstacles;
     if isfield(outerRequest, 'WrapX')
         acceptanceDeclaration.request.options.WrapX = outerRequest.WrapX;
         acceptanceDeclaration.request.options.WrapY = outerRequest.WrapY;
