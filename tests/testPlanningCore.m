@@ -249,9 +249,10 @@ function testHoleAndDisconnectedRegions(testCase)
     shape = subtract(outer,inner);
     scene = struct('ProtectedShape',shape);
     opts = struct('ConstraintTolerance',1e-8);
-    graph = obstacleAvoidance.search.createVisibilityGraph(scene,[-0.5 0],[0.5 0],testCase.TestData.Limits,opts);
+    skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene,testCase.TestData.Limits,opts);
+    graph = obstacleAvoidance.search.createVisibilityGraph(skeleton,[-0.5 0],[0.5 0]);
     verifyEqual(testCase,graph.RouteLength_units,1,'AbsTol',1e-12);
-    graph = obstacleAvoidance.search.createVisibilityGraph(scene,[0 0],[4 0],testCase.TestData.Limits,opts);
+    graph = obstacleAvoidance.search.createVisibilityGraph(skeleton,[0 0],[4 0]);
     verifyFalse(testCase,graph.IsConnected);
 end
 
@@ -269,7 +270,8 @@ function testVisibilityMatchesExhaustiveReference(testCase)
         end
         initial_units = [-9,rand*2-1]; goal_units = [9,rand*2-1];
         reference = createVisibilityGraphBaseline(scene,initial_units,goal_units,limits,options);
-        actual = obstacleAvoidance.search.createVisibilityGraph(scene,initial_units,goal_units,limits,options);
+        skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(skeleton,initial_units,goal_units);
         verifyEqual(testCase,actual.IsConnected,reference.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
         verifyTrue(testCase,actual.GraphIsFullyEnumerated);
@@ -294,7 +296,8 @@ function testBatchedContactsHolesAndConcavities(testCase)
     expectedLength_units = [16+sqrt(29);sqrt(2);18;14;14];
     for k = 1:numel(shapes)
         scene = struct('ProtectedShape',shapes{k},'ProtectedVertices_units',shapes{k}.Vertices);
-        actual = obstacleAvoidance.search.createVisibilityGraph(scene,starts(k,:),goals(k,:),limits,options);
+        skeleton = obstacleAvoidance.search.createVisibilitySkeleton(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(skeleton,starts(k,:),goals(k,:));
         verifyTrue(testCase,actual.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,expectedLength_units(k),'AbsTol',1e-8);
     end
@@ -315,8 +318,9 @@ function testReflectedAndTranslatedConcavities(testCase)
                 vertices=shapes{k}.Vertices*rotation+offset;
                 shape=polyshape(vertices(:,1),vertices(:,2));
                 scene=struct('ProtectedShape',shape);
-                graph=obstacleAvoidance.search.createVisibilityGraph(scene,starts(k,:)*rotation+offset, ...
-                    goals(k,:)*rotation+offset,limits,struct('ConstraintTolerance',1e-8));
+                skeleton=obstacleAvoidance.search.createVisibilitySkeleton(scene,limits,struct('ConstraintTolerance',1e-8));
+                graph=obstacleAvoidance.search.createVisibilityGraph(skeleton,starts(k,:)*rotation+offset, ...
+                    goals(k,:)*rotation+offset);
                 verifyTrue(testCase,graph.IsConnected);
                 verifyEqual(testCase,graph.RouteLength_units,lengths(k),'AbsTol',1e-8);
             end
