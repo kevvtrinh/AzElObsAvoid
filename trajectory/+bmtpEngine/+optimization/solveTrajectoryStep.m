@@ -1,57 +1,30 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = solveTrajectoryStep( ...
-    segmentCount, degree, initialState, goalState, limits, planes, ...
-    roundoffReserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, ...
-    intrinsicVariationEnabled, constraintBase)
+function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
+        solveTrajectoryStep(request, step)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
-%       bmtpEngine.optimization.solveTrajectoryStep(segmentCount, degree, initialState, ...
-%       goalState, limits, planes, roundoffReserve_units, maximumMotionDuration_s, ...
-%       options)
-%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
-%       bmtpEngine.optimization.solveTrajectoryStep(segmentCount, degree, initialState, ...
-%       goalState, limits, planes, roundoffReserve_units, maximumMotionDuration_s, ...
-%       options, segmentRatio, fixedClock)
-%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
-%       bmtpEngine.optimization.solveTrajectoryStep(..., segmentRatio, ...
-%       fixedClock, intrinsicVariationEnabled)
 %   [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
-%       bmtpEngine.optimization.solveTrajectoryStep(..., segmentRatio, ...
-%       fixedClock, intrinsicVariationEnabled, constraintBase)
+%       bmtpEngine.optimization.solveTrajectoryStep(request, step)
 %**************************************************************************
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
 %     policy, and derivative limits.
 %**************************************************************************
 % INPUTS
-%   - segmentCount (positive integer scalar)
-%       Number of composite Bezier segments.
-%   - degree (positive integer scalar)
-%       Degree of each Bezier segment.
-%   - initialState (scalar struct)
-%       Normalized initial position, velocity, and acceleration.
-%   - goalState (scalar struct)
-%       Normalized goal position, velocity, and acceleration.
-%   - limits (scalar struct)
-%       Workspace, velocity, acceleration, and jerk limits.
-%   - planes (S-by-R struct array)
-%       Fixed separating lines. TimeFraction scopes each active plane to a
-%       closed part of a fixed-duration motion span.
-%   - roundoffReserve_units (nonnegative scalar)
-%       Numerical separation reserve.
-%   - maximumMotionDuration_s (positive scalar)
-%       Upper bound on the internal minimum-time solve.
-%   - options (coneprog options)
-%       Numerical solver controls.
-%   - segmentRatio (S-by-1 positive vector)
-%       Relative segment durations; omitted input defaults to all ones.
-%   - fixedClock (logical scalar)
-%       Whether to prescribe the segment clock; omitted input defaults false.
-%   - intrinsicVariationEnabled (logical scalar)
-%       Whether surplus fixed-clock spans use the equivalent integrated-snap
-%       tie-break; omitted input defaults true.
-%   - constraintBase (scalar struct, optional)
-%       Reusable invariant constraint arrays for the unchanged formulation.
+%   - request (scalar struct)
+%       The engine solve request from createSolveRequest. This step reads
+%       Degree, InitialState, GoalState, Limits, and TrajectoryOptions.
+%   - step (scalar struct)
+%       What this one step is asked to do, every field required:
+%       SegmentCount (positive integer), Planes (S-by-R struct array of
+%       fixed separating lines whose TimeFraction scopes each active plane
+%       to a closed part of the span), RoundoffReserve_units (nonnegative
+%       scalar), MaximumMotionDuration_s (positive scalar upper bound on the
+%       internal minimum-time solve), SegmentRatio (S-by-1 positive relative
+%       segment durations), FixedClock (logical: prescribe the segment
+%       clock), IntrinsicVariationEnabled (logical: surplus fixed-clock
+%       spans use the integrated-snap tie-break), and ConstraintBase (the
+%       reusable invariant constraint arrays from an earlier step with the
+%       same formulation, or struct() to build them).
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -70,20 +43,26 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Create Decision Bounds And Continuity Rows
+%% Section 1: Read The Step And The Request, Then Create Decision Bounds
+validateattributes(step, {'struct'}, {'scalar'});
+stepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
+    "SegmentRatio", "FixedClock", "IntrinsicVariationEnabled", "ConstraintBase"];
+assert(all(isfield(step, stepFields)), 'bmtpEngine:InvalidStep', ...
+    'A trajectory step declares every one of: %s.', strjoin(stepFields, ', '));
+segmentCount              = step.SegmentCount;
+planes                    = step.Planes;
+roundoffReserve_units     = step.RoundoffReserve_units;
+maximumMotionDuration_s   = step.MaximumMotionDuration_s;
+segmentRatio              = step.SegmentRatio;
+fixedClock                = step.FixedClock;
+intrinsicVariationEnabled = step.IntrinsicVariationEnabled;
+constraintBase            = step.ConstraintBase;
+degree       = request.Degree;
+initialState = request.InitialState;
+goalState    = request.GoalState;
+limits       = request.Limits;
+options      = request.TrajectoryOptions;
 controlCount = segmentCount * (degree + 1) * 2;
-if nargin < 10
-    segmentRatio = ones(segmentCount, 1);
-end
-if nargin < 11
-    fixedClock = false;
-end
-if nargin < 12
-    intrinsicVariationEnabled = true;
-end
-if nargin < 13
-    constraintBase = struct();
-end
 originalPlaneCount = nnz([planes.Active]);
 partialPlanes      = false;
 if ~isempty(planes)
@@ -266,13 +245,17 @@ solverTimes_s = [];
 if intrinsicVariation
     solverTimes_s = physicalTimes_s;
 end
+% The conic program is one product; constraint generation grows its
+% inequality rows between solves.
+program = struct('f', f, 'cones', cones, 'A', A, 'b', b, 'Aeq', Aeq, 'beq', beq, ...
+    'lb', lb, 'ub', ub);
 retainedPlanePairs = initialPlanePairs;
 solveCount         = 0;
 constraintGenerationComplete   = ~fixedClock;
 maximumPlaneConstraintResidual = NaN;
 while true
-    [x, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, ...
-        options, ~intrinsicVariation, solverTimes_s, limits);
+    [x, exitFlag, output] = solveConic(program, options, ~intrinsicVariation, ...
+        solverTimes_s, limits);
     solveCount = solveCount + 1;
     if ~fixedClock || ~bmtpEngine.optimization.hasUsableConicIterate(x, exitFlag)
         break
@@ -283,9 +266,9 @@ while true
         options.ConstraintTolerance);
     if ~any(violatedPairs, 'all')
         loadedResidual = -Inf;
-        if size(A, 1) > baseInequalityCount
-            loadedResidual = max(A(baseInequalityCount + 1:end, :) * x - ...
-                b(baseInequalityCount + 1:end));
+        if size(program.A, 1) > baseInequalityCount
+            loadedResidual = max(program.A(baseInequalityCount + 1:end, :) * x - ...
+                program.b(baseInequalityCount + 1:end));
         end
         maximumPlaneConstraintResidual = max(loadedResidual, maximumOmittedResidual);
         constraintGenerationComplete = ...
@@ -295,8 +278,8 @@ while true
     retainedPlanePairs = retainedPlanePairs | violatedPairs;
     [newRows, newBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
         violatedPairs, degree, variableCount, slackColumnByPair, 2 * roundoffReserve_units);
-    A = [A; newRows];
-    b = [b; newBounds];
+    program.A = [program.A; newRows];
+    program.b = [program.b; newBounds];
 end
 output.TotalTime_s                    = toc(solverTimer);
 output.SolveCount                     = solveCount;
@@ -327,10 +310,18 @@ controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCo
 end
 
 %% Section 4: Local Functions
-function [x, exitFlag, output] = solveConic( ...
-    f, cones, A, b, Aeq, beq, lb, ub, options, givenAxis, phaseTimes_s, limits)
-    % Solve in a locally conditioned variable space when physical phase
-    % times are given, then restore the original decision vector.
+function [x, exitFlag, output] = solveConic(program, options, givenAxis, phaseTimes_s, limits)
+    % Solve one conic program (f, cones, A, b, Aeq, beq, lb, ub) in a locally
+    % conditioned variable space when physical phase times are given, then
+    % restore the original decision vector.
+    f     = program.f;
+    cones = program.cones;
+    A     = program.A;
+    b     = program.b;
+    Aeq   = program.Aeq;
+    beq   = program.beq;
+    lb    = program.lb;
+    ub    = program.ub;
     transform = [];
     center    = [];
     if ~isempty(phaseTimes_s)

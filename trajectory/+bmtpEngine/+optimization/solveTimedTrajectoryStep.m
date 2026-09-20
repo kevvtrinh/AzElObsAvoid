@@ -1,53 +1,30 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = solveTimedTrajectoryStep( ...
-    segmentCount, degree, start_units, goal_units, limits, planes, ...
-    roundoffReserve_units, maximumMotionDuration_s, goalTimeMode, options, ...
-    minimumMotionDuration_s, segmentRatio, constraintBase)
+function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
+        solveTimedTrajectoryStep(request, step)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
-%       bmtpEngine.optimization.solveTimedTrajectoryStep(segmentCount, degree, ...
-%       start_units, goal_units, limits, planes, roundoffReserve_units, ...
-%       maximumMotionDuration_s, goalTimeMode, options)
-%   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
-%       bmtpEngine.optimization.solveTimedTrajectoryStep(segmentCount, degree, ...
-%       start_units, goal_units, limits, planes, roundoffReserve_units, ...
-%       maximumMotionDuration_s, goalTimeMode, options, ...
-%       minimumMotionDuration_s, segmentRatio)
 %   [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
-%       bmtpEngine.optimization.solveTimedTrajectoryStep(..., ...
-%       minimumMotionDuration_s, segmentRatio, constraintBase)
+%       bmtpEngine.optimization.solveTimedTrajectoryStep(request, step)
 %**************************************************************************
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
 %     policy, and derivative limits.
 %**************************************************************************
 % INPUTS
-%   - segmentCount (positive integer scalar)
-%       Number of composite Bezier segments.
-%   - degree (positive integer scalar)
-%       Degree of each Bezier segment.
-%   - start_units (1-by-2 numeric row)
-%       Fixed initial position.
-%   - goal_units (1-by-2 numeric row)
-%       Fixed goal position.
-%   - limits (scalar struct)
-%       Workspace, velocity, acceleration, and jerk limits.
-%   - planes (S-by-R struct array)
-%       Fixed active separating-line constraints.
-%   - roundoffReserve_units (nonnegative scalar)
-%       Numerical separation reserve.
-%   - maximumMotionDuration_s (positive scalar)
-%       Upper bound or fixed motion duration.
-%   - goalTimeMode (scalar text)
-%       earliestArrival or fixedArrival.
-%   - options (coneprog options)
-%       Numerical solver controls.
-%   - minimumMotionDuration_s (nonnegative scalar, optional; default 0)
-%       Lower arrival bound, at most maximumMotionDuration_s.
-%   - segmentRatio (S-by-1 positive vector, optional; default all ones)
-%       Relative physical span durations.
-%   - constraintBase (scalar struct, optional)
-%       Reusable invariant constraint arrays for the unchanged formulation.
+%   - request (scalar struct)
+%       The engine solve request from createSolveRequest. This step reads
+%       Degree, the InitialState and GoalState positions, Limits, and
+%       TimedTrajectoryOptions.
+%   - step (scalar struct)
+%       What this one step is asked to do, every field required:
+%       SegmentCount (positive integer), Planes (S-by-R struct array of
+%       fixed active separating lines), RoundoffReserve_units (nonnegative
+%       scalar), MaximumMotionDuration_s (positive scalar upper bound or
+%       fixed duration), GoalTimeMode (earliestArrival or fixedArrival),
+%       MinimumMotionDuration_s (nonnegative scalar lower arrival bound, at
+%       most the maximum), SegmentRatio (S-by-1 positive relative span
+%       durations, or [] for one common segment time), and ConstraintBase
+%       (the reusable invariant constraint arrays from an earlier step with
+%       the same formulation, or struct() to build them).
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -55,7 +32,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %       Invalid input throws an error.
 %   - segmentTime_s (numeric scalar or S-by-1 numeric vector)
 %       Common segment time, or the per-segment durations implied by
-%       segmentRatio. NaN on expected solve failure.
+%       SegmentRatio. NaN on expected solve failure.
 %   - exitFlag (numeric scalar)
 %       Original coneprog status.
 %   - output (scalar struct)
@@ -68,16 +45,28 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Create Decision Bounds And Continuity Rows
-if nargin < 11
-    minimumMotionDuration_s = 0;
-end
-returnsCommonSegmentTime = nargin < 12 || isempty(segmentRatio);
+%% Section 1: Read The Step And The Request, Then Create Decision Bounds
+validateattributes(step, {'struct'}, {'scalar'});
+stepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
+    "GoalTimeMode", "MinimumMotionDuration_s", "SegmentRatio", "ConstraintBase"];
+assert(all(isfield(step, stepFields)), 'bmtpEngine:InvalidStep', ...
+    'A timed trajectory step declares every one of: %s.', strjoin(stepFields, ', '));
+segmentCount            = step.SegmentCount;
+planes                  = step.Planes;
+roundoffReserve_units   = step.RoundoffReserve_units;
+maximumMotionDuration_s = step.MaximumMotionDuration_s;
+goalTimeMode            = step.GoalTimeMode;
+minimumMotionDuration_s = step.MinimumMotionDuration_s;
+segmentRatio            = step.SegmentRatio;
+constraintBase          = step.ConstraintBase;
+degree      = request.Degree;
+start_units = request.InitialState.position_units;
+goal_units  = request.GoalState.position_units;
+limits      = request.Limits;
+options     = request.TimedTrajectoryOptions;
+returnsCommonSegmentTime = isempty(segmentRatio);
 if returnsCommonSegmentTime
     segmentRatio = ones(segmentCount, 1);
-end
-if nargin < 13
-    constraintBase = struct();
 end
 segmentRatio = double(segmentRatio(:));
 validateattributes(segmentRatio, {'numeric'}, ...
