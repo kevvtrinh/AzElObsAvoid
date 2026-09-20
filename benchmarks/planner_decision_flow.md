@@ -50,7 +50,7 @@ flowchart TD
         F0 -- no --> F1["Exhaustive exact spatial visibility graph"]
         F1 --> F2{"Connected?"}
         F2 -- no --> FN["Return noVisibilityRoute"]
-        F2 -- yes --> FB["BMTP on prescribed clock"]
+        F2 -- yes --> FB["BMTP on given clock"]
         FB --> FBA{"Result after solver, proof,<br/>and public acceptance gate"}
         FBA -- "validated" --> O
         FBA -- "otherwise" --> FTERM
@@ -205,9 +205,9 @@ deterministic comparison fields.
 | Endpoint derivative or workspace violation | `testEndpointDerivativeLimit`, `testEndpointOutsideWorkspace`, `testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning` | Stable endpoint reason before search | Required physical-input boundary |
 | Necessary travel time exceeds fixed horizon | `testPlannerDecisionFlow/testTimeWindowInfeasible` | Returns `timeWindowInfeasible` | Required physical lower bound |
 | Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in the unwrapped coordinates: obstacle copies that meet the reachable range, a target unwrapped by continuity, every goal copy in the reachable range planned nearest first and the best valid candidate accepted against the wrapped request in the one gate | Required coordinate policy |
-| Fixed direct chord | `testPlanningCore/testDirect` | Minimum-jerk quintic at the prescribed horizon, public validation | Retained analytic specialization |
+| Fixed direct chord | `testPlanningCore/testDirect` | Minimum-jerk quintic at the given horizon, public validation | Retained analytic specialization |
 | Fixed static detour | `testPlanningCore/testDetourAndTampering`, explicit default detour inputs | Exhaustive exact spatial visibility graph and static BMTP | Retained |
-| Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesPrescribedDeadline`) | The initial exact spatial route proves in the initial BMTP pass or its first refined pass | Retained as first guide |
+| Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesGivenDeadline`) | The initial exact spatial route proves in the initial BMTP pass or its first refined pass | Retained as first guide |
 | Fixed dynamic arrival-snapshot proof | random case 26 with static obstacle, `exampleSpinningUAtStartAndGoal`, `testArrivalSearchRegressions/testArrivalSnapshotFindsAnOpeningMissingAtInitialTime` | A distinct exact route on the arrival-time snapshot is tried only when the initial proof failed and the arrival route differs; identical routes are never solved twice | Retained; second physical guide |
 | Fixed dynamic timed guide | `testFixedTimedVisibility/testPersistentSpatialPairsUseTimedSeed` | One time-expanded route on the fixed clock, only after both spatial guides fail to prove | Retained; third physical guide |
 | Fixed dynamic initially blocked or disconnected snapshot | `testInitiallyOccupiedFutureGoalUsesTemporalSeed`, `testDisconnectedDynamicSnapshotUsesTemporalSeed` | A temporal direct seed is checked against exact timed cells and public validation | Retained; a static no-route cannot reject a future opening |

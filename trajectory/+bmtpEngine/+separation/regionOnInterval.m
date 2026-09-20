@@ -58,7 +58,7 @@ fraction    = min(1, max(0, fraction));
 delta_units = endVertices_units - region_units;
 first_units = region_units + fraction(1) * delta_units;
 last_units  = region_units + fraction(2) * delta_units;
-% Preserve the authoritative stored endpoints exactly. Besides avoiding an
+% Preserve the supplied stored endpoints exactly. Besides avoiding an
 % unnecessary roundoff step, this makes full-cell geometry safe to cache.
 if fraction(1) == 0
     first_units = region_units;

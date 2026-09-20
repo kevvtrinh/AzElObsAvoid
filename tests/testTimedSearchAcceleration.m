@@ -152,7 +152,7 @@ function testBoundedPairCachePreservesExactSearch(testCase)
 
     % With at least two moving cells, 1,450 nodes exceed the eager cache
     % work bound. All extra nodes are disconnected, so only storage strategy
-    % changes and the same exact start-to-goal edge remains authoritative.
+    % changes and the same exact start-to-goal edge remains supplied.
     nodeCount   = 1450;
     nodes_units = [0, 0; 10, 0; ...
         (1001:1000 + nodeCount - 2).', 50 * ones(nodeCount - 2, 1)];

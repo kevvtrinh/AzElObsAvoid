@@ -65,7 +65,7 @@ The first moving-cell construction used axis-aligned margin squares of half-widt
 `safetyMargin_units`. That square contains the disc buffer but not the
 constructor's square-join protection: for the first US interval [0,5] s,
 exact Boolean subtraction found 0.002117077092612 and 0.001818174066173
-square units of the authoritative endpoint samples outside the candidate
+square units of the supplied endpoint samples outside the candidate
 moving-cell union, and a rotated unit square with 0.1-unit protection reproduces
 0.000655552753962 square units missing from its margin-square hull. A square
 join of distance `d` reaches at most `d*sqrt(2)` from the source, so the

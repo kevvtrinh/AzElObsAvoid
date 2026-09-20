@@ -1,10 +1,10 @@
 function planes = verifyMovingSeparatingLines(planes, controlPoint_units, ...
-        firstRegions_units, lastRegions_units, reserve_units, target_units)
+        firstRegions_units, lastRegions_units, roundoffReserve_units, target_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   planes = bmtpEngine.separation.verifyMovingSeparatingLines(planes, ...
 %       controlPoint_units, firstRegions_units, lastRegions_units, ...
-%       reserve_units, target_units)
+%       roundoffReserve_units, target_units)
 %**************************************************************************
 % PURPOSE
 %   - Batch the scalar Bernstein plane bounds for affine moving cells.
@@ -16,8 +16,8 @@ function planes = verifyMovingSeparatingLines(planes, controlPoint_units, ...
 %       Common Bezier control points over the checked physical interval.
 %   - firstRegions_units, lastRegions_units (R-by-1 cell arrays)
 %       Corresponding convex-region vertices at the interval endpoints.
-%   - reserve_units, target_units (nonnegative numeric scalars)
-%       Required trajectory reserve and obstacle-side target.
+%   - roundoffReserve_units, target_units (nonnegative numeric scalars)
+%       Required trajectory roundoff reserve and obstacle-side target.
 %**************************************************************************
 % OUTPUTS
 %   - planes (R-element struct array)
@@ -91,7 +91,7 @@ scale_units = max([scale_units, max(abs(offsets_units), [], 2), ...
     repmat(max(1, max(abs(controlPoint_units), [], 'all')), regionCount, 1)], [], 2);
 [offsets_units, signedGap_units, verified] = bmtpEngine.separation.proveSeparation( ...
     minimumObstacle_units, maximumTrajectory_units, maximumNormalNorm, ...
-    offsets_units, 16 * eps(scale_units), reserve_units, target_units);
+    offsets_units, 16 * eps(scale_units), roundoffReserve_units, target_units);
 
 offsetCells = num2cell(offsets_units, 2);
 gapCells    = num2cell(signedGap_units);

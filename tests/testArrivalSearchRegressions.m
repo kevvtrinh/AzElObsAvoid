@@ -47,7 +47,7 @@ function testStaticSceneRetainsFreePointWait(testCase)
     verifyEqual(testCase,routeTime_s(end),goal.time_s,'AbsTol',1e-12);
     goalRows = all(abs(route_units-goal.position_units)<=1e-12,2);
     % The 0.4 s edge lands on the first layer at or after its physical
-    % arrival, then the free goal waits to the prescribed horizon.
+    % arrival, then the free goal waits to the given horizon.
     verifyGreaterThanOrEqual(testCase,nnz(goalRows),2);
     verifyEqual(testCase,routeTime_s(find(goalRows,1,'first')),1,'AbsTol',1e-12);
 end
@@ -55,7 +55,7 @@ end
 function testNonrestGoalRemainsAvailableAsTransitNode(testCase)
     % Endpoint timing must not remove the goal coordinate from the geometric
     % graph. This only feasible route crosses it early, visits a refuge, and
-    % returns at the prescribed nonrest terminal layer.
+    % returns at the given nonrest terminal layer.
     startBlocker_units = [-0.02,-0.08;0.02,-0.08;0.02,0.08;-0.02,0.08];
     startBlocker = obstacleAvoidance.obstacles.createObstacle( ...
         'start wait blocker',[0.2;3], ...

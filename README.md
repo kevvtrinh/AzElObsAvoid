@@ -83,7 +83,7 @@ and cannot weaken the independent acceptance gate.
 
 BMTP checks that supplied coverage metadata is internally consistent before it
 solves. That check is not treated as proof of coverage completeness: the public
-validator reconstructs authoritative obstacle coverage from the original
+validator reconstructs supplied obstacle coverage from the original
 request before any motion is accepted.
 
 ## Inputs
@@ -148,7 +148,7 @@ unwrapped coordinates.
 ## Outputs and validation
 
 Successful results contain sampled position, velocity, acceleration, and jerk;
-the authoritative piecewise polynomial; the selected route and visibility
+the supplied piecewise polynomial; the selected route and visibility
 evidence; prepared geometry; BMTP diagnostics; continuous plane proofs;
 and the independent validation record.
 
@@ -163,7 +163,7 @@ handles = obstacleAvoidance.plotting.plotTrajectory(result, ...
 Position spans are quintic for fixed and timed clocks and degree eight for
 static variable-clock BMTP. Position, velocity, acceleration, and jerk are
 continuous at internal joins. Endpoint position, velocity, and acceleration
-remain prescribed. No post-solve time stretching or tolerance weakening is
+remain given. No post-solve time stretching or tolerance weakening is
 used to make a candidate pass.
 
 ## Examples

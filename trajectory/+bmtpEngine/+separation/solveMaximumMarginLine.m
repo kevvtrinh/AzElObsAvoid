@@ -1,9 +1,9 @@
 function [plane, exitFlag, output] = solveMaximumMarginLine(controlPoint_units, ...
-        vertices_units, target_units, reserve_units, options)
+        vertices_units, target_units, roundoffReserve_units, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.separation.solveMaximumMarginLine( ...
-%       controlPoint_units, vertices_units, target_units, reserve_units, options)
+%       controlPoint_units, vertices_units, target_units, roundoffReserve_units, options)
 %**************************************************************************
 % PURPOSE
 %   - Solve and exactly verify a degree-one maximum-margin separating line
@@ -16,7 +16,7 @@ function [plane, exitFlag, output] = solveMaximumMarginLine(controlPoint_units, 
 %       Convex exclusion-region vertices.
 %   - target_units (nonnegative numeric scalar)
 %       Required obstacle-side separation target.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Numerical reserve applied on the trajectory side.
 %   - options (optim.options.Coneprog scalar)
 %       Options for the conic solver.
@@ -86,5 +86,5 @@ plane.Active       = true;
 plane.Normal       = reshape(solution(1:4), 2, []).';
 plane.Offset_units = solution(offsetIndex).';
 plane = bmtpEngine.separation.verifySeparatingLine( ...
-    plane, controlPoint_units, vertices_units, reserve_units, target_units);
+    plane, controlPoint_units, vertices_units, roundoffReserve_units, target_units);
 end

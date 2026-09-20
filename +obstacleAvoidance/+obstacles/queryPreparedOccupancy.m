@@ -80,7 +80,7 @@ for obstacleIndex = 1:numel(obstacles)
             continue;
         end
         % The shared evaluator returns the moving-cell-cell union at interior times
-        % and authoritative normalized geometry at sample times.
+        % and supplied normalized geometry at sample times.
         if ~isempty(cachedGeometry{timeIndex})
             geometry = cachedGeometry{timeIndex};
         else

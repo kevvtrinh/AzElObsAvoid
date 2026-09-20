@@ -1,8 +1,8 @@
-function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units)
+function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units, roundoffReserve_units, target_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   plane = bmtpEngine.separation.verifySeparatingLine(plane, controlPoint_units, ...
-%       vertices_units, reserve_units, target_units)
+%       vertices_units, roundoffReserve_units, target_units)
 %**************************************************************************
 % PURPOSE
 %   - Bound one degree-one separating line with direct Bernstein products,
@@ -15,7 +15,7 @@ function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units,
 %       Bezier control points for one motion span.
 %   - vertices_units (M-by-2 or M-by-2-by-2 numeric array)
 %       Static vertices or affine obstacle endpoint vertices.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Numerical reserve applied on the trajectory side.
 %   - target_units (nonnegative numeric scalar)
 %       Required obstacle-side separation target.
@@ -70,7 +70,7 @@ product_units = alpha .* [sum(controlPoint_units .* plane.Normal(1, :), 2); 0] +
 % Measuring the coordinate scale costs a pass over the obstacle and the hull,
 % so measure it only where an offset correction can actually be applied.
 roundoff_units = 0;
-if target_units - minimumObstacleSide_units <= -reserve_units - maximumTrajectorySide_units
+if target_units - minimumObstacleSide_units <= -roundoffReserve_units - maximumTrajectorySide_units
     finiteCoordinates_units = [plane.Offset_units(:); vertices_units(:); controlPoint_units(:)];
     finiteCoordinates_units = abs(finiteCoordinates_units(isfinite(finiteCoordinates_units)));
     scale_units             = max([1; finiteCoordinates_units]);
@@ -78,5 +78,5 @@ if target_units - minimumObstacleSide_units <= -reserve_units - maximumTrajector
 end
 [plane.Offset_units, plane.SignedGap_units, plane.Verified] = bmtpEngine.separation.proveSeparation( ...
     minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalNorm, ...
-    plane.Offset_units, roundoff_units, reserve_units, target_units);
+    plane.Offset_units, roundoff_units, roundoffReserve_units, target_units);
 end

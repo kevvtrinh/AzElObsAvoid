@@ -1,14 +1,14 @@
-function [result, diagnostics] = solveActivePairTrajectory(request, warmStart, diagnostics, target_units, reserve_units)
+function [result, diagnostics] = solveActivePairTrajectory(request, warmStart, diagnostics, target_units, roundoffReserve_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [result, diagnostics] = bmtpEngine.optimization.solveActivePairTrajectory( ...
-%       request, warmStart, diagnostics, target_units, reserve_units)
+%       request, warmStart, diagnostics, target_units, roundoffReserve_units)
 %**************************************************************************
 % PURPOSE
 %   - Alternate common-clock BMTP trajectory solves with separating planes
 %     only for curve-region pairs encountered by the current iterate.
 %   - This function generates proposals; public independent validation
-%     remains authoritative.
+%     remains supplied.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
@@ -19,7 +19,7 @@ function [result, diagnostics] = solveActivePairTrajectory(request, warmStart, d
 %       Diagnostics accumulated by the caller.
 %   - target_units (nonnegative numeric scalar)
 %       Required obstacle-side separation target.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Numerical reserve applied on the trajectory side.
 %**************************************************************************
 % OUTPUTS
@@ -68,7 +68,7 @@ for iterationIndex = 1:maximumIterationCount
     trajectoryPlanes           = planes;
     if isempty(bestControl_units) && nnz([planes.Active]) > segmentCount * request.Degree
         trajectoryPlanes = bmtpEngine.separation.removeRedundantPlanes( ...
-            planes, request.Limits, reserve_units, true);
+            planes, request.Limits, roundoffReserve_units, true);
         diagnostics.TransientPlaneRemovalCount = diagnostics.TransientPlaneRemovalCount + ...
             nnz([planes.Active]) - nnz([trajectoryPlanes.Active]);
     end
@@ -76,7 +76,7 @@ for iterationIndex = 1:maximumIterationCount
     [trialControl_units, trialTimes_s, exitFlag, output, constraintBase] = ...
         bmtpEngine.optimization.solveTrajectoryStep( ...
         segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, ...
-        trajectoryPlanes, reserve_units, request.MotionHorizon_s, request.TrajectoryOptions, ...
+        trajectoryPlanes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, ...
         ones(segmentCount, 1), false, true, constraintBase);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
@@ -109,7 +109,7 @@ for iterationIndex = 1:maximumIterationCount
     trialPreparedMotion = struct('Success', false);
     if ~any(collisionPairs, 'all')
         [trialProof, trialPreparedMotion] = proveTravelCandidate( ...
-            request, trialControl_units, trialTimes_s, reserve_units, target_units);
+            request, trialControl_units, trialTimes_s, roundoffReserve_units, target_units);
         proofIsDecisive = trialPreparedMotion.Success && trialProof.WorkspacePassed && ...
             trialProof.DynamicsPassed && trialProof.ContinuityPassed;
         if proofIsDecisive
@@ -164,7 +164,7 @@ for iterationIndex = 1:maximumIterationCount
         [segmentIndex, regionIndex] = ind2sub(size(activePairs), pairIndex);
         [plane, planeExitFlag, planeOutput] = bmtpEngine.separation.solveMaximumMarginLine( ...
             squeeze(feasibleControl_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, ...
-            target_units, reserve_units, request.TrajectoryOptions);
+            target_units, roundoffReserve_units, request.TrajectoryOptions);
         diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
             ~(isfield(planeOutput, 'IsAnalytic') && planeOutput.IsAnalytic);
         diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
@@ -196,7 +196,7 @@ diagnostics.TravelRefinementAccepted  = false;
 if ~isempty(bestControl_units)
     [shortControl_units, shortTimes_s, shortFlag, shortOutput] = bmtpEngine.optimization.solveTrajectoryStep( ...
         segmentCount, request.Degree, request.InitialState, request.GoalState, request.Limits, ...
-        bestPlanes, reserve_units, bestDuration_s, request.TrajectoryOptions, ...
+        bestPlanes, roundoffReserve_units, bestDuration_s, request.TrajectoryOptions, ...
         ones(segmentCount, 1), true);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + shortOutput.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
@@ -209,7 +209,7 @@ if ~isempty(bestControl_units)
             originalLength_units = sum(vecnorm(diff(bestControl_units, 1, 2), 2, 3), 'all');
             shortLength_units    = sum(vecnorm(diff(shortControl_units, 1, 2), 2, 3), 'all');
             [shortProof, shortPreparedMotion] = proveTravelCandidate( ...
-                request, shortControl_units, shortTimes_s, reserve_units, target_units);
+                request, shortControl_units, shortTimes_s, roundoffReserve_units, target_units);
             if shortLength_units <= originalLength_units && shortProof.Passed
                 bestControl_units                  = shortControl_units;
                 bestTimes_s                        = shortTimes_s;
@@ -281,11 +281,11 @@ function collisionPairs = unprovenPairsBySegment(proof, spanTime_s, segmentTime_
 end
 
 function [proof, preparedMotion] = proveTravelCandidate(request, controls_units, ...
-        times_s, reserve_units, target_units)
+        times_s, roundoffReserve_units, target_units)
     % Prepare and independently prove a shortened fixed-clock candidate.
     preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controls_units, times_s);
     [proof, proofCache] = bmtpEngine.validation.checkFinalMotion( ...
-        request, preparedMotion, reserve_units, target_units);
+        request, preparedMotion, roundoffReserve_units, target_units);
     for refinementIndex = 1:10
         if proof.Passed || ~proof.WorkspacePassed || ...
                 ~proof.DynamicsPassed || ~proof.ContinuityPassed
@@ -298,8 +298,8 @@ function [proof, preparedMotion] = proveTravelCandidate(request, controls_units,
             break
         end
         preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, preparedMotion.ControlPoint_units, ...
-            preparedMotion.SegmentTime_s, preparedMotion.PrescribedPower_units, splitMask);
+            preparedMotion.SegmentTime_s, preparedMotion.GivenPower_units, splitMask);
         [proof, proofCache] = bmtpEngine.validation.checkFinalMotion( ...
-            request, preparedMotion, reserve_units, target_units, proofCache);
+            request, preparedMotion, roundoffReserve_units, target_units, proofCache);
     end
 end

@@ -75,7 +75,7 @@ hasGoalDerivatives = all(isfield(goalState, ...
 if options.GoalTimeMode == "fixedArrival" && hasGoalDerivatives && ...
         any([goalState.velocity_units_s, goalState.acceleration_units_s2] ~= 0)
     % A nonrest endpoint cannot arrive early and remain at the goal until
-    % the prescribed intercept. The final layer is its only truthful state.
+    % the given intercept. The final layer is its only truthful state.
     goalLayerIsEligible(:)   = false;
     goalLayerIsEligible(end) = true;
 end
@@ -240,7 +240,7 @@ end
 %% Section 2: Reconstruct The Goal And Arrive-Then-Wait Routes
 
 % Earliest-arrival mode stops at the first reachable goal layer. Fixed-arrival
-% mode must evaluate its prescribed horizon.
+% mode must evaluate its given horizon.
 if isEarliestArrival
     firstGoalLayerIndex = find(reachable(:, 2) & goalLayerIsEligible, 1, "first");
     goalLayerIndex         = firstGoalLayerIndex;

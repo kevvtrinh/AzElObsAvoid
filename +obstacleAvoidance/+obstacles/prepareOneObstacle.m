@@ -309,8 +309,8 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
                 lowerOriginal_units, upperOriginal_units, ...
                 obstacle.safetyMargin_units, usesSourceIndex);
             if movingCellsSupported
-                % Prove both authoritative protected samples against the
-                % prescribed moving-cell enclosure without replacing either sample.
+                % Prove both supplied protected samples against the
+                % given moving-cell enclosure without replacing either sample.
                 uncoveredArea_units2 = [area(subtract(firstShape, movingCellShape)), ...
                     area(subtract(lastShape, movingCellShape))];
                 preparation.IntervalMovingCellUncoveredProtectedArea_units2(intervalIndex, :) = ...
@@ -356,7 +356,7 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
     classifiedIntervalIndices = intervalIndex;
     if finalSampleIndex > intervalIndex + 1
         % One proven partition restricts to every source subinterval with
-        % identical face indices. Source samples themselves remain authoritative.
+        % identical face indices. Source samples themselves remain supplied.
         spanDelta_units = [preparation.DeltaX_units{intervalIndex}, ...
             preparation.DeltaY_units{intervalIndex}];
         spanStartRegions_units = startRegions_units;
@@ -530,7 +530,7 @@ function finalSampleIndices = affineSpanEnds(obstacle, usesSourceIndex)
             % Equal velocities are only a proposal: over a long interval a
             % sub-epsilon velocity difference is still a real displacement.
             % The merged affine span must reproduce every interior
-            % authoritative sample in position.
+            % supplied sample in position.
             spanStartTime_s = time_s(intervalIndex);
             spanEndTime_s   = time_s(lastIntervalIndex + 2);
             spanIsAffine    = true;

@@ -1,11 +1,11 @@
 function [selectedPairs, maximumResidual] = findViolatedPlanePairs(decisionVector, planes, ...
         activePairs, retainedPairs, degree, slackColumnByPair, ...
-        trajectoryReserve_units, tolerance)
+        trajectoryRoundoffReserve_units, tolerance)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [selectedPairs, maximumResidual] = bmtpEngine.separation.findViolatedPlanePairs( ...
 %       decisionVector, planes, activePairs, retainedPairs, degree, ...
-%       slackColumnByPair, trajectoryReserve_units, tolerance)
+%       slackColumnByPair, trajectoryRoundoffReserve_units, tolerance)
 %**************************************************************************
 % PURPOSE
 %   - Separate omitted fixed-plane inequalities exactly and select the
@@ -24,7 +24,7 @@ function [selectedPairs, maximumResidual] = findViolatedPlanePairs(decisionVecto
 %       Bezier degree of every motion span.
 %   - slackColumnByPair (S-by-R numeric array)
 %       Optional slack column per pair; zero where the pair has no slack.
-%   - trajectoryReserve_units (nonnegative numeric scalar)
+%   - trajectoryRoundoffReserve_units (nonnegative numeric scalar)
 %       Trajectory-side numerical reserve added to every residual.
 %   - tolerance (nonnegative numeric scalar)
 %       Conic tolerance a residual must exceed to count as violated.
@@ -78,7 +78,7 @@ for pairIndex = reshape(find(activePairs & ~retainedPairs), 1, [])
     if slackColumn > 0
         slack = decisionVector(slackColumn);
     end
-    pairResidual         = max(product + offsets - slack + trajectoryReserve_units);
+    pairResidual         = max(product + offsets - slack + trajectoryRoundoffReserve_units);
     maximumResidual      = max(maximumResidual, pairResidual);
     pairIsWorstViolation = pairResidual > tolerance && ...
         pairResidual > greatestViolationBySegment(segmentIndex);

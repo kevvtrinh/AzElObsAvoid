@@ -24,9 +24,9 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         struct('Passed',true,'ExactRegionCount',0), ...
         base.Inputs.initialState,base.Inputs.goalState,base.Limits,base.Options);
     durations_s=[1.3;0.7;2]; breaks=[0;cumsum(durations_s)]/4;
-    [~,reserve_units]=bmtpEngine.validation.createCoordinateTolerances(base.Route_units, ...
+    [~,roundoffReserve_units]=bmtpEngine.validation.createCoordinateTolerances(base.Route_units, ...
         limits.xInterval_units,limits.yInterval_units);
-    target_units=(1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+reserve_units;
+    target_units=(1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+roundoffReserve_units;
     for degree=[5,8]
         fraction=zeros(degree+1,1); coefficients=[10,-15,6];
         for k=0:degree
@@ -44,17 +44,17 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         if degree==5, controls_units(2,1,1)=controls_units(2,1,1)+1e-6; end
         source=bmtpEngine.pipeline.prepareFinalMotion(request,controls_units,durations_s);
         sourcePolynomial=bmtpEngine.motion.createPowerPolynomial(source.ControlPoint_units, ...
-            source.SegmentTime_s,0,source.PrescribedPower_units);
+            source.SegmentTime_s,0,source.GivenPower_units);
         original=bmtpEngine.pipeline.createMotionOutput(base,request,source);
-        original.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,source,reserve_units,target_units);
+        original.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,source,roundoffReserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
         changed=bmtpEngine.pipeline.prepareFinalMotion(request,source.ProvenControlPoint_units, ...
             source.SegmentTime_s,sourcePolynomial.positionPower_units, ...
             repelem([true;false;true],2),repelem([0.31;0.5;0.73],2));
         changedPolynomial=bmtpEngine.motion.createPowerPolynomial(changed.ControlPoint_units, ...
-            changed.SegmentTime_s,0,changed.PrescribedPower_units);
+            changed.SegmentTime_s,0,changed.GivenPower_units);
         output=bmtpEngine.pipeline.createMotionOutput(base,request,changed);
-        output.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,changed,reserve_units,target_units);
+        output.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,changed,roundoffReserve_units,target_units);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(output).Passed);
         sampleTime_s=linspace(initial.time_s,goal.time_s,401).';
         [~,p,v,a,j]=bmtpEngine.motion.evaluatePolynomial(sourcePolynomial,sampleTime_s);

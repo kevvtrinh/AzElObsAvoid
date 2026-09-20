@@ -330,10 +330,10 @@ end
 
 function output = createProvenOutput(baseResult, request, preparedMotion)
     % Build an adversarial validator fixture without stale planner decisions.
-    reserve_units = baseResult.SeparationProof.RoundoffReserve_units;
-    target_units  = baseResult.SeparationProof.RequiredGap_units - reserve_units;
+    roundoffReserve_units = baseResult.SeparationProof.RoundoffReserve_units;
+    target_units  = baseResult.SeparationProof.RequiredGap_units - roundoffReserve_units;
     output = rmfield(baseResult, {'Validation', 'SolverDiagnostics', 'SeparationProof'});
     output = bmtpEngine.pipeline.createMotionOutput(output, request, preparedMotion);
     output.SeparationProof = bmtpEngine.validation.checkFinalMotion( ...
-        request, preparedMotion, reserve_units, target_units);
+        request, preparedMotion, roundoffReserve_units, target_units);
 end

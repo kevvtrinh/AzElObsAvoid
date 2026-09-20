@@ -318,7 +318,7 @@ function bounds = transformBounds(limits, pivot_units, scale, coordinateMap, tra
 end
 
 function obstacles = createObstacles(obstacleInput)
-    % Convert JSON obstacle records into authoritative planner obstacles.
+    % Convert JSON obstacle records into supplied planner obstacles.
     obstacleCells = cell(numel(obstacleInput), 1);
     for obstacleIndex = 1:numel(obstacleInput)
         keyframes     = obstacleInput(obstacleIndex).keyframes;

@@ -1,9 +1,9 @@
 function [rows, bounds] = createSelectedPlaneRows(planes, pairMask, degree, ...
-        variableCount, slackColumnByPair, trajectoryReserve_units)
+        variableCount, slackColumnByPair, trajectoryRoundoffReserve_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [rows, bounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, pairMask, ...
-%       degree, variableCount, slackColumnByPair, trajectoryReserve_units)
+%       degree, variableCount, slackColumnByPair, trajectoryRoundoffReserve_units)
 %**************************************************************************
 % PURPOSE
 %   - Materialize exact Bernstein separating rows for selected pairs.
@@ -19,7 +19,7 @@ function [rows, bounds] = createSelectedPlaneRows(planes, pairMask, degree, ...
 %       Decision-vector size.
 %   - slackColumnByPair (numeric matrix)
 %       Slack column per pair; zero leaves the pair without slack.
-%   - trajectoryReserve_units (numeric scalar)
+%   - trajectoryRoundoffReserve_units (numeric scalar)
 %       Trajectory-side reserve subtracted from every bound.
 %**************************************************************************
 % OUTPUTS
@@ -29,7 +29,7 @@ function [rows, bounds] = createSelectedPlaneRows(planes, pairMask, degree, ...
 %       Matching upper bounds in the same order.
 %**************************************************************************
 % UNITS
-%   - Bounds and trajectory reserve are coordinate units.
+%   - Bounds and trajectory roundoff reserve are coordinate units.
 %**************************************************************************
 
 %% Section 1: Allocate The Segment-Major Triplet Buffers
@@ -64,7 +64,7 @@ for segmentIndex = 1:size(pairMask, 1)
             entryValues(entryIndices)   = -1;
             nextEntry                   = nextEntry + degree + 2;
         end
-        bounds(targetRows) = -trajectoryReserve_units - offset_units;
+        bounds(targetRows) = -trajectoryRoundoffReserve_units - offset_units;
         nextRow            = targetRows(end);
     end
 end

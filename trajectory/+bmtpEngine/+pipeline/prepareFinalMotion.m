@@ -1,10 +1,10 @@
 function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmentTime_s, ...
-        prescribedPower_units, splitMask, splitFraction)
+        givenPower_units, splitMask, splitFraction)
 %% Section 0: Header & Readme
 % SYNTAX
 %   preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controlPoint_units, segmentTime_s)
 %   preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controlPoint_units, segmentTime_s, ...
-%       prescribedPower_units, splitMask, splitFraction)
+%       givenPower_units, splitMask, splitFraction)
 %**************************************************************************
 % PURPOSE
 %   - Impose physical endpoint states, split the selected curve, and retain
@@ -20,7 +20,7 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %       Selected composite Bezier control points.
 %   - segmentTime_s (positive finite numeric vector)
 %       Selected per-segment durations.
-%   - prescribedPower_units (S-by-2-by-(D+1) numeric array, optional)
+%   - givenPower_units (S-by-2-by-(D+1) numeric array, optional)
 %       Normalized analytic axis coefficients, preserved exactly through
 %       subdivision and independently proven.
 %   - splitMask (S-by-1 logical array, optional)
@@ -42,7 +42,7 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %% Section 1: Resolve The Requested Split Layout
 
 if nargin < 4
-    prescribedPower_units = [];
+    givenPower_units = [];
 end
 if nargin < 5
     splitMask = true(size(controlPoint_units, 1), 1);
@@ -55,33 +55,33 @@ splitFraction = splitFraction(:);
 repeatCount   = 1 + double(splitMask);
 outputStart   = 1 + [0; cumsum(repeatCount(1:end - 1))];
 
-%% Section 2: Restrict The Prescribed Power Polynomial Exactly
+%% Section 2: Restrict The Given Power Polynomial Exactly
 
-if ~isempty(prescribedPower_units)
-    % Restrict the prescribed power polynomial directly. Returning through
+if ~isempty(givenPower_units)
+    % Restrict the given power polynomial directly. Returning through
     % absolute Bernstein controls would lose its known low-degree form.
     degree  = size(controlPoint_units, 2) - 1;
     refined = NaN(sum(repeatCount), 2, degree + 1);
     for spanIndex = 1:numel(splitMask)
         targetIndex = outputStart(spanIndex);
         if ~splitMask(spanIndex)
-            refined(targetIndex, :, :) = prescribedPower_units(spanIndex, :, :);
+            refined(targetIndex, :, :) = givenPower_units(spanIndex, :, :);
             continue
         end
         fraction = splitFraction(spanIndex);
         for powerIndex = 0:degree
             refined(targetIndex, :, powerIndex + 1) = ...
-                prescribedPower_units(spanIndex, :, powerIndex + 1) * fraction ^ powerIndex;
+                givenPower_units(spanIndex, :, powerIndex + 1) * fraction ^ powerIndex;
             value = zeros(1, 2);
             for sourceIndex = powerIndex:degree
                 value = value + nchoosek(sourceIndex, powerIndex) * ...
-                    prescribedPower_units(spanIndex, :, sourceIndex + 1) * ...
+                    givenPower_units(spanIndex, :, sourceIndex + 1) * ...
                     fraction ^ (sourceIndex - powerIndex) * (1 - fraction) ^ powerIndex;
             end
             refined(targetIndex + 1, :, powerIndex + 1) = value;
         end
     end
-    prescribedPower_units = refined;
+    givenPower_units = refined;
 end
 
 %% Section 3: Set Endpoint Derivatives And Split The Curve
@@ -101,7 +101,7 @@ segmentTime_s = refinedTime_s;
 %% Section 4: Record Sufficient Control Bounds And Preserve The Clock
 
 exportPolynomial            = bmtpEngine.motion.createPowerPolynomial( ...
-    controlPoint_units, segmentTime_s, 0, prescribedPower_units);
+    controlPoint_units, segmentTime_s, 0, givenPower_units);
 provenControlPoint_units = bmtpEngine.motion.powerToBernstein(exportPolynomial.positionPower_units);
 requiredTime_s = max(bmtpEngine.motion.findRequiredSegmentTime(controlPoint_units, request.Limits), ...
     bmtpEngine.motion.findRequiredSegmentTime(provenControlPoint_units, request.Limits));
@@ -114,20 +114,20 @@ if ~isFixedArrival
     segmentTime_s = segmentTime_s * dilationScale;
 end
 minimumDuration_s = sum(segmentTime_s);
-clockIsAtPrescribedEndpoint = isFixedArrival && ...
+clockIsAtGivenEndpoint = isFixedArrival && ...
     abs(sum(segmentTime_s) - request.MotionHorizon_s) <= 64 * eps(request.MotionHorizon_s);
-if clockIsAtPrescribedEndpoint
-    % Close only accumulation roundoff at the prescribed physical endpoint.
+if clockIsAtGivenEndpoint
+    % Close only accumulation roundoff at the given physical endpoint.
     for passIndex = 1:2
         segmentTime_s(end) = segmentTime_s(end) + (request.MotionHorizon_s - sum(segmentTime_s));
     end
 end
 % Durations cannot carry an absolute boundary exactly: a non-representable
 % goal time lands one ulp off when the start time and the summed durations
-% are added back together. A prescribed clock therefore records the requested
+% are added back together. A given clock therefore records the requested
 % absolute time itself; a free clock ends where its durations end.
 finalTime_s = request.InitialState.time_s + sum(segmentTime_s);
-if clockIsAtPrescribedEndpoint
+if clockIsAtGivenEndpoint
     finalTime_s = request.GoalState.time_s;
 end
 
@@ -173,7 +173,7 @@ preparedMotion    = struct( ...
     "DilationScale",               dilationScale, ...
     "MotionProof",           motionProof, ...
     "ContinuityProjectionDisplacement_units", projectionDisplacement_units);
-preparedMotion.PrescribedPower_units = prescribedPower_units;
+preparedMotion.GivenPower_units = givenPower_units;
 end
 
 %% Section 7: Local Functions

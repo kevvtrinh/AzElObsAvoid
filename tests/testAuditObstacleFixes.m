@@ -2,7 +2,7 @@ function tests = testAuditObstacleFixes
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testAuditObstacleFixes.m')
 % PURPOSE: Regress the obstacle-side defects found by the read-only audit:
-%          span merging that moves authoritative samples, sampled overlap
+%          span merging that moves supplied samples, sampled overlap
 %          checks promoting a colliding iterate, and gallery plots of
 %          partially prepared failure results.
 % INPUTS: MATLAB unit test framework.
@@ -25,7 +25,7 @@ end
 function testSubEpsilonVelocityDriftIsNotMergedAway(testCase)
     % Two intervals with velocities 0 and 1e-14 units/s differ by less than
     % the velocity epsilon, yet the middle sample is displaced by 0.005 from
-    % the merged span. The authoritative sample must win.
+    % the merged span. The supplied sample must win.
     square_units = [0 0; 1 0; 1 1; 0 1];
     time_s       = [0; 1e12; 2e12];
     xByTime      = {square_units(:, 1); square_units(:, 1); square_units(:, 1) + 0.01};

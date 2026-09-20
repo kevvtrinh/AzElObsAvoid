@@ -14,7 +14,7 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 %   - regions_units (column cell array)
 %       Convex exclusion regions.
 %   - coverage (scalar struct)
-%       Authoritative geometry and time-coverage evidence.
+%       Supplied geometry and time-coverage evidence.
 %   - initialState (scalar struct)
 %       Initial time, position, velocity, and acceleration.
 %   - goalState (scalar struct)
@@ -41,7 +41,7 @@ for derivativeName = ["velocity_units_s", "acceleration_units_s2"]
     validateattributes(initialState.(derivativeName), {'numeric'}, {'real', 'finite', 'size', [1, 2]});
     validateattributes(goalState.(derivativeName), {'numeric'}, {'real', 'finite', 'size', [1, 2]});
 end
-validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
+validateEngineInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
 
 %% Section 2: Select The Polynomial Representation
 % Choose the representation from the physical request, never from a
@@ -134,7 +134,7 @@ request = struct( ...
 end
 
 %% Section 4: Local Functions
-function validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options)
+function validateEngineInputs(seed, regions_units, coverage, initialState, goalState, limits, options)
     % Check engine-specific input restrictions.
     if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, {'position_units', 'tau'}))
         error("bmtpEngine:InvalidSeed", "seed must be scalar and contain position_units and tau.");
@@ -222,7 +222,7 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
         options.SampleTime_s > 0 && isequal(size(derivativeLimits), [3, 2]) && ...
         all(isfinite(derivativeLimits), "all") && all(derivativeLimits > 0, "all");
     if ~requestIsSupported
-        error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped full-state request.");
+        error("bmtpEngine:UnsupportedRequest", "The BMTP engine requires a finite unwrapped full-state request.");
     end
 end
 

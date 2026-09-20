@@ -81,7 +81,7 @@ for obstacleIndex = 1:numel(obstacles)
         elseif preparation.MatchingTopology(firstIntervalIndex) && ...
                 preparation.IntervalHasExactPartition(firstIntervalIndex)
             % Each stored face is convex for the complete linear morph, and
-            % the moving union equals the authoritative concave polygon.
+            % the moving union equals the supplied concave polygon.
             fraction = (activeInterval_s - sourceIntervals_s(firstIntervalIndex, 1)) / ...
                 diff(sourceIntervals_s(firstIntervalIndex, :));
             startRegions_units  = preparation.IntervalStartRegions_units{firstIntervalIndex};

@@ -1,8 +1,8 @@
-function planes = removeRedundantPlanes(planes, limits, reserve_units, useAffineOneSourceProof)
+function planes = removeRedundantPlanes(planes, limits, roundoffReserve_units, useAffineOneSourceProof)
 %% Section 0: Header & Readme
 % SYNTAX
-%   planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, reserve_units)
-%   planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, reserve_units, ...
+%   planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, roundoffReserve_units)
+%   planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, roundoffReserve_units, ...
 %       useAffineOneSourceProof)
 %**************************************************************************
 % PURPOSE
@@ -13,7 +13,7 @@ function planes = removeRedundantPlanes(planes, limits, reserve_units, useAffine
 %       Active solver separating planes.
 %   - limits (scalar struct)
 %       Validated workspace limits.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Trajectory-side numerical reserve.
 %   - useAffineOneSourceProof (logical scalar, optional; default false)
 %       Whether one-generator lifted proofs may remove affine-normal planes.
@@ -61,7 +61,7 @@ for spanIndex = 1:size(planes, 1)
             normals(planeIndex, :) = reshape( ...
                 planes(spanIndex, activePlaneIndices(planeIndex)).Normal.', 1, []);
             offsets_units(planeIndex, :) = ...
-                planes(spanIndex, activePlaneIndices(planeIndex)).Offset_units + reserve_units;
+                planes(spanIndex, activePlaneIndices(planeIndex)).Offset_units + roundoffReserve_units;
         end
 
         % Workspace bounds apply independently to the two controls in each
@@ -108,7 +108,7 @@ for spanIndex = 1:size(planes, 1)
     for planeIndex = 1:activePlaneCount
         normals(planeIndex, :) = planes(spanIndex, activePlaneIndices(planeIndex)).Normal(1, :);
         offsets_units(planeIndex, :) = ...
-            planes(spanIndex, activePlaneIndices(planeIndex)).Offset_units + reserve_units;
+            planes(spanIndex, activePlaneIndices(planeIndex)).Offset_units + roundoffReserve_units;
     end
     normals       = [normals; workspaceNormals];
     offsets_units = [offsets_units; workspaceOffsets_units];

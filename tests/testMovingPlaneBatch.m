@@ -22,7 +22,7 @@ function testBatchMatchesScalarVerification(testCase)
     shifts_units = {[0.4, 0.2]; [-0.2, 0.3]; [0.1, -0.1]};
     lastRegions_units = cellfun(@plus, firstRegions_units, shifts_units, ...
         'UniformOutput', false);
-    reserve_units = 1e-8;
+    roundoffReserve_units = 1e-8;
     target_units  = 1e-7;
     planes = repmat(bmtpEngine.separation.createEmptyPlane(), 1, numel(firstRegions_units));
     scalarPlanes = planes;
@@ -30,14 +30,14 @@ function testBatchMatchesScalarVerification(testCase)
         vertices_units = cat(3, ...
             firstRegions_units{regionIndex}, lastRegions_units{regionIndex});
         planes(regionIndex) = bmtpEngine.separation.solveSeparatingLine( ...
-            controlPoint_units, vertices_units, target_units, reserve_units);
+            controlPoint_units, vertices_units, target_units, roundoffReserve_units);
         scalarPlanes(regionIndex) = bmtpEngine.separation.verifySeparatingLine( ...
             planes(regionIndex), controlPoint_units, vertices_units, ...
-            reserve_units, target_units);
+            roundoffReserve_units, target_units);
     end
     batchPlanes = bmtpEngine.separation.verifyMovingSeparatingLines( ...
         planes, controlPoint_units, firstRegions_units, lastRegions_units, ...
-        reserve_units, target_units);
+        roundoffReserve_units, target_units);
 
     verifyEqual(testCase, [batchPlanes.Verified], [scalarPlanes.Verified]);
     verifyEqual(testCase, [batchPlanes.Offset_units], ...

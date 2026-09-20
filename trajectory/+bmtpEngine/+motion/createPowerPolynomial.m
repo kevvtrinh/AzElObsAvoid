@@ -1,13 +1,13 @@
 function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, initialTime_s, ...
-        prescribedPower_units, finalTime_s)
+        givenPower_units, finalTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   polynomial = bmtpEngine.motion.createPowerPolynomial( ...
 %       controlPoint_units, segmentTime_s, initialTime_s)
 %   polynomial = bmtpEngine.motion.createPowerPolynomial( ...
-%       controlPoint_units, segmentTime_s, initialTime_s, prescribedPower_units)
+%       controlPoint_units, segmentTime_s, initialTime_s, givenPower_units)
 %   polynomial = bmtpEngine.motion.createPowerPolynomial( ...
-%       controlPoint_units, segmentTime_s, initialTime_s, prescribedPower_units, finalTime_s)
+%       controlPoint_units, segmentTime_s, initialTime_s, givenPower_units, finalTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Convert composite Bernstein controls to ascending-power polynomials.
@@ -20,7 +20,7 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 %       Physical segment durations.
 %   - initialTime_s (finite numeric scalar)
 %       Absolute motion start time.
-%   - prescribedPower_units (S-by-2-by-(D+1) numeric array, optional)
+%   - givenPower_units (S-by-2-by-(D+1) numeric array, optional)
 %       Exact analytic coefficients; NaN axes remain optimized.
 %   - finalTime_s (finite numeric scalar, optional)
 %       Absolute motion end time recorded by the prepared motion. Defaults
@@ -50,15 +50,15 @@ conversion(conversionEntryIsValid) = factorial(degree) * (-1) .^ ...
     (factorial(bernsteinIndex(conversionEntryIsValid)) .* ...
     factorial(powerIndex(conversionEntryIsValid) - bernsteinIndex(conversionEntryIsValid)) .* ...
     factorial(degree - powerIndex(conversionEntryIsValid)));
-fullyPrescribed = nargin >= 4 && ~isempty(prescribedPower_units) && ...
-    all(isfinite(prescribedPower_units), 'all');
-% Fully prescribed powers replace every converted coefficient below. Avoid
+fullyGiven = nargin >= 4 && ~isempty(givenPower_units) && ...
+    all(isfinite(givenPower_units), 'all');
+% Fully given powers replace every converted coefficient below. Avoid
 % solving a discarded control projection, especially on very short spans.
 % The projection may only absorb roundoff-sized join residuals; the largest
 % control displacement it introduces is reported so the producer can reject
 % a repair that would change the motion.
 projectionDisplacement_units = 0;
-if degree == 5 && ~fullyPrescribed
+if degree == 5 && ~fullyGiven
     suppliedControlPoint_units   = controlPoint_units;
     controlPoint_units           = projectQuinticContinuity(controlPoint_units, segmentTime_s);
     projectionDisplacement_units = max(abs(controlPoint_units - suppliedControlPoint_units), [], 'all');
@@ -73,14 +73,14 @@ if degree > 5
     positionPower_units = stabilizePolynomialEndpoints( ...
         positionPower_units, controlPoint_units, segmentTime_s);
 end
-if nargin >= 4 && ~isempty(prescribedPower_units)
-    assert(isequal(size(prescribedPower_units), size(positionPower_units)), ...
+if nargin >= 4 && ~isempty(givenPower_units)
+    assert(isequal(size(givenPower_units), size(positionPower_units)), ...
         'bmtpEngine:InvalidPrescribedPower', ...
         'Analytic coefficients must match the composite basis.');
-    coefficientIsPrescribed = repmat( ...
-        all(isfinite(prescribedPower_units), 3), 1, 1, degree + 1);
-    positionPower_units(coefficientIsPrescribed) = ...
-        prescribedPower_units(coefficientIsPrescribed);
+    coefficientIsGiven = repmat( ...
+        all(isfinite(givenPower_units), 3), 1, 1, degree + 1);
+    positionPower_units(coefficientIsGiven) = ...
+        givenPower_units(coefficientIsGiven);
 end
 
 %% Section 2: Create Physical Derivative Powers And Timing

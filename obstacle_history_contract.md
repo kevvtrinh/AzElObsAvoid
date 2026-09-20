@@ -42,7 +42,7 @@ sample indices/times. Lists contain at most one entry per history sample.
 Canonical rebuilds preserve these diagnostics for the same time history;
 diagnostics are informational and never determine obstacle occupancy.
 
-At a sample time, its normalized protected geometry is authoritative. An empty
+At a sample time, its normalized protected geometry is supplied. An empty
 sample does not clear either neighboring interval. Between samples, the current
 preparer interpolates verified corresponding vertices. A moving concave ring is
 represented by one conforming convex partition whose vertices use that same
@@ -90,11 +90,11 @@ exact longest-shared-edge-first convex repartition of that union (the same
 rule as exact intervals), so point queries and cells agree exactly and the
 cell count follows the enclosure's shape rather than the grid.
 
-Preparation still independently checks both authoritative protected sample
+Preparation still independently checks both supplied protected sample
 shapes against the moving-cell enclosure, using the existing endpoint area-proof
 roundoff tolerance. Failure discards that candidate geometry and records the
 uncovered areas in `IntervalMovingCellUncoveredProtectedArea_units2`. It does not
-enlarge the prescribed moving cells, shrink protection, or replace the samples.
+enlarge the given moving cells, shrink protection, or replace the samples.
 Failed moving-cell coverage, unequal original counts, and an unavailable single-ring
 source map proceed to the endpoint-hull model below.
 
@@ -117,7 +117,7 @@ stable planner outcome `unsupportedObstacleInterpolation`. Earlier models keep
 their existing acceptance rules. Both-empty intervals retain the existing
 empty stationary model.
 
-The hull is identical at both interval ends, but authoritative sample geometry
+The hull is identical at both interval ends, but supplied sample geometry
 is unchanged at sample times. `IntervalUsesEndpointHull` is the typed behavior
 flag; `MatchingTopology`, `IntervalHasExactPartition`, `IntervalUsesMovingCells`,
 `IntervalIsStationary`, and `IntervalIsUnsupported` are all false for this
@@ -164,7 +164,7 @@ realign the distant span endpoints: that can select a different motion.
 One exact proof and shared face-index partition must hold over the
 complete span; its restrictions prove every constituent interval with the
 same partition. A span without that proof is not merged. The supplied
-sample geometry remains authoritative at each retained sample time.
+sample geometry remains supplied at each retained sample time.
 
 `IntervalGeometryModel` retains the reported model name. Preparation also emits
 `IntervalHasExactPartition`, `IntervalIsStationary`, `IntervalUsesMovingCells`,

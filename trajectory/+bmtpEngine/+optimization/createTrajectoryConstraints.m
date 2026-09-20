@@ -44,7 +44,7 @@ function [A, Aeq, beq, lb, ub, jerkMap] = createTrajectoryConstraints( ...
 %   - Controls are coordinate units and physicalTimes_s is seconds.
 %**************************************************************************
 
-%% Section 1: Allocate Bounds And Prescribed Endpoint Rows
+%% Section 1: Allocate Bounds And Given Endpoint Rows
 segmentRatio       = segmentRatio(:);
 controlCount        = segmentCount * (degree + 1) * 2;
 powerIndex          = controlCount + (1:4);

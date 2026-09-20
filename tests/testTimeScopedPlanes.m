@@ -47,15 +47,15 @@ function testGeneratedPlaneRowsMatchExactOmissionOracle(testCase)
     planes(2,3).TimeFraction=[0.4,0.9];
     activePairs=true(segmentCount,regionCount);
     slackColumnByPair=zeros(size(activePairs));
-    reserve_units=2e-4;
+    roundoffReserve_units=2e-4;
     [rows,bounds]=bmtpEngine.separation.createSelectedPlaneRows(planes,activePairs, ...
-        degree,variableCount,slackColumnByPair,reserve_units);
+        degree,variableCount,slackColumnByPair,roundoffReserve_units);
     rowResidual=rows*x-bounds;
     pairResidual=reshape(max(reshape(rowResidual,degree+2,[]),[],1), ...
         regionCount,segmentCount).';
     [selectedPairs,maximumResidual]=bmtpEngine.separation.findViolatedPlanePairs( ...
         x,planes,activePairs,false(size(activePairs)),degree, ...
-        slackColumnByPair,reserve_units,-1e9);
+        slackColumnByPair,roundoffReserve_units,-1e9);
     expected=false(size(activePairs));
     for segmentIndex=1:segmentCount
         [~,regionIndex]=max(pairResidual(segmentIndex,:));
@@ -170,10 +170,10 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
         'Planes',             repmat(plane, 3, 1), ...
         'TaggedPairs',        false(3, 1));
     diagnostics = struct('ConicSolver', bmtpEngine.optimization.accumulateConicDiagnostics());
-    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
-    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
+    roundoffReserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - roundoffReserve_units;
     [refined, diagnostics] = bmtpEngine.pipeline.refineTimedTravel( ...
-        request, alternating, diagnostics, target_units, reserve_units);
+        request, alternating, diagnostics, target_units, roundoffReserve_units);
     verifyTrue(testCase, diagnostics.TravelRefinementAccepted);
     verifyGreaterThan(testCase, diagnostics.TaggedPairCount, 0);
     verifyLessThan(testCase, diagnostics.TravelRefinementFinalLength_units, ...
@@ -182,7 +182,7 @@ function testTravelRefinementAddsNewCollisionPlanes(testCase)
         'SegmentTime_s', refined.SegmentTime_s(:), ...
         'FinalTime_s', request.InitialState.time_s + sum(refined.SegmentTime_s));
     verifyTrue(testCase, bmtpEngine.validation.checkFinalMotion( ...
-        request, prepared, reserve_units, target_units).Passed);
+        request, prepared, roundoffReserve_units, target_units).Passed);
 end
 
 function testSingleSpanTimedInfeasibilityReturnsNoMotion(testCase)
@@ -219,10 +219,10 @@ function testSingleSpanTimedMotionIsIndependentlyValid(testCase)
                 struct('Passed',true,'ExactRegionCount',0), ...
                 result.Inputs.initialState,result.Inputs.goalState,result.Limits,result.Options);
             prepared = bmtpEngine.pipeline.prepareFinalMotion(request,controls,duration_s);
-            [~,reserve_units] = bmtpEngine.validation.createCoordinateTolerances(controls,limits.xInterval_units,limits.yInterval_units);
-            target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
+            [~,roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances(controls,limits.xInterval_units,limits.yInterval_units);
+            target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+roundoffReserve_units;
             result = bmtpEngine.pipeline.createMotionOutput(result,request,prepared);
-            result.SeparationProof = bmtpEngine.validation.checkFinalMotion(request,prepared,reserve_units,target_units);
+            result.SeparationProof = bmtpEngine.validation.checkFinalMotion(request,prepared,roundoffReserve_units,target_units);
             assertTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         end
     end
@@ -259,10 +259,10 @@ function testTimedSolverHonorsRequestIterationLimit(testCase)
 end
 
 function testTimedSolverReturnsCoherentEmptyRecord(testCase)
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createBlockedTimedSolveFixture();
     [result, diagnostics] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
     activePairs = reshape([result.Planes.Active], size(result.Planes));
     verifyFalse(testCase, result.Success);
     verifyEmpty(testCase, result.ControlPoint_units);
@@ -278,14 +278,14 @@ function testTimedSolverReturnsCoherentEmptyRecord(testCase)
 end
 
 function testTimedSolverRetainsAtomicRecordAfterLaterRejectedTrial(testCase)
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createMovingTimedSolveFixture(1);
     [retainedResult, retainedDiagnostics] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createMovingTimedSolveFixture(2);
     [result, diagnostics] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
     controlTolerance_units = request.Options.ConstraintTolerance;
     timeTolerance_s        = request.Options.ArrivalTimeTolerance_s;
     planeTolerance_units   = request.Options.ConstraintTolerance;
@@ -312,19 +312,19 @@ end
 
 function testTimedSolverRetainsAtomicRecordAfterLaterFailedTrial(testCase)
     failedTrialIterationLimit = 15;
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createMovingTimedSolveFixture(1);
     request.TimedTrajectoryOptions = optimoptions( ...
         request.TimedTrajectoryOptions, 'MaxIterations', failedTrialIterationLimit);
     [retainedResult, retainedDiagnostics] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
 
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createMovingTimedSolveFixture(2);
     request.TimedTrajectoryOptions = optimoptions( ...
         request.TimedTrajectoryOptions, 'MaxIterations', failedTrialIterationLimit);
     [result, diagnostics] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
 
     controlTolerance_units = request.Options.ConstraintTolerance;
     timeTolerance_s        = request.Options.ArrivalTimeTolerance_s;
@@ -741,7 +741,7 @@ function [request, warmStart, diagnostics] = createEmptyTimedSolveFixture(maximu
         'ConicSolver',             bmtpEngine.optimization.accumulateConicDiagnostics());
 end
 
-function [request, warmStart, diagnostics, target_units, reserve_units] = ...
+function [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createBlockedTimedSolveFixture()
     initial = struct('time_s', 0, 'position_units', [-1, 0]);
     goal    = struct('time_s', 10, 'position_units', [1, 0]);
@@ -770,11 +770,11 @@ function [request, warmStart, diagnostics, target_units, reserve_units] = ...
         'FinalCollisionPairCount', 0, ...
         'SolverMessage',           "", ...
         'ConicSolver',             bmtpEngine.optimization.accumulateConicDiagnostics());
-    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
-    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
+    roundoffReserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - roundoffReserve_units;
 end
 
-function [request, warmStart, diagnostics, target_units, reserve_units] = ...
+function [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createMovingTimedSolveFixture(maximumIterationCount)
     initial = struct('time_s', 0, 'position_units', [-4, 0]);
     goal    = struct('time_s', 20, 'position_units', [4, 0]);
@@ -813,6 +813,6 @@ function [request, warmStart, diagnostics, target_units, reserve_units] = ...
         'FinalCollisionPairCount', 0, ...
         'PlaneSocpCount',          0, ...
         'SolverMessage',           "");
-    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
-    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
+    roundoffReserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - roundoffReserve_units;
 end

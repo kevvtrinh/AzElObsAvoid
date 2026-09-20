@@ -1,10 +1,10 @@
 function [planes, activePairs, complete, statistics] = createTimeScopedPlanes( ...
-        referenceControl_units, segmentTime_s, request, target_units, reserve_units)
+        referenceControl_units, segmentTime_s, request, target_units, roundoffReserve_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [planes, activePairs, complete, statistics] = ...
 %       bmtpEngine.separation.createTimeScopedPlanes(referenceControl_units, ...
-%       segmentTime_s, request, target_units, reserve_units)
+%       segmentTime_s, request, target_units, roundoffReserve_units)
 %**************************************************************************
 % PURPOSE
 %   - Separate each motion span from overlapping affine obstacle cells.
@@ -15,10 +15,10 @@ function [planes, activePairs, complete, statistics] = createTimeScopedPlanes( .
 %   - segmentTime_s (positive numeric scalar or S-by-1 vector)
 %       Physical span durations.
 %   - request (scalar struct)
-%       Checked request and authoritative obstacle cells.
+%       Checked request and supplied obstacle cells.
 %   - target_units (finite numeric scalar)
 %       Required obstacle-side separation target.
-%   - reserve_units (finite numeric scalar)
+%   - roundoffReserve_units (finite numeric scalar)
 %       Required trajectory-side separation reserve.
 %**************************************************************************
 % OUTPUTS
@@ -77,7 +77,7 @@ for segmentIndex = 1:segmentCount
         vertices_units = bmtpEngine.separation.regionOnInterval(request.Regions_units{regionIndex}, ...
             request.Coverage, regionIndex, interval_s);
         [plane, exitFlag] = bmtpEngine.separation.solveSeparatingLine( ...
-            controls_units, vertices_units, target_units, reserve_units, geometry);
+            controls_units, vertices_units, target_units, roundoffReserve_units, geometry);
         plane.TimeFraction = timeFraction;
         planes(segmentIndex, regionIndex) = plane;
         if exitFlag <= 0 || ~plane.Active || ~plane.Verified

@@ -256,7 +256,7 @@ end
 
 function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = updatePlanes( ...
     controlPoint_units, segmentTime_s, planes, request, diagnostics, ...
-    target_units, reserve_units, verifyOnly)
+    target_units, roundoffReserve_units, verifyOnly)
     % Update every active curve-region pair without sampled discovery or pruning.
     % Inactive pairs count as verified so the caller sees only real failures.
     % The first unusable pair stops the sweep with allActive false.
@@ -300,11 +300,11 @@ function [planes, allActive, verifiedPairs, diagnostics, verifiedPairCount] = up
                     min(vertices_units(:, :, end) * normal.')];
                 plane.TimeFraction = timeFraction;
                 plane = bmtpEngine.separation.verifySeparatingLine( ...
-                    plane, controls_units, vertices_units, reserve_units, target_units);
+                    plane, controls_units, vertices_units, roundoffReserve_units, target_units);
                 verifiedPairCount = verifiedPairCount + 1;
             else
                 [plane, exitFlag, output] = bmtpEngine.separation.solveSeparatingLine( ...
-                    controls_units, vertices_units, target_units, reserve_units);
+                    controls_units, vertices_units, target_units, roundoffReserve_units);
                 plane.TimeFraction = timeFraction;
                 diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
                     ~(isfield(output, 'IsAnalytic') && output.IsAnalytic);

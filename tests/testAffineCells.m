@@ -91,7 +91,7 @@ function testCompletePreparationReuseAndSourceChanges(testCase)
     reused = obstacleAvoidance.obstacles.prepareObstacles(complete,[3,7]);
     verifyTrue(testCase,isequaln(reused,complete));
     verifyTrue(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(reused,1.6,0,8));
-    % A complete cache must still be invalidated when authoritative data changes.
+    % A complete cache must still be invalidated when supplied data changes.
     changed = complete;
     changed.x_units = cellfun(@(x)x+10,changed.x_units,'UniformOutput',false);
     changed.originalX_units = cellfun(@(x)x+10,changed.originalX_units,'UniformOutput',false);

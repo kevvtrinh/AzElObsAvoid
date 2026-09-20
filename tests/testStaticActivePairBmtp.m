@@ -90,10 +90,10 @@ function testStaticMeshIgnoresCollinearSeedVertices(testCase)
 end
 
 function testReturnedActivePlanesProveReturnedControls(testCase)
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createStaticAlternatingFixture("earliestArrival");
     [result, diagnostics] = bmtpEngine.optimization.solveActivePairTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
     verifyTrue(testCase, result.Success, result.SolverMessage);
     verifyEqual(testCase, result.FailureStage, "");
     verifyEqual(testCase, result.FailureKind, "");
@@ -108,7 +108,7 @@ function testReturnedActivePlanesProveReturnedControls(testCase)
         checkedPlane = bmtpEngine.separation.verifySeparatingLine( ...
             result.Planes(segmentIndex, regionIndex), ...
             squeeze(result.ControlPoint_units(segmentIndex, :, :)), ...
-            request.Regions_units{regionIndex}, reserve_units, target_units);
+            request.Regions_units{regionIndex}, roundoffReserve_units, target_units);
         verifyTrue(testCase, checkedPlane.Verified);
     end
     verifyEqual(testCase, diagnostics.ApplicablePairCount, nnz(result.TaggedPairs));
@@ -119,10 +119,10 @@ end
 function testRowProofReturnsPlanesThatProveReturnedControls(testCase)
     % The constraint-row proof accepts a motion without per-pair verification;
     % every returned plane must still separate the returned controls exactly.
-    [request, warmStart, diagnostics, target_units, reserve_units] = ...
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createStaticAlternatingFixture("fixedArrival");
     [result, diagnostics] = bmtpEngine.optimization.solveAlternatingTrajectory( ...
-        request, warmStart, diagnostics, target_units, reserve_units);
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
     verifyTrue(testCase, result.Success, result.SolverMessage);
     verifyGreaterThan(testCase, diagnostics.ConstraintRowPairVerificationCount, 0);
     verifyEqual(testCase, diagnostics.ExistingPlanePairVerificationCount, 0);
@@ -134,7 +134,7 @@ function testRowProofReturnsPlanesThatProveReturnedControls(testCase)
         checkedPlane = bmtpEngine.separation.verifySeparatingLine( ...
             result.Planes(segmentIndex, regionIndex), ...
             squeeze(result.ControlPoint_units(segmentIndex, :, :)), ...
-            request.Regions_units{regionIndex}, reserve_units, target_units);
+            request.Regions_units{regionIndex}, roundoffReserve_units, target_units);
         verifyTrue(testCase, checkedPlane.Verified);
     end
 end
@@ -170,7 +170,7 @@ function testSolveRequestRejectsIncompleteCoverage(testCase)
         'bmtpEngine:InvalidCoverage');
 end
 
-function [request, warmStart, diagnostics, target_units, reserve_units] = ...
+function [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
         createStaticAlternatingFixture(goalTimeMode)
     box_units = [-0.5, -0.5; 0.5, -0.5; 0.5, 0.5; -0.5, 0.5];
     initial   = state([-3, 0], 0);
@@ -197,8 +197,8 @@ function [request, warmStart, diagnostics, target_units, reserve_units] = ...
         'FinalCollisionPairCount', 0, ...
         'PlaneSocpCount',          0, ...
         'SolverMessage',           "");
-    reserve_units = normalized.SeparationProof.RoundoffReserve_units;
-    target_units  = normalized.SeparationProof.RequiredGap_units - reserve_units;
+    roundoffReserve_units = normalized.SeparationProof.RoundoffReserve_units;
+    target_units  = normalized.SeparationProof.RequiredGap_units - roundoffReserve_units;
 end
 
 function verifyValidatedStaticBmtp(testCase,result)

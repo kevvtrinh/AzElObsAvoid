@@ -18,7 +18,7 @@ function setupOnce(testCase)
     testCase.TestData.Options=struct('GoalTimeMode','fixedArrival');
 end
 
-function testPrescribedArrivalAndContinuousMotion(testCase)
+function testGivenArrivalAndContinuousMotion(testCase)
     data=testCase.TestData;
     result=planner([],data.Initial,data.Goal,data.Limits,data.Options);
     assertTrue(testCase,result.Success,result.Message);
@@ -29,7 +29,7 @@ function testPrescribedArrivalAndContinuousMotion(testCase)
     verifyLessThan(testCase,size(result.Route_units,1),9);
 end
 
-function testMovingTargetEndsAtExactPrescribedClock(testCase)
+function testMovingTargetEndsAtExactGivenClock(testCase)
     goalTime_s = 13.984378262112314;
     initial = struct('time_s',0.45999999999999996,'position_units',[-4,0]);
     targetMotion = struct( ...
@@ -53,7 +53,7 @@ function testMovingTargetEndsAtExactPrescribedClock(testCase)
     verifyEqual(testCase,result.time_s(end),goal.time_s);
 end
 
-function testStaticGoalUsesExactPrescribedClock(testCase)
+function testStaticGoalUsesExactGivenClock(testCase)
     % This clock pair reproduces one ulp late when the arrival is rebuilt
     % from the start time plus summed durations.
     initial = struct('time_s',0.45999999999999996,'position_units',[0,0]);
@@ -93,7 +93,7 @@ function testFixedTimedSearchRetainsBoundaryVelocity(testCase)
         'AbsTol',1e-8);
 end
 
-function testSavedDetourUsesPrescribedDeadline(testCase)
+function testSavedDetourUsesGivenDeadline(testCase)
     root=fileparts(mfilename('fullpath'));
     request=jsondecode(fileread(fullfile(root,'fixtures','savedMovingDetour.json')));
     sources=cell(numel(request.obstacles),1);
@@ -191,7 +191,7 @@ function testTimedSearchCrossesARecurrentCurtain(testCase)
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,result.Validation.Passed);
     verifyEqual(testCase,result.Message, ...
-        "The prescribed goal layer produced an independently validated timed BMTP motion.");
+        "The given goal layer produced an independently validated timed BMTP motion.");
     verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,goal.time_s);

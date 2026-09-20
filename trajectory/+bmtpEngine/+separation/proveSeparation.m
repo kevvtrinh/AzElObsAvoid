@@ -1,12 +1,12 @@
 function [offset_units, signedGap_units, verified] = proveSeparation( ...
         minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalNorm, ...
-        offset_units, roundoff_units, reserve_units, target_units)
+        offset_units, roundoff_units, roundoffReserve_units, target_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [offset_units, signedGap_units, verified] = ...
 %       bmtpEngine.separation.proveSeparation(minimumObstacleSide_units, ...
 %       maximumTrajectorySide_units, maximumNormalNorm, offset_units, ...
-%       roundoff_units, reserve_units, target_units)
+%       roundoff_units, roundoffReserve_units, target_units)
 %**************************************************************************
 % PURPOSE
 %   - Apply the shared separating-line acceptance decision.
@@ -22,7 +22,7 @@ function [offset_units, signedGap_units, verified] = proveSeparation( ...
 %       Endpoint offsets for each plane.
 %   - roundoff_units (numeric scalar or R-by-1 array)
 %       Admissible correction reserve for each plane.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Required trajectory-side reserve.
 %   - target_units (nonnegative numeric scalar)
 %       Required obstacle-side target.
@@ -41,7 +41,7 @@ function [offset_units, signedGap_units, verified] = proveSeparation( ...
 
 %% Section 1: Shift The Plane Into The Admissible Correction Interval
 minimumCorrection_units = target_units - minimumObstacleSide_units;
-maximumCorrection_units = -reserve_units - maximumTrajectorySide_units;
+maximumCorrection_units = -roundoffReserve_units - maximumTrajectorySide_units;
 robustMinimum_units      = minimumCorrection_units + roundoff_units;
 robustMaximum_units      = maximumCorrection_units - roundoff_units;
 correction_units         = zeros(size(minimumCorrection_units));
@@ -64,12 +64,12 @@ maximumTrajectorySide_units = maximumTrajectorySide_units + correction_units;
 %% Section 2: Require Every Acceptance Inequality Together
 signedGap_units          = minimumObstacleSide_units - maximumTrajectorySide_units;
 normalNormLimit          = 1 + 2 ^ 20 * eps;
-clearanceTarget_units    = (target_units - reserve_units) / normalNormLimit;
-provenClearance_units = (signedGap_units - 2 * reserve_units) ./ max(maximumNormalNorm, realmin);
+clearanceTarget_units    = (target_units - roundoffReserve_units) / normalNormLimit;
+provenClearance_units = (signedGap_units - 2 * roundoffReserve_units) ./ max(maximumNormalNorm, realmin);
 
 obstacleSideIsValid       = minimumObstacleSide_units >= target_units;
-trajectorySideIsValid     = maximumTrajectorySide_units <= -reserve_units;
-signedGapIsValid          = signedGap_units >= target_units + reserve_units;
+trajectorySideIsValid     = maximumTrajectorySide_units <= -roundoffReserve_units;
+signedGapIsValid          = signedGap_units >= target_units + roundoffReserve_units;
 provenClearanceIsValid = provenClearance_units >= clearanceTarget_units;
 normalNormIsValid         = maximumNormalNorm <= normalNormLimit;
 

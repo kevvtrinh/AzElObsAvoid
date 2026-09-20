@@ -26,7 +26,7 @@ function result = planNormalizedRequest(request, requestContext)
 obstacles    = requestContext.obstacles;
 parentRequest = requestContext.parentRequest;
 
-%% Section 2: Prepare Authoritative Geometry And Motion Coverage
+%% Section 2: Prepare Supplied Geometry And Motion Coverage
 
 totalTimer          = tic;
 earliestTarget      = ~isempty(request.goalState.targetMotion) && ...
@@ -95,8 +95,8 @@ if ~isempty(unsupportedObstacleIndex)
         proofReason = preparation.IntervalProofReason(unsupportedIntervalIndex);
         if proofReason == "movingCellsExcludeProtectedSample"
             result.Message = result.Message + ...
-                " The prescribed moving-cell margin-square enclosure excludes " + ...
-                "authoritative protected sample area.";
+                " The given moving-cell margin-square enclosure excludes " + ...
+                "supplied protected sample area.";
         end
     end
 

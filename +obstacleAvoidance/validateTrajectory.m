@@ -363,14 +363,14 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
         return
     end
 
-    authoritativeInput = result.Inputs.obstacles;
-    if isstruct(authoritativeInput) && isfield(authoritativeInput, 'InternalPreparation')
-        authoritativeInput = rmfield(authoritativeInput, 'InternalPreparation');
+    suppliedObstacleInput = result.Inputs.obstacles;
+    if isstruct(suppliedObstacleInput) && isfield(suppliedObstacleInput, 'InternalPreparation')
+        suppliedObstacleInput = rmfield(suppliedObstacleInput, 'InternalPreparation');
     end
-    if (result.Options.WrapX || result.Options.WrapY) && ~isempty(authoritativeInput)
+    if (result.Options.WrapX || result.Options.WrapY) && ~isempty(suppliedObstacleInput)
         % Wrapped obstacles are rebuilt as the same translated copies the
         % planner used, from the supplied obstacles and the record's band.
-        authoritativeInput = obstacleAvoidance.input.copyObstaclesAcrossWraps(authoritativeInput, ...
+        suppliedObstacleInput = obstacleAvoidance.input.copyObstaclesAcrossWraps(suppliedObstacleInput, ...
             [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units], ...
             [result.Options.WrapX, result.Options.WrapY], ...
             [result.Limits.xInterval_units; result.Limits.yInterval_units]);
@@ -392,7 +392,7 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
         proofIsValid = false;
         return
     end
-    authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput, ...
+    suppliedPreparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(suppliedObstacleInput, ...
         [result.Inputs.initialState.time_s, coverageEnd_s]);
 
     endpoints_units = [result.Inputs.initialState.position_units; result.Inputs.goalState.position_units];
@@ -401,7 +401,7 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
         endpoints_units(2, :) = obstacleAvoidance.input.targetPositionAtTime( ...
             result.Inputs.goalState.targetMotion, endpointTimes_s(2));
     end
-    endpointsAreOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(authoritativeObstacles, ...
+    endpointsAreOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(suppliedPreparedObstacles, ...
         endpoints_units(:, 1), endpoints_units(:, 2), endpointTimes_s);
     if any(endpointsAreOccupied)
         proofIsValid = false;
@@ -411,7 +411,7 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
     usesDynamicCells = isfield(proof, 'Coverage') && ...
         isfield(proof.Coverage, 'ActiveTimeInterval_s');
     if usesDynamicCells
-        cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
+        cells = obstacleAvoidance.obstacles.createTimeCells(suppliedPreparedObstacles, ...
             result.Inputs.initialState.time_s, coverageEnd_s);
         regions_units  = cells.Regions_units;
         starts_s       = result.Polynomial.SegmentStartTime_s;
@@ -426,7 +426,7 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
         end
     else
         scene         = obstacleAvoidance.obstacles.snapshot( ...
-            authoritativeObstacles, result.Inputs.initialState.time_s);
+            suppliedPreparedObstacles, result.Inputs.initialState.time_s);
         regions_units = cell(0, 1);
         for obstacleIndex = 1:numel(scene)
             regions_units = [regions_units; scene(obstacleIndex).Regions_units]; %#ok<AGROW>
@@ -434,8 +434,8 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
         expectedActive = true(size(positionPower_units, 1), numel(regions_units));
 
         % Static proofs cannot prove changing geometry or activity.
-        for obstacleIndex = 1:numel(authoritativeObstacles)
-            obstacle = authoritativeObstacles(obstacleIndex);
+        for obstacleIndex = 1:numel(suppliedPreparedObstacles)
+            obstacle = suppliedPreparedObstacles(obstacleIndex);
             spanIsUncovered = numel(obstacle.time_s) > 1 && ...
                 (result.time_s(1) < obstacle.time_s(1) || result.time_s(end) > obstacle.time_s(end));
             if ~obstacle.InternalPreparation.IsTimeInvariant || spanIsUncovered
@@ -460,11 +460,11 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
     if usesDynamicCells
         endRegions_units = cells.EndRegions_units;
     end
-    [~, reserve_units] = bmtpEngine.validation.createCoordinateTolerances(result.Route_units, ...
+    [~, roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances(result.Route_units, ...
         result.Limits.xInterval_units, result.Limits.yInterval_units, regions_units, endRegions_units);
-    target_units = (1 + 2^20 * eps) * result.Options.CollisionClearanceTolerance_units + reserve_units;
-    toleranceDiffers = ~isequal(proof.RoundoffReserve_units, reserve_units) || ...
-        ~isequal(proof.RequiredGap_units, target_units + reserve_units);
+    target_units = (1 + 2^20 * eps) * result.Options.CollisionClearanceTolerance_units + roundoffReserve_units;
+    toleranceDiffers = ~isequal(proof.RoundoffReserve_units, roundoffReserve_units) || ...
+        ~isequal(proof.RequiredGap_units, target_units + roundoffReserve_units);
     if toleranceDiffers
         proofIsValid = false;
         return
@@ -476,7 +476,7 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
             % The coefficient products, gap, and roundoff conditions match
             % the scalar verifier used for affine time-dependent geometry.
             verifiedPlanes = bmtpEngine.separation.verifyStaticSeparatingLines(proof.Planes(segmentIndex, :), ...
-                squeeze(controlPoint_units(segmentIndex, :, :)), regions_units, reserve_units, target_units);
+                squeeze(controlPoint_units(segmentIndex, :, :)), regions_units, roundoffReserve_units, target_units);
             if ~all([verifiedPlanes.Verified])
                 proofIsValid = false;
                 return
@@ -512,7 +512,7 @@ function proofIsValid = verifySeparationProof(result, positionPower_units)
             verifiedPlanes = bmtpEngine.separation.verifyMovingSeparatingLines( ...
                 proof.Planes(segmentIndex, groupRegionIndices), ...
                 restricted_units, firstRegions_units, lastRegions_units, ...
-                reserve_units, target_units);
+                roundoffReserve_units, target_units);
             if ~all([verifiedPlanes.Verified])
                 proofIsValid = false;
                 return

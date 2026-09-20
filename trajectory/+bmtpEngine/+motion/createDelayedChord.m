@@ -1,7 +1,7 @@
-function [controls_units, durations_s, prescribedPower_units, diagnostics] = createDelayedChord(request)
+function [controls_units, durations_s, givenPower_units, diagnostics] = createDelayedChord(request)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [controls_units, durations_s, prescribedPower_units, diagnostics] = ...
+%   [controls_units, durations_s, givenPower_units, diagnostics] = ...
 %       bmtpEngine.motion.createDelayedChord(request)
 %**************************************************************************
 % PURPOSE
@@ -9,14 +9,14 @@ function [controls_units, durations_s, prescribedPower_units, diagnostics] = cre
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
-%       Validated rest-to-rest request and authoritative convex time cells.
+%       Validated rest-to-rest request and supplied convex time cells.
 %**************************************************************************
 % OUTPUTS
 %   - controls_units (S-by-6-by-2 numeric array)
 %       Waiting-plus-chord Bezier controls, or empty when unavailable.
 %   - durations_s (numeric column)
 %       Waiting-plus-chord span durations, or empty when unavailable.
-%   - prescribedPower_units (S-by-2-by-6 numeric array)
+%   - givenPower_units (S-by-2-by-6 numeric array)
 %       Matching analytic powers, or empty when unavailable.
 %   - diagnostics (scalar struct)
 %       Selected departure delay and availability state.
@@ -26,7 +26,7 @@ function [controls_units, durations_s, prescribedPower_units, diagnostics] = cre
 %**************************************************************************
 
 %% Section 1: Construct The Scalar Progress Clock
-[controls_units, durations_s, prescribedPower_units] = bmtpEngine.motion.createC3Chord( ...
+[controls_units, durations_s, givenPower_units] = bmtpEngine.motion.createC3Chord( ...
     request.InitialState.position_units, request.GoalState.position_units, request.Limits);
 phaseStartTime_s      = [0; cumsum(durations_s(1:end - 1))];
 phaseTiming           = struct('StartTime_s', phaseStartTime_s, 'SegmentTime_s', durations_s);
@@ -36,7 +36,7 @@ initial_units         = request.InitialState.position_units;
 direction_units       = request.GoalState.position_units - initial_units;
 directionNorm2_units2 = sum(direction_units .^ 2);
 pathNormal             = [-direction_units(2), direction_units(1)] / sqrt(directionNorm2_units2);
-relativePower_units    = prescribedPower_units;
+relativePower_units    = givenPower_units;
 relativePower_units(:, :, 1) = relativePower_units(:, :, 1) - initial_units;
 progressPower = reshape(sum(relativePower_units .* reshape(direction_units, 1, 2, 1), 2), [], 6) / ...
     directionNorm2_units2;
@@ -48,11 +48,11 @@ endRegions_units = {};
 if isfield(request.Coverage, 'EndRegions_units')
     endRegions_units = request.Coverage.EndRegions_units;
 end
-[~, reserve_units] = bmtpEngine.validation.createCoordinateTolerances(initial_units, ...
+[~, roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances(initial_units, ...
     request.GoalState.position_units, request.Limits.xInterval_units, ...
     request.Limits.yInterval_units, request.Regions_units, endRegions_units);
 clearance_units = (1 + 2 ^ 20 * eps) * request.Options.CollisionClearanceTolerance_units + ...
-    3 * reserve_units;
+    3 * roundoffReserve_units;
 forbidden_s = zeros(0, 2);
 pathMinimum_units = min(initial_units, request.GoalState.position_units);
 pathMaximum_units = max(initial_units, request.GoalState.position_units);
@@ -211,7 +211,7 @@ for regionIndex = 1:numel(request.Regions_units)
             diagnostics = struct('DepartureDelay_s', provenDelay_s, 'Available', false);
             controls_units        = zeros(0, request.Degree + 1, 2);
             durations_s           = zeros(0, 1);
-            prescribedPower_units = [];
+            givenPower_units = [];
             return
         end
     end
@@ -223,7 +223,7 @@ diagnostics = struct('DepartureDelay_s', wait_s, 'Available', wait_s <= maximumW
 if ~diagnostics.Available
     controls_units        = zeros(0, request.Degree + 1, 2);
     durations_s           = zeros(0, 1);
-    prescribedPower_units = [];
+    givenPower_units = [];
     return
 end
 if wait_s > 0
@@ -232,7 +232,7 @@ if wait_s > 0
     durations_s     = [wait_s; durations_s];
     waitingPower_units          = zeros(1, 2, request.Degree + 1);
     waitingPower_units(:, :, 1) = initial_units;
-    prescribedPower_units       = cat(1, waitingPower_units, prescribedPower_units);
+    givenPower_units       = cat(1, waitingPower_units, givenPower_units);
 end
 end
 

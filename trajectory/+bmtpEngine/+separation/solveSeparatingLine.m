@@ -1,11 +1,11 @@
 function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, vertices_units, ...
-        target_units, reserve_units, obstacleGeometry)
+        target_units, roundoffReserve_units, obstacleGeometry)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.separation.solveSeparatingLine( ...
-%       controlPoint_units, vertices_units, target_units, reserve_units)
+%       controlPoint_units, vertices_units, target_units, roundoffReserve_units)
 %   [plane, exitFlag, output] = bmtpEngine.separation.solveSeparatingLine( ...
-%       controlPoint_units, vertices_units, target_units, reserve_units, obstacleGeometry)
+%       controlPoint_units, vertices_units, target_units, roundoffReserve_units, obstacleGeometry)
 %**************************************************************************
 % PURPOSE
 %   - Compute a convex supporting plane and verify its exact Bernstein
@@ -20,7 +20,7 @@ function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, ver
 %       Static vertices or affine obstacle endpoint vertices.
 %   - target_units (nonnegative numeric scalar)
 %       Required obstacle-side separation target.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Numerical reserve applied on the trajectory side.
 %   - obstacleGeometry (scalar struct, optional)
 %       Cached obstacle-edge normals and supports for these exact vertices.
@@ -114,7 +114,7 @@ gaps_units = -max(supportDifference_units, [], 1);
 productGaps_units = -max((1 - beta) .* ...
     [supportDifference_units; zeros(1, size(normals, 1))] + ...
     beta .* [zeros(1, size(normals, 1)); supportDifference_units], [], 1);
-directionIsProvable = productGaps_units >= target_units + reserve_units;
+directionIsProvable = productGaps_units >= target_units + roundoffReserve_units;
 if any(directionIsProvable)
     gaps_units(~directionIsProvable) = -Inf;
 end
@@ -137,5 +137,5 @@ plane.Normal       = repmat(normals(directionIndex, :), 2, 1);
 plane.Offset_units = target_units - ...
     [firstSupport_units(directionIndex), lastSupport_units(directionIndex)];
 plane = bmtpEngine.separation.verifySeparatingLine( ...
-    plane, controlPoint_units, vertices_units, reserve_units, target_units);
+    plane, controlPoint_units, vertices_units, roundoffReserve_units, target_units);
 end

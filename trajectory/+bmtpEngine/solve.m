@@ -20,7 +20,7 @@ function [candidate, diagnostics, directMotion] = solve( ...
 %       Geometry provenance. ExactRegionCount and timed end-region metadata
 %       must be internally consistent. Optional ActiveTimeInterval_s limits
 %       each region to an absolute physical motion-time interval. The public
-%       validator, not this metadata check, establishes authoritative
+%       validator, not this metadata check, establishes supplied
 %       obstacle-coverage completeness.
 %   - initialState (scalar struct)
 %       Normalized initial position, velocity, and acceleration.
@@ -104,7 +104,7 @@ elseif options.GoalTimeMode == "fixedArrival"
         'Limits',        request.Limits, ...
         'Options',       request.Options, ...
         'Degree',        degree, ...
-        'Reserve_units', roundoffReserve_units, ...
+        'RoundoffReserve_units', roundoffReserve_units, ...
         'Target_units',  obstacleTarget_units);
     if isfield(directMotion, 'Key') && isequaln(directMotion.Key, directMotionKey)
         preparedMotion   = directMotion.PreparedMotion;
@@ -173,7 +173,7 @@ else
             request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
     else
         % Only a variable clock needs the dedicated solver that rebuilds
-        % obstacle/time overlap after every duration change. A prescribed
+        % obstacle/time overlap after every duration change. A given
         % clock uses the mature fixed-duration alternating SOCP; its active
         % intervals are already exact and do not move between iterations.
         usesTimedSolver = request.UsesVariableClock;
@@ -248,7 +248,7 @@ for refinementIndex = 1:10
     end
     preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, ...
         preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, ...
-        preparedMotion.PrescribedPower_units, splitMask, splitFraction);
+        preparedMotion.GivenPower_units, splitMask, splitFraction);
     [proof, proofCache] = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, roundoffReserve_units, obstacleTarget_units, proofCache);
 end
@@ -302,8 +302,8 @@ diagnostics.ElapsedTime_s                        = toc(totalTimer);
 end
 
 %% Section 5: Local Functions
-function [preparedMotion, proof, cache] = directFixedArrivalMotion(request, reserve_units, target_units)
-    % Construct and prove the direct chord at the prescribed horizon.
+function [preparedMotion, proof, cache] = directFixedArrivalMotion(request, roundoffReserve_units, target_units)
+    % Construct and prove the direct chord at the given horizon.
     degree       = request.Degree;
     initialState = request.InitialState;
     goalState    = request.GoalState;
@@ -329,7 +329,7 @@ function [preparedMotion, proof, cache] = directFixedArrivalMotion(request, rese
         reshape(controls_units, 1, degree + 1, 2), request.MotionHorizon_s);
     if preparedMotion.Success
         [proof, cache] = bmtpEngine.validation.checkFinalMotion(request, ...
-            preparedMotion, reserve_units, target_units, cache, true);
+            preparedMotion, roundoffReserve_units, target_units, cache, true);
     end
 end
 
@@ -343,7 +343,7 @@ function candidate = createEmptyCandidate(initialState)
     candidate.AlternativeGuideEligible                 = false;
     candidate.FailureStage                             = "notRun";
     candidate.FailureKind                              = "notRun";
-    candidate.Message                                  = "The BMTP kernel was not run.";
+    candidate.Message                                  = "The BMTP engine was not run.";
     candidate.TerminationReason                        = "notRun";
     candidate.ArrivalTime_s                            = NaN;
     candidate.TrajectoryDuration_s                     = NaN;

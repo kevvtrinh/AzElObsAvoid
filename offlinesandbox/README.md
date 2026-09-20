@@ -166,7 +166,7 @@ with `Success=false`; malformed requests return bounded error responses.
   when it contains obstacle histories. Reset to author a fresh scene.
 - External topology-changing histories may be rendered using the nearer
   keyframe. MATLAB's protected geometry and independent proof remain
-  authoritative; browser interpolation does not validate collision freedom.
+  supplied; browser interpolation does not validate collision freedom.
 - The editor keeps vehicle endpoint velocity and acceleration at zero. Goal
   motion controls author a constant-velocity target history; richer target
   histories and full endpoint states can be supplied through JSON or replay

@@ -1,8 +1,8 @@
-function planes = verifyStaticSeparatingLines(planes, controlPoint_units, regions_units, reserve_units, target_units)
+function planes = verifyStaticSeparatingLines(planes, controlPoint_units, regions_units, roundoffReserve_units, target_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   planes = bmtpEngine.separation.verifyStaticSeparatingLines(planes, ...
-%       controlPoint_units, regions_units, reserve_units, target_units)
+%       controlPoint_units, regions_units, roundoffReserve_units, target_units)
 %**************************************************************************
 % PURPOSE
 %   - Batch the scalar Bernstein plane bounds for static cells, then apply
@@ -15,7 +15,7 @@ function planes = verifyStaticSeparatingLines(planes, controlPoint_units, region
 %       Common Bezier control points for one motion span.
 %   - regions_units (R-by-1 cell array)
 %       Static convex exclusion-region vertices.
-%   - reserve_units (nonnegative numeric scalar)
+%   - roundoffReserve_units (nonnegative numeric scalar)
 %       Numerical reserve applied on the trajectory side.
 %   - target_units (nonnegative numeric scalar)
 %       Required obstacle-side separation target.
@@ -80,7 +80,7 @@ scale_units = max([scale_units, max(abs(offsets_units), [], 2), ...
     repmat(max(1, max(abs(controlPoint_units), [], 'all')), regionCount, 1)], [], 2);
 [offsets_units, signedGap_units, verified] = bmtpEngine.separation.proveSeparation( ...
     minimumObstacle_units, maximumTrajectory_units, maximumNormalNorm, ...
-    offsets_units, 16 * eps(scale_units), reserve_units, target_units);
+    offsets_units, 16 * eps(scale_units), roundoffReserve_units, target_units);
 
 offsetCells = num2cell(offsets_units, 2);
 gapCells    = num2cell(signedGap_units);

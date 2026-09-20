@@ -29,7 +29,7 @@ function [result, accepted, directMotion] = tryTimedArrival( ...
 %       Request-owned direct-motion product, or struct() before construction.
 %   - maximumArrivalTime_s (finite scalar, optional)
 %       Upper search clock for earliest-arrival requests. Omission keeps the
-%       request horizon. Fixed-arrival requests always keep their prescribed
+%       request horizon. Fixed-arrival requests always keep their given
 %       clock.
 %**************************************************************************
 % OUTPUTS
@@ -190,7 +190,7 @@ if freeGoalWindowIsUsed
         [minimumArrivalTime_s, motionGoalState.time_s];
     validationDeclarations.TrajectoryCoverageEndTime_s = motionGoalState.time_s;
 else
-    % Declare the prescribed clock the motion was solved on, not the
+    % Declare the given clock the motion was solved on, not the
     % achieved arrival; the validator compares the two.
     validationDeclarations.FixedArrivalTrialTime_s = motionGoalState.time_s;
 end
@@ -204,7 +204,7 @@ if ~accepted
     return
 end
 if arrivalIsFixed
-    result.Message = "The prescribed goal layer produced an independently validated timed BMTP motion.";
+    result.Message = "The given goal layer produced an independently validated timed BMTP motion.";
 elseif freeGoalWindowIsUsed
     result.Message = "The first reachable goal window produced an independently validated free-clock BMTP motion.";
 else

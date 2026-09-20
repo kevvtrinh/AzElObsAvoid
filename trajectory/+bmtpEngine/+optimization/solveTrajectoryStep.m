@@ -1,16 +1,16 @@
 function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = solveTrajectoryStep( ...
     segmentCount, degree, initialState, goalState, limits, planes, ...
-    reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, ...
+    roundoffReserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, ...
     intrinsicVariationEnabled, constraintBase)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.optimization.solveTrajectoryStep(segmentCount, degree, initialState, ...
-%       goalState, limits, planes, reserve_units, maximumMotionDuration_s, ...
+%       goalState, limits, planes, roundoffReserve_units, maximumMotionDuration_s, ...
 %       options)
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.optimization.solveTrajectoryStep(segmentCount, degree, initialState, ...
-%       goalState, limits, planes, reserve_units, maximumMotionDuration_s, ...
+%       goalState, limits, planes, roundoffReserve_units, maximumMotionDuration_s, ...
 %       options, segmentRatio, fixedClock)
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.optimization.solveTrajectoryStep(..., segmentRatio, ...
@@ -37,7 +37,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %   - planes (S-by-R struct array)
 %       Fixed separating lines. TimeFraction scopes each active plane to a
 %       closed part of a fixed-duration motion span.
-%   - reserve_units (nonnegative scalar)
+%   - roundoffReserve_units (nonnegative scalar)
 %       Numerical separation reserve.
 %   - maximumMotionDuration_s (positive scalar)
 %       Upper bound on the internal minimum-time solve.
@@ -100,7 +100,7 @@ if ~isempty(planes)
 end
 % Half-spaces on different physical intervals cannot eliminate each other.
 if fixedClock && ~partialPlanes && originalPlaneCount > segmentCount * degree
-    planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, 2 * reserve_units);
+    planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, 2 * roundoffReserve_units);
 end
 % Larger clocks have surplus phases that can oscillate under length alone.
 % Preserve the compact eight-span steering solve used on sparse clocks.
@@ -207,7 +207,7 @@ baseInequalityCount = 4 * segmentCount * (3 * degree - 3);
 b = zeros(baseInequalityCount, 1);
 [planeRows, planeBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
     initialPlanePairs, degree, variableCount, slackColumnByPair, ...
-    (1 + fixedClock) * reserve_units);
+    (1 + fixedClock) * roundoffReserve_units);
 A = [A; planeRows];
 b = [b; planeBounds];
 
@@ -279,7 +279,7 @@ while true
     end
     [violatedPairs, maximumOmittedResidual] = bmtpEngine.separation.findViolatedPlanePairs( ...
         x, planes, planeActiveBySegment, ...
-        retainedPlanePairs, degree, slackColumnByPair, 2 * reserve_units, ...
+        retainedPlanePairs, degree, slackColumnByPair, 2 * roundoffReserve_units, ...
         options.ConstraintTolerance);
     if ~any(violatedPairs, 'all')
         loadedResidual = -Inf;
@@ -294,7 +294,7 @@ while true
     end
     retainedPlanePairs = retainedPlanePairs | violatedPairs;
     [newRows, newBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
-        violatedPairs, degree, variableCount, slackColumnByPair, 2 * reserve_units);
+        violatedPairs, degree, variableCount, slackColumnByPair, 2 * roundoffReserve_units);
     A = [A; newRows];
     b = [b; newBounds];
 end
@@ -328,9 +328,9 @@ end
 
 %% Section 4: Local Functions
 function [x, exitFlag, output] = solveConic( ...
-    f, cones, A, b, Aeq, beq, lb, ub, options, prescribedAxis, phaseTimes_s, limits)
+    f, cones, A, b, Aeq, beq, lb, ub, options, givenAxis, phaseTimes_s, limits)
     % Solve in a locally conditioned variable space when physical phase
-    % times are prescribed, then restore the original decision vector.
+    % times are given, then restore the original decision vector.
     transform = [];
     center    = [];
     if ~isempty(phaseTimes_s)
@@ -391,10 +391,10 @@ function [x, exitFlag, output] = solveConic( ...
         lb(fixedIndices) = fixedValues;
         ub(fixedIndices) = fixedValues;
     end
-    % Eliminate prescribed variables exactly. Leaving a complete analytic
+    % Eliminate given variables exactly. Leaving a complete analytic
     % axis as equal bounds produces redundant, poorly scaled solver rows.
     fixedIndices = find(lb == ub & isfinite(lb));
-    if (isempty(phaseTimes_s) && ~prescribedAxis) || isempty(fixedIndices)
+    if (isempty(phaseTimes_s) && ~givenAxis) || isempty(fixedIndices)
         [x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
         return
     end

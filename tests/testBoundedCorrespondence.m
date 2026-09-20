@@ -277,7 +277,7 @@ function testMovingCellsContainUnprovableCorrespondingRing(testCase)
             enclosure=unionRegions(cells.Regions_units);
         else
             % Protection can itself remove a thin notch and admit an exact
-            % model. Exercise the prescribed cell-level margin independently.
+            % model. Exercise the given cell-level margin independently.
             [supported,enclosure]=obstacleAvoidance.obstacles.createMovingCells(lower,upper,margin_units);
             verifyTrue(testCase,supported);
         end
