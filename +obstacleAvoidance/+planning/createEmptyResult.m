@@ -1,9 +1,9 @@
 function result = createEmptyResult( ...
-        preparedObstacles, request, requestContext, visibilityGraph, attempts, elapsedTime_s)
+        preparedObstacles, request, visibilityGraph, attempts, elapsedTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.createEmptyResult( ...
-%       preparedObstacles, request, requestContext, visibilityGraph, attempts, elapsedTime_s)
+%       preparedObstacles, request, visibilityGraph, attempts, elapsedTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Construct the stable planner record from explicit request, geometry,
@@ -14,8 +14,6 @@ function result = createEmptyResult( ...
 %       Prepared obstacle geometry owned by the normalized request.
 %   - request (scalar struct)
 %       Normalized initial state, goal state, limits, and resolved options.
-%   - requestContext (scalar struct)
-%       Original obstacles, supplied/requested provenance, and optional
 %       outer-request context.
 %   - visibilityGraph (scalar struct)
 %       Current spatial or timed guide record.
@@ -39,7 +37,7 @@ result                              = struct();
 result.Success                      = false;
 result.Message                      = "Planning has not completed.";
 result.TerminationReason            = "notStarted";
-result.Inputs                       = struct("obstacles", {requestContext.obstacles}, ...
+result.Inputs                       = struct("obstacles", {request.context.obstacles}, ...
     "initialState", request.initialState, "goalState", request.goalState);
 result.PreparedObstacles            = preparedObstacles;
 result.Limits                       = request.limits;
@@ -64,11 +62,11 @@ result.Intercept                    = struct( ...
 result.TrajectoryDuration_s         = NaN;
 result.ElapsedTime_s                = elapsedTime_s;
 
-result.SuppliedLimits     = requestContext.suppliedLimits;
-result.RequestedLimits    = requestContext.requestedLimits;
-result.RequestedGoalState = requestContext.requestedGoalState;
-result.SuppliedGoalState  = requestContext.suppliedGoalState;
-if ~isempty(requestContext.parentRequest)
-    result.ParentRequest = requestContext.parentRequest;
+result.SuppliedLimits     = request.context.suppliedLimits;
+result.RequestedLimits    = request.context.requestedLimits;
+result.RequestedGoalState = request.context.requestedGoalState;
+result.SuppliedGoalState  = request.context.suppliedGoalState;
+if ~isempty(request.context.parentRequest)
+    result.ParentRequest = request.context.parentRequest;
 end
 end

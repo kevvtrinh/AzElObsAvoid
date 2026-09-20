@@ -1,8 +1,8 @@
-function result = planWrappedRequest(request, requestContext)
+function result = planWrappedRequest(request)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.planWrappedRequest( ...
-%       request, requestContext)
+%       request)
 %**************************************************************************
 % PURPOSE
 %   - A wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped
@@ -20,8 +20,6 @@ function result = planWrappedRequest(request, requestContext)
 %       Normalized wrapped request. Its goal holds the nearest goal copy or
 %       the unwrapped target path, and its wrapped intervals are the range
 %       the vehicle can reach.
-%   - requestContext (scalar struct)
-%       Original obstacles and supplied/requested provenance.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -38,17 +36,17 @@ function result = planWrappedRequest(request, requestContext)
 
 timer           = tic;
 wrapAxes        = [request.options.WrapX, request.options.WrapY];
-intervals_units = [requestContext.requestedLimits.xInterval_units; ...
-    requestContext.requestedLimits.yInterval_units];
+intervals_units = [request.context.requestedLimits.xInterval_units; ...
+    request.context.requestedLimits.yInterval_units];
 reachableRange_units      = [request.limits.xInterval_units; request.limits.yInterval_units];
 period_units    = diff(intervals_units, 1, 2).';
 obstacleCopies          = obstacleAvoidance.input.copyObstaclesAcrossWraps( ...
-    requestContext.obstacles, intervals_units, wrapAxes, reachableRange_units);
+    request.context.obstacles, intervals_units, wrapAxes, reachableRange_units);
 
 unwrappedOptions       = request.options;
 unwrappedOptions.WrapX = false;
 unwrappedOptions.WrapY = false;
-parentRequest = obstacleAvoidance.planning.createParentRequest(request, requestContext);
+parentRequest = obstacleAvoidance.planning.createParentRequest(request);
 
 %% Section 2: List Every Goal Copy In The Reachable Range, Nearest First
 
@@ -81,8 +79,7 @@ wasPlanned       = false(candidateCount, 1);
 result           = [];
 bestKey          = [];
 bestOffset_units = [NaN, NaN];
-selectedGoalCopyRequest        = [];
-selectedGoalCopyRequestContext = [];
+selectedGoalCopyRequest = [];
 isEarliest       = request.options.GoalTimeMode == "earliestArrival";
 % The chord to a fixed goal bounds motion length and travel time from below;
 % a moving target can be met earlier and nearer, so it is never pruned.
@@ -116,16 +113,15 @@ for candidateIndex = 1:candidateCount
         error("planTrajectory:CoincidentEndpoints", ...
             "Initial and goal positions must be distinct.");
     end
-    goalCopyRequestContext = struct( ...
+    goalCopyRequest.context = struct( ...
         'obstacles',          {obstacleCopies}, ...
         'suppliedLimits',     goalCopyRequest.limits, ...
         'requestedLimits',    goalCopyRequest.limits, ...
         'suppliedGoalState',  goalCopyRequest.goalState, ...
         'requestedGoalState', goalCopyRequest.goalState, ...
-        'parentRequest',       parentRequest);
+        'parentRequest',      parentRequest);
     wasPlanned(candidateIndex) = true;
-    candidate = obstacleAvoidance.planning.planNormalizedRequest( ...
-        goalCopyRequest, goalCopyRequestContext);
+    candidate = obstacleAvoidance.planning.planNormalizedRequest(goalCopyRequest);
     reasons(candidateIndex) = candidate.TerminationReason;
     if candidate.Success
         if isEarliest
@@ -135,16 +131,14 @@ for candidateIndex = 1:candidateCount
         end
         isBetter = isempty(bestKey) || key(1) < bestKey(1) || (key(1) == bestKey(1) && key(2) < bestKey(2));
         if isBetter
-            result                      = candidate;
-            selectedGoalCopyRequest        = goalCopyRequest;
-            selectedGoalCopyRequestContext = goalCopyRequestContext;
-            bestKey                     = key;
-            bestOffset_units            = offsets_units(candidateIndex, :);
+            result                  = candidate;
+            selectedGoalCopyRequest = goalCopyRequest;
+            bestKey                 = key;
+            bestOffset_units        = offsets_units(candidateIndex, :);
         end
     elseif isempty(result)
-        result                      = candidate;
-        selectedGoalCopyRequest        = goalCopyRequest;
-        selectedGoalCopyRequestContext = goalCopyRequestContext;
+        result                  = candidate;
+        selectedGoalCopyRequest = goalCopyRequest;
     end
 end
 
@@ -153,8 +147,7 @@ end
 if isempty(bestKey) && isfield(result, 'ParentRequest')
     % Every candidate failed: report the nearest copy's failure against
     % the wrapped request.
-    result = assembleFailedCopyResult( ...
-        selectedGoalCopyRequest, selectedGoalCopyRequestContext, result, parentRequest);
+    result = assembleFailedCopyResult(selectedGoalCopyRequest, result, parentRequest);
 end
 result.WrappedGoalCopies = struct( ...
     'GoalOffset_units',           bestOffset_units, ...
@@ -197,8 +190,7 @@ function goalState = resolveMatchedCopyDerivatives(goalState, options)
     end
 end
 
-function result = assembleFailedCopyResult( ...
-        goalCopyRequest, goalCopyRequestContext, goalCopyResult, parentRequest)
+function result = assembleFailedCopyResult(goalCopyRequest, goalCopyResult, parentRequest)
     % Compose the retained copy failure with the wrapped declaration.
     declarationRequest           = goalCopyRequest;
     declarationRequest.goalState = goalCopyResult.Inputs.goalState;
@@ -206,17 +198,15 @@ function result = assembleFailedCopyResult( ...
     declarationRequest.options.WrapX = parentRequest.WrapX;
     declarationRequest.options.WrapY = parentRequest.WrapY;
     declarationRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
-
-    declarationContext                    = goalCopyRequestContext;
-    declarationContext.obstacles          = parentRequest.Obstacles;
-    declarationContext.suppliedLimits     = parentRequest.SuppliedLimits;
-    declarationContext.requestedLimits    = parentRequest.RequestedLimits;
-    declarationContext.suppliedGoalState  = parentRequest.SuppliedGoalState;
-    declarationContext.requestedGoalState = parentRequest.RequestedGoalState;
-    declarationContext.parentRequest       = [];
+    declarationRequest.context.obstacles          = parentRequest.Obstacles;
+    declarationRequest.context.suppliedLimits     = parentRequest.SuppliedLimits;
+    declarationRequest.context.requestedLimits    = parentRequest.RequestedLimits;
+    declarationRequest.context.suppliedGoalState  = parentRequest.SuppliedGoalState;
+    declarationRequest.context.requestedGoalState = parentRequest.RequestedGoalState;
+    declarationRequest.context.parentRequest      = [];
 
     result = obstacleAvoidance.planning.createEmptyResult( ...
-        goalCopyResult.PreparedObstacles, declarationRequest, declarationContext, ...
+        goalCopyResult.PreparedObstacles, declarationRequest, ...
         goalCopyResult.VisibilityGraph, goalCopyResult.Attempts, goalCopyResult.ElapsedTime_s);
     declarationFieldNames = ["Inputs", "Limits", "Options", ...
         "SuppliedLimits", "RequestedLimits", "RequestedGoalState", ...

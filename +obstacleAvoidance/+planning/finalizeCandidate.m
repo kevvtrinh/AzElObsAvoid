@@ -1,10 +1,10 @@
-function result = finalizeCandidate(preparedObstacles, request, requestContext, ...
-        visibilityGraph, priorResult, candidate, diagnostics, declaration)
+function result = finalizeCandidate(preparedObstacles, request, visibilityGraph, ...
+        priorResult, candidate, diagnostics, declaration)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.finalizeCandidate( ...
-%       preparedObstacles, request, requestContext, visibilityGraph, ...
-%       priorResult, candidate, diagnostics, declaration)
+%       preparedObstacles, request, visibilityGraph, priorResult, ...
+%       candidate, diagnostics, declaration)
 %**************************************************************************
 % PURPOSE
 %   - Assemble one complete planner record from explicit request, geometry,
@@ -15,10 +15,9 @@ function result = finalizeCandidate(preparedObstacles, request, requestContext, 
 %   - preparedObstacles (struct array)
 %       Prepared obstacle geometry owned by the normalized request.
 %   - request (scalar struct)
-%       Normalized initial state, goal state, limits, and resolved options.
-%   - requestContext (scalar struct)
-%       Original obstacles, supplied/requested provenance, and optional
-%       outer-request context.
+%       Normalized initial state, goal state, limits, and resolved options,
+%       with its context (original obstacles, supplied and requested
+%       provenance, and the parent request when this is a child request).
 %   - visibilityGraph (scalar struct)
 %       Spatial or timed guide associated with the candidate; its
 %       Route_units is the route the candidate was seeded from.
@@ -49,23 +48,23 @@ attempts               = priorResult.Attempts;
 elapsedTime_s          = priorResult.ElapsedTime_s;
 route_units            = visibilityGraph.Route_units;
 validationDeclarations = declaration;
-acceptanceDeclaration = struct( ...
-    'request',        request, ...
-    'requestContext', requestContext);
-parentRequest = requestContext.parentRequest;
+% The declared request is the one the result answers: the request itself,
+% or, for an accepted child request, the parent request it was planned for.
+declaredRequest = request;
+parentRequest   = request.context.parentRequest;
 if ~isempty(parentRequest) && candidate.Success
-    acceptanceDeclaration.requestContext.parentRequest = [];
-    acceptanceDeclaration.requestContext.suppliedLimits = parentRequest.SuppliedLimits;
-    acceptanceDeclaration.requestContext.suppliedGoalState = parentRequest.SuppliedGoalState;
-    acceptanceDeclaration.requestContext.requestedGoalState = parentRequest.RequestedGoalState;
-    acceptanceDeclaration.requestContext.requestedLimits = parentRequest.RequestedLimits;
-    acceptanceDeclaration.requestContext.obstacles = parentRequest.Obstacles;
-    acceptanceDeclaration.request.options.WrapX = parentRequest.WrapX;
-    acceptanceDeclaration.request.options.WrapY = parentRequest.WrapY;
+    declaredRequest.context.parentRequest      = [];
+    declaredRequest.context.suppliedLimits     = parentRequest.SuppliedLimits;
+    declaredRequest.context.suppliedGoalState  = parentRequest.SuppliedGoalState;
+    declaredRequest.context.requestedGoalState = parentRequest.RequestedGoalState;
+    declaredRequest.context.requestedLimits    = parentRequest.RequestedLimits;
+    declaredRequest.context.obstacles          = parentRequest.Obstacles;
+    declaredRequest.options.WrapX = parentRequest.WrapX;
+    declaredRequest.options.WrapY = parentRequest.WrapY;
     % The declared goal keeps the whole effective inner goal except its clock,
     % including the selected target unwrapping and resolved derivatives.
-    acceptanceDeclaration.request.goalState.time_s = parentRequest.GoalTime_s;
-    acceptanceDeclaration.request.options.GoalTimeMode = parentRequest.GoalTimeMode;
+    declaredRequest.goalState.time_s    = parentRequest.GoalTime_s;
+    declaredRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
     % Only an arrival-time trial declares the clock it was asked to meet.
     if ~isnan(parentRequest.FixedArrivalTrialTime_s)
         validationDeclarations.FixedArrivalTrialTime_s = ...
@@ -76,8 +75,7 @@ end
 %% Section 2: Assemble The Complete Candidate Record
 
 result = obstacleAvoidance.planning.createEmptyResult( ...
-    preparedObstacles, acceptanceDeclaration.request, ...
-    acceptanceDeclaration.requestContext, visibilityGraph, attempts, elapsedTime_s);
+    preparedObstacles, declaredRequest, visibilityGraph, attempts, elapsedTime_s);
 
 % Every record declares its outcome fields before the candidate fills them,
 % so the field order does not depend on which method produced the candidate.

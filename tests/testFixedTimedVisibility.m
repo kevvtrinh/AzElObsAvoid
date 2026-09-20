@@ -292,7 +292,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
         'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[2,2], ...
         'maxJerk_units_s3',[4,4]);
     base=planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
-    [request,requestContext,preparedObstacles]=explicitTimedInputs(base);
+    [request,preparedObstacles]=explicitTimedInputs(base);
     attempts=struct('Marker',17);
     elapsedTime_s=1.25;
 
@@ -300,7 +300,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     unsupportedRequest.options.GoalTimeMode="earliestArrival";
     unsupportedRequest.goalState.velocity_units_s=[0.1,0];
     [unsupported,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        unsupportedRequest,requestContext,preparedObstacles,attempts,elapsedTime_s,struct());
+        unsupportedRequest,preparedObstacles,attempts,elapsedTime_s,struct(),unsupportedRequest.goalState.time_s);
     verifyFalse(testCase,accepted);
     verifyEqual(testCase,unsupported.TerminationReason,"unsupportedTimedRequest");
     verifyEqual(testCase,unsupported.Message, ...
@@ -318,7 +318,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     freeWindowRequest=request;
     freeWindowRequest.options.GoalTimeMode="earliestArrival";
     [freeWindow,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        freeWindowRequest,requestContext,preparedObstacles,attempts,elapsedTime_s,struct());
+        freeWindowRequest,preparedObstacles,attempts,elapsedTime_s,struct(),freeWindowRequest.goalState.time_s);
     assertTrue(testCase,accepted,freeWindow.Message);
     verifyEqual(testCase,freeWindow.Message, ...
         "The first reachable goal window produced an independently validated free-clock BMTP motion.");
@@ -336,13 +336,13 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     rawBase=planner([],struct('time_s',0,'position_units',[-1,0]), ...
         struct('time_s',30,'position_units',[1,0]),rawLimits, ...
         struct('GoalTimeMode','fixedArrival'));
-    [rawRequest,rawContext,rawObstacles]=explicitTimedInputs(rawBase);
+    [rawRequest,rawObstacles]=explicitTimedInputs(rawBase);
     rawRequest.goalState.time_s=obstacleAvoidance.input.minimumTravelTime( ...
         rawRequest.initialState,rawRequest.goalState,rawRequest.limits);
-    rawContext.parentRequest=createTrialParentRequest(rawRequest,rawContext,30, ...
+    rawRequest.context.parentRequest=createTrialParentRequest(rawRequest,30, ...
         rawRequest.goalState.time_s);
     [rawFailure,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        rawRequest,rawContext,rawObstacles,attempts,elapsedTime_s,struct());
+        rawRequest,rawObstacles,attempts,elapsedTime_s,struct(),rawRequest.goalState.time_s);
     verifyFalse(testCase,accepted);
     verifyEqual(testCase,rawFailure.TerminationReason,"timedMotionInfeasible");
     verifyEqual(testCase,rawFailure.Message, ...
@@ -355,10 +355,10 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyFalse(testCase,rawFailure.Options.WrapX);
     verifyTrue(testCase,isfield(rawFailure,'ParentRequest'));
 
-    rejectedContext=requestContext;
-    rejectedContext.parentRequest=createTrialParentRequest(request,requestContext,6,5);
+    rejectedRequest=request;
+    rejectedRequest.context.parentRequest=createTrialParentRequest(request,6,5);
     [rejected,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
-        request,rejectedContext,preparedObstacles,attempts,elapsedTime_s,struct());
+        rejectedRequest,preparedObstacles,attempts,elapsedTime_s,struct(),rejectedRequest.goalState.time_s);
     verifyFalse(testCase,accepted);
     verifyTrue(testCase,rejected.SolverDiagnostics.Accepted);
     verifyEqual(testCase,rejected.TerminationReason,"invalidMotion");
@@ -372,7 +372,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyFalse(testCase,isfield(rejected,'ParentRequest'));
 end
 
-function [request,requestContext,preparedObstacles]=explicitTimedInputs(result)
+function [request,preparedObstacles]=explicitTimedInputs(result)
     % Recover normalized fixture inputs once; production callers pass these
     % values directly rather than reconstructing them from a result.
     request=struct( ...
@@ -380,7 +380,7 @@ function [request,requestContext,preparedObstacles]=explicitTimedInputs(result)
         'goalState',result.Inputs.goalState, ...
         'limits',result.Limits, ...
         'options',result.Options);
-    requestContext=struct( ...
+    request.context=struct( ...
         'obstacles',{result.Inputs.obstacles}, ...
         'suppliedLimits',result.SuppliedLimits, ...
         'requestedLimits',result.RequestedLimits, ...
@@ -390,9 +390,9 @@ function [request,requestContext,preparedObstacles]=explicitTimedInputs(result)
     preparedObstacles=result.PreparedObstacles;
 end
 
-function parentRequest=createTrialParentRequest(request,requestContext,goalTime_s,trialTime_s)
+function parentRequest=createTrialParentRequest(request,goalTime_s,trialTime_s)
     % Declare a distinct parent request so acceptance ownership is observable.
-    parentRequest=obstacleAvoidance.planning.createParentRequest(request,requestContext);
+    parentRequest=obstacleAvoidance.planning.createParentRequest(request);
     parentRequest.WrapX=true;
     parentRequest.WrapY=false;
     parentRequest.GoalTime_s=goalTime_s;

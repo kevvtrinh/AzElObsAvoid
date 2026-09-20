@@ -1,8 +1,8 @@
-function result = planNormalizedRequest(request, requestContext)
+function result = planNormalizedRequest(request)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.planNormalizedRequest( ...
-%       request, requestContext)
+%       request)
 %**************************************************************************
 % PURPOSE
 %   - Plan one normalized, unwrapped request through geometry preparation,
@@ -11,8 +11,6 @@ function result = planNormalizedRequest(request, requestContext)
 % INPUTS
 %   - request (scalar struct)
 %       Normalized planner states, limits, and options.
-%   - requestContext (scalar struct)
-%       Original inputs, provenance, and optional parent request.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -23,8 +21,8 @@ function result = planNormalizedRequest(request, requestContext)
 %   - Positions are coordinate units and time is seconds.
 %**************************************************************************
 
-obstacles    = requestContext.obstacles;
-parentRequest = requestContext.parentRequest;
+obstacles    = request.context.obstacles;
+parentRequest = request.context.parentRequest;
 
 %% Section 2: Prepare Supplied Geometry And Motion Coverage
 
@@ -61,7 +59,7 @@ visibilityGraph = struct( ...
     'SearchKind',             "notSearched");
 emptyAttempts = repmat(obstacleAvoidance.planning.createAttemptRecord(0, ""), 0, 1);
 result = obstacleAvoidance.planning.createEmptyResult( ...
-    scene.preparedObstacles, request, requestContext, visibilityGraph, emptyAttempts, 0);
+    scene.preparedObstacles, request, visibilityGraph, emptyAttempts, 0);
 
 % Moving cells have a declared conservative continuous model.
 % Only intervals without correspondence or any proof stop preparation.
@@ -218,7 +216,7 @@ endpointDerivatives = [request.initialState.velocity_units_s, ...
     request.goalState.velocity_units_s, request.goalState.acceleration_units_s2];
 isRest              = all(endpointDerivatives == 0);
 if request.options.GoalTimeMode == "earliestArrival"
-    result = planEarliestArrival(result, scene, request, requestContext, totalTimer, ...
+    result = planEarliestArrival(result, scene, request, totalTimer, ...
         isDynamic, earliestTarget, isRest);
     return
 end
@@ -228,7 +226,7 @@ end
 motionGoalState     = request.goalState;
 fixedArrivalDynamic = isDynamic && request.options.GoalTimeMode == "fixedArrival";
 if fixedArrivalDynamic
-    result = planFixedArrivalDynamic(result, scene, request, requestContext, totalTimer);
+    result = planFixedArrivalDynamic(result, scene, request, totalTimer);
     return
 end
 
@@ -256,7 +254,7 @@ seed             = struct('position_units', route_units, ...
     'options', request.options), struct());
 
 result = obstacleAvoidance.planning.finalizeCandidate( ...
-    scene.preparedObstacles, request, requestContext, visibilityGraph, result, ...
+    scene.preparedObstacles, request, visibilityGraph, result, ...
     candidate, solverDiagnostics, struct());
 result.ElapsedTime_s = toc(totalTimer);
 end
@@ -269,7 +267,7 @@ function graph = getVisibilityGraph(vertexVisibility, start_units, goal_units, k
     graph.SearchKind = kind;
 end
 
-function result = planEarliestArrival(result, scene, request, requestContext, totalTimer, ...
+function result = planEarliestArrival(result, scene, request, totalTimer, ...
         isDynamic, earliestTarget, isRest)
     % Keep one truthful method method sequence with a fixed stage order. Every stage
     % receives the search product of the stages before it and returns it
@@ -295,25 +293,25 @@ function result = planEarliestArrival(result, scene, request, requestContext, to
         'BestSoFarAttemptIndex', 0, ...
         'Done',                  false);
     if capabilities.StaticSpatialBmtp
-        search = runStaticSpatialStage(search, scene, request, requestContext, ...
+        search = runStaticSpatialStage(search, scene, request, ...
             earliestPossibleArrival_s);
     end
     if ~search.Done && capabilities.DepartureFamily
-        search = runDepartureStage(search, scene, request, requestContext, ...
+        search = runDepartureStage(search, scene, request, ...
             earliestPossibleArrival_s);
     end
     if ~search.Done && capabilities.TimedVariableClockBmtp
-        search = runTimedSearchStage(search, scene, request, requestContext, ...
+        search = runTimedSearchStage(search, scene, request, ...
             totalTimer, earliestPossibleArrival_s);
     end
     if ~search.Done && capabilities.ArrivalTimeTrials
-        search = runArrivalTimeTrialStage(search, scene, request, requestContext, totalTimer);
+        search = runArrivalTimeTrialStage(search, scene, request, totalTimer);
     end
     result = finishEarliestArrival(search.Result, search.Attempts, capabilities, ...
         totalTimer, earliestPossibleArrival_s);
 end
 
-function search = runStaticSpatialStage(search, scene, request, requestContext, ...
+function search = runStaticSpatialStage(search, scene, request, ...
         earliestPossibleArrival_s)
     % Static fixed-position rest requests use one exact spatial proposal, and
     % that proposal is the whole method sequence.
@@ -339,7 +337,7 @@ function search = runStaticSpatialStage(search, scene, request, requestContext, 
         [candidate, diagnostics] = bmtpEngine.solve(seed, scene, ...
             request, struct());
         result = obstacleAvoidance.planning.finalizeCandidate( ...
-            scene.preparedObstacles, request, requestContext, graph, result, ...
+            scene.preparedObstacles, request, graph, result, ...
             candidate, diagnostics, struct());
         attempt          = populateMotionAttempt(attempt, result, candidate, diagnostics);
         attempt.Selected = result.Success;
@@ -357,7 +355,7 @@ function search = runStaticSpatialStage(search, scene, request, requestContext, 
     search.Done                 = true;
 end
 
-function search = runDepartureStage(search, scene, request, requestContext, ...
+function search = runDepartureStage(search, scene, request, ...
         earliestPossibleArrival_s)
     % Dynamic fixed-position rest requests try the direct departure family
     % first. A validated departure becomes the best plan so far and ends the method sequence
@@ -383,7 +381,7 @@ function search = runDepartureStage(search, scene, request, requestContext, ...
     graph.IsConnected            = true;
     graph.GraphIsFullyEnumerated = false;
     departureResult = obstacleAvoidance.planning.finalizeCandidate( ...
-        scene.preparedObstacles, request, requestContext, graph, result, ...
+        scene.preparedObstacles, request, graph, result, ...
         candidate, diagnostics, struct());
     attempt = populateMotionAttempt(attempt, departureResult, candidate, diagnostics);
     attempt.ElapsedTime_s = toc(attemptTimer);
@@ -411,7 +409,7 @@ function search = runDepartureStage(search, scene, request, requestContext, ...
     search.Attempts(end + 1, 1) = attempt;
 end
 
-function search = runTimedSearchStage(search, scene, request, requestContext, ...
+function search = runTimedSearchStage(search, scene, request, ...
         totalTimer, earliestPossibleArrival_s)
     % One time-expanded variable-clock timed search attempt, bounded by the best plan so far
     % arrival when there is one. An accepted timed search attempt settles the selection;
@@ -428,7 +426,7 @@ function search = runTimedSearchStage(search, scene, request, requestContext, ..
     end
     priorElapsedTime_s = toc(totalTimer);
     [timedResult, timedAccepted] = obstacleAvoidance.planning.tryTimedArrival( ...
-        request, requestContext, scene.preparedObstacles, search.Attempts, ...
+        request, scene.preparedObstacles, search.Attempts, ...
         priorElapsedTime_s, struct(), maximumArrivalTime_s);
     attempt = createTimedAttemptRecord(numel(search.Attempts) + 1, ...
         timedResult, timedAccepted, priorElapsedTime_s);
@@ -481,7 +479,7 @@ function search = runTimedSearchStage(search, scene, request, requestContext, ..
     search.Attempts(end + 1, 1) = attempt;
 end
 
-function search = runArrivalTimeTrialStage(search, scene, request, requestContext, totalTimer)
+function search = runArrivalTimeTrialStage(search, scene, request, totalTimer)
     % Arrival-time search: the primary method for moving targets
     % and non-rest endpoints, and the refinement of a dynamic best plan so far within
     % its own trial budget.
@@ -497,7 +495,7 @@ function search = runArrivalTimeTrialStage(search, scene, request, requestContex
     searchBase               = search.Result;
     searchBase.ElapsedTime_s = toc(totalTimer);
     search.Result   = obstacleAvoidance.planning.searchArrivalTimes( ...
-        request, requestContext, scene, searchBase, search.Attempts, trialLimit);
+        request, scene, searchBase, search.Attempts, trialLimit);
     search.Attempts = search.Result.Attempts;
     search.Done     = true;
 end
@@ -599,7 +597,7 @@ function result = finishEarliestArrival(result, attempts, capabilities, totalTim
     end
 end
 
-function result = planFixedArrivalDynamic(result, scene, request, requestContext, totalTimer)
+function result = planFixedArrivalDynamic(result, scene, request, totalTimer)
     % Two cheap exact-snapshot guides are deterministic shortcuts. Their
     % bounded failures never prove infeasibility; eligible failures advance
     % to the next guide and ultimately to one clean timed next method.
@@ -652,7 +650,7 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
             [candidate, diagnostics, directMotion] = bmtpEngine.solve(seed, scene, ...
                 request, directMotion);
             candidateResult = obstacleAvoidance.planning.finalizeCandidate( ...
-                scene.preparedObstacles, request, requestContext, graph, result, ...
+                scene.preparedObstacles, request, graph, result, ...
                 candidate, diagnostics, struct());
 
             attempt.IterationCount = readDiagnosticScalar( ...
@@ -700,7 +698,8 @@ function result = planFixedArrivalDynamic(result, scene, request, requestContext
     % the only non-snapshot proposal and runs with the normal solver budget.
     priorElapsedTime_s = toc(totalTimer);
     [timedResult, timedAccepted, ~] = obstacleAvoidance.planning.tryTimedArrival( ...
-        request, requestContext, scene.preparedObstacles, attempts, priorElapsedTime_s, directMotion);
+        request, scene.preparedObstacles, attempts, priorElapsedTime_s, directMotion, ...
+        request.goalState.time_s);
     timedAttempt = obstacleAvoidance.planning.createAttemptRecord( ...
         numel(attempts) + 1, "timedVisibility");
     timedAttempt.GraphIsFullyEnumerated = false;

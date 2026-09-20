@@ -1,9 +1,9 @@
-function result = searchArrivalTimes(request, requestContext, scene, baseResult, ...
+function result = searchArrivalTimes(request, scene, baseResult, ...
         priorAttempts, maximumTrialCount)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.searchArrivalTimes( ...
-%       request, requestContext, scene, baseResult, priorAttempts, ...
+%       request, scene, baseResult, priorAttempts, ...
 %       maximumTrialCount)
 %**************************************************************************
 % PURPOSE
@@ -13,8 +13,6 @@ function result = searchArrivalTimes(request, requestContext, scene, baseResult,
 % INPUTS
 %   - request (scalar struct)
 %       Normalized unwrapped request that owns the arrival-time trials.
-%   - requestContext (scalar struct)
-%       Original planar inputs, provenance, and optional parent request.
 %   - scene (scalar struct)
 %       Prepared geometry owned by the unwrapped request.
 %   - baseResult (scalar struct)
@@ -40,11 +38,8 @@ function result = searchArrivalTimes(request, requestContext, scene, baseResult,
 
 searchTimer       = tic;
 initialState      = request.initialState;
-suppliedGoalState = requestContext.suppliedGoalState;
+suppliedGoalState = request.context.suppliedGoalState;
 trialOptions      = request.options;
-if nargin < 6 || isempty(maximumTrialCount)
-    maximumTrialCount = trialOptions.MaxArrivalTrials;
-end
 validateattributes(maximumTrialCount, {'numeric'}, ...
     {'scalar', 'finite', 'integer', 'positive'});
 
@@ -109,10 +104,10 @@ candidateTimes_s     = unique([gridTimes_s; boundaryTimes_s]);
 candidateTimes_s     = candidateTimes_s(candidateTimes_s <= horizonTime_s);
 
 trialOptions.GoalTimeMode = "fixedArrival";
-if ~isempty(requestContext.parentRequest)
-    parentRequest = requestContext.parentRequest;
+if ~isempty(request.context.parentRequest)
+    parentRequest = request.context.parentRequest;
 else
-    parentRequest = obstacleAvoidance.planning.createParentRequest(request, requestContext);
+    parentRequest = obstacleAvoidance.planning.createParentRequest(request);
 end
 
 %% Section 4: Screen Endpoint Physics, Then Spend The Solver Budget
