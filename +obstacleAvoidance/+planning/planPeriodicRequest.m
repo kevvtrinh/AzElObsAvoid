@@ -45,10 +45,7 @@ images          = obstacleAvoidance.input.replicatePeriodicObstacles( ...
 planarOptions       = request.options;
 planarOptions.WrapX = false;
 planarOptions.WrapY = false;
-outerRequest                 = obstacleAvoidance.planning.createOuterRequest(request, requestContext);
-outerRequest.RequestedLimits = requestContext.requestedLimits;
-outerRequest.WrapX           = request.options.WrapX;
-outerRequest.WrapY           = request.options.WrapY;
+outerRequest = obstacleAvoidance.planning.createOuterRequest(request, requestContext);
 
 %% Section 2: Enumerate Goal Images Inside The Band, Nearest First
 

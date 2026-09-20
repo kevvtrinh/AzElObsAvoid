@@ -393,7 +393,6 @@ end
 function outerRequest=createTrialOuterRequest(request,requestContext,goalTime_s,trialTime_s)
     % Declare a distinct outer request so acceptance ownership is observable.
     outerRequest=obstacleAvoidance.planning.createOuterRequest(request,requestContext);
-    outerRequest.RequestedLimits=requestContext.requestedLimits;
     outerRequest.WrapX=true;
     outerRequest.WrapY=false;
     outerRequest.GoalTime_s=goalTime_s;

@@ -60,19 +60,16 @@ if ~isempty(outerRequest) && candidate.Success
     acceptanceDeclaration.requestContext.suppliedLimits = outerRequest.SuppliedLimits;
     acceptanceDeclaration.requestContext.suppliedGoalState = outerRequest.SuppliedGoalState;
     acceptanceDeclaration.requestContext.requestedGoalState = outerRequest.RequestedGoalState;
-    if isfield(outerRequest, 'RequestedLimits')
-        acceptanceDeclaration.requestContext.requestedLimits = outerRequest.RequestedLimits;
-    end
+    acceptanceDeclaration.requestContext.requestedLimits = outerRequest.RequestedLimits;
     acceptanceDeclaration.requestContext.obstacles = outerRequest.Obstacles;
-    if isfield(outerRequest, 'WrapX')
-        acceptanceDeclaration.request.options.WrapX = outerRequest.WrapX;
-        acceptanceDeclaration.request.options.WrapY = outerRequest.WrapY;
-    end
+    acceptanceDeclaration.request.options.WrapX = outerRequest.WrapX;
+    acceptanceDeclaration.request.options.WrapY = outerRequest.WrapY;
     % The declared goal keeps the whole effective inner goal except its clock,
     % including the selected target lift and resolved derivatives.
     acceptanceDeclaration.request.goalState.time_s = outerRequest.GoalTime_s;
     acceptanceDeclaration.request.options.GoalTimeMode = outerRequest.GoalTimeMode;
-    if isfield(outerRequest, 'FixedArrivalTrialTime_s')
+    % Only a chronological trial declares the clock it was asked to meet.
+    if ~isnan(outerRequest.FixedArrivalTrialTime_s)
         validationDeclarations.FixedArrivalTrialTime_s = ...
             outerRequest.FixedArrivalTrialTime_s;
     end
