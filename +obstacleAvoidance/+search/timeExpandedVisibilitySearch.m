@@ -177,6 +177,16 @@ for sourceNodeIndex = 1:nodeCount
             norm(displacement_units(targetNodeIndex, :));
     end
 end
+% The layer graph: everything the motion-candidate builders read about the
+% time layers, the node-to-node edges, and where a wait can start and end.
+layerGraph = struct( ...
+    'LayerTimes_s',                 layerTimes_s, ...
+    'NodeIsFree',                   nodeIsFree, ...
+    'IsWaitComponentStart',         isWaitComponentStart, ...
+    'WaitComponentFinalLayerIndex', waitComponentFinalLayerIndex, ...
+    'MotionEdgeExists',             motionEdgeExists, ...
+    'MinimumEdgeDuration_s',        minimumEdgeDuration_s, ...
+    'MotionEdgeLengths_units',      motionEdgeLengths_units);
 distanceToGoal_units = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
 isEarliestArrival           = options.GoalTimeMode == "earliestArrival";
 goalCanTerminateAtLayer     = false(layerCount, 1);
@@ -392,9 +402,7 @@ function scheduleLayerExpansion(layerIndex)
     end
 
     [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
-        currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
-        minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-        isWaitComponentStart, waitComponentFinalLayerIndex);
+        currentNodeIndices, layerIndex, layerGraph);
     rejectedCount = rejectedCount + candidateRejectedCount;
     targetLayerIndices = unique(motionCandidates(:, 3)).';
     for targetLayerIndex = targetLayerIndices
@@ -421,9 +429,7 @@ function propagateFixedArrivalLayer(layerIndex)
         end
     end
     [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
-        currentNodeIndices, layerIndex, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, ...
-        minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-        isWaitComponentStart, waitComponentFinalLayerIndex);
+        currentNodeIndices, layerIndex, layerGraph);
     rejectedCount        = rejectedCount + candidateRejectedCount;
     motionCandidateCount = size(motionCandidates, 1);
     motionIsPending      = true(motionCandidateCount, 1);
@@ -680,9 +686,7 @@ end
 end
 
 function [candidates, rejectedCount] = buildLayerCandidates( ...
-        sourceNodeIndices, sourceLayerIndex, sourceTime_s, layerTimes_s, motionEdgeExists, ...
-        minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-        isWaitComponentStart, waitComponentFinalLayerIndex)
+        sourceNodeIndices, sourceLayerIndex, layerGraph)
     % Enumerate [entry layer, target node, source node] in the original order.
     % Bound the temporary logical tensor while retaining the vectorized path
     % for ordinary inputs and the velocity-only duration lower bound.
@@ -692,8 +696,8 @@ function [candidates, rejectedCount] = buildLayerCandidates( ...
         return
     end
 
-    layerCount  = numel(layerTimes_s);
-    nodeCount   = size(nodeIsFree, 2);
+    layerCount  = numel(layerGraph.LayerTimes_s);
+    nodeCount   = size(layerGraph.NodeIsFree, 2);
     sourceCount = numel(sourceNodeIndices);
     maximumCandidateTensorElements = 1024 ^ 2;
     sourceBatchSize = max(1, ...
@@ -705,21 +709,25 @@ function [candidates, rejectedCount] = buildLayerCandidates( ...
         finalSourceOffset = min(sourceCount, batchIndex * sourceBatchSize);
         batchSourceNodeIndices = sourceNodeIndices(firstSourceOffset:finalSourceOffset);
         [candidateBlocks{batchIndex}, batchRejectedCount] = buildCandidateBatch( ...
-            batchSourceNodeIndices, sourceLayerIndex, sourceTime_s, layerTimes_s, motionEdgeExists, ...
-            minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-            isWaitComponentStart, waitComponentFinalLayerIndex);
+            batchSourceNodeIndices, sourceLayerIndex, layerGraph);
         rejectedCount = rejectedCount + batchRejectedCount;
     end
     candidates = vertcat(candidateBlocks{:});
 end
 
 function [candidates, rejectedCount] = buildCandidateBatch( ...
-        sourceNodeIndices, sourceLayerIndex, sourceTime_s, layerTimes_s, motionEdgeExists, ...
-        minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, ...
-        isWaitComponentStart, waitComponentFinalLayerIndex)
+        sourceNodeIndices, sourceLayerIndex, layerGraph)
     % Vectorize one bounded block and preserve source/target/layer ordering.
-    layerCount  = numel(layerTimes_s);
-    nodeCount   = size(nodeIsFree, 2);
+    layerTimes_s                 = layerGraph.LayerTimes_s;
+    nodeIsFree                   = layerGraph.NodeIsFree;
+    isWaitComponentStart         = layerGraph.IsWaitComponentStart;
+    waitComponentFinalLayerIndex = layerGraph.WaitComponentFinalLayerIndex;
+    motionEdgeExists             = layerGraph.MotionEdgeExists;
+    minimumEdgeDuration_s        = layerGraph.MinimumEdgeDuration_s;
+    motionEdgeLengths_units      = layerGraph.MotionEdgeLengths_units;
+    sourceTime_s = layerTimes_s(sourceLayerIndex);
+    layerCount   = numel(layerTimes_s);
+    nodeCount    = size(nodeIsFree, 2);
     sourceCount = numel(sourceNodeIndices);
     earliestTime_s = sourceTime_s + minimumEdgeDuration_s(sourceNodeIndices, :).' - 1e-12;
     firstFeasibleLayerIndices = 1 + sum( ...
