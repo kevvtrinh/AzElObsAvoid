@@ -1,15 +1,12 @@
 function [verified, alignedUpper_units, startRegions_units, endRegions_units, ...
     geometryModel, hasExactPartition, partitionReused, dependsOnPrevious] = alignVerifiedSingleRing( ...
-    lowerX_units, lowerY_units, upperX_units, upperY_units, lowerShape, ...
-    upperShape, reusableStartRegions_units, preserveAlignment, translationOnly, deferTranslation)
+    startSample, endSample, reusableStartRegions_units, proofRequest)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [verified, alignedUpper_units, startRegions_units, endRegions_units, ...
 %       geometryModel, hasExactPartition, partitionReused, dependsOnPrevious] = ...
 %       obstacleAvoidance.obstacles.alignVerifiedSingleRing( ...
-%       lowerX_units, lowerY_units, upperX_units, upperY_units, lowerShape, ...
-%       upperShape, reusableStartRegions_units, preserveAlignment, ...
-%       translationOnly, deferTranslation)
+%       startSample, endSample, reusableStartRegions_units, proofRequest)
 %**************************************************************************
 % PURPOSE
 %   - Prove one source interval of a moving obstacle: align the two
@@ -21,20 +18,20 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 %     topology or the endpoint areas.
 %**************************************************************************
 % INPUTS
-%   - lowerX_units, lowerY_units, upperX_units, upperY_units (numeric vectors)
-%       Protected sample rings at the interval start and end, NaN-separated
-%       when a sample has several rings.
-%   - lowerShape, upperShape (polyshape)
-%       The same two samples as shapes.
+%   - startSample, endSample (scalar structs)
+%       The obstacle sample at the interval start and end, each with
+%       X_units and Y_units (the protected ring, NaN-separated when a
+%       sample has several rings) and Shape (the same sample as a
+%       polyshape).
 %   - reusableStartRegions_units (cell column)
 %       End regions of a proven preceding interval, or empty.
-%   - preserveAlignment (logical scalar)
-%       Keep the given vertex order instead of realigning.
-%   - translationOnly (logical scalar)
-%       Stop after the index-preserving translation check.
-%   - deferTranslation (logical scalar)
-%       Report a translation candidate as depending on the previous
-%       interval instead of resolving it here (batch preparation).
+%   - proofRequest (scalar struct)
+%       Which proofs to try, with three logical scalars:
+%       PreserveAlignment keeps the given vertex order instead of
+%       realigning; TranslationOnly stops after the index-preserving
+%       translation check; DeferTranslation reports a translation
+%       candidate as depending on the previous interval instead of
+%       resolving it here (batch preparation).
 %**************************************************************************
 % OUTPUTS
 %   - verified (logical scalar)
@@ -57,6 +54,15 @@ function [verified, alignedUpper_units, startRegions_units, endRegions_units, ..
 
 %% Section 1: Validate The Rings And The Proof Requests
 
+lowerX_units = startSample.X_units;
+lowerY_units = startSample.Y_units;
+lowerShape   = startSample.Shape;
+upperX_units = endSample.X_units;
+upperY_units = endSample.Y_units;
+upperShape   = endSample.Shape;
+preserveAlignment = proofRequest.PreserveAlignment;
+translationOnly   = proofRequest.TranslationOnly;
+deferTranslation  = proofRequest.DeferTranslation;
 validateattributes(lowerX_units, {'numeric'}, {'real', 'vector'});
 validateattributes(lowerY_units, {'numeric'}, {'real', 'numel', numel(lowerX_units)});
 validateattributes(upperX_units, {'numeric'}, {'real', 'vector'});
