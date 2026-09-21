@@ -136,16 +136,9 @@ staticEdgeCache = zeros(0, 0, 'uint8');
 if staticCount > 0 && nodeCount^2 * staticCount <= maximumCacheBytes
     staticEdgeCache = zeros(nodeCount^2, staticCount, 'uint8');
 end
-% Cache a conservative space-time broad phase for the fixed node segments.
-% The boxes contain every point accepted by the exact residual predicate,
-% including its tolerance near sharp corners. A cache miss therefore removes
-% work only; uncertain and degenerating cells remain on the exact path.
-nodeScale_units = max([1; abs(nodePosition_units(:))]);
-[dynamicCellLower_units, dynamicCellUpper_units, dynamicCellIsCounterclockwise] = ...
-    obstacleAvoidance.search.createCellBoxes(dynamicCells, nodeScale_units);
-dynamicPairCache = obstacleAvoidance.search.createPairCellCache( ...
-    nodePosition_units, dynamicCellLower_units, dynamicCellUpper_units, ...
-    dynamicCells.ActiveTimeInterval_s);
+% Index the moving cells once: their boxes, orientation, and the broad-phase
+% clocks of every node pair, for the exact clearance predicate below.
+dynamicCellIndex = obstacleAvoidance.search.createMovingCellIndex(dynamicCells, nodePosition_units);
 nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
@@ -576,9 +569,8 @@ function [isClear, blockingCellIndices, collisionTimes_s] = ...
     candidateIndices = find(isClear);
     [dynamicIsClear, dynamicBlockingCellIndices, dynamicCollisionTimes_s] = ...
         obstacleAvoidance.search.affineEdgesAreClear( ...
-        first_units(candidateIndices, :), second_units(candidateIndices, :), ...
         firstNodeIndices(candidateIndices), secondNodeIndices(candidateIndices), ...
-        first_s, second_s, dynamicCells, dynamicPairCache, dynamicCellIsCounterclockwise);
+        first_s, second_s, dynamicCellIndex);
     isClear(candidateIndices)             = dynamicIsClear;
     blockingCellIndices(candidateIndices) = dynamicBlockingCellIndices;
     collisionTimes_s(candidateIndices)      = dynamicCollisionTimes_s;
@@ -596,8 +588,8 @@ function blockedLayerCount = provenBlockedLayerCount( ...
         return
     end
     cellIndex = double(cellIndex);
-    if any(~isfinite([dynamicCellLower_units(cellIndex, :), ...
-            dynamicCellUpper_units(cellIndex, :)]))
+    if any(~isfinite([dynamicCellIndex.CellLower_units(cellIndex, :), ...
+            dynamicCellIndex.CellUpper_units(cellIndex, :)]))
         return
     end
 

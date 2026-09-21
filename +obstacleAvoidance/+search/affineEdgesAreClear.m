@@ -1,12 +1,10 @@
 function [isClear, blockingCellIndices, collisionTimes_s] = affineEdgesAreClear( ...
-    first_units, second_units, firstNodeIndices, secondNodeIndices, ...
-    first_s, second_s, cells, pairCache, cellIsCounterclockwise)
+    firstNodeIndices, secondNodeIndices, first_s, second_s, index)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [isClear, blockingCellIndices, collisionTimes_s] = ...
-%       obstacleAvoidance.search.affineEdgesAreClear(first_units, second_units, ...
-%       firstNodeIndices, secondNodeIndices, first_s, second_s, cells, ...
-%       pairCache, cellIsCounterclockwise)
+%       obstacleAvoidance.search.affineEdgesAreClear( ...
+%       firstNodeIndices, secondNodeIndices, first_s, second_s, index)
 %**************************************************************************
 % PURPOSE
 %   - Decide exactly whether straight segments traversed over one clock
@@ -14,18 +12,13 @@ function [isClear, blockingCellIndices, collisionTimes_s] = affineEdgesAreClear(
 %     blocked segment name the first blocking cell and a collision time.
 %**************************************************************************
 % INPUTS
-%   - first_units, second_units (N-by-2 numeric)
-%       Segment start and end positions.
 %   - firstNodeIndices, secondNodeIndices (N-by-1 numeric)
-%       Node indices of the segment endpoints, the keys of pairCache.
+%       Node indices of the segment endpoints.
 %   - first_s, second_s (numeric scalars)
 %       Clock interval of the traversal; equal clocks are a stationary point.
-%   - cells (scalar struct)
-%       Affine time cells from createTimeCells.
-%   - pairCache (scalar struct)
-%       Segment/box parameter clocks from createPairCellCache.
-%   - cellIsCounterclockwise (logical column)
-%       Orientation of every cell from createCellBoxes.
+%   - index (scalar struct)
+%       The moving-cell index from createMovingCellIndex: the cells, their
+%       orientation, the node positions, and the pair cache.
 %**************************************************************************
 % OUTPUTS
 %   - isClear (N-by-1 logical)
@@ -43,6 +36,11 @@ function [isClear, blockingCellIndices, collisionTimes_s] = affineEdgesAreClear(
 
 %% Section 1: Prove Every Segment Against The Affine Cells
 
+first_units            = index.NodePosition_units(firstNodeIndices, :);
+second_units           = index.NodePosition_units(secondNodeIndices, :);
+cells                  = index.Cells;
+pairCache              = index;
+cellIsCounterclockwise = index.CellIsCounterclockwise;
 % A path point and every vertex of a time cell are affine in time. Each
 % convex half-space residual is therefore quadratic; its real roots
 % partition the clock into intervals of constant inside/outside sign.
