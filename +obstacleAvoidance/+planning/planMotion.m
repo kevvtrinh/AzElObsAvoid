@@ -1,7 +1,7 @@
-function result = planNormalizedRequest(request)
+function result = planMotion(request)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.planning.planNormalizedRequest( ...
+%   result = obstacleAvoidance.planning.planMotion( ...
 %       request)
 %**************************************************************************
 % PURPOSE

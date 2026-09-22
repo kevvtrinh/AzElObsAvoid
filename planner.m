@@ -53,7 +53,7 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %     velocity, acceleration, and jerk use units/s, units/s^2, and units/s^3.
 %**************************************************************************
 
-%% Section 1: Resolve Inputs And Dispatch The Request
+%% Section 1: Prepare The Request
 
 % Recursive user path setup can put archived benchmark packages ahead of this
 % checkout's engine. Keep planning and validation bound to the same checkout.
@@ -65,7 +65,7 @@ if ~startsWith(path, [productionPath pathsep])
 end
 
 if nargin == 0
-    result = obstacleAvoidance.planning.planRequest();
+    result = obstacleAvoidance.planning.prepareRequest();
     return
 end
 if nargin < 2
@@ -80,6 +80,14 @@ end
 if nargin < 5
     options = [];
 end
-result = obstacleAvoidance.planning.planRequest( ...
-    obstacles, initialState, goalState, limits, options, []);
+request = obstacleAvoidance.planning.prepareRequest(obstacles, initialState, goalState, limits, options, []);
+
+%% Section 2: Plan The Motion
+
+% Wrapped requests need equivalent goal copies before motion planning.
+if request.options.WrapX || request.options.WrapY
+    result = obstacleAvoidance.planning.planWrappedMotion(request);
+else
+    result = obstacleAvoidance.planning.planMotion(request);
+end
 end

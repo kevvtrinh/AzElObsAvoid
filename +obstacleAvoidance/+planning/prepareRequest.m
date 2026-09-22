@@ -1,14 +1,13 @@
-function result = planRequest(obstacles, initialState, goalState, limits, options, parentRequest)
+function request = prepareRequest(obstacles, initialState, goalState, limits, options, parentRequest)
 %% Section 0: Header & Readme
 % SYNTAX
-%   options = obstacleAvoidance.planning.planRequest()
-%   result = obstacleAvoidance.planning.planRequest( ...
+%   options = obstacleAvoidance.planning.prepareRequest()
+%   request = obstacleAvoidance.planning.prepareRequest( ...
 %       obstacles, initialState, goalState, limits, options, parentRequest)
 %**************************************************************************
 % PURPOSE
-%   - Check and normalize one planner request, then plan it: a request with
-%     a wrapped axis goes through the wrapped planner, which plans unwrapped
-%     copies; every other request goes straight to the planning core.
+%   - Check inputs, fill defaults, match target motion, and unwrap coordinates.
+%     Return the prepared request without searching routes or generating motion.
 %**************************************************************************
 % INPUTS
 %   - obstacles (struct array)
@@ -26,9 +25,9 @@ function result = planRequest(obstacles, initialState, goalState, limits, option
 %       obstacleAvoidance.planning.createParentRequest; [] for a public call.
 %**************************************************************************
 % OUTPUTS
-%   - result (scalar struct)
-%       Stable planner result. Expected planning failure returns
-%       Success = false; invalid input throws an error.
+%   - request (scalar struct)
+%       Checked states, limits, options, and original input context.
+%       Invalid input throws an error.
 %   - options (scalar struct, zero-input call)
 %       Fully resolved planner defaults.
 %**************************************************************************
@@ -36,12 +35,12 @@ function result = planRequest(obstacles, initialState, goalState, limits, option
 %   - Positions are coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Normalize And Dispatch The Request
+%% Section 1: Prepare The Request
 
 % With no inputs, return the available options and their default values.
 if nargin == 0
     [~, ~, ~, defaultOptions] = createDefaults();
-    result = resolveOptions(struct(), defaultOptions);
+    request = resolveOptions(struct(), defaultOptions);
     return
 end
 
@@ -198,15 +197,6 @@ if goalIsRequiredEndpoint && endpointsCoincide
     error("planTrajectory:CoincidentEndpoints", "Initial and goal positions must be distinct.");
 end
 
-% For a wrapped axis, try goal positions shifted by whole loops within the
-% search range. Check the result against the original wrapped request.
-if any(wrapAxes)
-    result = obstacleAvoidance.planning.planWrappedRequest(request);
-    return
-end
-
-% With no wrapped axes, send the checked inputs directly to the planner.
-result = obstacleAvoidance.planning.planNormalizedRequest(request);
 end
 
 

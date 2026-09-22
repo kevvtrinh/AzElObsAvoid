@@ -1,7 +1,7 @@
-function result = planWrappedRequest(request)
+function result = planWrappedMotion(request)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.planning.planWrappedRequest( ...
+%   result = obstacleAvoidance.planning.planWrappedMotion( ...
 %       request)
 %**************************************************************************
 % PURPOSE
@@ -121,7 +121,7 @@ for candidateIndex = 1:candidateCount
         'requestedGoalState', goalCopyRequest.goalState, ...
         'parentRequest',      parentRequest);
     wasPlanned(candidateIndex) = true;
-    candidate = obstacleAvoidance.planning.planNormalizedRequest(goalCopyRequest);
+    candidate = obstacleAvoidance.planning.planMotion(goalCopyRequest);
     reasons(candidateIndex) = candidate.TerminationReason;
     if candidate.Success
         if isEarliest

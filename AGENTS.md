@@ -47,8 +47,26 @@ generation, independent validation, and plots of those returned core results.
   helper only when logic is genuinely shared or moving it out materially improves
   clarity; avoid sprawling layers of tiny functions.
 - Keep the main function body flush left and local helper bodies indented four
-  spaces. Validate public inputs before computation and explain only non-obvious
-  geometry, tolerances, or approximations.
+  spaces. Validate public inputs before computation and explain non-obvious
+  logic, geometry, tolerances, or approximations.
+
+### Commenting Style
+
+- Write for a junior or associate engineer. Use plain, direct language while
+  preserving the engineering meaning and accuracy.
+- Explain what the code does and why when it is not obvious; do not narrate
+  routine syntax. Keep comments short and close to the relevant code.
+- Prefer familiar wording over jargon such as "residual," "broadcast," or
+  "outer bound" when a simpler explanation conveys the same meaning.
+- Use short equations and symbols when they help, for example:
+  `maximum travel distance = maximum speed x available time`.
+- Give concrete numerical examples for unfamiliar concepts, especially wrapped
+  coordinates: `start = 350, goal = 10; use goal = 370, distance = 20` on a
+  360-unit axis.
+- Explain edge cases by their outcome, for example: "If two copies are equally
+  close, choose the higher coordinate."
+- Use clear, consistent variable names so comments do not need to decode
+  abbreviations. Distinguish supplied goal values from target motion values.
 
 ## Verification
 

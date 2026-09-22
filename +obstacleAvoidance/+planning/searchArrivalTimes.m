@@ -234,9 +234,16 @@ for candidateIndex = 1:numel(candidateTimes_s)
     attempt.SolverAttempted         = true;
     attemptTimer                    = tic;
     try
-        candidate = obstacleAvoidance.planning.planRequest( ...
+        preparedTrialRequest = obstacleAvoidance.planning.prepareRequest( ...
             scene.preparedObstacles, initialState, trialGoalState, ...
             request.limits, trialOptions, trialRequest);
+
+        % Keep the trial's parent context when planning its prepared inputs.
+        if preparedTrialRequest.options.WrapX || preparedTrialRequest.options.WrapY
+            candidate = obstacleAvoidance.planning.planWrappedMotion(preparedTrialRequest);
+        else
+            candidate = obstacleAvoidance.planning.planMotion(preparedTrialRequest);
+        end
     catch exception
         failureIsExpected = string(exception.identifier) == ...
             ["planner:UndefinedTargetDerivative", "planTrajectory:CoincidentEndpoints"];
