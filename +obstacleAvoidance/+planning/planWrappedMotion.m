@@ -36,12 +36,12 @@ function result = planWrappedMotion(request)
 
 timer           = tic;
 wrapAxes        = [request.options.WrapX, request.options.WrapY];
-intervals_units = [request.context.requestedLimits.xInterval_units; ...
-    request.context.requestedLimits.yInterval_units];
+intervals_units = [request.originalInputs.requestedLimits.xInterval_units; ...
+    request.originalInputs.requestedLimits.yInterval_units];
 reachableRange_units      = [request.limits.xInterval_units; request.limits.yInterval_units];
 period_units    = diff(intervals_units, 1, 2).';
 obstacleCopies          = obstacleAvoidance.input.copyObstaclesAcrossWraps( ...
-    request.context.obstacles, intervals_units, wrapAxes, reachableRange_units);
+    request.obstacles, intervals_units, wrapAxes, reachableRange_units);
 
 unwrappedOptions       = request.options;
 unwrappedOptions.WrapX = false;
@@ -113,13 +113,13 @@ for candidateIndex = 1:candidateCount
         error("planTrajectory:CoincidentEndpoints", ...
             "Initial and goal positions must be distinct.");
     end
-    goalCopyRequest.context = struct( ...
-        'obstacles',          {obstacleCopies}, ...
+    goalCopyRequest.obstacles     = obstacleCopies;
+    goalCopyRequest.parentRequest = parentRequest;
+    goalCopyRequest.originalInputs = struct( ...
         'suppliedLimits',     goalCopyRequest.limits, ...
         'requestedLimits',    goalCopyRequest.limits, ...
         'suppliedGoalState',  goalCopyRequest.goalState, ...
-        'requestedGoalState', goalCopyRequest.goalState, ...
-        'parentRequest',      parentRequest);
+        'requestedGoalState', goalCopyRequest.goalState);
     wasPlanned(candidateIndex) = true;
     candidate = obstacleAvoidance.planning.planMotion(goalCopyRequest);
     reasons(candidateIndex) = candidate.TerminationReason;
@@ -198,12 +198,12 @@ function result = assembleFailedCopyResult(goalCopyRequest, goalCopyResult, pare
     declarationRequest.options.WrapX = parentRequest.WrapX;
     declarationRequest.options.WrapY = parentRequest.WrapY;
     declarationRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
-    declarationRequest.context.obstacles          = parentRequest.Obstacles;
-    declarationRequest.context.suppliedLimits     = parentRequest.SuppliedLimits;
-    declarationRequest.context.requestedLimits    = parentRequest.RequestedLimits;
-    declarationRequest.context.suppliedGoalState  = parentRequest.SuppliedGoalState;
-    declarationRequest.context.requestedGoalState = parentRequest.RequestedGoalState;
-    declarationRequest.context.parentRequest      = [];
+    declarationRequest.obstacles = parentRequest.Obstacles;
+    declarationRequest.originalInputs.suppliedLimits     = parentRequest.SuppliedLimits;
+    declarationRequest.originalInputs.requestedLimits    = parentRequest.RequestedLimits;
+    declarationRequest.originalInputs.suppliedGoalState  = parentRequest.SuppliedGoalState;
+    declarationRequest.originalInputs.requestedGoalState = parentRequest.RequestedGoalState;
+    declarationRequest.parentRequest = [];
 
     result = obstacleAvoidance.planning.createEmptyResult( ...
         goalCopyResult.PreparedObstacles, declarationRequest, ...

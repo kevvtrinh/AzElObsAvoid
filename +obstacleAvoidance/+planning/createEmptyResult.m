@@ -37,7 +37,7 @@ result                              = struct();
 result.Success                      = false;
 result.Message                      = "Planning has not completed.";
 result.TerminationReason            = "notStarted";
-result.Inputs                       = struct("obstacles", {request.context.obstacles}, ...
+result.Inputs                       = struct("obstacles", {request.obstacles}, ...
     "initialState", request.initialState, "goalState", request.goalState);
 result.PreparedObstacles            = preparedObstacles;
 result.Limits                       = request.limits;
@@ -62,11 +62,11 @@ result.Intercept                    = struct( ...
 result.TrajectoryDuration_s         = NaN;
 result.ElapsedTime_s                = elapsedTime_s;
 
-result.SuppliedLimits     = request.context.suppliedLimits;
-result.RequestedLimits    = request.context.requestedLimits;
-result.RequestedGoalState = request.context.requestedGoalState;
-result.SuppliedGoalState  = request.context.suppliedGoalState;
-if ~isempty(request.context.parentRequest)
-    result.ParentRequest = request.context.parentRequest;
+result.SuppliedLimits     = request.originalInputs.suppliedLimits;
+result.RequestedLimits    = request.originalInputs.requestedLimits;
+result.RequestedGoalState = request.originalInputs.requestedGoalState;
+result.SuppliedGoalState  = request.originalInputs.suppliedGoalState;
+if ~isempty(request.parentRequest)
+    result.ParentRequest = request.parentRequest;
 end
 end

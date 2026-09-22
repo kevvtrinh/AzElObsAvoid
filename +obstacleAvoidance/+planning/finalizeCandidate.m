@@ -51,14 +51,14 @@ validationDeclarations = declaration;
 % The declared request is the one the result answers: the request itself,
 % or, for an accepted child request, the parent request it was planned for.
 declaredRequest = request;
-parentRequest   = request.context.parentRequest;
+parentRequest   = request.parentRequest;
 if ~isempty(parentRequest) && candidate.Success
-    declaredRequest.context.parentRequest      = [];
-    declaredRequest.context.suppliedLimits     = parentRequest.SuppliedLimits;
-    declaredRequest.context.suppliedGoalState  = parentRequest.SuppliedGoalState;
-    declaredRequest.context.requestedGoalState = parentRequest.RequestedGoalState;
-    declaredRequest.context.requestedLimits    = parentRequest.RequestedLimits;
-    declaredRequest.context.obstacles          = parentRequest.Obstacles;
+    declaredRequest.parentRequest = [];
+    declaredRequest.originalInputs.suppliedLimits     = parentRequest.SuppliedLimits;
+    declaredRequest.originalInputs.suppliedGoalState  = parentRequest.SuppliedGoalState;
+    declaredRequest.originalInputs.requestedGoalState = parentRequest.RequestedGoalState;
+    declaredRequest.originalInputs.requestedLimits    = parentRequest.RequestedLimits;
+    declaredRequest.obstacles = parentRequest.Obstacles;
     declaredRequest.options.WrapX = parentRequest.WrapX;
     declaredRequest.options.WrapY = parentRequest.WrapY;
     % The declared goal keeps the whole effective inner goal except its clock,

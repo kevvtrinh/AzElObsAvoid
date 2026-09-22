@@ -38,7 +38,7 @@ function result = searchArrivalTimes(request, scene, baseResult, ...
 
 searchTimer       = tic;
 initialState      = request.initialState;
-suppliedGoalState = request.context.suppliedGoalState;
+suppliedGoalState = request.originalInputs.suppliedGoalState;
 trialOptions      = request.options;
 validateattributes(maximumTrialCount, {'numeric'}, ...
     {'scalar', 'finite', 'integer', 'positive'});
@@ -104,8 +104,8 @@ candidateTimes_s     = unique([gridTimes_s; boundaryTimes_s]);
 candidateTimes_s     = candidateTimes_s(candidateTimes_s <= horizonTime_s);
 
 trialOptions.GoalTimeMode = "fixedArrival";
-if ~isempty(request.context.parentRequest)
-    parentRequest = request.context.parentRequest;
+if ~isempty(request.parentRequest)
+    parentRequest = request.parentRequest;
 else
     parentRequest = obstacleAvoidance.planning.createParentRequest(request);
 end
