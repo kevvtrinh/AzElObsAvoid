@@ -1,211 +1,242 @@
-function [proof, cache] = checkFinalMotion(request, preparedMotion, ...
-        roundoffReserve_units, obstacleTarget_units, cache, stopOnFirstUnverified)
+function [motionCheck, savedPairChecks] = checkFinalMotion(solverRequest, preparedMotion, ...
+    roundoffReserve_units, separationTarget_units, savedPairChecks, stopOnFirstUnverified)
 %% Section 0: Header & Readme
 % SYNTAX
-%   proof = bmtpEngine.validation.checkFinalMotion(request, preparedMotion, ...
-%       roundoffReserve_units, obstacleTarget_units)
-%   [proof, cache] = bmtpEngine.validation.checkFinalMotion(request, ...
-%       preparedMotion, roundoffReserve_units, obstacleTarget_units, cache)
-%   [proof, cache] = bmtpEngine.validation.checkFinalMotion(request, ...
-%       preparedMotion, roundoffReserve_units, obstacleTarget_units, cache, ...
-%       stopOnFirstUnverified)
+%   motionCheck = bmtpEngine.validation.checkFinalMotion(solverRequest, ...
+%       preparedMotion, roundoffReserve_units, separationTarget_units)
+%   [motionCheck, savedPairChecks] = bmtpEngine.validation.checkFinalMotion( ...
+%       solverRequest, preparedMotion, roundoffReserve_units, ...
+%       separationTarget_units, savedPairChecks, stopOnFirstUnverified)
 %**************************************************************************
 % PURPOSE
-%   - Prove every applicable curve-span and convex-obstacle pair.
+%   - Check separation for every curve segment and obstacle region whose
+%     time intervals overlap. When full motion controls are present, also
+%     check workspace limits, motion rates and continuity between segments.
 %**************************************************************************
 % INPUTS
-%   - request (scalar struct)
-%       Checked motion request.
+%   - solverRequest (scalar struct)
+%       Validated states, motion limits, options and prepared obstacle regions.
 %   - preparedMotion (scalar struct)
-%       Complete prepared curve.
+%       Prepared curve controls, segment durations and final time.
 %   - roundoffReserve_units (finite numeric scalar)
 %       Numerical separation reserve.
-%   - obstacleTarget_units (finite numeric scalar)
+%   - separationTarget_units (finite numeric scalar)
 %       Required obstacle-side target.
-%   - cache (scalar struct, optional; default [])
-%       Matching checks from an earlier refinement in the same solve.
+%   - savedPairChecks (scalar struct or empty, optional; default [])
+%       Earlier checked curves and their inputs, used only when they match.
 %   - stopOnFirstUnverified (logical scalar, optional; default false)
 %       Stop after the first failed pair when rejecting a proposal.
 %**************************************************************************
 % OUTPUTS
-%   - proof (scalar struct)
-%       Pair proofs for the prepared motion; Passed is false when any
-%       required clearance, workspace, dynamics, or continuity check fails.
-%   - cache (scalar struct)
-%       Reusable checks for a later refinement.
+%   - motionCheck (scalar struct)
+%       Separation results and checked lines. Passed is false when a required
+%       clearance, workspace, motion-rate or continuity check fails.
+%   - savedPairChecks (scalar struct)
+%       Current curve checks and their inputs, ready for a later refinement.
 %**************************************************************************
 % UNITS
 %   - Position, gaps, targets, and reserves are coordinate units.
 %**************************************************************************
 
-%% Section 1: Check All Curve And Obstacle Pairs
+%% Section 1: Check Every Curve And Obstacle Pair That Overlaps In Time
+
 if nargin < 5
-    cache = [];
+    savedPairChecks = [];
 end
 if nargin < 6
     stopOnFirstUnverified = false;
 end
 
-% Each optimized segment becomes two output spans. Repeat the static
-% all-region mask for both spans.
+% A static obstacle applies to every prepared segment. For moving regions,
+% check only positive-duration overlap with each region's active interval.
+% Use the prepared segment times, which may differ after curve subdivision.
 regionActiveBySegment = true(size(preparedMotion.ProvenControlPoint_units, 1), ...
-    numel(request.Regions_units));
-spanBreaks_s      = request.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s)];
-spanBreaks_s(end) = preparedMotion.FinalTime_s;
-if isfield(request.Coverage, 'ActiveTimeInterval_s')
-    intervals_s = request.Coverage.ActiveTimeInterval_s;
-    starts_s    = spanBreaks_s(1:end - 1);
-    ends_s      = spanBreaks_s(2:end);
-    regionActiveBySegment = starts_s < intervals_s(:, 2).' & ends_s > intervals_s(:, 1).';
+    numel(solverRequest.Regions_units));
+segmentBoundaryTime_s = solverRequest.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s)];
+segmentBoundaryTime_s(end) = preparedMotion.FinalTime_s;
+if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
+    regionActiveIntervals_s = solverRequest.Coverage.ActiveTimeInterval_s;
+    segmentStartTime_s      = segmentBoundaryTime_s(1:end - 1);
+    segmentEndTime_s        = segmentBoundaryTime_s(2:end);
+    regionActiveBySegment = segmentStartTime_s < regionActiveIntervals_s(:, 2).' & ...
+        segmentEndTime_s > regionActiveIntervals_s(:, 1).';
 end
-separatingLineGeometry = cell(numel(request.Regions_units), 1);
-if isfield(request, 'SeparatingLineGeometry')
-    separatingLineGeometry = request.SeparatingLineGeometry;
+separatingLineGeometry = cell(numel(solverRequest.Regions_units), 1);
+if isfield(solverRequest, 'SeparatingLineGeometry')
+    separatingLineGeometry = solverRequest.SeparatingLineGeometry;
 end
-proof = checkAllCurveObstaclePairs(preparedMotion.ProvenControlPoint_units, ...
-    request.Regions_units, request.Coverage, separatingLineGeometry, ...
-    regionActiveBySegment, roundoffReserve_units, obstacleTarget_units, ...
-    spanBreaks_s, cache, stopOnFirstUnverified);
+motionCheck = checkAllCurveObstaclePairs(preparedMotion.ProvenControlPoint_units, ...
+    solverRequest.Regions_units, solverRequest.Coverage, separatingLineGeometry, ...
+    regionActiveBySegment, roundoffReserve_units, separationTarget_units, ...
+    segmentBoundaryTime_s, savedPairChecks, stopOnFirstUnverified);
+
+%% Section 2: Check Workspace Limits, Motion Rates And Segment Joins
+
 if isfield(preparedMotion, 'ControlPoint_units')
-    % Fixed physical boundary derivatives prevent post-solve dilation. Reject
-    % an over-limit analytic proposal here so the shared optimizer can run.
+    % Use the actual returned curve and durations for these checks. Simply
+    % slowing it down would change supplied endpoint velocity/acceleration.
+    % An over-limit direct proposal must fail so the optimizer can try.
     polynomial = bmtpEngine.motion.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
-        preparedMotion.SegmentTime_s, request.InitialState.time_s, preparedMotion.GivenPower_units, ...
+        preparedMotion.SegmentTime_s, solverRequest.InitialState.time_s, preparedMotion.GivenPower_units, ...
         preparedMotion.FinalTime_s);
-    derivativePowers = {polynomial.velocityPower_units_s, polynomial.accelerationPower_units_s2, ...
+    motionRateCoefficients = {polynomial.velocityPower_units_s, polynomial.accelerationPower_units_s2, ...
         polynomial.jerkPower_units_s3};
-    derivativeBounds = [request.Limits.maxVelocity_units_s; request.Limits.maxAcceleration_units_s2; ...
-        request.Limits.maxJerk_units_s3];
-    workspaceBounds_units = [request.Limits.xInterval_units; ...
-        request.Limits.yInterval_units];
-    proof.WorkspacePassed = true;
-    proof.DynamicsPassed  = true;
+    motionRateLimits = [solverRequest.Limits.maxVelocity_units_s; solverRequest.Limits.maxAcceleration_units_s2; ...
+        solverRequest.Limits.maxJerk_units_s3];
+    workspaceBounds_units = [solverRequest.Limits.xInterval_units; ...
+        solverRequest.Limits.yInterval_units];
+
+    % Each polynomial range check covers the full segment, including values
+    % between output samples. Check x/y position first, then velocity,
+    % acceleration and jerk against their separate limits.
+    motionCheck.WorkspacePassed = true;
+    motionCheck.DynamicsPassed  = true;
     for axisIndex = 1:2
         for segmentIndex = 1:polynomial.SegmentCount
-            coefficients = reshape(polynomial.positionPower_units(segmentIndex, axisIndex, :), [], 1);
-            proof.WorkspacePassed = proof.WorkspacePassed && ...
+            segmentCoefficients = reshape(polynomial.positionPower_units(segmentIndex, axisIndex, :), [], 1);
+            motionCheck.WorkspacePassed = motionCheck.WorkspacePassed && ...
                 bmtpEngine.validation.provePolynomialRange( ...
-                coefficients, workspaceBounds_units(axisIndex, 1), workspaceBounds_units(axisIndex, 2), ...
-                request.Options.ConstraintTolerance);
+                segmentCoefficients, workspaceBounds_units(axisIndex, 1), workspaceBounds_units(axisIndex, 2), ...
+                solverRequest.Options.ConstraintTolerance);
         end
     end
-    for derivativeOrder = 1:3
+    for stateArrayIndex = 1:3
         for axisIndex = 1:2
             for segmentIndex = 1:polynomial.SegmentCount
-                coefficients = reshape(derivativePowers{derivativeOrder}(segmentIndex, axisIndex, :), [], 1);
-                proof.DynamicsPassed = proof.DynamicsPassed && ...
-                    bmtpEngine.validation.provePolynomialRange(coefficients, ...
-                    -derivativeBounds(derivativeOrder, axisIndex), ...
-                    derivativeBounds(derivativeOrder, axisIndex), ...
-                    request.Options.ConstraintTolerance);
+                segmentCoefficients = reshape(motionRateCoefficients{stateArrayIndex}(segmentIndex, axisIndex, :), [], 1);
+                motionCheck.DynamicsPassed = motionCheck.DynamicsPassed && ...
+                    bmtpEngine.validation.provePolynomialRange(segmentCoefficients, ...
+                    -motionRateLimits(stateArrayIndex, axisIndex), ...
+                    motionRateLimits(stateArrayIndex, axisIndex), ...
+                    solverRequest.Options.ConstraintTolerance);
             end
         end
     end
-    proof.ContinuityPassed = true;
-    motionPowers = [{polynomial.positionPower_units}, derivativePowers];
-    for derivativeOrder = 1:4
-        values = motionPowers{derivativeOrder};
-        residual = sum(values(1:end - 1, :, :), 3) - values(2:end, :, 1);
-        proof.ContinuityPassed = proof.ContinuityPassed && ...
-            all(abs(residual) <= request.Options.ConstraintTolerance, 'all');
+
+    % Adjacent segments must join with matching position, velocity,
+    % acceleration and jerk. At fraction 1, sum the power coefficients;
+    % at fraction 0, use the first coefficient. Compare those two values.
+    motionCheck.ContinuityPassed = true;
+    motionStateCoefficients = [{polynomial.positionPower_units}, motionRateCoefficients];
+    for stateArrayIndex = 1:4
+        stateCoefficients = motionStateCoefficients{stateArrayIndex};
+        joinDifference    = sum(stateCoefficients(1:end - 1, :, :), 3) - stateCoefficients(2:end, :, 1);
+        motionCheck.ContinuityPassed = motionCheck.ContinuityPassed && ...
+            all(abs(joinDifference) <= solverRequest.Options.ConstraintTolerance, 'all');
     end
-    proof.Passed = proof.Passed && proof.WorkspacePassed && ...
-        proof.DynamicsPassed && proof.ContinuityPassed;
+    motionCheck.Passed = motionCheck.Passed && motionCheck.WorkspacePassed && ...
+        motionCheck.DynamicsPassed && motionCheck.ContinuityPassed;
 end
-cache = struct( ...
+
+% Save the checked controls and absolute times with the result so the next
+% refinement can identify exactly which separation checks remain reusable.
+savedPairChecks = struct( ...
     'Controls',     preparedMotion.ProvenControlPoint_units, ...
-    'Breaks',       spanBreaks_s, ...
-    'Target_units', obstacleTarget_units, ...
-    'Proof',  proof);
+    'Breaks',       segmentBoundaryTime_s, ...
+    'Target_units', separationTarget_units, ...
+    'Proof',        motionCheck);
 end
 
-%% Section 2: Local Functions
-function proof = checkAllCurveObstaclePairs(controlPoint_units, regions_units, ...
-        coverage, separatingLineGeometry, regionActiveBySegment, roundoffReserve_units, ...
-        target_units, spanBreaks_s, cache, stopOnFirstUnverified)
-    % Verify every applicable output-span and convex-exclusion-region pair.
-    segmentCount        = size(controlPoint_units, 1);
-    regionCount         = numel(regions_units);
-    planes              = repmat(bmtpEngine.separation.createEmptyPlane(), segmentCount, regionCount);
-    previousPlanes      = repmat(bmtpEngine.separation.createEmptyPlane(), 1, regionCount);
-    verifiedCount       = 0;
-    reusedCount         = 0;
-    cachedCount         = 0;
-    cachedGeometryCount = 0;
-    minimumGap_units    = Inf;
-    staticGeometry      = ~isfield(coverage, 'ActiveTimeInterval_s');
+%% Section 3: Local Functions
+function motionCheck = checkAllCurveObstaclePairs(controlPoint_units, regions_units, ...
+        regionCoverage, separatingLineGeometry, regionActiveBySegment, roundoffReserve_units, ...
+        separationTarget_units, segmentBoundaryTime_s, savedPairChecks, stopOnFirstUnverified)
+    % Check each applicable segment/region pair and retain its verified line.
+    % Saved results require identical inputs. A neighboring line direction
+    % is only a proposal and must be checked again for the current curve.
+    segmentCount            = size(controlPoint_units, 1);
+    regionCount             = numel(regions_units);
+    separatingPlanes        = repmat(bmtpEngine.separation.createEmptyPlane(), segmentCount, regionCount);
+    previousSegmentPlanes   = repmat(bmtpEngine.separation.createEmptyPlane(), 1, regionCount);
+    verifiedPairCount       = 0;
+    reusedPairCount         = 0;
+    cachedPairCount         = 0;
+    cachedGeometryPairCount = 0;
+    minimumGap_units        = Inf;
+    obstaclesAreStatic      = ~isfield(regionCoverage, 'ActiveTimeInterval_s');
 
-    % A subdivision leaves most spans unchanged. Their existing proofs
-    % remain valid only for identical curve controls and supplied inputs.
-    % Static collision geometry is independent of the span's clock; moving
-    % geometry additionally requires the identical absolute time interval.
-    cachedSpanIndexBySegment = zeros(segmentCount, 1);
-    cacheMatchesRequest = ~isempty(cache) && ...
-        isequaln(cache.Proof.Regions_units, regions_units) && ...
-        isequaln(cache.Proof.Coverage, coverage) && ...
-        cache.Proof.RoundoffReserve_units == roundoffReserve_units && ...
-        cache.Target_units == target_units && ...
-        size(cache.Controls, 2) == size(controlPoint_units, 2);
-    if cacheMatchesRequest
-        oldKeys = [cache.Breaks(1:end - 1), cache.Breaks(2:end), ...
-            reshape(cache.Controls, size(cache.Controls, 1), [])];
-        newKeys = [spanBreaks_s(1:end - 1), spanBreaks_s(2:end), ...
+    % Splitting one segment can leave other segments unchanged. Reuse their
+    % checked lines only when controls, regions and clearance settings match.
+    % Moving regions also require the same absolute start/end times; static
+    % geometry does not change when the same curve is run at another time.
+    savedSegmentIndexByCurrentSegment = zeros(segmentCount, 1);
+    savedChecksMatchRequest = ~isempty(savedPairChecks) && ...
+        isequaln(savedPairChecks.Proof.Regions_units, regions_units) && ...
+        isequaln(savedPairChecks.Proof.Coverage, regionCoverage) && ...
+        savedPairChecks.Proof.RoundoffReserve_units == roundoffReserve_units && ...
+        savedPairChecks.Target_units == separationTarget_units && ...
+        size(savedPairChecks.Controls, 2) == size(controlPoint_units, 2);
+    if savedChecksMatchRequest
+        savedSegmentKeys = [savedPairChecks.Breaks(1:end - 1), savedPairChecks.Breaks(2:end), ...
+            reshape(savedPairChecks.Controls, size(savedPairChecks.Controls, 1), [])];
+        currentSegmentKeys = [segmentBoundaryTime_s(1:end - 1), segmentBoundaryTime_s(2:end), ...
             reshape(controlPoint_units, segmentCount, [])];
-        if staticGeometry
-            oldKeys = oldKeys(:, 3:end);
-            newKeys = newKeys(:, 3:end);
+        if obstaclesAreStatic
+            savedSegmentKeys   = savedSegmentKeys(:, 3:end);
+            currentSegmentKeys = currentSegmentKeys(:, 3:end);
         end
-        [~, cachedSpanIndexBySegment] = ismember(newKeys, oldKeys, 'rows');
+        [~, savedSegmentIndexByCurrentSegment] = ismember(currentSegmentKeys, savedSegmentKeys, 'rows');
     end
-    if staticGeometry && regionCount > 0
-        staticVertices_units = vertcat(regions_units{:});
-        staticOwnerIndexByVertex = repelem( ...
+
+    % Group static vertices once so later segments can recheck all previous
+    % line directions together. Keep each vertex paired with its own region.
+    if obstaclesAreStatic && regionCount > 0
+        staticVertices_units      = vertcat(regions_units{:});
+        staticRegionIndexByVertex = repelem( ...
             (1:regionCount).', cellfun(@(vertices) size(vertices, 1), regions_units));
-        staticOwnerIndexByVertex = staticOwnerIndexByVertex(:);
+        staticRegionIndexByVertex = staticRegionIndexByVertex(:);
     end
 
     pairWasRejected = false;
     for segmentIndex = 1:segmentCount
-        trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
-        lastTimeFraction = [NaN, NaN];
-        lastRestricted_units = zeros(0, 2);
-        cachedSpanIndex   = cachedSpanIndexBySegment(segmentIndex);
-        cachedSpanMatches = cachedSpanIndex > 0 && isequal( ...
+        segmentControlPoint_units   = squeeze(controlPoint_units(segmentIndex, :, :));
+        savedOverlapFractions       = [NaN, NaN];
+        savedSubcurveControls_units = zeros(0, 2);
+        savedSegmentIndex           = savedSegmentIndexByCurrentSegment(segmentIndex);
+        savedSegmentMatches         = savedSegmentIndex > 0 && isequal( ...
             regionActiveBySegment(segmentIndex, :), ...
-            cache.Proof.RegionActiveBySegment(cachedSpanIndex, :));
-        if cachedSpanMatches
-            activeRegions = regionActiveBySegment(segmentIndex, :);
-            oldPlanes     = cache.Proof.Planes(cachedSpanIndex, :);
-            if all([oldPlanes(activeRegions).Verified])
-                planes(segmentIndex, :) = oldPlanes;
-                previousPlanes          = oldPlanes;
-                reusedCount             = reusedCount + nnz(activeRegions);
-                cachedCount             = cachedCount + nnz(activeRegions);
-                verifiedCount           = verifiedCount + nnz(activeRegions);
-                if any(activeRegions)
+            savedPairChecks.Proof.RegionActiveBySegment(savedSegmentIndex, :));
+
+        % Reuse a complete saved segment only if its active-region list also
+        % matches and every applicable line was verified.
+        if savedSegmentMatches
+            regionIsActive = regionActiveBySegment(segmentIndex, :);
+            savedPlanes    = savedPairChecks.Proof.Planes(savedSegmentIndex, :);
+            if all([savedPlanes(regionIsActive).Verified])
+                separatingPlanes(segmentIndex, :) = savedPlanes;
+                previousSegmentPlanes = savedPlanes;
+                reusedPairCount       = reusedPairCount + nnz(regionIsActive);
+                cachedPairCount       = cachedPairCount + nnz(regionIsActive);
+                verifiedPairCount     = verifiedPairCount + nnz(regionIsActive);
+                if any(regionIsActive)
                     minimumGap_units = min(minimumGap_units, ...
-                        min([oldPlanes(activeRegions).SignedGap_units]));
+                        min([savedPlanes(regionIsActive).SignedGap_units]));
                 end
                 continue;
             end
         end
 
-        if staticGeometry && regionCount > 0 && segmentIndex > 1
-            normalPages    = reshape([previousPlanes.Normal], 2, 2, regionCount);
-            normals        = reshape(normalPages(1, :, :), 2, regionCount).';
-            supports_units = accumarray(staticOwnerIndexByVertex, ...
-                sum(staticVertices_units .* normals(staticOwnerIndexByVertex, :), 2), ...
+        % For a new curve segment, try the previous segment's directions
+        % against every static region. Reposition and verify those lines
+        % against this curve before reusing any of them.
+        if obstaclesAreStatic && regionCount > 0 && segmentIndex > 1
+            normalByEndpointAndRegion = reshape([previousSegmentPlanes.Normal], 2, 2, regionCount);
+            startNormals             = reshape(normalByEndpointAndRegion(1, :, :), 2, regionCount).';
+            obstacleSideBounds_units = accumarray(staticRegionIndexByVertex, ...
+                sum(staticVertices_units .* startNormals(staticRegionIndexByVertex, :), 2), ...
                 [regionCount, 1], @min);
-            offsets                       = num2cell(repmat(target_units - supports_units, 1, 2), 2);
-            [previousPlanes.Offset_units] = offsets{:};
-            previousPlanes = bmtpEngine.separation.verifyStaticSeparatingLines( ...
-                previousPlanes, trajectory_units, regions_units, roundoffReserve_units, target_units);
-            verified               = [previousPlanes.Verified];
-            planes(segmentIndex, :) = previousPlanes;
-            reusedCount   = reusedCount + nnz(verified);
-            verifiedCount = verifiedCount + nnz(verified);
-            if any(verified)
-                minimumGap_units = min(minimumGap_units, min([previousPlanes(verified).SignedGap_units]));
+            offsetCells = num2cell(repmat(separationTarget_units - obstacleSideBounds_units, 1, 2), 2);
+            [previousSegmentPlanes.Offset_units] = offsetCells{:};
+            previousSegmentPlanes = bmtpEngine.separation.verifyStaticSeparatingLines( ...
+                previousSegmentPlanes, segmentControlPoint_units, regions_units, ...
+                roundoffReserve_units, separationTarget_units);
+            separationIsVerified = [previousSegmentPlanes.Verified];
+            separatingPlanes(segmentIndex, :) = previousSegmentPlanes;
+            reusedPairCount   = reusedPairCount + nnz(separationIsVerified);
+            verifiedPairCount = verifiedPairCount + nnz(separationIsVerified);
+            if any(separationIsVerified)
+                minimumGap_units = min(minimumGap_units, ...
+                    min([previousSegmentPlanes(separationIsVerified).SignedGap_units]));
             end
         end
 
@@ -213,62 +244,74 @@ function proof = checkAllCurveObstaclePairs(controlPoint_units, regions_units, .
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;
             end
-            if staticGeometry && segmentIndex > 1 && previousPlanes(regionIndex).Verified
+            if obstaclesAreStatic && segmentIndex > 1 && previousSegmentPlanes(regionIndex).Verified
                 continue;
             end
 
-            restricted_units = trajectory_units;
-            interval_s       = spanBreaks_s(segmentIndex:segmentIndex + 1).';
-            timeFraction     = [0, 1];
-            if isfield(coverage, 'ActiveTimeInterval_s')
-                activeInterval_s = (coverage.ActiveTimeInterval_s(regionIndex, :) - ...
-                    spanBreaks_s(segmentIndex)) / ...
-                    diff(spanBreaks_s(segmentIndex:segmentIndex + 1));
-                timeFraction     = max(0, min(1, activeInterval_s));
-                if isequal(timeFraction, lastTimeFraction)
-                    restricted_units = lastRestricted_units;
+            % Restrict both the curve and region to their common times.
+            % For example, a segment at 2-6 s and region active at 4-8 s
+            % need a check over 4-6 s: curve fractions [0.5 1].
+            subcurveControlPoint_units = segmentControlPoint_units;
+            overlapInterval_s          = segmentBoundaryTime_s(segmentIndex:segmentIndex + 1).';
+            overlapFractions           = [0, 1];
+            if isfield(regionCoverage, 'ActiveTimeInterval_s')
+                regionActiveFractions = (regionCoverage.ActiveTimeInterval_s(regionIndex, :) - ...
+                    segmentBoundaryTime_s(segmentIndex)) / ...
+                    diff(segmentBoundaryTime_s(segmentIndex:segmentIndex + 1));
+                overlapFractions = max(0, min(1, regionActiveFractions));
+                % Different regions can share the same interval; reuse that
+                % curve restriction without changing the geometry checked.
+                if isequal(overlapFractions, savedOverlapFractions)
+                    subcurveControlPoint_units = savedSubcurveControls_units;
                 else
-                    restricted_units       = bmtpEngine.motion.restrictBezier(trajectory_units, timeFraction);
-                    lastTimeFraction       = timeFraction;
-                    lastRestricted_units   = restricted_units;
+                    subcurveControlPoint_units = bmtpEngine.motion.restrictBezier( ...
+                        segmentControlPoint_units, overlapFractions);
+                    savedOverlapFractions       = overlapFractions;
+                    savedSubcurveControls_units = subcurveControlPoint_units;
                 end
-                interval_s       = [max(interval_s(1), coverage.ActiveTimeInterval_s(regionIndex, 1)), ...
-                    min(interval_s(2), coverage.ActiveTimeInterval_s(regionIndex, 2))];
+                overlapInterval_s = [max(overlapInterval_s(1), regionCoverage.ActiveTimeInterval_s(regionIndex, 1)), ...
+                    min(overlapInterval_s(2), regionCoverage.ActiveTimeInterval_s(regionIndex, 2))];
             end
             vertices_units = bmtpEngine.separation.regionOnInterval( ...
-                regions_units{regionIndex}, coverage, regionIndex, interval_s);
+                regions_units{regionIndex}, regionCoverage, regionIndex, overlapInterval_s);
 
-            % A neighboring span's direction is only a proposal. Recompute
-            % supports on this physical interval and verify the entire pair.
-            plane = previousPlanes(regionIndex);
-            if plane.Active && ~staticGeometry
-                normal = plane.Normal(1, :);
-                plane.Offset_units = target_units - [min(vertices_units(:, :, 1) * normal.'), ...
-                    min(vertices_units(:, :, end) * normal.')];
+            % Reuse a neighboring segment's direction only after recalculating
+            % the obstacle bounds and checking the whole current interval.
+            plane = previousSegmentPlanes(regionIndex);
+            if plane.Active && ~obstaclesAreStatic
+                lineNormal = plane.Normal(1, :);
+                plane.Offset_units = separationTarget_units - [min(vertices_units(:, :, 1) * lineNormal.'), ...
+                    min(vertices_units(:, :, end) * lineNormal.')];
                 plane = bmtpEngine.separation.verifySeparatingLine( ...
-                    plane, restricted_units, vertices_units, roundoffReserve_units, target_units);
+                    plane, subcurveControlPoint_units, vertices_units, roundoffReserve_units, separationTarget_units);
             end
             if plane.Verified
-                reusedCount = reusedCount + 1;
+                reusedPairCount = reusedPairCount + 1;
             else
-                geometry = [];
-                intervalMatchesFullActivity = staticGeometry || ...
-                    isequal(interval_s, coverage.ActiveTimeInterval_s(regionIndex, :));
+                % A saved obstacle-edge calculation applies only to the
+                % same complete activity interval. Otherwise build it from
+                % the vertices restricted to this interval.
+                reusableObstacleGeometry    = [];
+                intervalMatchesFullActivity = obstaclesAreStatic || ...
+                    isequal(overlapInterval_s, regionCoverage.ActiveTimeInterval_s(regionIndex, :));
                 if intervalMatchesFullActivity && ~isempty(separatingLineGeometry{regionIndex})
-                    geometry            = separatingLineGeometry{regionIndex};
-                    cachedGeometryCount = cachedGeometryCount + 1;
+                    reusableObstacleGeometry = separatingLineGeometry{regionIndex};
+                    cachedGeometryPairCount  = cachedGeometryPairCount + 1;
                 end
                 plane = bmtpEngine.separation.solveSeparatingLine( ...
-                    restricted_units, vertices_units, target_units, roundoffReserve_units, geometry);
+                    subcurveControlPoint_units, vertices_units, separationTarget_units, ...
+                    roundoffReserve_units, reusableObstacleGeometry);
             end
 
-            plane.TimeFraction = timeFraction;
-            previousPlanes(regionIndex)       = plane;
-            planes(segmentIndex, regionIndex) = plane;
+            plane.TimeFraction                         = overlapFractions;
+            previousSegmentPlanes(regionIndex)         = plane;
+            separatingPlanes(segmentIndex, regionIndex) = plane;
             if plane.Verified
-                verifiedCount    = verifiedCount + 1;
-                minimumGap_units = min(minimumGap_units, plane.SignedGap_units);
+                verifiedPairCount = verifiedPairCount + 1;
+                minimumGap_units  = min(minimumGap_units, plane.SignedGap_units);
             elseif stopOnFirstUnverified
+                % A failed pair is enough to reject the candidate. Remaining
+                % pairs stay unverified, so the overall result cannot pass.
                 pairWasRejected = true;
                 break;
             end
@@ -278,33 +321,36 @@ function proof = checkAllCurveObstaclePairs(controlPoint_units, regions_units, .
         end
     end
 
-    allPairCount     = nnz(regionActiveBySegment);
-    exactRegionCount = regionCount;
-    if isfield(coverage, "ExactRegionCount")
-        exactRegionCount = coverage.ExactRegionCount;
+    % Passing requires every applicable pair plus complete region metadata.
+    % Matching counts alone would not reveal a missing moving-region endpoint.
+    requiredPairCount = nnz(regionActiveBySegment);
+    exactRegionCount  = regionCount;
+    if isfield(regionCoverage, "ExactRegionCount")
+        exactRegionCount = regionCoverage.ExactRegionCount;
     end
     regionCountConsistent = exactRegionCount == regionCount;
-    timedMetadataComplete = ~isfield(coverage, "ActiveTimeInterval_s") || ...
-        regionCount == 0 || (isfield(coverage, "EndRegions_units") && ...
-        numel(coverage.EndRegions_units) == regionCount);
+    timedMetadataComplete = ~isfield(regionCoverage, "ActiveTimeInterval_s") || ...
+        regionCount == 0 || (isfield(regionCoverage, "EndRegions_units") && ...
+        numel(regionCoverage.EndRegions_units) == regionCount);
     coverageMetadataConsistent = regionCountConsistent && timedMetadataComplete;
-    proof = struct( ...
-        "Passed",                  verifiedCount == allPairCount && coverageMetadataConsistent, ...
+
+    motionCheck = struct( ...
+        "Passed",                     verifiedPairCount == requiredPairCount && coverageMetadataConsistent, ...
         "CoverageMetadataConsistent", coverageMetadataConsistent, ...
-        "RegionCountConsistent",   regionCountConsistent, ...
-        "TimedMetadataComplete",   timedMetadataComplete, ...
-        "ExactRegionCount",        exactRegionCount, ...
-        "SolverRegionCount",       regionCount, ...
-        "Regions_units",           {regions_units}, ...
-        "Planes",                  planes, ...
-        "RegionActiveBySegment",   regionActiveBySegment, ...
-        "RequiredGap_units",       target_units + roundoffReserve_units, ...
-        "RoundoffReserve_units",   roundoffReserve_units, ...
-        "MinimumSignedGap_units",  minimumGap_units, ...
-        "Coverage",                coverage, ...
-        "AllPairCount",            allPairCount, ...
-        "VerifiedPairCount",       verifiedCount, ...
-        "ReusedPairCount",         reusedCount, ...
-        "CachedPairCount",         cachedCount, ...
-        "CachedGeometryPairCount", cachedGeometryCount);
+        "RegionCountConsistent",      regionCountConsistent, ...
+        "TimedMetadataComplete",      timedMetadataComplete, ...
+        "ExactRegionCount",           exactRegionCount, ...
+        "SolverRegionCount",          regionCount, ...
+        "Regions_units",              {regions_units}, ...
+        "Planes",                     separatingPlanes, ...
+        "RegionActiveBySegment",      regionActiveBySegment, ...
+        "RequiredGap_units",          separationTarget_units + roundoffReserve_units, ...
+        "RoundoffReserve_units",      roundoffReserve_units, ...
+        "MinimumSignedGap_units",     minimumGap_units, ...
+        "Coverage",                   regionCoverage, ...
+        "AllPairCount",               requiredPairCount, ...
+        "VerifiedPairCount",          verifiedPairCount, ...
+        "ReusedPairCount",            reusedPairCount, ...
+        "CachedPairCount",            cachedPairCount, ...
+        "CachedGeometryPairCount",    cachedGeometryPairCount);
 end

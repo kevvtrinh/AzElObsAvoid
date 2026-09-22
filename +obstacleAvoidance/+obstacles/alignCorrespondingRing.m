@@ -1,80 +1,95 @@
-function alignedUpper_units = alignCorrespondingRing(lower_units, upper_units)
+function alignedNextVertices_units = alignCorrespondingRing(referenceVertices_units, nextVertices_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   alignedUpper_units = obstacleAvoidance.obstacles.alignCorrespondingRing( ...
-%       lower_units, upper_units)
+%   alignedNextVertices_units = obstacleAvoidance.obstacles.alignCorrespondingRing( ...
+%       referenceVertices_units, nextVertices_units)
 %**************************************************************************
 % PURPOSE
-%   - Select the centered circular-correlation vertex correspondence.
+%   - Reorder the next boundary sample so its vertices best match the
+%     reference sample after removing translation. Try every starting vertex
+%     in both boundary directions; keep every coordinate unchanged.
 %**************************************************************************
 % INPUTS
-%   - lower_units (N-by-2 numeric array)
-%       Finite reference ring with at least three vertices.
-%   - upper_units (N-by-2 numeric array)
-%       Finite ring with the same size as lower_units.
+%   - referenceVertices_units (N-by-2 numeric array)
+%       Reference boundary loop with at least three finite vertices.
+%   - nextVertices_units (N-by-2 numeric array)
+%       Next boundary sample with the same number of finite vertices.
 %**************************************************************************
 % OUTPUTS
-%   - alignedUpper_units (N-by-2 numeric array)
-%       Upper vertices reordered only by cyclic shift and orientation.
+%   - alignedNextVertices_units (N-by-2 numeric array)
+%       Next sample with only its starting vertex and boundary direction changed.
 %       Invalid input throws an error.
 %**************************************************************************
 % UNITS
-%   - Ring coordinates use caller-consistent coordinate units.
+%   - Both boundary samples use the same coordinate units.
 %**************************************************************************
 
-%% Section 1: Validate Corresponding Rings
+%% Section 1: Check The Two Boundary Samples
 
-validateattributes(lower_units, {'numeric'}, {'real', 'finite', 'ncols', 2});
-validateattributes(upper_units, {'numeric'}, {'real', 'finite', 'size', size(lower_units)});
-assert(size(lower_units, 1) >= 3, 'alignCorrespondingRing:InvalidRing', 'A ring needs three vertices.');
-alignedUpper_units = upper_units;
-if isequal(lower_units, upper_units)
+validateattributes(referenceVertices_units, {'numeric'}, {'real', 'finite', 'ncols', 2});
+validateattributes(nextVertices_units, {'numeric'}, {'real', 'finite', 'size', size(referenceVertices_units)});
+assert(size(referenceVertices_units, 1) >= 3, 'alignCorrespondingRing:InvalidRing', 'A ring needs three vertices.');
+alignedNextVertices_units = nextVertices_units;
+if isequal(referenceVertices_units, nextVertices_units)
     return
 end
 
-%% Section 2: Resolve Alignment At A Physical Anchor
+%% Section 2: Compare Vertex Orders And Choose The Closest Match
 
-% Center and scale before FFT correlation: translation does not affect
-% the least-squares correspondence, and normalization avoids cancellation
-% when a small polygon is far from the coordinate origin.
-centeredLower_units = lower_units - mean(lower_units, 1);
-centeredUpper_units = upper_units - mean(upper_units, 1);
-scale_units         = max(abs([centeredLower_units; centeredUpper_units]), [], 'all');
-if scale_units == 0
+% Subtract each sample's average vertex position to compare shape without
+% translation. Divide both by the same size scale to reduce numerical error
+% when a small polygon has very large coordinate values.
+centeredReference_units = referenceVertices_units - mean(referenceVertices_units, 1);
+centeredNext_units      = nextVertices_units - mean(nextVertices_units, 1);
+shapeScale_units        = max(abs([centeredReference_units; centeredNext_units]), [], 'all');
+if shapeScale_units == 0
     return
 end
-centeredLower_units = centeredLower_units / scale_units;
-centeredUpper_units = centeredUpper_units / scale_units;
-lowerSpectrum       = fft(centeredLower_units);
-anchorChoices       = find(lower_units(:, 1) == min(lower_units(:, 1)));
-[~, anchorChoice]   = min(lower_units(anchorChoices, 2));
-anchorIndex         = anchorChoices(anchorChoice);
-bestSquaredCost     = Inf;
+normalizedReferenceVertices = centeredReference_units / shapeScale_units;
+normalizedNextVertices      = centeredNext_units / shapeScale_units;
+referenceSpectrum           = fft(normalizedReferenceVertices);
 
-% Circular correlation evaluates every cyclic alignment in O(N log N).
-% Only the two selected shifts are precomputed.
+% Use the leftmost reference vertex as an anchor. If several have that x
+% coordinate, use the lowest y coordinate. This ignores the supplied start index.
+referenceAnchorCandidates = find(referenceVertices_units(:, 1) == min(referenceVertices_units(:, 1)));
+[~, referenceAnchorChoice] = min(referenceVertices_units(referenceAnchorCandidates, 2));
+referenceAnchorIndex      = referenceAnchorCandidates(referenceAnchorChoice);
+bestAlignmentErrorSquared = Inf;
+
+% The Fourier transform compares every possible starting vertex efficiently.
+% Try the supplied boundary direction first, then the reversed direction.
+% A larger correlation score means a smaller sum of squared vertex distances.
 for orientationIndex = 1:2
-    orientedUpper_units         = upper_units;
-    orientedCenteredUpper_units = centeredUpper_units;
+    orientedNextVertices_units = nextVertices_units;
+    orientedNormalizedVertices = normalizedNextVertices;
     if orientationIndex == 2
-        orientedUpper_units = flipud(orientedUpper_units);
-        orientedCenteredUpper_units = flipud(orientedCenteredUpper_units);
+        orientedNextVertices_units = flipud(orientedNextVertices_units);
+        orientedNormalizedVertices = flipud(orientedNormalizedVertices);
     end
 
-    correlation = sum(real(ifft(lowerSpectrum .* conj(fft(orientedCenteredUpper_units)))), 2);
-    % Resolve numerically tied alignments at a physical anchor vertex,
-    % independent of either incoming ring's starting index.
-    tieTolerance        = 64 * ceil(log2(size(lower_units, 1))) * eps(max(abs(correlation)));
-    shifts              = find(correlation >= max(correlation) - tieTolerance);
-    anchorVertices_units = orientedUpper_units(mod(anchorIndex - shifts, size(lower_units, 1)) + 1, :);
-    choices             = find(anchorVertices_units(:, 1) == min(anchorVertices_units(:, 1)));
-    [~, choice]         = min(anchorVertices_units(choices, 2));
-    shiftIndex          = shifts(choices(choice));
-    shiftCount          = shiftIndex - 1;
-    squaredCost = sum((circshift(orientedCenteredUpper_units, shiftCount, 1) - centeredLower_units) .^ 2, 'all');
-    if squaredCost < bestSquaredCost
-        bestSquaredCost     = squaredCost;
-        alignedUpper_units = circshift(orientedUpper_units, shiftCount, 1);
+    alignmentScores = sum(real(ifft(referenceSpectrum .* conj(fft(orientedNormalizedVertices)))), 2);
+
+    % Scores within roundoff may describe equally good alignments. Choose
+    % the one matching the reference anchor to the smallest x coordinate in
+    % the next sample, using the smallest y coordinate to break an x tie.
+    scoreTieTolerance     = 64 * ceil(log2(size(referenceVertices_units, 1))) * eps(max(abs(alignmentScores)));
+    candidateShiftIndices = find(alignmentScores >= max(alignmentScores) - scoreTieTolerance);
+
+    matchedAnchorVertices_units = orientedNextVertices_units( ...
+        mod(referenceAnchorIndex - candidateShiftIndices, size(referenceVertices_units, 1)) + 1, :);
+    matchedAnchorChoices        = find(matchedAnchorVertices_units(:, 1) == min(matchedAnchorVertices_units(:, 1)));
+    [~, matchedAnchorChoice]    = min(matchedAnchorVertices_units(matchedAnchorChoices, 2));
+
+    selectedShiftIndex = candidateShiftIndices(matchedAnchorChoices(matchedAnchorChoice));
+    shiftCount         = selectedShiftIndex - 1;
+
+    % Compare the chosen forward and reversed alignments using the same
+    % squared-distance calculation. Equal errors keep the forward ordering.
+    alignmentErrorSquared = sum((circshift(orientedNormalizedVertices, shiftCount, 1) - ...
+        normalizedReferenceVertices) .^ 2, 'all');
+    if alignmentErrorSquared < bestAlignmentErrorSquared
+        bestAlignmentErrorSquared = alignmentErrorSquared;
+        alignedNextVertices_units = circshift(orientedNextVertices_units, shiftCount, 1);
     end
 end
 end

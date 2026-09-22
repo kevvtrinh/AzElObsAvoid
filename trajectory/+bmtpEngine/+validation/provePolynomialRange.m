@@ -1,18 +1,19 @@
-function isWithinRange = provePolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
+function isWithinRange = provePolynomialRange(powerCoefficients, lowerBound, upperBound, tolerance)
 %% Section 0: Header & Readme
 % SYNTAX
 %   isWithinRange = bmtpEngine.validation.provePolynomialRange( ...
-%       powerCoefficient, lowerBound, upperBound, tolerance)
+%       powerCoefficients, lowerBound, upperBound, tolerance)
 %**************************************************************************
 % PURPOSE
-%   - Prove a scalar polynomial range on normalized time [0, 1].
-%   - Resolve easy intervals with Bernstein hulls before using stationary
-%     points for cases that remain ambiguous after subdivision.
+%   - Check that a scalar polynomial stays within its allowed range over
+%     the whole segment, where fraction 0 is the start and 1 is the end.
+%   - Try bounds from its Bezier coefficients first. If those are inconclusive,
+%     evaluate endpoints and locations where the polynomial slope is zero.
 %**************************************************************************
 % INPUTS
-%   - powerCoefficient (finite real numeric vector)
-%       Ascending-power coefficients supplied by the validated polynomial
-%       trajectory path. Empty vectors are unsupported.
+%   - powerCoefficients (finite real numeric vector)
+%       Constant term first: [2 3 4] represents 2 + 3u + 4u^2. The validated
+%       trajectory supplies this vector; empty vectors are unsupported.
 %   - lowerBound (finite real numeric scalar)
 %       Inclusive lower range limit.
 %   - upperBound (finite real numeric scalar)
@@ -29,115 +30,136 @@ function isWithinRange = provePolynomialRange(powerCoefficient, lowerBound, uppe
 %     Polynomial time is dimensionless normalized time on [0, 1].
 %**************************************************************************
 
-%% Section 1: Try Proven Bernstein Range Tests
+%% Section 1: Check Endpoints And Whole-Curve Coefficient Bounds
 
-powerCoefficient     = double(powerCoefficient(:));
-lastCoefficientIndex = find(powerCoefficient ~= 0, 1, "last");
+% Remove unused high powers and apply the tolerance once. All subsequent
+% checks use these same allowed lower and upper limits.
+
+powerCoefficients    = double(powerCoefficients(:));
+lastCoefficientIndex = find(powerCoefficients ~= 0, 1, "last");
 if isempty(lastCoefficientIndex)
     lastCoefficientIndex = 1;
 end
-powerCoefficient    = powerCoefficient(1:lastCoefficientIndex);
-provenLowerBound = lowerBound - tolerance;
-provenUpperBound = upperBound + tolerance;
+powerCoefficients = powerCoefficients(1:lastCoefficientIndex);
+allowedLowerBound = lowerBound - tolerance;
+allowedUpperBound = upperBound + tolerance;
 
-endpointValues       = [powerCoefficient(1); sum(powerCoefficient)];
-endpointIsOutOfRange = any(endpointValues < provenLowerBound | endpointValues > provenUpperBound);
+% An out-of-range endpoint rejects any polynomial. For a constant or
+% straight line, the endpoint values also determine the complete range.
+endpointValues      = [powerCoefficients(1); sum(powerCoefficients)];
+endpointIsOutOfRange = any(endpointValues < allowedLowerBound | endpointValues > allowedUpperBound);
 if endpointIsOutOfRange
     isWithinRange = false;
     return
 end
-if numel(powerCoefficient) <= 2
+if numel(powerCoefficients) <= 2
     isWithinRange = true;
     return
 end
 
-bernsteinControl = convertPowerToBernstein(powerCoefficient);
-% Try two subdivisions before falling back to polynomial extrema.
+bernsteinCoefficients = convertPowerToBernstein(powerCoefficients);
+% A Bezier polynomial stays between its smallest and largest coefficients.
+% Splitting into smaller intervals can tighten those bounds without changing
+% the polynomial. Try up to two subdivision levels before checking extrema.
 maximumSubdivisionDepth = 2;
-decision                = classifyBernsteinRange( ...
-    bernsteinControl, provenLowerBound, provenUpperBound, maximumSubdivisionDepth);
-if decision ~= 0
-    isWithinRange = decision > 0;
+rangeDecision           = classifyBernsteinRange( ...
+    bernsteinCoefficients, allowedLowerBound, allowedUpperBound, maximumSubdivisionDepth);
+if rangeDecision ~= 0
+    isWithinRange = rangeDecision > 0;
     return
 end
 
-%% Section 2: Resolve Ambiguity At Stationary Points
+%% Section 2: Check Extrema When Coefficient Bounds Are Inconclusive
 
-isWithinRange = stationaryPointsWithinBounds( ...
-    powerCoefficient, provenLowerBound, provenUpperBound);
+% A polynomial reaches its minimum/maximum at an endpoint or where its
+% derivative is zero. Those values settle cases the coefficient bounds could
+% not decide; an inconclusive bound alone is not a failure.
+
+isWithinRange = checkEndpointAndStationaryValues( ...
+    powerCoefficients, allowedLowerBound, allowedUpperBound);
 end
 
 %% Section 3: Local Functions
 
-function bernsteinControl = convertPowerToBernstein(powerCoefficient)
-    % Convert ascending powers to same-degree Bernstein controls on [0, 1].
-    % The degree-dependent basis conversion is cached across calls.
-    persistent transformByCoefficientCount
-    degree           = numel(powerCoefficient) - 1;
+function bernsteinCoefficients = convertPowerToBernstein(powerCoefficients)
+    % Represent the same polynomial using Bezier coefficients on [0 1].
+    % This changes the coefficients, not the curve. Reuse the conversion
+    % matrix for later polynomials with the same coefficient count.
+    persistent conversionMapsByCoefficientCount
+    degree           = numel(powerCoefficients) - 1;
     coefficientCount = degree + 1;
-    needsTransform   = isempty(transformByCoefficientCount) || ...
-        numel(transformByCoefficientCount) < coefficientCount || ...
-        isempty(transformByCoefficientCount{coefficientCount});
-    if needsTransform
-        transform = zeros(coefficientCount);
+    conversionMapIsMissing = isempty(conversionMapsByCoefficientCount) || ...
+        numel(conversionMapsByCoefficientCount) < coefficientCount || ...
+        isempty(conversionMapsByCoefficientCount{coefficientCount});
+    if conversionMapIsMissing
+        powerToBernsteinMap = zeros(coefficientCount);
         for bernsteinIndex = 0:degree
             for powerIndex = 0:bernsteinIndex
-                transform(bernsteinIndex + 1, powerIndex + 1) = ...
+                powerToBernsteinMap(bernsteinIndex + 1, powerIndex + 1) = ...
                     nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
             end
         end
-        transformByCoefficientCount{coefficientCount} = transform;
+        conversionMapsByCoefficientCount{coefficientCount} = powerToBernsteinMap;
     end
-    bernsteinControl = transformByCoefficientCount{coefficientCount} * powerCoefficient;
+    bernsteinCoefficients = conversionMapsByCoefficientCount{coefficientCount} * powerCoefficients;
 end
 
-function decision = classifyBernsteinRange(control, lowerBound, upperBound, remainingDepth)
-    % Return 1 for proven inside, -1 for proven outside, and 0 for ambiguous.
-    % One outlying control is not a curve sample and cannot reject the interval.
-    hullIsInside  = all(control >= lowerBound & control <= upperBound);
-    hullIsOutside = max(control) < lowerBound || min(control) > upperBound;
-    if hullIsInside
-        decision = 1;
+function rangeDecision = classifyBernsteinRange( ...
+        bernsteinCoefficients, lowerBound, upperBound, remainingSubdivisions)
+    % Return 1 for inside, -1 for outside, and 0 when the bounds cannot decide.
+    % Coefficients bound the curve but are not samples on it: one coefficient
+    % beyond a limit is not enough to reject the curve.
+    coefficientBoundsAreInside  = all(bernsteinCoefficients >= lowerBound & bernsteinCoefficients <= upperBound);
+    coefficientBoundsAreOutside = max(bernsteinCoefficients) < lowerBound || min(bernsteinCoefficients) > upperBound;
+    if coefficientBoundsAreInside
+        rangeDecision = 1;
         return
     end
-    if hullIsOutside
-        decision = -1;
+    if coefficientBoundsAreOutside
+        rangeDecision = -1;
         return
     end
-    if remainingDepth == 0
-        decision = 0;
+    if remainingSubdivisions == 0
+        rangeDecision = 0;
         return
     end
 
-    % One de Casteljau restriction serves both halves of the midpoint split.
-    leftControl  = bmtpEngine.motion.restrictBezier(control, [0, 0.5]);
-    rightControl = bmtpEngine.motion.restrictBezier(control, [0.5, 1]);
-    leftDecision = classifyBernsteinRange(leftControl, lowerBound, upperBound, remainingDepth - 1);
-    if leftDecision < 0
-        decision = -1;
+    % Check both halves of the same curve. Reject if either half is outside;
+    % accept only if both halves pass. Otherwise keep the result undecided.
+    leftHalfCoefficients  = bmtpEngine.motion.restrictBezier(bernsteinCoefficients, [0, 0.5]);
+    rightHalfCoefficients = bmtpEngine.motion.restrictBezier(bernsteinCoefficients, [0.5, 1]);
+    leftHalfDecision = classifyBernsteinRange( ...
+        leftHalfCoefficients, lowerBound, upperBound, remainingSubdivisions - 1);
+    if leftHalfDecision < 0
+        rangeDecision = -1;
         return
     end
-    rightDecision = classifyBernsteinRange(rightControl, lowerBound, upperBound, remainingDepth - 1);
-    if rightDecision < 0
-        decision = -1;
-    elseif leftDecision > 0 && rightDecision > 0
-        decision = 1;
+    rightHalfDecision = classifyBernsteinRange( ...
+        rightHalfCoefficients, lowerBound, upperBound, remainingSubdivisions - 1);
+    if rightHalfDecision < 0
+        rangeDecision = -1;
+    elseif leftHalfDecision > 0 && rightHalfDecision > 0
+        rangeDecision = 1;
     else
-        decision = 0;
+        rangeDecision = 0;
     end
 end
 
-function isWithinRange = stationaryPointsWithinBounds(powerCoefficient, lowerBound, upperBound)
-    % Fall back to endpoints and real stationary points.
-    derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* powerCoefficient(2:end);
-    lastDerivativeIndex   = find(derivativeCoefficient ~= 0, 1, "last");
-    candidateTau          = [0; 1];
+function isWithinRange = checkEndpointAndStationaryValues(powerCoefficients, lowerBound, upperBound)
+    % A zero derivative identifies a possible interior maximum or minimum.
+    % Include both endpoints, and keep the real parts of derivative roots
+    % within [0 1]. Clamp roots just beyond an endpoint by the small fraction
+    % tolerance; the polynomial-value limits are unchanged.
+    derivativeCoefficients = (1:numel(powerCoefficients) - 1).' .* powerCoefficients(2:end);
+    lastDerivativeIndex    = find(derivativeCoefficients ~= 0, 1, "last");
+    candidateFractions     = [0; 1];
     if ~isempty(lastDerivativeIndex)
-        stationaryTau  = real(roots(flip(derivativeCoefficient(1:lastDerivativeIndex))));
-        rootTolerance  = 1e-9;
-        stationaryTau  = stationaryTau(stationaryTau >= -rootTolerance & stationaryTau <= 1 + rootTolerance);
-        candidateTau   = [candidateTau; min(max(stationaryTau, 0), 1)];
+        stationaryFractions = real(roots(flip(derivativeCoefficients(1:lastDerivativeIndex))));
+        fractionTolerance   = 1e-9;
+        stationaryFractions = stationaryFractions( ...
+            stationaryFractions >= -fractionTolerance & stationaryFractions <= 1 + fractionTolerance);
+        candidateFractions = [candidateFractions; min(max(stationaryFractions, 0), 1)];
     end
-    candidateValues = polyval(flip(powerCoefficient), candidateTau);
+    candidateValues = polyval(flip(powerCoefficients), candidateFractions);
     isWithinRange   = all(candidateValues >= lowerBound & candidateValues <= upperBound);
 end

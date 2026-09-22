@@ -1,43 +1,45 @@
-function index = createMovingCellIndex(cells, nodePosition_units)
+function movingCellLookup = createMovingCellIndex(timedRegions, nodePosition_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   index = obstacleAvoidance.search.createMovingCellIndex(cells, nodePosition_units)
+%   movingCellLookup = obstacleAvoidance.search.createMovingCellIndex( ...
+%       timedRegions, nodePosition_units)
 %**************************************************************************
 % PURPOSE
-%   - Build, once per search, everything the exact clearance predicate
-%     needs to test a node-to-node segment against the moving convex cells:
-%     the cells themselves, their outer boxes and orientation over their
-%     clocks, and the segment/box parameter clocks of every directed node
-%     pair (precomputed when the product is small, computed on demand
-%     otherwise).
+%   - Prepare the geometry lookup used to check motion between route points.
+%     Each convex region is a piece of protected obstacle geometry whose
+%     vertices move linearly during its stored time interval.
+%   - Save boxes that quickly exclude distant regions, then save which boxes
+%     each node-to-node segment can meet when that table is small enough.
 %**************************************************************************
 % INPUTS
-%   - cells (scalar struct)
-%       Affine time cells from createTimeCells.
+%   - timedRegions (scalar struct)
+%       Moving protected regions from createTimeCells.
 %   - nodePosition_units (N-by-2 numeric)
-%       Node positions of the search.
+%       Fixed [x y] route points used by the search.
 %**************************************************************************
 % OUTPUTS
-%   - index (scalar struct)
-%       The pair cache of createPairCellCache (NodeCount, IsPrecomputed,
-%       NodePosition_units, CellLower_units, CellUpper_units,
-%       ActiveIntervals_s, and the pair entries) with Cells and
-%       CellIsCounterclockwise added.
+%   - movingCellLookup (scalar struct)
+%       Node-pair lookup from createPairCellCache, plus the full moving
+%       regions in Cells and their boundary directions in CellIsCounterclockwise.
+%       Large node-pair tables are calculated as needed instead of stored.
 %**************************************************************************
 % UNITS
-%   - Positions are coordinate units and clocks are seconds.
+%   - Positions are coordinate units; active time intervals are seconds.
 %**************************************************************************
 
-%% Section 1: Box The Cells, Then Index Every Node Pair Against Them
+%% Section 1: Prepare Boxes And Node-Pair Lookups
 
-% The boxes contain every point accepted by the exact residual predicate,
-% including its tolerance near sharp corners. A cache miss therefore removes
-% work only; uncertain and degenerating cells remain on the exact path.
-nodeScale_units = max([1; abs(nodePosition_units(:))]);
-[cellLower_units, cellUpper_units, cellIsCounterclockwise] = ...
-    obstacleAvoidance.search.createCellBoxes(cells, nodeScale_units);
-index = obstacleAvoidance.search.createPairCellCache( ...
-    nodePosition_units, cellLower_units, cellUpper_units, cells.ActiveTimeInterval_s);
-index.Cells                  = cells;
-index.CellIsCounterclockwise = cellIsCounterclockwise;
+% Each box includes the collision tolerance, even near sharp corners.
+% A segment that misses the box cannot touch that region; a segment that
+% meets it still needs the full moving-region collision check.
+nodeCoordinateScale_units = max([1; abs(nodePosition_units(:))]);
+[boxMinimum_units, boxMaximum_units, regionIsCounterclockwise] = ...
+    obstacleAvoidance.search.createCellBoxes(timedRegions, nodeCoordinateScale_units);
+
+% Store the node-pair calculations separately from the full region geometry.
+% The collision checker uses both, whether pair results are saved or calculated.
+movingCellLookup = obstacleAvoidance.search.createPairCellCache( ...
+    nodePosition_units, boxMinimum_units, boxMaximum_units, timedRegions.ActiveTimeInterval_s);
+movingCellLookup.Cells                  = timedRegions;
+movingCellLookup.CellIsCounterclockwise = regionIsCounterclockwise;
 end

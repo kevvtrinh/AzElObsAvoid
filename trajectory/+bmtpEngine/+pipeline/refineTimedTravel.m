@@ -1,30 +1,31 @@
-function [result, diagnostics] = refineTimedTravel(request, alternatingResult, diagnostics, ...
-        obstacleTarget_units, roundoffReserve_units)
+function [result, diagnostics] = refineTimedTravel( ...
+    solverRequest, retainedSolveResult, diagnostics, separationTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [result, diagnostics] = bmtpEngine.pipeline.refineTimedTravel(request, alternatingResult, ...
-%       diagnostics, obstacleTarget_units, roundoffReserve_units)
+%   [result, diagnostics] = bmtpEngine.pipeline.refineTimedTravel( ...
+%       solverRequest, retainedSolveResult, diagnostics, separationTarget_units, roundoffReserve_units)
 %**************************************************************************
 % PURPOSE
-%   - Reduce the convex travel surrogate after the alternating solve has
-%     established a feasible obstacle homotopy.
+%   - Try to shorten the control polygon after an earliest-arrival motion
+%     has been retained. Keep its segment times fixed and require the complete
+%     motion checks to pass before replacing that result.
 %**************************************************************************
 % INPUTS
-%   - request (scalar struct)
-%       Checked BMTP request with an earliest-arrival variable clock.
-%   - alternatingResult (scalar struct)
-%       Retained alternating attempt, its planes, and its tagged pairs.
+%   - solverRequest (scalar struct)
+%       Checked BMTP inputs for a solve that could choose an earlier arrival.
+%   - retainedSolveResult (scalar struct)
+%       Selected motion from the alternating solver, with its separating lines.
 %   - diagnostics (scalar struct)
 %       Diagnostics accumulated so far by the caller.
-%   - obstacleTarget_units (finite numeric scalar)
-%       Required obstacle-side separation target.
+%   - separationTarget_units (finite numeric scalar)
+%       Required distance from each obstacle to its separating line.
 %   - roundoffReserve_units (finite numeric scalar)
 %       Numerical reserve applied on the trajectory side.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Selected controls and segment time. A refinement that does not
-%       improve or prove leaves the alternating result unchanged.
+%       Selected controls and segment durations. Keep the original result
+%       when refinement does not shorten its control polygon or pass checks.
 %   - diagnostics (scalar struct)
 %       Updated active-pair count and travel-refinement measurements.
 %**************************************************************************
@@ -32,101 +33,112 @@ function [result, diagnostics] = refineTimedTravel(request, alternatingResult, d
 %   - Position and travel are coordinate units; time is seconds.
 %**************************************************************************
 
-%% Section 1: Preserve The Feasible Alternating Result
+%% Section 1: Read The Retained Candidate
 
-result = alternatingResult;
+% Start with the original result so an unsuccessful refinement preserves it.
+result = retainedSolveResult;
 
-%% Section 2: Refine Travel At The Selected Arrival Clock
-
-baseControl_units = result.ControlPoint_units;
-baseSegmentTime_s = result.SegmentTime_s(:);
-segmentCount      = size(baseControl_units, 1);
-assert(numel(baseSegmentTime_s) == segmentCount, ...
+originalControl_units = result.ControlPoint_units;
+originalSegmentTime_s = result.SegmentTime_s(:);
+segmentCount          = size(originalControl_units, 1);
+assert(numel(originalSegmentTime_s) == segmentCount, ...
     'bmtpEngine:InvalidTimedSegmentClock', ...
     'Timed refinement requires one physical duration per motion span.');
-baseDuration_s   = sum(baseSegmentTime_s);
-baseLength_units = controlPolygonLength(baseControl_units);
+% The objective uses distances between adjacent controls. That sum bounds
+% the Bezier curve length; it is not the exact distance along the curve.
+originalDuration_s   = sum(originalSegmentTime_s);
+originalLength_units = controlPolygonLength(originalControl_units);
 
-selectedControl_units    = baseControl_units;
-selectedSegmentTime_s    = baseSegmentTime_s;
-selectedPlanes           = alternatingResult.Planes;
-selectedPairs            = alternatingResult.TaggedPairs;
-selectedSolverMessage    = alternatingResult.SolverMessage;
-selectedLength_units     = baseLength_units;
+selectedControl_units    = originalControl_units;
+selectedSegmentTime_s    = originalSegmentTime_s;
+selectedPlanes           = retainedSolveResult.Planes;
+selectedPairs            = retainedSolveResult.TaggedPairs;
+selectedSolverMessage    = retainedSolveResult.SolverMessage;
+selectedLength_units     = originalLength_units;
 travelRefinementAccepted = false;
-travelPlanes             = alternatingResult.Planes;
+separatingPlanes         = retainedSolveResult.Planes;
 
-assert(request.UsesVariableClock && ...
-    request.Options.GoalTimeMode == "earliestArrival", ...
+%% Section 2: Shorten The Path At The Retained Segment Times
+
+assert(solverRequest.UsesVariableClock && ...
+    solverRequest.Options.GoalTimeMode == "earliestArrival", ...
     'bmtpEngine:InvalidTimedTravelRefinement', ...
     'Timed travel refinement requires an earliest-arrival variable clock.');
-% Preserve the selected earliest clock exactly while minimizing its travel
-% surrogate. Fixed-arrival requests use the ordinary alternating solver and
-% never enter this refinement path.
-refinementHorizon_s = baseDuration_s;
+% Fix total duration and all segment-duration ratios to preserve the
+% retained timing. Fixed-arrival requests use the other alternating solver
+% and do not enter this refinement.
+fixedMotionDuration_s = originalDuration_s;
 diagnostics.TravelRefinementAttempted           = true;
-diagnostics.TravelRefinementInitialLength_units = baseLength_units;
-diagnostics.TravelRefinementFinalLength_units   = baseLength_units;
-diagnostics.TravelRefinementInitialDuration_s   = baseDuration_s;
-diagnostics.TravelRefinementFinalDuration_s     = baseDuration_s;
+diagnostics.TravelRefinementInitialLength_units = originalLength_units;
+diagnostics.TravelRefinementFinalLength_units   = originalLength_units;
+diagnostics.TravelRefinementInitialDuration_s   = originalDuration_s;
+diagnostics.TravelRefinementFinalDuration_s     = originalDuration_s;
 diagnostics.TravelRefinementAccepted            = false;
-segmentRatio   = baseSegmentTime_s / mean(baseSegmentTime_s);
-constraintBase = struct();
+segmentTimeRatios          = originalSegmentTime_s / mean(originalSegmentTime_s);
+savedTrajectoryConstraints = struct();
+% Only a changed, verified line set allows another solve. Stop at the first
+% fully checked candidate or after at most eight attempts.
 for refinementIndex = 1:8
-    step = struct( ...
+    trajectoryStep = struct( ...
         'SegmentCount',            segmentCount, ...
-        'Planes',                  travelPlanes, ...
+        'Planes',                  separatingPlanes, ...
         'RoundoffReserve_units',   roundoffReserve_units, ...
-        'MaximumMotionDuration_s', refinementHorizon_s, ...
+        'MaximumMotionDuration_s', fixedMotionDuration_s, ...
         'GoalTimeMode',            "fixedArrival", ...
         'MinimumMotionDuration_s', 0, ...
-        'SegmentRatio',            segmentRatio, ...
-        'ConstraintBase',          constraintBase);
-    [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output, constraintBase] = ...
-        bmtpEngine.optimization.solveTimedTrajectoryStep(request, step);
-    diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
-    diagnostics.TravelRefinementExitFlag             = travelExitFlag;
-    diagnostics.TravelRefinementOptimizationConverged = output.OptimizationConverged;
-    if ~bmtpEngine.optimization.hasUsableConicIterate(refinedControl_units, travelExitFlag)
+        'SegmentRatio',            segmentTimeRatios, ...
+        'ConstraintBase',          savedTrajectoryConstraints);
+    [refinedControl_units, refinedSegmentTime_s, refinementExitFlag, solverOutput, savedTrajectoryConstraints] = ...
+        bmtpEngine.optimization.solveTimedTrajectoryStep(solverRequest, trajectoryStep);
+    diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
+        diagnostics.ConicSolver, solverOutput);
+    diagnostics.TravelRefinementExitFlag             = refinementExitFlag;
+    diagnostics.TravelRefinementOptimizationConverged = solverOutput.OptimizationConverged;
+    if ~bmtpEngine.optimization.hasUsableConicIterate(refinedControl_units, refinementExitFlag)
         break
     end
-    if ~output.ConstraintGenerationComplete
+    % Do not inspect a refinement whose full line-constraint set is unresolved.
+    if ~solverOutput.ConstraintGenerationComplete
         break
     end
     physicalSegmentTime_s = refinedSegmentTime_s(:);
-    refinedMotion = struct('ProvenControlPoint_units', refinedControl_units, ...
-        'ControlPoint_units', refinedControl_units, ...
-        'SegmentTime_s', physicalSegmentTime_s, ...
-        'FinalTime_s', request.InitialState.time_s + sum(physicalSegmentTime_s), ...
-        'GivenPower_units', []);
-    refinedProof = bmtpEngine.validation.checkFinalMotion(request, ...
-        refinedMotion, roundoffReserve_units, obstacleTarget_units);
-    refinedCollisionPairs = ~reshape([refinedProof.Planes.Verified], ...
-        size(refinedProof.Planes)) & refinedProof.RegionActiveBySegment;
-    if any(refinedCollisionPairs, "all")
-        [rebuiltPlanes, ~, complete] = ...
-            bmtpEngine.separation.createTimeScopedPlanes(baseControl_units, ...
-            baseSegmentTime_s, request, ...
-            obstacleTarget_units, roundoffReserve_units);
-        planeSetChanged = ~isequaln(rebuiltPlanes, travelPlanes);
-        if ~complete || ~planeSetChanged
+    refinedMotion = struct( ...
+        'ProvenControlPoint_units', refinedControl_units, ...
+        'ControlPoint_units',       refinedControl_units, ...
+        'SegmentTime_s',            physicalSegmentTime_s, ...
+        'FinalTime_s',              solverRequest.InitialState.time_s + sum(physicalSegmentTime_s), ...
+        'GivenPower_units',         []);
+    refinedMotionCheck = bmtpEngine.validation.checkFinalMotion(solverRequest, ...
+        refinedMotion, roundoffReserve_units, separationTarget_units);
+    unverifiedPairs = ~reshape([refinedMotionCheck.Planes.Verified], ...
+        size(refinedMotionCheck.Planes)) & refinedMotionCheck.RegionActiveBySegment;
+    if any(unverifiedPairs, "all")
+        % Rebuild lines around the original retained curve and times. A new
+        % attempt is useful only if every required line is verified and the
+        % rebuilt set differs from the one that produced this rejected curve.
+        [rebuiltSeparatingPlanes, ~, allRequiredLinesVerified] = ...
+            bmtpEngine.separation.createTimeScopedPlanes(originalControl_units, ...
+            originalSegmentTime_s, solverRequest, ...
+            separationTarget_units, roundoffReserve_units);
+        planeSetChanged = ~isequaln(rebuiltSeparatingPlanes, separatingPlanes);
+        if ~allRequiredLinesVerified || ~planeSetChanged
             break
         end
-        travelPlanes = rebuiltPlanes;
+        separatingPlanes = rebuiltSeparatingPlanes;
         continue
     end
-    if ~refinedProof.Passed
+    if ~refinedMotionCheck.Passed
         break
     end
     refinedLength_units = controlPolygonLength(refinedControl_units);
-    % Replace the current travel profile only when refinement improves the
-    % declared objective and remains feasible.
+    % Keep the original motion unless all checks pass and the measured
+    % control-polygon length is strictly shorter.
     refinementIsBetter = refinedLength_units < selectedLength_units;
     if refinementIsBetter
         selectedControl_units    = refinedControl_units;
         selectedSegmentTime_s    = refinedSegmentTime_s;
-        selectedPlanes           = refinedProof.Planes;
-        selectedPairs            = refinedProof.RegionActiveBySegment;
+        selectedPlanes           = refinedMotionCheck.Planes;
+        selectedPairs            = refinedMotionCheck.RegionActiveBySegment;
         selectedSolverMessage    = "A travel-shortened time-scoped feasible iterate was retained.";
         selectedLength_units     = refinedLength_units;
         travelRefinementAccepted = true;
@@ -134,7 +146,7 @@ for refinementIndex = 1:8
     break
 end
 
-%% Section 3: Return The Best Travel Attempt
+%% Section 3: Return The Selected Motion And Its Matching Lines
 
 if travelRefinementAccepted
     result.ControlPoint_units = selectedControl_units;
@@ -155,7 +167,7 @@ end
 %% Section 4: Local Functions
 
 function length_units = controlPolygonLength(controlPoint_units)
-    % Sum Bezier control-edge lengths as a convex travel estimate.
-    edge_units   = diff(controlPoint_units, 1, 2);
-    length_units = sum(vecnorm(edge_units, 2, 3), "all");
+    % Sum distances between adjacent Bezier controls over every segment.
+    controlEdgeVectors_units = diff(controlPoint_units, 1, 2);
+    length_units             = sum(vecnorm(controlEdgeVectors_units, 2, 3), "all");
 end

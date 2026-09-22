@@ -1,102 +1,119 @@
-function planes = verifyMovingSeparatingLines(planes, controlPoint_units, ...
-        firstRegions_units, lastRegions_units, roundoffReserve_units, target_units)
+function separatingPlanes = verifyMovingSeparatingLines(separatingPlanes, controlPoint_units, ...
+    startRegions_units, endRegions_units, roundoffReserve_units, separationTarget_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   planes = bmtpEngine.separation.verifyMovingSeparatingLines(planes, ...
-%       controlPoint_units, firstRegions_units, lastRegions_units, ...
-%       roundoffReserve_units, target_units)
+%   separatingPlanes = bmtpEngine.separation.verifyMovingSeparatingLines( ...
+%       separatingPlanes, controlPoint_units, startRegions_units, endRegions_units, ...
+%       roundoffReserve_units, separationTarget_units)
 %**************************************************************************
 % PURPOSE
-%   - Batch the scalar Bernstein plane bounds for affine moving cells.
+%   - Check one curve against several moving convex regions together. Use
+%     the same whole-interval bounds and acceptance rules as the one-line check.
 %**************************************************************************
 % INPUTS
-%   - planes (R-element struct array)
-%       One separating plane per convex moving region.
+%   - separatingPlanes (R-element struct array)
+%       One separating line per convex region whose vertices move linearly.
 %   - controlPoint_units (N-by-2 numeric array)
 %       Common Bezier control points over the checked physical interval.
-%   - firstRegions_units, lastRegions_units (R-by-1 cell arrays)
+%   - startRegions_units, endRegions_units (R-by-1 cell arrays)
 %       Corresponding convex-region vertices at the interval endpoints.
-%   - roundoffReserve_units, target_units (nonnegative numeric scalars)
+%   - roundoffReserve_units, separationTarget_units (nonnegative numeric scalars)
 %       Required trajectory roundoff reserve and obstacle-side target.
 %**************************************************************************
 % OUTPUTS
-%   - planes (R-element struct array)
-%       Planes with corrected offsets, signed gaps, and verification states.
+%   - separatingPlanes (R-element struct array)
+%       Updated offsets and gap bounds. Verified is true only where every
+%       separation condition passes for the entire interval.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, reserve, and gap are coordinate units;
 %     normals are dimensionless.
 %**************************************************************************
 
-%% Section 1: Evaluate All Obstacle And Curve Product Coefficients
+%% Section 1: Check Matching Regions And Group Their Vertices
 
-regionCount = numel(firstRegions_units);
-assert(numel(planes) == regionCount && numel(lastRegions_units) == regionCount, ...
+regionCount = numel(startRegions_units);
+assert(numel(separatingPlanes) == regionCount && numel(endRegions_units) == regionCount, ...
     'bmtpEngine:InvalidMovingPlaneBatch', ...
     'Every moving source region requires one plane and two endpoint regions.');
 if regionCount == 0
     return
 end
 
-vertexCounts     = cellfun(@(region) size(region, 1), firstRegions_units);
-lastVertexCounts = cellfun(@(region) size(region, 1), lastRegions_units);
-regionsAreValid  = all(vertexCounts >= 3) && isequal(vertexCounts, lastVertexCounts) && ...
+startVertexCounts = cellfun(@(region) size(region, 1), startRegions_units);
+endVertexCounts   = cellfun(@(region) size(region, 1), endRegions_units);
+regionsAreValid   = all(startVertexCounts >= 3) && isequal(startVertexCounts, endVertexCounts) && ...
     all(cellfun(@(region) isnumeric(region) && size(region, 2) == 2 && ...
-    all(isfinite(region), 'all'), firstRegions_units)) && ...
+    all(isfinite(region), 'all'), startRegions_units)) && ...
     all(cellfun(@(region) isnumeric(region) && size(region, 2) == 2 && ...
-    all(isfinite(region), 'all'), lastRegions_units));
+    all(isfinite(region), 'all'), endRegions_units));
 assert(regionsAreValid, ...
     'bmtpEngine:InvalidMovingPlaneBatch', ...
     'Moving-region endpoint vertices must be finite corresponding convex polygons.');
-normalPages  = reshape([planes.Normal], 2, 2, regionCount);
-firstNormals = reshape(normalPages(1, :, :), 2, regionCount).';
-lastNormals  = reshape(normalPages(2, :, :), 2, regionCount).';
-offsets_units = reshape([planes.Offset_units], 2, regionCount).';
-firstVertices_units = vertcat(firstRegions_units{:});
-lastVertices_units  = vertcat(lastRegions_units{:});
-regionIndexByVertex = repelem((1:regionCount).', vertexCounts);
+% Stack the regions for one calculation. Keep the region index of each
+% vertex so every projection uses its own line normal and offset.
+normalByEndpointAndRegion = reshape([separatingPlanes.Normal], 2, 2, regionCount);
+startNormals             = reshape(normalByEndpointAndRegion(1, :, :), 2, regionCount).';
+endNormals               = reshape(normalByEndpointAndRegion(2, :, :), 2, regionCount).';
+
+lineOffset_units    = reshape([separatingPlanes.Offset_units], 2, regionCount).';
+startVertices_units = vertcat(startRegions_units{:});
+endVertices_units   = vertcat(endRegions_units{:});
+regionIndexByVertex = repelem((1:regionCount).', startVertexCounts);
 regionIndexByVertex = regionIndexByVertex(:);
 
-firstSide_units = sum(firstVertices_units .* firstNormals(regionIndexByVertex, :), 2);
-lastSide_units  = sum(lastVertices_units .* lastNormals(regionIndexByVertex, :), 2);
-crossSide_units = sum(firstVertices_units .* lastNormals(regionIndexByVertex, :), 2) + ...
-    sum(lastVertices_units .* firstNormals(regionIndexByVertex, :), 2);
-obstacleSide_units = min([firstSide_units + offsets_units(regionIndexByVertex, 1), ...
-    (crossSide_units + sum(offsets_units(regionIndexByVertex, :), 2)) / 2, ...
-    lastSide_units + offsets_units(regionIndexByVertex, 2)], [], 2);
-minimumObstacle_units = accumarray(regionIndexByVertex, obstacleSide_units, ...
+%% Section 2: Bound Both Sides Of Each Line Throughout The Interval
+
+% A linearly moving vertex x a linearly changing normal gives a quadratic.
+% Its three Bernstein coefficients bound its value for the whole interval,
+% including between the endpoints. Take the lowest bound over each region.
+startSideWithoutOffset_units = sum(startVertices_units .* startNormals(regionIndexByVertex, :), 2);
+endSideWithoutOffset_units   = sum(endVertices_units .* endNormals(regionIndexByVertex, :), 2);
+crossSideWithoutOffset_units = sum(startVertices_units .* endNormals(regionIndexByVertex, :), 2) + ...
+    sum(endVertices_units .* startNormals(regionIndexByVertex, :), 2);
+minimumVertexSide_units = min([startSideWithoutOffset_units + lineOffset_units(regionIndexByVertex, 1), ...
+    (crossSideWithoutOffset_units + sum(lineOffset_units(regionIndexByVertex, :), 2)) / 2, ...
+    endSideWithoutOffset_units + lineOffset_units(regionIndexByVertex, 2)], [], 2);
+minimumObstacleSide_units = accumarray(regionIndexByVertex, minimumVertexSide_units, ...
     [regionCount, 1], @min);
 
-degree = size(controlPoint_units, 1) - 1;
-beta   = (0:degree + 1).' / (degree + 1);
-alpha  = 1 - beta;
-firstProjection_units = controlPoint_units(:, 1) * firstNormals(:, 1).' + ...
-    controlPoint_units(:, 2) * firstNormals(:, 2).';
-lastProjection_units = controlPoint_units(:, 1) * lastNormals(:, 1).' + ...
-    controlPoint_units(:, 2) * lastNormals(:, 2).';
-product_units = alpha .* [firstProjection_units; zeros(1, regionCount)] + ...
-    beta .* [zeros(1, regionCount); lastProjection_units] + ...
-    alpha * offsets_units(:, 1).' + beta * offsets_units(:, 2).';
-maximumTrajectory_units = max(product_units, [], 1).';
-maximumNormalNorm = max( ...
-    [vecnorm(firstNormals, 2, 2), vecnorm(lastNormals, 2, 2)], [], 2);
+% For the degree-D curve, the corresponding product has degree D + 1.
+% Its largest coefficient bounds the curve-side value without time sampling.
+degree             = size(controlPoint_units, 1) - 1;
+endNormalWeights   = (0:degree + 1).' / (degree + 1);
+startNormalWeights = 1 - endNormalWeights;
+startNormalProjection_units = controlPoint_units(:, 1) * startNormals(:, 1).' + ...
+    controlPoint_units(:, 2) * startNormals(:, 2).';
+endNormalProjection_units = controlPoint_units(:, 1) * endNormals(:, 1).' + ...
+    controlPoint_units(:, 2) * endNormals(:, 2).';
+curveSideCoefficients_units = startNormalWeights .* [startNormalProjection_units; zeros(1, regionCount)] + ...
+    endNormalWeights .* [zeros(1, regionCount); endNormalProjection_units] + ...
+    startNormalWeights * lineOffset_units(:, 1).' + endNormalWeights * lineOffset_units(:, 2).';
+maximumTrajectorySide_units = max(curveSideCoefficients_units, [], 1).';
+maximumNormalLength = max( ...
+    [vecnorm(startNormals, 2, 2), vecnorm(endNormals, 2, 2)], [], 2);
 
-%% Section 2: Apply The Shared Correction And Acceptance Decision
+%% Section 3: Shift The Lines When Possible And Apply All Gap Checks
 
-vertexScale_units = max([max(abs(firstVertices_units), [], 2), ...
-    max(abs(lastVertices_units), [], 2)], [], 2);
-scale_units = accumarray(regionIndexByVertex, vertexScale_units, ...
+% Size the rounding allowance from each region, its offsets and the curve.
+% The shared check may shift both offsets equally, but all required curve
+% and obstacle gaps must still pass after that shift.
+
+vertexScale_units = max([max(abs(startVertices_units), [], 2), ...
+    max(abs(endVertices_units), [], 2)], [], 2);
+geometryScale_units = accumarray(regionIndexByVertex, vertexScale_units, ...
     [regionCount, 1], @max);
-scale_units = max([scale_units, max(abs(offsets_units), [], 2), ...
+geometryScale_units = max([geometryScale_units, max(abs(lineOffset_units), [], 2), ...
     repmat(max(1, max(abs(controlPoint_units), [], 'all')), regionCount, 1)], [], 2);
-[offsets_units, signedGap_units, verified] = bmtpEngine.separation.proveSeparation( ...
-    minimumObstacle_units, maximumTrajectory_units, maximumNormalNorm, ...
-    offsets_units, 16 * eps(scale_units), roundoffReserve_units, target_units);
+[lineOffset_units, signedGap_units, separationIsVerified] = bmtpEngine.separation.proveSeparation( ...
+    minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalLength, ...
+    lineOffset_units, 16 * eps(geometryScale_units), roundoffReserve_units, separationTarget_units);
 
-offsetCells = num2cell(offsets_units, 2);
-gapCells    = num2cell(signedGap_units);
-flags       = num2cell(verified);
-[planes.Offset_units]    = offsetCells{:};
-[planes.SignedGap_units] = gapCells{:};
-[planes.Verified]        = flags{:};
+% Put each batch result back into its original line record.
+offsetCells       = num2cell(lineOffset_units, 2);
+gapCells          = num2cell(signedGap_units);
+verificationCells = num2cell(separationIsVerified);
+[separatingPlanes.Offset_units]    = offsetCells{:};
+[separatingPlanes.SignedGap_units] = gapCells{:};
+[separatingPlanes.Verified]        = verificationCells{:};
 end

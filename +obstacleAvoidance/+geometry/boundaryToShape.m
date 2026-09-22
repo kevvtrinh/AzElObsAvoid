@@ -4,25 +4,26 @@ function shape = boundaryToShape(x_units, y_units)
 %   shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units)
 %**************************************************************************
 % PURPOSE
-%   - Convert NaN-separated boundary coordinates into a polyshape.
+%   - Build a polygon from boundary points. NaN entries separate closed
+%     boundary loops, including holes and separate outlines.
 %**************************************************************************
 % INPUTS
 %   - x_units (numeric vector)
-%       Boundary x coordinates with nonfinite ring separators.
+%       Boundary x coordinates; NaN separates boundary loops.
 %   - y_units (numeric vector)
-%       Matching boundary y coordinates with paired separators.
+%       Matching y coordinates, with NaN at the same separator positions.
 %**************************************************************************
 % OUTPUTS
 %   - shape (scalar polyshape)
-%       Unsimplified geometry that preserves collinear vertices. Fewer than
-%       three finite vertices returns an empty polyshape; invalid input
+%       Polygon that retains supplied points along straight edges. Fewer
+%       than three finite vertices returns an empty polygon; invalid input
 %       throws an error.
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates are coordinate units.
 %**************************************************************************
 
-%% Section 1: Construct The Shape Without Reinterpreting Geometry
+%% Section 1: Construct The Polygon From Its Boundary Points
 
 % Fewer than three finite vertices enclose no area.
 vertexIsFinite = isfinite(x_units) & isfinite(y_units);
@@ -31,7 +32,8 @@ if nnz(vertexIsFinite) < 3
     return
 end
 
-% Keep collinear vertices and disable simplification to preserve vertex
-% correspondence between moving-obstacle samples.
+% Keep extra points along straight edges and turn off simplification.
+% Moving-obstacle samples may match points by index; removing points could
+% make the same index refer to different boundary locations at different times.
 shape = polyshape(x_units, y_units, "Simplify", false, "KeepCollinearPoints", true);
 end

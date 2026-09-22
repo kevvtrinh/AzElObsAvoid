@@ -1,82 +1,94 @@
-function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units, roundoffReserve_units, target_units)
+function plane = verifySeparatingLine( ...
+    plane, controlPoint_units, vertices_units, roundoffReserve_units, separationTarget_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   plane = bmtpEngine.separation.verifySeparatingLine(plane, controlPoint_units, ...
-%       vertices_units, roundoffReserve_units, target_units)
+%       vertices_units, roundoffReserve_units, separationTarget_units)
 %**************************************************************************
 % PURPOSE
-%   - Bound one degree-one separating line with direct Bernstein products,
-%     then apply the shared bmtpEngine.separation.proveSeparation decision.
+%   - Bound the obstacle and curve sides of a line that changes linearly.
+%     Check the entire interval, then apply the shared clearance requirements.
 %**************************************************************************
 % INPUTS
 %   - plane (scalar struct)
-%       Candidate normals and offsets.
+%       Candidate normal vectors and offsets at the interval start/end.
 %   - controlPoint_units (N-by-2 numeric array)
-%       Bezier control points for one motion span.
+%       Bezier control points for one trajectory segment.
 %   - vertices_units (M-by-2 or M-by-2-by-2 numeric array)
-%       Static vertices or affine obstacle endpoint vertices.
+%       Static vertices, or matching vertices at the start/end of linear motion.
 %   - roundoffReserve_units (nonnegative numeric scalar)
 %       Numerical reserve applied on the trajectory side.
-%   - target_units (nonnegative numeric scalar)
+%   - separationTarget_units (nonnegative numeric scalar)
 %       Required obstacle-side separation target.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
-%       Corrected offsets, proven signed gap, and verification state.
+%       Updated offsets and a bound on the signed gap. Verified is true only
+%       if every separation condition passes for the entire interval.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, reserve, and gap are coordinate units;
 %     normals are dimensionless.
 %**************************************************************************
 
-%% Section 1: Bound The Obstacle And Trajectory Sides Exactly
+%% Section 1: Bound Both Sides Of The Line Throughout The Interval
+
+% Line-side value = normal x position + offset. The obstacle must stay
+% above its target and the curve below its negative roundoff reserve.
 
 if ismatrix(vertices_units)
-    % Static vertices make the obstacle-side polynomial linear.
+    % With static vertices, each line-side value changes linearly.
+    % Its minimum occurs at the start or end.
     minimumObstacleSide_units = min( ...
         vertices_units * plane.Normal.' + plane.Offset_units, [], "all");
 else
-    first_units = vertices_units(:, :, 1);
-    last_units  = vertices_units(:, :, end);
+    startVertices_units = vertices_units(:, :, 1);
+    endVertices_units   = vertices_units(:, :, end);
 
-    % Affine vertex motion times an affine normal is quadratic. Its three
-    % Bernstein coefficients bound the obstacle side throughout the interval.
-    obstacleSide_units = [first_units * plane.Normal(1, :).' + plane.Offset_units(1), ...
-        (first_units * plane.Normal(2, :).' + last_units * plane.Normal(1, :).' + ...
+    % A linearly moving vertex x a linearly changing normal gives a quadratic.
+    % Its three Bernstein coefficients bound its value between the endpoints;
+    % endpoint values alone could miss a smaller value during the interval.
+    obstacleSideCoefficients_units = [startVertices_units * plane.Normal(1, :).' + plane.Offset_units(1), ...
+        (startVertices_units * plane.Normal(2, :).' + endVertices_units * plane.Normal(1, :).' + ...
         sum(plane.Offset_units)) / 2, ...
-        last_units * plane.Normal(2, :).' + plane.Offset_units(2)];
-    minimumObstacleSide_units = min(obstacleSide_units, [], "all");
+        endVertices_units * plane.Normal(2, :).' + plane.Offset_units(2)];
+    minimumObstacleSide_units = min(obstacleSideCoefficients_units, [], "all");
 end
 
 degree = size(controlPoint_units, 1) - 1;
 
-% Exact degree-N by degree-one Bernstein product weights.
-persistent cachedDegree cachedBeta cachedAlpha
+% The degree-D curve x a degree-1 line normal gives degree D + 1.
+% Its largest Bernstein coefficient bounds the curve-side value everywhere.
+% Cache the product weights because they depend only on curve degree.
+persistent cachedDegree cachedEndNormalWeights cachedStartNormalWeights
 if isempty(cachedDegree) || cachedDegree ~= degree
-    cachedDegree = degree;
-    cachedBeta   = (0:degree + 1).' / (degree + 1);
-    cachedAlpha  = 1 - cachedBeta;
+    cachedDegree             = degree;
+    cachedEndNormalWeights   = (0:degree + 1).' / (degree + 1);
+    cachedStartNormalWeights = 1 - cachedEndNormalWeights;
 end
-beta  = cachedBeta;
-alpha = cachedAlpha;
-product_units = alpha .* [sum(controlPoint_units .* plane.Normal(1, :), 2); 0] + ...
-    beta .* [0; sum(controlPoint_units .* plane.Normal(2, :), 2)] + ...
-    alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
-[maximumTrajectorySide_units, maximumNormalNorm] = deal( ...
-    max(product_units), max(vecnorm(plane.Normal, 2, 2)));
+endNormalWeights   = cachedEndNormalWeights;
+startNormalWeights = cachedStartNormalWeights;
 
-%% Section 2: Apply The Shared Correction And Acceptance Decision
+curveSideCoefficients_units = startNormalWeights .* [sum(controlPoint_units .* plane.Normal(1, :), 2); 0] + ...
+    endNormalWeights .* [0; sum(controlPoint_units .* plane.Normal(2, :), 2)] + ...
+    startNormalWeights * plane.Offset_units(1) + endNormalWeights * plane.Offset_units(2);
+[maximumTrajectorySide_units, maximumNormalLength] = deal( ...
+    max(curveSideCoefficients_units), max(vecnorm(plane.Normal, 2, 2)));
 
-% Measuring the coordinate scale costs a pass over the obstacle and the hull,
-% so measure it only where an offset correction can actually be applied.
-roundoff_units = 0;
-if target_units - minimumObstacleSide_units <= -roundoffReserve_units - maximumTrajectorySide_units
-    finiteCoordinates_units = [plane.Offset_units(:); vertices_units(:); controlPoint_units(:)];
-    finiteCoordinates_units = abs(finiteCoordinates_units(isfinite(finiteCoordinates_units)));
-    scale_units             = max([1; finiteCoordinates_units]);
-    roundoff_units = 16 * eps(scale_units);
+%% Section 2: Shift The Line When Possible And Apply All Gap Checks
+
+% A common offset shift needs room for both required gaps:
+% target - obstacleSide <= shift <= -reserve - curveSide. Calculate the
+% rounding allowance only when that allowed shift interval is nonempty.
+offsetRoundoffAllowance_units = 0;
+if separationTarget_units - minimumObstacleSide_units <= ...
+    -roundoffReserve_units - maximumTrajectorySide_units
+    finiteCoordinates_units      = [plane.Offset_units(:); vertices_units(:); controlPoint_units(:)];
+    finiteCoordinates_units      = abs(finiteCoordinates_units(isfinite(finiteCoordinates_units)));
+    geometryScale_units          = max([1; finiteCoordinates_units]);
+    offsetRoundoffAllowance_units = 16 * eps(geometryScale_units);
 end
 [plane.Offset_units, plane.SignedGap_units, plane.Verified] = bmtpEngine.separation.proveSeparation( ...
-    minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalNorm, ...
-    plane.Offset_units, roundoff_units, roundoffReserve_units, target_units);
+    minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalLength, ...
+    plane.Offset_units, offsetRoundoffAllowance_units, roundoffReserve_units, separationTarget_units);
 end

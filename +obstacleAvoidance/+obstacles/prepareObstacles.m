@@ -7,26 +7,28 @@ function obstacles = prepareObstacles(obstacles, timeRange_s, stopAtUnsupported)
 %       obstacles, timeRange_s, stopAtUnsupported)
 %**************************************************************************
 % PURPOSE
-%   - Prepare requested source intervals and reuse source-checked cache data.
+%   - Prepare obstacle shapes and motion models for the requested time
+%     range. Reuse saved preparation only when its original inputs still match.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical obstacle array)
 %       Obstacle histories to prepare; empty input remains empty.
 %   - timeRange_s (finite 1-by-2 row, optional; default full history)
-%       Nondecreasing time interval whose samples and spans are needed.
+%       [start end] times to prepare, with start <= end.
 %   - stopAtUnsupported (logical scalar, optional; default false)
-%       Whether preparation stops at the first unsupported touched interval.
+%       Whether to stop preparing each obstacle at the first requested
+%       interval whose motion model cannot be verified.
 %**************************************************************************
 % OUTPUTS
 %   - obstacles (prepared obstacle array)
-%       Each record contains reusable source-derived geometry. Invalid input
-%       throws an error.
+%       Each record includes reusable shapes and interval motion models.
+%       Invalid input throws an error.
 %**************************************************************************
 % UNITS
 %   - Geometry uses coordinate units; time uses seconds.
 %**************************************************************************
 
-%% Section 1: Reuse Only Source-Checked Preparation
+%% Section 1: Check Controls And Standardize The Obstacle Records
 
 if nargin < 3
     stopAtUnsupported = false;
@@ -45,37 +47,48 @@ obstacles = obstacleAvoidance.obstacles.canonicalizeObstacles(obstacles);
 if isempty(obstacles)
     return;
 end
+
+% A version mismatch means the saved preparation uses a different format or
+% calculation. Rebuild it even if the obstacle inputs are unchanged.
 preparationVersion = 13;
 
-%% Section 2: Extend Only The Requested Entries
+%% Section 2: Reuse Or Prepare Each Obstacle For The Requested Times
 
-% Prepare each obstacle separately.
 for obstacleIndex = 1:numel(obstacles)
-    previous = [];
+    previousPreparation  = [];
     preparationIsCurrent = false;
+
+    % Compare every input used by preparation, including protected and
+    % original vertices. Even a small coordinate change requires rebuilding.
     if isfield(obstacles, 'InternalPreparation')
-        preparation = obstacles(obstacleIndex).InternalPreparation;
-        preparationIsCurrent = isstruct(preparation) && isscalar(preparation) && ...
-            all(isfield(preparation, {'PreparationVersion', 'SourceSnapshot'})) && ...
-            isequal(preparation.PreparationVersion, preparationVersion) && ...
-            isequaln(preparation.SourceSnapshot, createSourceSnapshot(obstacles(obstacleIndex)));
+        savedPreparation = obstacles(obstacleIndex).InternalPreparation;
+        preparationIsCurrent = isstruct(savedPreparation) && isscalar(savedPreparation) && ...
+            all(isfield(savedPreparation, {'PreparationVersion', 'SourceSnapshot'})) && ...
+            isequal(savedPreparation.PreparationVersion, preparationVersion) && ...
+            isequaln(savedPreparation.SourceSnapshot, createSourceSnapshot(obstacles(obstacleIndex)));
     end
     if preparationIsCurrent
-        normalized = obstacles(obstacleIndex);
-        previous   = normalized.InternalPreparation;
-        % Source equality was checked above. Complete preparation needs no
-        % extension or reconstruction of its unchanged derived fields.
-        if all(previous.SamplePrepared) && all(previous.IntervalPrepared)
+        normalizedObstacle  = obstacles(obstacleIndex);
+        previousPreparation = normalizedObstacle.InternalPreparation;
+        % When every sample and interval is already prepared, no further
+        % work is needed for this unchanged obstacle.
+        if all(previousPreparation.SamplePrepared) && all(previousPreparation.IntervalPrepared)
             continue;
         end
     else
-        normalized = obstacleAvoidance.obstacles.createObstacle(obstacles(obstacleIndex));
+        normalizedObstacle = obstacleAvoidance.obstacles.createObstacle(obstacles(obstacleIndex));
     end
-    sourceSnapshot = createSourceSnapshot(normalized);
+
+    % Keep valid partial results and prepare the missing times. If the
+    % inputs changed, previous preparation is empty and the work starts anew.
+    sourceSnapshot   = createSourceSnapshot(normalizedObstacle);
     preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
-        normalized, preparationVersion, sourceSnapshot, timeRange_s, previous, stopAtUnsupported);
-    for fieldName = reshape(string(fieldnames(normalized)), 1, [])
-        obstacles(obstacleIndex).(fieldName) = normalized.(fieldName);
+        normalizedObstacle, preparationVersion, sourceSnapshot, timeRange_s, ...
+        previousPreparation, stopAtUnsupported);
+
+    % Return the normalized input fields together with the prepared geometry.
+    for fieldName = reshape(string(fieldnames(normalizedObstacle)), 1, [])
+        obstacles(obstacleIndex).(fieldName) = normalizedObstacle.(fieldName);
     end
     obstacles(obstacleIndex).InternalPreparation = preparedObstacle.InternalPreparation;
 end
@@ -83,16 +96,17 @@ end
 
 %% Section 3: Local Functions
 
-function snapshot = createSourceSnapshot(obstacle)
-    % Store the source fields for cache checks.
-    snapshot = struct( ...
-        "targetName",           obstacle.targetName, ...
-        "time_s",               obstacle.time_s, ...
-        "x_units",              {obstacle.x_units}, ...
-        "y_units",              {obstacle.y_units}, ...
-        "originalX_units",      {obstacle.originalX_units}, ...
-        "originalY_units",      {obstacle.originalY_units}, ...
-        "safetyMargin_units",   obstacle.safetyMargin_units, ...
-        "status",               obstacle.status, ...
-        "UsesSourceIndex",      obstacle.UsesSourceIndex);
+function sourceSnapshot = createSourceSnapshot(obstacle)
+    % Save the inputs that determine geometry and vertex correspondence.
+    % Later calls compare them before reusing any prepared shapes or models.
+    sourceSnapshot = struct( ...
+        "targetName",         obstacle.targetName, ...
+        "time_s",             obstacle.time_s, ...
+        "x_units",            {obstacle.x_units}, ...
+        "y_units",            {obstacle.y_units}, ...
+        "originalX_units",    {obstacle.originalX_units}, ...
+        "originalY_units",    {obstacle.originalY_units}, ...
+        "safetyMargin_units", obstacle.safetyMargin_units, ...
+        "status",             obstacle.status, ...
+        "UsesSourceIndex",    obstacle.UsesSourceIndex);
 end

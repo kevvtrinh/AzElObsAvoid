@@ -1,108 +1,119 @@
 function result = planWrappedMotion(request)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.planning.planWrappedMotion( ...
-%       request)
+%   result = obstacleAvoidance.planning.planWrappedMotion(request)
 %**************************************************************************
 % PURPOSE
-%   - A wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped
-%     coordinates. Obstacles are copied one full turn up and down, and the
-%     goal has several copies, one per whole turn, inside the range the
-%     vehicle can reach in time. Each goal copy is one ordinary request.
-%   - Goal copies are planned nearest first and each result is accepted
-%     against the wrapped request the user made. The answer is the earliest
-%     valid copy (earliestArrival) or the shortest (fixedArrival); a fixed
-%     goal copy whose straight-line distance cannot beat the best plan so
-%     far is not planned at all.
+%   - Plan across a coordinate seam by shifting copies of the goal and
+%     obstacles by whole wrap lengths. Example: on a 360-unit axis,
+%     start = 350 and goal = 10 can be planned as 350 to 370.
+%   - Try goal copies nearest first. Keep the earliest validated motion for
+%     earliestArrival, or the shortest validated motion for fixedArrival.
+%     Skip a fixed goal copy when it cannot improve the current result.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
-%       Normalized wrapped request. Its goal holds the nearest goal copy or
-%       the unwrapped target path, and its wrapped intervals are the range
-%       the vehicle can reach.
+%       Prepared request with the nearest fixed goal copy or an unwrapped
+%       target path. Wrapped-axis limits contain the start position +/-
+%       maximum speed x available time; obstacles and acceleration limits
+%       may make some positions in this range unreachable.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Planner record accepted against the wrapped request, with a
-%       WrappedGoalCopies field recording every goal copy tried, its
-%       whole-turn shift, and its outcome. Failure of every copy returns
-%       Success = false.
+%       Selected motion checked against the original wrapped request.
+%       WrappedGoalCopies records each listed copy's shift and whether it
+%       was planned or skipped. If all planned copies fail, Success = false.
+%       Invalid input throws an error.
 %**************************************************************************
 % UNITS
 %   - Coordinate units and seconds.
 %**************************************************************************
 
-%% Section 1: Build The Unwrapped Scene: Obstacle Copies And Plain Options
+%% Section 1: Copy Obstacles Into Unwrapped Coordinates
 
-timer           = tic;
-wrapAxes        = [request.options.WrapX, request.options.WrapY];
-intervals_units = [request.originalInputs.requestedLimits.xInterval_units; ...
+totalTimer             = tic;
+wrapAxes               = [request.options.WrapX, request.options.WrapY];
+wrappedIntervals_units = [request.originalInputs.requestedLimits.xInterval_units; ...
     request.originalInputs.requestedLimits.yInterval_units];
-reachableRange_units      = [request.limits.xInterval_units; request.limits.yInterval_units];
-period_units    = diff(intervals_units, 1, 2).';
-obstacleCopies          = obstacleAvoidance.input.copyObstaclesAcrossWraps( ...
-    request.obstacles, intervals_units, wrapAxes, reachableRange_units);
+planningRange_units = [request.limits.xInterval_units; request.limits.yInterval_units];
+wrapLength_units    = diff(wrappedIntervals_units, 1, 2).';
+obstacleCopies      = obstacleAvoidance.input.copyObstaclesAcrossWraps( ...
+    request.obstacles, wrappedIntervals_units, wrapAxes, planningRange_units);
 
+% The copied coordinates no longer jump at the seam. Plan them with wrapping
+% disabled, while retaining the original request for final validation.
 unwrappedOptions       = request.options;
 unwrappedOptions.WrapX = false;
 unwrappedOptions.WrapY = false;
-parentRequest = obstacleAvoidance.planning.createParentRequest(request);
+parentRequest          = obstacleAvoidance.planning.createParentRequest(request);
 
-%% Section 2: List Every Goal Copy In The Reachable Range, Nearest First
+%% Section 2: List Goal Copies Inside The Planning Range
 
-offsetsByAxis = {0, 0};
+% Example: on a 360-unit axis, goal = 10 has copies at -350, 10, and 370.
+% Keep the copies inside the planning range, then try the nearest ones first.
+goalCopyOffsetsByAxis = {0, 0};
 for axisIndex = find(wrapAxes)
-    lowestCopy = ceil((reachableRange_units(axisIndex, 1) - ...
-        request.goalState.position_units(axisIndex)) / period_units(axisIndex));
-    highestCopy = floor((reachableRange_units(axisIndex, 2) - ...
-        request.goalState.position_units(axisIndex)) / period_units(axisIndex));
-    offsetsByAxis{axisIndex} = (lowestCopy:highestCopy) * period_units(axisIndex);
+    minimumWrapCount = ceil((planningRange_units(axisIndex, 1) - ...
+        request.goalState.position_units(axisIndex)) / wrapLength_units(axisIndex));
+    maximumWrapCount = floor((planningRange_units(axisIndex, 2) - ...
+        request.goalState.position_units(axisIndex)) / wrapLength_units(axisIndex));
+    goalCopyOffsetsByAxis{axisIndex} = (minimumWrapCount:maximumWrapCount) * wrapLength_units(axisIndex);
 end
-[dx_units, dy_units] = ndgrid(offsetsByAxis{1}, offsetsByAxis{2});
-offsets_units = [dx_units(:), dy_units(:)];
-if isempty(offsets_units)
-    % No copy is reachable inside the reachable range; plan the nearest copy so the
-    % ordinary request reports the honest failure.
-    offsets_units = [0, 0];
+% If both axes wrap, include every combination of x and y shifts.
+[xOffsets_units, yOffsets_units] = ndgrid(goalCopyOffsetsByAxis{1}, goalCopyOffsetsByAxis{2});
+goalCopyOffsets_units = [xOffsets_units(:), yOffsets_units(:)];
+if isempty(goalCopyOffsets_units)
+    % Keep the prepared goal when no listed copy lies in the range. The normal
+    % planning checks will determine whether this request can be satisfied.
+    goalCopyOffsets_units = [0, 0];
 end
-chord_units = vecnorm(request.goalState.position_units + offsets_units - ...
+directDistance_units = vecnorm(request.goalState.position_units + goalCopyOffsets_units - ...
     request.initialState.position_units, 2, 2);
-[~, order]  = sortrows([chord_units, offsets_units]);
-offsets_units = offsets_units(order, :);
-chord_units   = chord_units(order);
+[~, goalCopyOrder]     = sortrows([directDistance_units, goalCopyOffsets_units]);
+goalCopyOffsets_units = goalCopyOffsets_units(goalCopyOrder, :);
+directDistance_units  = directDistance_units(goalCopyOrder);
 
-%% Section 3: Plan Each Candidate As A Plain Request And Keep The Best
+%% Section 3: Plan Each Goal Copy And Keep The Best Motion
 
-candidateCount   = size(offsets_units, 1);
-reasons          = strings(candidateCount, 1);
-wasPlanned       = false(candidateCount, 1);
-result           = [];
-bestKey          = [];
-bestOffset_units = [NaN, NaN];
+goalCopyCount              = size(goalCopyOffsets_units, 1);
+goalCopyTerminationReasons = strings(goalCopyCount, 1);
+goalCopyWasPlanned         = false(goalCopyCount, 1);
+
+result                  = [];
 selectedGoalCopyRequest = [];
-isEarliest       = request.options.GoalTimeMode == "earliestArrival";
-% The chord to a fixed goal bounds motion length and travel time from below;
-% a moving target can be met earlier and nearer, so it is never pruned.
-canPrune = isempty(request.goalState.targetMotion);
-for candidateIndex = 1:candidateCount
+selectedOffset_units    = [NaN, NaN];
+hasValidMotion          = false;
+bestArrivalTime_s       = Inf;
+bestMotionLength_units  = Inf;
+
+findEarliestArrival = request.options.GoalTimeMode == "earliestArrival";
+goalPositionIsFixed = isempty(request.goalState.targetMotion);
+for goalCopyIndex = 1:goalCopyCount
     goalCopyRequest           = request;
     goalCopyRequest.goalState = shiftGoal( ...
-        request.goalState, offsets_units(candidateIndex, :));
-    goalCopyRequest.options   = unwrappedOptions;
-    if ~isempty(bestKey) && canPrune
-        bound = chord_units(candidateIndex);
-        slack = 0;
-        if isEarliest
-            bound = goalCopyRequest.initialState.time_s + ...
+        request.goalState, goalCopyOffsets_units(goalCopyIndex, :));
+    goalCopyRequest.options = unwrappedOptions;
+
+    % For a fixed goal, compare the best result with this copy's shortest
+    % possible distance or earliest possible arrival. Obstacles can only make
+    % those values worse. A moving target may be met closer, so try every copy.
+    if hasValidMotion && goalPositionIsFixed
+        if findEarliestArrival
+            earliestPossibleArrival_s = goalCopyRequest.initialState.time_s + ...
                 obstacleAvoidance.input.minimumTravelTime( ...
                 goalCopyRequest.initialState, goalCopyRequest.goalState, goalCopyRequest.limits);
-            slack = goalCopyRequest.options.ArrivalTimeTolerance_s;
+            copyCannotImproveResult = bestArrivalTime_s <= earliestPossibleArrival_s + ...
+                goalCopyRequest.options.ArrivalTimeTolerance_s;
+        else
+            copyCannotImproveResult = bestMotionLength_units <= directDistance_units(goalCopyIndex);
         end
-        if bestKey(1) <= bound + slack
-            reasons(candidateIndex) = "chordBoundNotBetter";
+        if copyCannotImproveResult
+            goalCopyTerminationReasons(goalCopyIndex) = "chordBoundNotBetter";
             continue
         end
     end
+
+    % Resolve this copy's endpoint requirements before planning its motion.
     goalCopyRequest.goalState = resolveMatchedCopyDerivatives( ...
         goalCopyRequest.goalState, request.options);
     goalIsRequiredEndpoint = isempty(goalCopyRequest.goalState.targetMotion) || ...
@@ -113,49 +124,60 @@ for candidateIndex = 1:candidateCount
         error("planTrajectory:CoincidentEndpoints", ...
             "Initial and goal positions must be distinct.");
     end
-    goalCopyRequest.obstacles     = obstacleCopies;
-    goalCopyRequest.parentRequest = parentRequest;
+    % The copy uses unwrapped inputs. Its parent retains the original wrapped
+    % inputs so accepting a motion still requires satisfying the user's request.
+    goalCopyRequest.obstacles      = obstacleCopies;
+    goalCopyRequest.parentRequest  = parentRequest;
     goalCopyRequest.originalInputs = struct( ...
         'suppliedLimits',     goalCopyRequest.limits, ...
         'requestedLimits',    goalCopyRequest.limits, ...
         'suppliedGoalState',  goalCopyRequest.goalState, ...
         'requestedGoalState', goalCopyRequest.goalState);
-    wasPlanned(candidateIndex) = true;
-    candidate = obstacleAvoidance.planning.planMotion(goalCopyRequest);
-    reasons(candidateIndex) = candidate.TerminationReason;
-    if candidate.Success
-        if isEarliest
-            key = [candidate.ArrivalTime_s, candidate.MotionLength_units];
+    goalCopyWasPlanned(goalCopyIndex) = true;
+    goalCopyResult                   = obstacleAvoidance.planning.planMotion(goalCopyRequest);
+    goalCopyTerminationReasons(goalCopyIndex) = goalCopyResult.TerminationReason;
+
+    if goalCopyResult.Success
+        % Earliest arrival prefers less time, then less distance on an exact
+        % tie. Fixed arrival prefers less distance, then an earlier arrival.
+        if findEarliestArrival
+            copyIsBetter = ~hasValidMotion || goalCopyResult.ArrivalTime_s < bestArrivalTime_s || ...
+                (goalCopyResult.ArrivalTime_s == bestArrivalTime_s && ...
+                goalCopyResult.MotionLength_units < bestMotionLength_units);
         else
-            key = [candidate.MotionLength_units, candidate.ArrivalTime_s];
+            copyIsBetter = ~hasValidMotion || goalCopyResult.MotionLength_units < bestMotionLength_units || ...
+                (goalCopyResult.MotionLength_units == bestMotionLength_units && ...
+                goalCopyResult.ArrivalTime_s < bestArrivalTime_s);
         end
-        isBetter = isempty(bestKey) || key(1) < bestKey(1) || (key(1) == bestKey(1) && key(2) < bestKey(2));
-        if isBetter
-            result                  = candidate;
+        if copyIsBetter
+            result                  = goalCopyResult;
             selectedGoalCopyRequest = goalCopyRequest;
-            bestKey                 = key;
-            bestOffset_units        = offsets_units(candidateIndex, :);
+            selectedOffset_units    = goalCopyOffsets_units(goalCopyIndex, :);
+            bestArrivalTime_s       = goalCopyResult.ArrivalTime_s;
+            bestMotionLength_units  = goalCopyResult.MotionLength_units;
+            hasValidMotion          = true;
         end
     elseif isempty(result)
-        result                  = candidate;
+        % Keep the first failure in case no copy produces valid motion.
+        result                  = goalCopyResult;
         selectedGoalCopyRequest = goalCopyRequest;
     end
 end
 
-%% Section 4: Record The Candidates On The Returned Result
+%% Section 4: Return The Selected Result And The Outcome Of Each Copy
 
-if isempty(bestKey) && isfield(result, 'ParentRequest')
+if ~hasValidMotion && isfield(result, 'ParentRequest')
     % Every candidate failed: report the nearest copy's failure against
     % the wrapped request.
     result = assembleFailedCopyResult(selectedGoalCopyRequest, result, parentRequest);
 end
 result.WrappedGoalCopies = struct( ...
-    'GoalOffset_units',           bestOffset_units, ...
-    'CandidateOffsets_units',     offsets_units, ...
-    'CandidatePlanned',           wasPlanned, ...
-    'CandidateTerminationReason', reasons, ...
-    'ObstacleCopyCount',         numel(obstacleCopies));
-result.ElapsedTime_s = toc(timer);
+    'GoalOffset_units',           selectedOffset_units, ...
+    'CandidateOffsets_units',     goalCopyOffsets_units, ...
+    'CandidatePlanned',           goalCopyWasPlanned, ...
+    'CandidateTerminationReason', goalCopyTerminationReasons, ...
+    'ObstacleCopyCount',          numel(obstacleCopies));
+result.ElapsedTime_s = toc(totalTimer);
 end
 
 %% Section 5: Local Functions
@@ -169,50 +191,56 @@ function goalState = shiftGoal(goalState, offset_units)
 end
 
 function goalState = resolveMatchedCopyDerivatives(goalState, options)
-    % Recheck derivatives after target unwrapping creates the copied goal.
-    derivativeNames     = ["velocity_units_s", "acceleration_units_s2"];
-    matches             = [options.MatchTargetVelocity, options.MatchTargetAcceleration];
-    if ~any(matches)
+    % Recheck target velocity and acceleration after shifting the target path.
+    derivativeFieldNames  = ["velocity_units_s", "acceleration_units_s2"];
+    matchTargetDerivative = [options.MatchTargetVelocity, options.MatchTargetAcceleration];
+    if ~any(matchTargetDerivative)
         return
     end
-    [~, tgtVel, tgtAcc] = obstacleAvoidance.input.targetPositionAtTime( ...
-        goalState.targetMotion, goalState.time_s);
-    derivatives         = [tgtVel; tgtAcc];
-    for derivativeIndex = find(matches)
-        derivativeName     = derivativeNames(derivativeIndex);
-        targetDerivative   = derivatives(derivativeIndex, :);
-        derivativeResidual = abs(goalState.(derivativeName) - targetDerivative);
-        if any(derivativeResidual > options.ConstraintTolerance)
+    [~, targetVelocity_units_s, targetAcceleration_units_s2] = ...
+        obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion, goalState.time_s);
+    targetDerivativeValues = [targetVelocity_units_s; targetAcceleration_units_s2];
+    for derivativeIndex = find(matchTargetDerivative)
+        derivativeFieldName   = derivativeFieldNames(derivativeIndex);
+        targetDerivativeValue = targetDerivativeValues(derivativeIndex, :);
+        derivativeDifference  = abs(goalState.(derivativeFieldName) - targetDerivativeValue);
+        % Do not replace an existing goal value that disagrees with the target.
+        if any(derivativeDifference > options.ConstraintTolerance)
             error('planner:ConflictingTargetDerivative', ...
                 'Explicit and matched target derivatives conflict.');
         end
-        goalState.(derivativeName) = targetDerivative;
+        goalState.(derivativeFieldName) = targetDerivativeValue;
     end
 end
 
 function result = assembleFailedCopyResult(goalCopyRequest, goalCopyResult, parentRequest)
-    % Compose the retained copy failure with the wrapped declaration.
-    declarationRequest           = goalCopyRequest;
-    declarationRequest.goalState = goalCopyResult.Inputs.goalState;
-    declarationRequest.goalState.time_s = parentRequest.GoalTime_s;
-    declarationRequest.options.WrapX = parentRequest.WrapX;
-    declarationRequest.options.WrapY = parentRequest.WrapY;
-    declarationRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
-    declarationRequest.obstacles = parentRequest.Obstacles;
-    declarationRequest.originalInputs.suppliedLimits     = parentRequest.SuppliedLimits;
-    declarationRequest.originalInputs.requestedLimits    = parentRequest.RequestedLimits;
-    declarationRequest.originalInputs.suppliedGoalState  = parentRequest.SuppliedGoalState;
-    declarationRequest.originalInputs.requestedGoalState = parentRequest.RequestedGoalState;
-    declarationRequest.parentRequest = [];
+    % Return the failed copy with the original wrapped inputs so the caller
+    % can compare the failure with the request they supplied.
+    failureRequest                  = goalCopyRequest;
+    failureRequest.goalState        = goalCopyResult.Inputs.goalState;
+    failureRequest.goalState.time_s = parentRequest.GoalTime_s;
+
+    failureRequest.options.WrapX        = parentRequest.WrapX;
+    failureRequest.options.WrapY        = parentRequest.WrapY;
+    failureRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
+    failureRequest.obstacles            = parentRequest.Obstacles;
+    failureRequest.parentRequest        = [];
+
+    failureRequest.originalInputs.suppliedLimits     = parentRequest.SuppliedLimits;
+    failureRequest.originalInputs.requestedLimits    = parentRequest.RequestedLimits;
+    failureRequest.originalInputs.suppliedGoalState  = parentRequest.SuppliedGoalState;
+    failureRequest.originalInputs.requestedGoalState = parentRequest.RequestedGoalState;
 
     result = obstacleAvoidance.planning.createEmptyResult( ...
-        goalCopyResult.PreparedObstacles, declarationRequest, ...
+        goalCopyResult.PreparedObstacles, failureRequest, ...
         goalCopyResult.VisibilityGraph, goalCopyResult.Attempts, goalCopyResult.ElapsedTime_s);
-    declarationFieldNames = ["Inputs", "Limits", "Options", ...
+    % Keep the original request fields just assembled, and retain the failed
+    % copy's other results, including its graph, attempts, and failure reason.
+    requestFieldNames = ["Inputs", "Limits", "Options", ...
         "SuppliedLimits", "RequestedLimits", "RequestedGoalState", ...
         "SuppliedGoalState", "ParentRequest"];
     for fieldName = reshape(string(fieldnames(goalCopyResult)), 1, [])
-        if ~any(fieldName == declarationFieldNames)
+        if ~any(fieldName == requestFieldNames)
             result.(fieldName) = goalCopyResult.(fieldName);
         end
     end

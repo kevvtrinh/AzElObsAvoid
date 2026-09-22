@@ -1,49 +1,60 @@
-function [rows, offset_units] = createPlaneRows(plane, degree, variableCount, segmentIndex)
+function [lineConstraintRows, lineOffsetCoefficients_units] = createPlaneRows( ...
+    plane, degree, decisionVariableCount, segmentIndex)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [rows, offset_units] = ...
-%       bmtpEngine.separation.createPlaneRows(plane, degree, variableCount, segmentIndex)
+%   [lineConstraintRows, lineOffsetCoefficients_units] = ...
+%       bmtpEngine.separation.createPlaneRows(plane, degree, decisionVariableCount, segmentIndex)
 %**************************************************************************
 % PURPOSE
-%   - Multiply fixed affine separating planes by variable Bezier controls.
+%   - Build matrix rows that evaluate the curve's side of a separating line.
+%     The line normal and offset can change linearly over its time interval.
 %**************************************************************************
 % INPUTS
 %   - plane (scalar struct)
 %       Separating-plane record with Normal, Offset_units, and TimeFraction.
 %   - degree (integer scalar)
 %       Polynomial degree.
-%   - variableCount (integer scalar)
-%       Decision-vector size.
+%   - decisionVariableCount (integer scalar)
+%       Number of unknown values in the solver vector.
 %   - segmentIndex (integer scalar)
-%       Target span index.
+%       Curve segment to constrain.
 %**************************************************************************
 % OUTPUTS
-%   - rows (sparse matrix)
-%       Degree-plus-two Bernstein product rows for the selected span.
-%   - offset_units (numeric column)
-%       Matching Bernstein offsets in the same constraint order.
+%   - lineConstraintRows (sparse matrix)
+%       Rows multiplying solver values to give normal x curve position.
+%       There are degree + 2 Bernstein coefficients for this product.
+%   - lineOffsetCoefficients_units (numeric column)
+%       Add these offsets to the row results to get the full line-side values.
 %**************************************************************************
 % UNITS
 %   - Offsets are coordinate units; TimeFraction is dimensionless.
 %**************************************************************************
 
-%% Section 1: Form The Degree-Elevated Bernstein Product Rows
-% Exact degree-N by degree-one Bernstein product weights.
-beta  = (0:degree + 1).' / (degree + 1);
-alpha = 1 - beta;
+%% Section 1: Multiply The Curve By The Changing Line Normal
 
-controlColumns = (segmentIndex - 1) * 2 * (degree + 1) + (1:2 * (degree + 1)).';
-rowIndices     = [repelem((1:degree + 1).', 2); repelem((2:degree + 2).', 2)];
-values         = [reshape((alpha(1:end - 1) * plane.Normal(1, :)).', [], 1); ...
-    reshape((beta(2:end) * plane.Normal(2, :)).', [], 1)];
-rows = sparse(rowIndices, [controlColumns; controlColumns], values, degree + 2, variableCount);
+% A degree-D curve x a linear normal gives a degree-(D+1) polynomial.
+% Its Bernstein coefficients use these start/end weights. Bounding every
+% coefficient also bounds the line-side value throughout the interval.
+endNormalWeights   = (0:degree + 1).' / (degree + 1);
+startNormalWeights = 1 - endNormalWeights;
 
-%% Section 2: Restrict To The Plane's Own Time Fraction
+segmentCoordinateIndices = (segmentIndex - 1) * 2 * (degree + 1) + (1:2 * (degree + 1)).';
+rowIndices               = [repelem((1:degree + 1).', 2); repelem((2:degree + 2).', 2)];
+normalWeightsByCoordinate = [reshape((startNormalWeights(1:end - 1) * plane.Normal(1, :)).', [], 1); ...
+    reshape((endNormalWeights(2:end) * plane.Normal(2, :)).', [], 1)];
+lineConstraintRows = sparse(rowIndices, [segmentCoordinateIndices; segmentCoordinateIndices], ...
+    normalWeightsByCoordinate, degree + 2, decisionVariableCount);
+
+%% Section 2: Apply The Line Only To Its Selected Curve Portion
+
 if ~isequal(plane.TimeFraction, [0, 1])
-    % Restrict the unknown controls exactly before forming the existing
-    % Bernstein plane product; keep every source interval as a constraint.
-    restriction = bmtpEngine.motion.restrictBezier(eye(degree + 1), plane.TimeFraction);
-    rows(:, controlColumns) = rows(:, controlColumns) * kron(restriction, speye(2));
+    % Applying curve restriction to an identity matrix gives the weights
+    % for extracting this subcurve from the unknown controls. Duplicate the
+    % map for interleaved x/y values, then apply it inside the line rows.
+    subcurveControlMap = bmtpEngine.motion.restrictBezier(eye(degree + 1), plane.TimeFraction);
+    lineConstraintRows(:, segmentCoordinateIndices) = ...
+        lineConstraintRows(:, segmentCoordinateIndices) * kron(subcurveControlMap, speye(2));
 end
-offset_units = alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
+lineOffsetCoefficients_units = startNormalWeights * plane.Offset_units(1) + ...
+    endNormalWeights * plane.Offset_units(2);
 end

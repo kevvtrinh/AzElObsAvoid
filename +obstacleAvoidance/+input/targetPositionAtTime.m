@@ -20,7 +20,7 @@ function [position_units, velocity_units_s, acceleration_units_s2] = targetPosit
 %**************************************************************************
 % OUTPUTS
 %   - position_units (N-by-2 numeric array)
-%       Interpolated target position at each query time.
+%       Interpolated target position at each requested time.
 %   - velocity_units_s (N-by-2 numeric array)
 %       Target velocity calculated from the path at each requested time.
 %   - acceleration_units_s2 (N-by-2 numeric array)
@@ -107,7 +107,8 @@ for axisIndex = 1:2
         for sampleIndex = 2:numel(sampleTime_s) - 1
             requestedTimeMatchesSample = any(time_s == sampleTime_s(sampleIndex));
             if requestedTimeMatchesSample
-                velocityChangesAtSample = segmentVelocity_units_s(sampleIndex) ~= segmentVelocity_units_s(sampleIndex - 1);
+                velocityChangesAtSample = segmentVelocity_units_s(sampleIndex) ~= ...
+                    segmentVelocity_units_s(sampleIndex - 1);
                 if velocityChangesAtSample
                     error('planner:UndefinedTargetDerivative', ...
                         'A linear target corner has no defined matched derivative.');
@@ -123,6 +124,7 @@ for axisIndex = 1:2
     % Differentiate each position segment to get velocity, then acceleration.
     % Example: position = a x t^2 + b x t + c gives velocity = 2 x a x t + b.
     % MATLAB stores coefficients from the highest power of time to the lowest.
+    % Its "order" counts coefficients: a cubic has degree 3 and order 4.
     polynomialOrder = positionPolynomial.order;
     if polynomialOrder > 1
         velocityPolynomial = mkpp(positionPolynomial.breaks, ...

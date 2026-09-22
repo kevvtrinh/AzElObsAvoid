@@ -1,39 +1,42 @@
-function finalOffset = sortedUpperBound(sortedValues, queryValue)
+function lastMatchingIndex = sortedUpperBound(sortedValues, maximumValue)
 %% Section 0: Header & Readme
 % SYNTAX
-%   finalOffset = obstacleAvoidance.search.sortedUpperBound(sortedValues, queryValue)
+%   lastMatchingIndex = obstacleAvoidance.search.sortedUpperBound(sortedValues, maximumValue)
 %**************************************************************************
 % PURPOSE
-%   - Last index whose sorted value is not greater than the scalar query,
-%     zero when every value is greater.
+%   - Find the last value <= the supplied limit in an ascending list.
+%     For [1 3 3 7] and a limit of 3, return index 3.
 %**************************************************************************
 % INPUTS
 %   - sortedValues (numeric vector)
 %       Values in ascending order.
-%   - queryValue (numeric scalar)
-%       The query.
+%   - maximumValue (numeric scalar)
+%       Largest allowed value, including equality.
 %**************************************************************************
 % OUTPUTS
-%   - finalOffset (numeric scalar)
-%       Index into sortedValues, or zero.
+%   - lastMatchingIndex (numeric scalar)
+%       Last matching index, or 0 when no value matches or the list is empty.
 %**************************************************************************
 % UNITS
-%   - Whatever the caller sorts by.
+%   - sortedValues and maximumValue must use the same units.
 %**************************************************************************
 
-%% Section 1: Bisect
+%% Section 1: Narrow The Sorted List To Its Last Match
 
-% Last index whose sorted value is not greater than the scalar query.
-lowOffset  = 1;
-highOffset = numel(sortedValues);
-finalOffset = 0;
-while lowOffset <= highOffset
-    middleOffset = floor((lowOffset + highOffset) / 2);
-    if sortedValues(middleOffset) <= queryValue
-        finalOffset = middleOffset;
-        lowOffset   = middleOffset + 1;
+% Each comparison discards half the remaining indices. Start at 0 so
+% an empty list or a limit below the first value returns no match.
+firstCandidateIndex = 1;
+lastCandidateIndex  = numel(sortedValues);
+lastMatchingIndex   = 0;
+while firstCandidateIndex <= lastCandidateIndex
+    middleIndex = floor((firstCandidateIndex + lastCandidateIndex) / 2);
+    if sortedValues(middleIndex) <= maximumValue
+        % Keep this match, then look right for a later one, including ties.
+        lastMatchingIndex   = middleIndex;
+        firstCandidateIndex = middleIndex + 1;
     else
-        highOffset = middleOffset - 1;
+        % This value and every value to its right exceed the limit.
+        lastCandidateIndex = middleIndex - 1;
     end
 end
 end

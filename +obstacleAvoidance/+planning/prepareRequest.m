@@ -21,7 +21,7 @@ function request = prepareRequest(obstacles, initialState, goalState, limits, op
 %   - options (scalar struct)
 %       Planner option overrides.
 %   - parentRequest (scalar struct or [])
-%       Private provenance for a child request, built by
+%       Original request details passed to a planning trial, built by
 %       obstacleAvoidance.planning.createParentRequest; [] for a public call.
 %**************************************************************************
 % OUTPUTS
@@ -35,7 +35,7 @@ function request = prepareRequest(obstacles, initialState, goalState, limits, op
 %   - Positions are coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Prepare The Request
+%% Section 1: Check Inputs And Fill Defaults
 
 % With no inputs, return the available options and their default values.
 if nargin == 0
@@ -45,6 +45,7 @@ if nargin == 0
 end
 
 [defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();
+
 % Empty input structures select defaults. Partially filled structures are
 % completed and checked by the normalization functions below.
 if isempty(initialState)
@@ -59,12 +60,16 @@ end
 if isempty(options)
     options = struct();
 end
+
 % Keep the supplied fields so later checks can distinguish an explicit
-% user constraint from a value filled in during normalization.
-suppliedLimits     = limits;
-suppliedGoalState  = goalState;
-initialState       = normalizeState(initialState, defaultInitialState, "initialState", true);
-goalState          = normalizeState(goalState, defaultGoalState, "goalState", false);
+% user constraint from a missing field filled in during normalization.
+% Entirely empty input structures have already been replaced with defaults.
+suppliedLimits    = limits;
+suppliedGoalState = goalState;
+
+initialState = normalizeState(initialState, defaultInitialState, "initialState", true);
+goalState    = normalizeState(goalState, defaultGoalState, "goalState", false);
+
 requestTimeIsInvalid = goalState.time_s <= initialState.time_s;
 
 % Calculate the target's position at the requested goal time.
@@ -75,8 +80,8 @@ if ~isempty(goalState.targetMotion)
     try
         targetPosition_units = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion, goalState.time_s);
     catch exception
-        % If reversed request times also put the goal outside the target
-        % history, report the time-order error below. Preserve other errors.
+        % If an invalid arrival time also falls outside the target history,
+        % report the time-order error below first. Preserve other errors.
         historyErrorComesFromInvalidRequest = requestTimeIsInvalid && ...
             exception.identifier == "planner:TargetTimeOutsideHistory";
         if ~historyErrorComesFromInvalidRequest
@@ -92,13 +97,15 @@ end
 if ~isempty(goalState.targetMotion)
     goalState.position_units = targetPosition_units;
 end
-limits             = normalizeLimits(limits, defaultLimits);
-options            = resolveOptions(options, defaultOptions);
-% Save the normalized request before target matching or unwrapping changes
+limits  = normalizeLimits(limits, defaultLimits);
+options = resolveOptions(options, defaultOptions);
+
+% Save these normalized values before target matching or unwrapping changes them.
 requestedLimits    = limits;
 requestedGoalState = goalState;
 
-% Matching target velocity or acceleration
+%% Section 2: Match The Requested Target Velocity Or Acceleration
+
 if options.MatchTargetVelocity || options.MatchTargetAcceleration
     if isempty(goalState.targetMotion)
         error('planner:MissingTarget', ...
@@ -106,11 +113,12 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
             'but goalState.targetMotion is empty. Provide a target trajectory ' ...
             'or disable both matching options.']);
     end
-    derivativeFieldNames   = ["velocity_units_s", "acceleration_units_s2"];
+    derivativeFieldNames  = ["velocity_units_s", "acceleration_units_s2"];
     matchTargetDerivative = [options.MatchTargetVelocity, options.MatchTargetAcceleration];
     [~, targetVelocity_units_s, targetAcceleration_units_s2] = ...
         obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion, goalState.time_s);
     targetDerivativeValues = [targetVelocity_units_s; targetAcceleration_units_s2];
+
     % Each row holds one derivative; process only the requested matches.
     for derivativeIndex = find(matchTargetDerivative)
         derivativeFieldName   = derivativeFieldNames(derivativeIndex);
@@ -119,9 +127,8 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
         goalDerivativeWasSupplied = isfield(suppliedGoalState, derivativeFieldName) && ...
             ~isempty(suppliedGoalState.(derivativeFieldName));
         if goalDerivativeWasSupplied
-            % Check that the supplied goal velocity or acceleration agrees with
-            % the target's value.
-            % component is compared with the same component of the other value.
+            % Compare any supplied goal velocity or acceleration with the target:
+            % x with x and y with y. Reject differences larger than the tolerance.
             goalTargetDerivativeDifference = abs(goalState.(derivativeFieldName) - targetDerivativeValue);
             if any(goalTargetDerivativeDifference > options.ConstraintTolerance)
                 error('planner:ConflictingTargetDerivative', 'Explicit and matched target derivatives conflict.');
@@ -131,12 +138,14 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
     end
 end
 
+%% Section 3: Unwrap Periodic Coordinates
+
 % Convert periodic axes to continuous coordinates so a seam crossing does
 % not look like a large jump. For example, 359 -> 1 becomes 359 -> 361 on
 % a 360-unit axis. The planner can then use ordinary coordinate differences.
 wrapAxes = [options.WrapX options.WrapY];
 if any(wrapAxes)
-    % Preserve the original interval widths: they define the axis periods.
+    % Each original interval width is one complete loop of that axis.
     intervalFieldNames       = ["xInterval_units", "yInterval_units"];
     workspaceIntervals_units = [limits.xInterval_units; limits.yInterval_units];
     if ~isempty(goalState.targetMotion)
@@ -149,8 +158,8 @@ if any(wrapAxes)
             goalState.targetMotion, goalState.time_s);
     end
     for axisIndex = find(wrapAxes)
-        % One period is the distance between equivalent coordinate copies.
-        axisPeriod_units    = diff(workspaceIntervals_units(axisIndex, :));
+        % Equivalent coordinate copies are one loop length apart.
+        wrapLength_units    = diff(workspaceIntervals_units(axisIndex, :));
         startPosition_units = initialState.position_units(axisIndex);
         goalPosition_units  = goalState.position_units(axisIndex);
         % Maximum travel distance = maximum speed x available time.
@@ -161,8 +170,8 @@ if any(wrapAxes)
             % Example: start = 350, goal = 10, loop length = 360.
             % Use goal = 10 + 360 = 370, so the distance is 20 instead of 340.
             % If two copies are equally close, choose the higher coordinate.
-            periodOffset = floor((startPosition_units - goalPosition_units) / axisPeriod_units + 0.5);
-            goalState.position_units(axisIndex) = goalPosition_units + axisPeriod_units * periodOffset;
+            goalWrapCount = floor((startPosition_units - goalPosition_units) / wrapLength_units + 0.5);
+            goalState.position_units(axisIndex) = goalPosition_units + wrapLength_units * goalWrapCount;
         end
         % Search in both directions from the start, including coordinates
         % beyond the original interval endpoints.
@@ -170,9 +179,11 @@ if any(wrapAxes)
     end
 end
 
+%% Section 4: Package The Request And Check For Distinct Endpoints
+
 % Keep obstacles and the parent request beside the working states and limits.
-% Save supplied and normalized inputs before wrapping or target matching so
-% later steps can check the result against the original requirements.
+% Include the inputs saved before wrapping or target matching so later steps
+% can check the result against the original requirements.
 request = struct( ...
     'initialState',   initialState, ...
     'goalState',      goalState, ...
@@ -199,6 +210,7 @@ end
 
 end
 
+%% Section 5: Local Functions
 
 function [initialState, goalState, limits, options] = createDefaults()
     % Set default start and goal states, workspace limits, and planner options.
@@ -273,14 +285,14 @@ function state = normalizeState(state, defaults, argumentName, evaluateTargetPos
 
     % When position is deferred, the main function calculates it from the target path.
     positionIsDeferred = hasTargetMotion && ~evaluateTargetPosition;
-    stateFieldNames = ["position_units", "velocity_units_s", "acceleration_units_s2"];
+    stateFieldNames    = ["position_units", "velocity_units_s", "acceleration_units_s2"];
 
     for fieldName = stateFieldNames
         if fieldName == "position_units" && positionIsDeferred
             continue
         end
 
-        stateValue = state.(fieldName);
+        stateValue        = state.(fieldName);
         stateValueIsValid = isnumeric(stateValue) && isreal(stateValue) && ...
             isvector(stateValue) && numel(stateValue) == 2 && all(isfinite(stateValue));
 
@@ -321,7 +333,7 @@ function limits = normalizeLimits(limits, defaults)
 
     % Each workspace interval must be [minimum maximum], with minimum < maximum.
     for fieldName = ["xInterval_units", "yInterval_units"]
-        interval_units = limits.(fieldName);
+        interval_units  = limits.(fieldName);
         intervalIsValid = isnumeric(interval_units) && isreal(interval_units) && ...
             isvector(interval_units) && numel(interval_units) == 2 && ...
             all(isfinite(interval_units)) && interval_units(2) > interval_units(1);
@@ -337,7 +349,7 @@ function limits = normalizeLimits(limits, defaults)
     % Specify speed, acceleration, and jerk limits in the same format:
     % one number for each limit, or an [x y] pair for each. Do not mix formats.
     derivativeLimitFieldNames = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"];
-    limitElementCounts = arrayfun(@(limitName) numel(limits.(limitName)), derivativeLimitFieldNames);
+    limitElementCounts        = arrayfun(@(limitName) numel(limits.(limitName)), derivativeLimitFieldNames);
 
     if any(limitElementCounts ~= limitElementCounts(1))
         error('planTrajectory:MixedLimitModes', ...
@@ -346,7 +358,7 @@ function limits = normalizeLimits(limits, defaults)
     end
 
     for fieldName = derivativeLimitFieldNames
-        limitValue = limits.(fieldName);
+        limitValue        = limits.(fieldName);
         limitValueIsValid = isnumeric(limitValue) && isreal(limitValue) && ...
             isvector(limitValue) && any(numel(limitValue) == [1 2]) && ...
             all(isfinite(limitValue)) && all(limitValue > 0);
@@ -358,9 +370,10 @@ function limits = normalizeLimits(limits, defaults)
 
         limitValue = double(limitValue);
         if isscalar(limitValue)
-            % For a single combined limit, set each axis limit = combined limit / sqrt(2).
+            % For a single combined limit: axis limit = combined limit / sqrt(2).
             % Example: a speed limit of 10 gives about 7.07 on each axis.
-            % This keeps the combined speed <= 10, but also caps motion along just one axis at 7.07.
+            % This keeps combined speed <= 10, but also limits motion along
+            % just one axis to 7.07.
             limitValue = [limitValue limitValue] / sqrt(2);
         end
 
@@ -390,9 +403,9 @@ function options = resolveOptions(options, defaults)
             "Ignoring unknown option fields: %s.", strjoin(unknownFieldNames, ", "));
     end
 
-    % Fixed arrival means arrive at the requested time. Earliest arrival means
-    % find the earliest possible arrival, using the requested time as the deadline.
-    options.GoalTimeMode  = string(options.GoalTimeMode);
+    % Fixed arrival means arrive at the requested time. Earliest arrival tries
+    % to minimize arrival time, using the requested time as the deadline.
+    options.GoalTimeMode = string(options.GoalTimeMode);
     allowedGoalTimeModes = ["fixedArrival", "earliestArrival"];
     goalTimeModeIsValid  = isscalar(options.GoalTimeMode) && any(options.GoalTimeMode == allowedGoalTimeModes);
 

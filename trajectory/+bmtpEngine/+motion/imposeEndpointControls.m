@@ -1,50 +1,61 @@
-function controls_units = imposeEndpointControls(controls_units, durations_s, initialState, goalState)
+function controlPoint_units = imposeEndpointControls( ...
+    controlPoint_units, segmentTime_s, initialState, goalState)
 %% Section 0: Header & Readme
 % SYNTAX
-%   controls_units = bmtpEngine.motion.imposeEndpointControls(controls_units, durations_s, initialState, goalState)
+%   controlPoint_units = bmtpEngine.motion.imposeEndpointControls( ...
+%       controlPoint_units, segmentTime_s, initialState, goalState)
 %**************************************************************************
 % PURPOSE
-%   - Express requested physical boundary states in the Bernstein basis.
+%   - Set the first and last three Bezier controls to match the requested
+%     endpoint positions, velocities, and accelerations.
 %**************************************************************************
 % INPUTS
-%   - controls_units (S-by-(D+1)-by-2 numeric array)
-%       Composite Bezier control points for S motion spans.
-%   - durations_s (positive numeric vector)
-%       Physical duration of each motion span.
+%   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
+%       Bezier control points for S motion segments.
+%   - segmentTime_s (positive numeric vector)
+%       Duration of each motion segment.
 %   - initialState (scalar struct)
 %       Initial position, velocity, and acceleration state.
 %   - goalState (scalar struct)
 %       Goal position, velocity, and acceleration state.
 %**************************************************************************
 % OUTPUTS
-%   - controls_units (S-by-(D+1)-by-2 numeric array)
-%       Controls with endpoint position, velocity, and acceleration imposed.
+%   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
+%       Controls updated to match the two endpoint states.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and duration is seconds.
 %**************************************************************************
 
-%% Section 1: Use Each Endpoint Span's Physical Duration
+%% Section 1: Set The Initial Position, Velocity, And Acceleration
 
-degree = size(controls_units, 2) - 1;
+degree = size(controlPoint_units, 2) - 1;
 
-duration_s            = durations_s(1);
+% The first three controls determine the starting state. With degree D
+% and duration T, v0 = D x (P1 - P0) / T and
+% a0 = D x (D - 1) x (P2 - 2 x P1 + P0) / T^2. Solve for P0, P1, P2.
+% P0 means the first control point, stored at MATLAB index 1.
+endpointSegmentTime_s = segmentTime_s(1);
 position_units        = initialState.position_units;
 velocity_units_s      = initialState.velocity_units_s;
 acceleration_units_s2 = initialState.acceleration_units_s2;
-initialTriple_units   = [position_units; ...
-    position_units + duration_s * velocity_units_s / degree; ...
-    position_units + 2 * duration_s * velocity_units_s / degree + ...
-    duration_s ^ 2 * acceleration_units_s2 / (degree * (degree - 1))];
-controls_units(1, 1:3, :) = reshape(initialTriple_units, 1, 3, 2);
+initialControlPoints_units = [position_units; ...
+    position_units + endpointSegmentTime_s * velocity_units_s / degree; ...
+    position_units + 2 * endpointSegmentTime_s * velocity_units_s / degree + ...
+    endpointSegmentTime_s ^ 2 * acceleration_units_s2 / (degree * (degree - 1))];
+controlPoint_units(1, 1:3, :) = reshape(initialControlPoints_units, 1, 3, 2);
 
-duration_s            = durations_s(end);
+%% Section 2: Set The Goal Position, Velocity, And Acceleration
+
+% Work backward from the goal to find the final three controls. Use the
+% last segment's duration; it may differ from the first segment's duration.
+endpointSegmentTime_s = segmentTime_s(end);
 position_units        = goalState.position_units;
 velocity_units_s      = goalState.velocity_units_s;
 acceleration_units_s2 = goalState.acceleration_units_s2;
-goalTriple_units      = [position_units - 2 * duration_s * velocity_units_s / degree + ...
-    duration_s ^ 2 * acceleration_units_s2 / (degree * (degree - 1)); ...
-    position_units - duration_s * velocity_units_s / degree; ...
+goalControlPoints_units = [position_units - 2 * endpointSegmentTime_s * velocity_units_s / degree + ...
+    endpointSegmentTime_s ^ 2 * acceleration_units_s2 / (degree * (degree - 1)); ...
+    position_units - endpointSegmentTime_s * velocity_units_s / degree; ...
     position_units];
-controls_units(end, end - 2:end, :) = reshape(goalTriple_units, 1, 3, 2);
+controlPoint_units(end, end - 2:end, :) = reshape(goalControlPoints_units, 1, 3, 2);
 end

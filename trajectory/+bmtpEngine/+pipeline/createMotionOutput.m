@@ -1,18 +1,19 @@
-function candidate = createMotionOutput(candidate, request, preparedMotion)
+function candidate = createMotionOutput(candidate, solverRequest, preparedMotion)
 %% Section 0: Header & Readme
 % SYNTAX
-%   candidate = bmtpEngine.pipeline.createMotionOutput(candidate, request, preparedMotion)
+%   candidate = bmtpEngine.pipeline.createMotionOutput(candidate, solverRequest, preparedMotion)
 %**************************************************************************
 % PURPOSE
-%   - Export a prepared BMTP curve through the stable candidate fields.
+%   - Fill the candidate with its polynomial, sampled motion history,
+%     arrival time, path length, and integrated squared jerk.
 %**************************************************************************
 % INPUTS
 %   - candidate (scalar struct)
 %       Empty candidate record whose stable fields are filled in.
-%   - request (scalar struct)
-%       Checked request supplying the initial clock and sample time.
+%   - solverRequest (scalar struct)
+%       Checked inputs supplying the start time and output sample spacing.
 %   - preparedMotion (scalar struct)
-%       Final prepared control net and its motion proof.
+%       Final curve controls, segment durations, coefficients, and motion checks.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar struct)
@@ -22,28 +23,35 @@ function candidate = createMotionOutput(candidate, request, preparedMotion)
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Convert The Prepared Net To A Sampled Polynomial
+%% Section 1: Create The Polynomial And Output Samples
+
 polynomial = bmtpEngine.motion.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
-    preparedMotion.SegmentTime_s, request.InitialState.time_s, preparedMotion.GivenPower_units, ...
+    preparedMotion.SegmentTime_s, solverRequest.InitialState.time_s, preparedMotion.GivenPower_units, ...
     preparedMotion.FinalTime_s);
-sampledMotion = samplePolynomial(polynomial, request.Options.SampleTime_s);
+sampledMotion = samplePolynomial(polynomial, solverRequest.Options.SampleTime_s);
 
 %% Section 2: Measure Arrival, Path Length, And Jerk Cost
+
 candidate.ArrivalTime_s        = polynomial.FinalTime_s;
-candidate.TrajectoryDuration_s = polynomial.FinalTime_s - request.InitialState.time_s;
+candidate.TrajectoryDuration_s = polynomial.FinalTime_s - solverRequest.InitialState.time_s;
 candidate.MotionLength_units   = 0;
+% Path length = segment duration x integral(speed(u), u = 0..1),
+% where u = elapsed time / segment duration.
+% This measures the curve itself rather than distances between output samples.
 for segmentIndex = 1:polynomial.SegmentCount
-    velocityPower_units_s = squeeze(polynomial.velocityPower_units_s(segmentIndex, :, :));
-    speedAtTauHandle = @(tau) hypot(polyval(fliplr(velocityPower_units_s(1, :)), tau), ...
-        polyval(fliplr(velocityPower_units_s(2, :)), tau));
+    velocityCoefficients_units_s = squeeze(polynomial.velocityPower_units_s(segmentIndex, :, :));
+    speedAtFractionHandle = @(segmentFraction) hypot( ...
+        polyval(fliplr(velocityCoefficients_units_s(1, :)), segmentFraction), ...
+        polyval(fliplr(velocityCoefficients_units_s(2, :)), segmentFraction));
     candidate.MotionLength_units = candidate.MotionLength_units + ...
         polynomial.SegmentDuration_s(segmentIndex) * ...
-        integral(speedAtTauHandle, 0, 1, 'AbsTol', 1e-11, 'RelTol', 1e-11);
+        integral(speedAtFractionHandle, 0, 1, 'AbsTol', 1e-11, 'RelTol', 1e-11);
 end
 candidate.IntegratedSquaredJerk_units2_s5 = integratedSquaredJerk(polynomial);
-candidate.MaximumConstraintViolation      = preparedMotion.MotionProof.MaximumViolation;
+candidate.MaximumConstraintViolation     = preparedMotion.MotionProof.MaximumViolation;
 
-%% Section 3: Transfer The Sampled Histories And The Polynomial
+%% Section 3: Store The Motion Histories And Polynomial
+
 for fieldName = ["time_s", "position_units", "velocity_units_s", ...
         "acceleration_units_s2", "jerk_units_s3"]
     candidate.(fieldName) = sampledMotion.(fieldName);
@@ -52,17 +60,19 @@ candidate.Polynomial = polynomial;
 end
 
 %% Section 4: Local Functions
-function sampled = samplePolynomial(polynomial, sampleTime_s)
-    % Sample the output polynomial on a uniform grid that retains every knot.
-    initialTime_s = polynomial.SegmentStartTime_s(1);
-    duration_s    = polynomial.FinalTime_s - initialTime_s;
-    % Distinct relative knots can round to the same absolute time after a
-    % clock shift. Deduplicate in the exported coordinate, retaining endpoints.
-    sampleTimes_s = unique([initialTime_s + (0:sampleTime_s:duration_s).'; ...
+
+function sampledMotion = samplePolynomial(polynomial, sampleTime_s)
+    % Use regularly spaced times plus every segment start and the final time.
+    % This includes segment joins even when the sample spacing skips them.
+    initialTime_s    = polynomial.SegmentStartTime_s(1);
+    motionDuration_s = polynomial.FinalTime_s - initialTime_s;
+    % Adding a large start time can round two nearby times to the same value.
+    % Remove duplicates after that addition so exported times stay distinct.
+    sampleTimes_s = unique([initialTime_s + (0:sampleTime_s:motionDuration_s).'; ...
         polynomial.SegmentStartTime_s; polynomial.FinalTime_s]);
     [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = ...
         bmtpEngine.motion.evaluatePolynomial(polynomial, sampleTimes_s);
-    sampled = struct( ...
+    sampledMotion = struct( ...
         "time_s",                time_s, ...
         "position_units",        position_units, ...
         "velocity_units_s",      velocity_units_s, ...
@@ -70,13 +80,15 @@ function sampled = samplePolynomial(polynomial, sampleTime_s)
         "jerk_units_s3",         jerk_units_s3);
 end
 
-function cost_units2_s5 = integratedSquaredJerk(polynomial)
-    % Integrate squared physical jerk exactly over every polynomial segment.
+function integratedJerkCost_units2_s5 = integratedSquaredJerk(polynomial)
+    % Square each axis's jerk polynomial and integrate every power exactly.
+    % For powers i and j, integral(u^(i+j), 0..1) = 1 / (i+j+1).
+    % Multiplying by segment duration converts the fraction integral to seconds.
     jerkCoefficients_units_s3 = permute(polynomial.jerkPower_units_s3, [3, 1, 2]);
-    powerOrder                 = (1:size(jerkCoefficients_units_s3, 1)).';
-    gramMatrix                 = 1 ./ (powerOrder + powerOrder.' - 1);
-    segmentCosts_units2_s6     = sum(jerkCoefficients_units_s3 .* ...
-        pagemtimes(gramMatrix, jerkCoefficients_units_s3), 1);
-    cost_units2_s5 = sum(polynomial.SegmentDuration_s(:) .* ...
-        reshape(segmentCosts_units2_s6, polynomial.SegmentCount, 2), "all");
+    coefficientIndices       = (1:size(jerkCoefficients_units_s3, 1)).';
+    powerProductIntegrals    = 1 ./ (coefficientIndices + coefficientIndices.' - 1);
+    segmentJerkCost_units2_s6 = sum(jerkCoefficients_units_s3 .* ...
+        pagemtimes(powerProductIntegrals, jerkCoefficients_units_s3), 1);
+    integratedJerkCost_units2_s5 = sum(polynomial.SegmentDuration_s(:) .* ...
+        reshape(segmentJerkCost_units2_s6, polynomial.SegmentCount, 2), "all");
 end

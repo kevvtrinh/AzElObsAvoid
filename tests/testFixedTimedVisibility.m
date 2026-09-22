@@ -199,6 +199,8 @@ function testTimedSearchCrossesARecurrentCurtain(testCase)
     verifyFalse(testCase,isfield(result,'TrajectoryCoverageEndTime_s'));
     verifyEqual(testCase,numel(result.Attempts),3);
     verifyFalse(testCase,any([result.Attempts(1:2).SolverAttempted]));
+    % Fixed-arrival attempts keep the requested time in FixedArrivalTrialTime_s.
+    verifyTrue(testCase,isnan(result.Attempts(end).CandidateArrival_s));
 end
 
 function testFailedTimedSearchDoesNotLeakSpatialState(testCase)

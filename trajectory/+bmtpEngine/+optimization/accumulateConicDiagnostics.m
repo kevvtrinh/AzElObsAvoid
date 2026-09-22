@@ -1,47 +1,50 @@
-function stats = accumulateConicDiagnostics(stats, output)
+function solverTotals = accumulateConicDiagnostics(solverTotals, solveOutput)
 %% Section 0: Header & Readme
 % SYNTAX
-%   stats = bmtpEngine.optimization.accumulateConicDiagnostics()
-%   stats = bmtpEngine.optimization.accumulateConicDiagnostics(stats, output)
+%   solverTotals = bmtpEngine.optimization.accumulateConicDiagnostics()
+%   solverTotals = bmtpEngine.optimization.accumulateConicDiagnostics(solverTotals, solveOutput)
 %**************************************************************************
 % PURPOSE
-%   - Count production coneprog calls and preserve elapsed solver time.
+%   - Add coneprog call counts and elapsed solver time to the running totals.
 %**************************************************************************
 % INPUTS
-%   - stats (scalar struct)
-%       Statistics accumulated by the previous calls.
-%   - output (scalar struct)
-%       Original solver output; analytic outputs contribute no call.
+%   - solverTotals (scalar struct)
+%       Counts and solver time accumulated by previous calls.
+%   - solveOutput (scalar struct)
+%       Output for the latest solver stage. A directly calculated analytic
+%       solution contributes no coneprog calls or solver time.
 %**************************************************************************
 % OUTPUTS
-%   - stats (scalar struct)
-%       Solver call count and total elapsed solver time.
-%   - stats (scalar struct, zero-input call)
-%       Zeroed accumulator ready for the first call.
+%   - solverTotals (scalar struct)
+%       Updated CallCount and TotalTime_s. With no inputs, both start at 0.
 %**************************************************************************
 % UNITS
 %   - TotalTime_s is seconds; CallCount is a completed-call count.
 %**************************************************************************
 
-%% Section 1: Return The Zeroed Accumulator
+%% Section 1: Initialize Totals When Called Without Inputs
+
 if nargin == 0
-    stats             = struct();
-    stats.CallCount   = 0;
-    stats.TotalTime_s = 0;
+    solverTotals = struct();
+    solverTotals.CallCount   = 0;
+    solverTotals.TotalTime_s = 0;
     return
 end
 
-%% Section 2: Accumulate One Production Coneprog Call
-outputIsAnalytic = isfield(output, 'IsAnalytic') && output.IsAnalytic;
-if outputIsAnalytic
+%% Section 2: Add The Latest Numerical-Solver Work
+
+usesAnalyticSolution = isfield(solveOutput, 'IsAnalytic') && solveOutput.IsAnalytic;
+if usesAnalyticSolution
     return
 end
 
-callCount = 1;
-if isfield(output, 'SolveCount')
-    callCount = output.SolveCount;
+% Some stages report several solver calls together. Use their supplied
+% count; an output without SolveCount represents one call.
+newCallCount = 1;
+if isfield(solveOutput, 'SolveCount')
+    newCallCount = solveOutput.SolveCount;
 end
 
-stats.CallCount   = stats.CallCount + callCount;
-stats.TotalTime_s = stats.TotalTime_s + output.TotalTime_s;
+solverTotals.CallCount   = solverTotals.CallCount + newCallCount;
+solverTotals.TotalTime_s = solverTotals.TotalTime_s + solveOutput.TotalTime_s;
 end

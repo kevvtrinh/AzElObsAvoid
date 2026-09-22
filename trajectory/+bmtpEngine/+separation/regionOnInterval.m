@@ -1,70 +1,81 @@
-function vertices_units = regionOnInterval(region_units, coverage, regionIndex, interval_s)
+function intervalVertices_units = regionOnInterval( ...
+    startVertices_units, regionMotionData, regionIndex, requestedInterval_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   vertices_units = bmtpEngine.separation.regionOnInterval(region_units, coverage, regionIndex, interval_s)
+%   intervalVertices_units = bmtpEngine.separation.regionOnInterval( ...
+%       startVertices_units, regionMotionData, regionIndex, requestedInterval_s)
 %**************************************************************************
 % PURPOSE
-%   - Restrict a source-derived affine convex cell to physical time.
+%   - Return a convex obstacle region at the requested start/end times,
+%     using the stored linear motion of its vertices.
 %**************************************************************************
 % INPUTS
-%   - region_units (N-by-2 numeric array)
-%       Convex cell vertices at the start of the cell's active interval.
-%   - coverage (scalar struct)
-%       Cell coverage carrying end vertices and active time intervals.
+%   - startVertices_units (N-by-2 numeric array)
+%       Region vertices at the start of its stored motion interval.
+%   - regionMotionData (scalar struct)
+%       EndRegions_units and ActiveTimeInterval_s when motion is present.
 %   - regionIndex (positive integer scalar)
-%       Index of the cell within the coverage.
-%   - interval_s (empty or 1-by-2 numeric row)
-%       Two absolute times. An empty interval requests the conservative
-%       spatial projection over the whole active interval.
+%       Region to select from the stored motion arrays.
+%   - requestedInterval_s (empty or 1-by-2 numeric row)
+%       Two absolute times. Empty requests one polygon enclosing everywhere
+%       the region travels during its complete stored interval.
 %**************************************************************************
 % OUTPUTS
-%   - vertices_units (N-by-2 or N-by-2-by-2 numeric array)
-%       Static vertices, or affine endpoint vertices for a moving cell.
-%       A request outside the cell's active time interval throws.
+%   - intervalVertices_units (M-by-2 or N-by-2-by-2 numeric array)
+%       Static/enclosing polygon vertices, or moving-region vertices at the
+%       two requested times. An out-of-range moving-region request throws.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Return The Static Cell When No Motion Is Stored
+%% Section 1: Return Unchanged Vertices For A Static Region
 
-vertices_units = region_units;
-if ~isfield(coverage, 'EndRegions_units')
+intervalVertices_units = startVertices_units;
+if ~isfield(regionMotionData, 'EndRegions_units')
     return
 end
-endVertices_units = coverage.EndRegions_units{regionIndex};
-if isequal(region_units, endVertices_units)
-    return
-end
-
-%% Section 2: Project The Whole Sweep When No Interval Is Requested
-
-if isempty(interval_s)
-    points_units   = [region_units; endVertices_units];
-    hullIndex      = convhull(points_units(:, 1), points_units(:, 2));
-    vertices_units = points_units(hullIndex(1:end - 1), :);
+endVertices_units = regionMotionData.EndRegions_units{regionIndex};
+if isequal(startVertices_units, endVertices_units)
     return
 end
 
-%% Section 3: Evaluate The Source Cell At The Requested Endpoints
+%% Section 2: Enclose The Whole Motion When No Times Are Requested
 
-activeInterval_s = coverage.ActiveTimeInterval_s(regionIndex, :);
-fraction         = (interval_s - activeInterval_s(1)) / diff(activeInterval_s);
-intervalLeavesActiveWindow = any(fraction < -64 * eps | fraction > 1 + 64 * eps);
+% Linear vertex paths stay inside the convex hull of their start/end points.
+% This enclosure can include extra area; it is a whole-motion obstacle bound.
+
+if isempty(requestedInterval_s)
+    endpointVertices_units = [startVertices_units; endVertices_units];
+    hullVertexIndices      = convhull(endpointVertices_units(:, 1), endpointVertices_units(:, 2));
+    intervalVertices_units = endpointVertices_units(hullVertexIndices(1:end - 1), :);
+    return
+end
+
+%% Section 3: Interpolate Vertices At The Requested Times
+
+% fraction = (requested time - start time) / stored duration. Allow only
+% a small rounding error beyond [0 1], then clamp that error to the endpoint.
+
+activeInterval_s  = regionMotionData.ActiveTimeInterval_s(regionIndex, :);
+intervalFractions = (requestedInterval_s - activeInterval_s(1)) / diff(activeInterval_s);
+intervalLeavesActiveWindow = any(intervalFractions < -64 * eps | intervalFractions > 1 + 64 * eps);
 if intervalLeavesActiveWindow
     error('bmtpEngine:RegionTimeOutsideCell', 'Region restriction must remain within its active time interval.');
 end
-fraction    = min(1, max(0, fraction));
-delta_units = endVertices_units - region_units;
-first_units = region_units + fraction(1) * delta_units;
-last_units  = region_units + fraction(2) * delta_units;
-% Preserve the supplied stored endpoints exactly. Besides avoiding an
-% unnecessary roundoff step, this makes full-cell geometry safe to cache.
-if fraction(1) == 0
-    first_units = region_units;
+intervalFractions           = min(1, max(0, intervalFractions));
+vertexDisplacement_units    = endVertices_units - startVertices_units;
+intervalStartVertices_units = startVertices_units + intervalFractions(1) * vertexDisplacement_units;
+intervalEndVertices_units   = startVertices_units + intervalFractions(2) * vertexDisplacement_units;
+
+% At the stored start/end times, return the original vertices exactly.
+% Recalculating start + displacement could otherwise add rounding error
+% and prevent a later geometry comparison from recognizing the same region.
+if intervalFractions(1) == 0
+    intervalStartVertices_units = startVertices_units;
 end
-if fraction(2) == 1
-    last_units = endVertices_units;
+if intervalFractions(2) == 1
+    intervalEndVertices_units = endVertices_units;
 end
-vertices_units = cat(3, first_units, last_units);
+intervalVertices_units = cat(3, intervalStartVertices_units, intervalEndVertices_units);
 end

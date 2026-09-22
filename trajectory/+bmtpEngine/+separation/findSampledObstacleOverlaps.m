@@ -1,20 +1,20 @@
-function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, regions_units, ...
-        regionMinimum_units, regionMaximum_units, regionActiveBySegment)
+function sampledOverlapPairs = findSampledObstacleOverlaps(controlPoint_units, regions_units, ...
+    regionMinimum_units, regionMaximum_units, regionActiveBySegment)
 %% Section 0: Header & Readme
 % SYNTAX
-%   collisionPairs = bmtpEngine.separation.findSampledObstacleOverlaps(controlPoint_units, ...
+%   sampledOverlapPairs = bmtpEngine.separation.findSampledObstacleOverlaps(controlPoint_units, ...
 %       regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment)
 %**************************************************************************
 % PURPOSE
-%   - Identify sampled Bezier span and convex-region overlaps that require
-%     separating-line updates during optimization. The sampled result is
-%     never a final acceptance proof.
+%   - Find curve samples that touch or enter an obstacle, so the optimizer
+%     knows which separating lines to update. Samples can miss a collision
+%     between them, so the complete curve still needs its motion checks.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
 %   - regions_units (R-by-1 cell array)
-%       Convex exclusion polygons.
+%       Protected convex obstacle polygons.
 %   - regionMinimum_units (R-by-2 numeric array)
 %       Cached minimum region bounds.
 %   - regionMaximum_units (R-by-2 numeric array)
@@ -23,25 +23,27 @@ function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, region
 %       Applicable curve-region pairs.
 %**************************************************************************
 % OUTPUTS
-%   - collisionPairs (S-by-R logical array)
-%       Sampled-overlap tags used only to guide later optimization.
+%   - sampledOverlapPairs (S-by-R logical array)
+%       True where at least one sample touches or lies inside that obstacle.
 %**************************************************************************
 % UNITS
 %   - Position and region bounds are coordinate units.
 %**************************************************************************
 
-%% Section 1: Check Sampled Span And Region Overlaps
+%% Section 1: Check Curve Samples Against Applicable Obstacles
 
-% This stage owns its span sampling resolution. It guides optimization only;
-% continuous separating-plane proof remains the acceptance test.
-sampleCount    = 1201;
-segmentCount   = size(controlPoint_units, 1);
-collisionPairs = false(segmentCount, numel(regions_units));
-tau            = linspace(0, 1, sampleCount).';
+% Sample 1201 equally spaced fractions of each segment, including both ends.
+% This sampling density belongs to the optimizer, not the output plot spacing.
+sampleCount         = 1201;
+segmentCount        = size(controlPoint_units, 1);
+sampledOverlapPairs = false(segmentCount, numel(regions_units));
+segmentFractions    = linspace(0, 1, sampleCount).';
 for segmentIndex = 1:segmentCount
-    position_units      = evaluateBezier(squeeze(controlPoint_units(segmentIndex, :, :)), tau);
-    sampleMinimum_units = min(position_units, [], 1);
-    sampleMaximum_units = max(position_units, [], 1);
+    sampledPosition_units = evaluateBezier(squeeze(controlPoint_units(segmentIndex, :, :)), segmentFractions);
+    sampleMinimum_units   = min(sampledPosition_units, [], 1);
+    sampleMaximum_units   = max(sampledPosition_units, [], 1);
+    % Skip obstacle boxes that cannot contain any of these sampled points.
+    % The surviving obstacles still need the polygon containment check below.
     regionIsActive   = regionActiveBySegment(segmentIndex, :).';
     minimumXOverlaps = regionMinimum_units(:, 1) <= sampleMaximum_units(1);
     maximumXOverlaps = regionMaximum_units(:, 1) >= sampleMinimum_units(1);
@@ -50,23 +52,28 @@ for segmentIndex = 1:segmentCount
     boundsOverlap    = regionIsActive & minimumXOverlaps & maximumXOverlaps & ...
         minimumYOverlaps & maximumYOverlaps;
     for regionIndex = reshape(find(boundsOverlap), 1, [])
-        vertices_units = regions_units{regionIndex};
-        [inside, on] = inpolygon(position_units(:, 1), position_units(:, 2), ...
-            vertices_units(:, 1), vertices_units(:, 2));
-        collisionPairs(segmentIndex, regionIndex) = any(inside | on);
+        obstacleVertices_units = regions_units{regionIndex};
+        % Boundary contact counts as overlap as well as an interior point.
+        [sampleIsInside, sampleIsOnBoundary] = inpolygon(sampledPosition_units(:, 1), sampledPosition_units(:, 2), ...
+            obstacleVertices_units(:, 1), obstacleVertices_units(:, 2));
+        sampledOverlapPairs(segmentIndex, regionIndex) = any(sampleIsInside | sampleIsOnBoundary);
     end
 end
 end
 
 %% Section 2: Local Functions
 
-function position_units = evaluateBezier(controlPoint_units, tau)
-    % Evaluate samples through one vectorized de Casteljau recurrence.
-    degree     = size(controlPoint_units, 1) - 1;
-    tau        = reshape(double(tau), [], 1, 1);
-    work_units = repmat(reshape(controlPoint_units, 1, degree + 1, []), numel(tau), 1, 1);
-    for levelIndex = 1:degree
-        work_units = (1 - tau) .* work_units(:, 1:end - 1, :) + tau .* work_units(:, 2:end, :);
+function sampledPosition_units = evaluateBezier(controlPoint_units, segmentFractions)
+    % Repeatedly blend adjacent controls at each requested fraction until
+    % one curve point remains (de Casteljau evaluation). At fraction 0.25,
+    % each blend is 0.75 x left control + 0.25 x right control.
+    degree                     = size(controlPoint_units, 1) - 1;
+    segmentFractions           = reshape(double(segmentFractions), [], 1, 1);
+    interpolatedControls_units = repmat(reshape(controlPoint_units, 1, degree + 1, []), numel(segmentFractions), 1, 1);
+    for interpolationLevel = 1:degree
+        interpolatedControls_units = (1 - segmentFractions) .* interpolatedControls_units(:, 1:end - 1, :) + ...
+            segmentFractions .* interpolatedControls_units(:, 2:end, :);
     end
-    position_units = reshape(work_units(:, 1, :), numel(tau), size(controlPoint_units, 2));
+    sampledPosition_units = reshape(interpolatedControls_units(:, 1, :), ...
+        numel(segmentFractions), size(controlPoint_units, 2));
 end

@@ -5,7 +5,8 @@ function [edgeStart_units, edgeEnd_units] = boundaryToEdges(shape, closureTolera
 %       obstacleAvoidance.geometry.boundaryToEdges(shape, closureTolerance_units)
 %**************************************************************************
 % PURPOSE
-%   - Convert every boundary ring into ordered start and end edge rows.
+%   - List the start and end points of every polygon edge, including the
+%     boundaries of holes and separate outlines.
 %**************************************************************************
 % INPUTS
 %   - shape (scalar polyshape)
@@ -24,7 +25,7 @@ function [edgeStart_units, edgeEnd_units] = boundaryToEdges(shape, closureTolera
 %   - Geometry and closure tolerance are coordinate units.
 %**************************************************************************
 
-%% Section 1: Validate Inputs And Locate The NaN-Separated Rings
+%% Section 1: Check Inputs And Locate Each Boundary Loop
 
 if ~isa(shape, "polyshape") || ~isscalar(shape)
     error("boundaryToEdges:InvalidShape", "shape must be a scalar polyshape.");
@@ -34,36 +35,38 @@ validateattributes(closureTolerance_units, {'numeric'}, {'scalar', 'real', 'fini
 [x_units, y_units] = boundary(shape);
 boundaryPosition_units = [double(x_units(:)), double(y_units(:))];
 
-% Each maximal run of finite rows is one ring, in the order polyshape reports.
+% A ring is one closed boundary loop. Rows containing NaN separate the loops;
+% each consecutive group of finite [x y] rows supplies one loop's vertices.
 vertexIsFinite = all(isfinite(boundaryPosition_units), 2);
-runStartIndex  = find(vertexIsFinite & [true; ~vertexIsFinite(1:end - 1)]);
-runEndIndex    = find(vertexIsFinite & [~vertexIsFinite(2:end); true]);
+ringStartIndex = find(vertexIsFinite & [true; ~vertexIsFinite(1:end - 1)]);
+ringEndIndex   = find(vertexIsFinite & [~vertexIsFinite(2:end); true]);
 
-%% Section 2: Close Every Valid Ring Into Matched Edge Rows
+%% Section 2: Connect The Vertices Of Each Boundary Loop
 
 emptyEdges_units      = zeros(0, 2);
-edgeStartByRing_units = repmat({emptyEdges_units}, numel(runStartIndex), 1);
-edgeEndByRing_units   = repmat({emptyEdges_units}, numel(runStartIndex), 1);
+edgeStartByRing_units = repmat({emptyEdges_units}, numel(ringStartIndex), 1);
+edgeEndByRing_units   = repmat({emptyEdges_units}, numel(ringStartIndex), 1);
 
-for runIndex = 1:numel(runStartIndex)
-    ring_units = boundaryPosition_units(runStartIndex(runIndex):runEndIndex(runIndex), :);
+for ringIndex = 1:numel(ringStartIndex)
+    ringVertices_units = boundaryPosition_units(ringStartIndex(ringIndex):ringEndIndex(ringIndex), :);
 
-    % A ring with fewer than two distinct vertices cannot produce a segment.
-    if size(ring_units, 1) < 2
+    % At least two vertices are needed to form an edge.
+    if size(ringVertices_units, 1) < 2
         continue;
     end
 
-    % Drop a repeated closing vertex so the wrap-around edge is not duplicated.
-    if norm(ring_units(end, :) - ring_units(1, :)) <= closureTolerance_units
-        ring_units(end, :) = [];
+    % Treat first and last points within the closure tolerance as the same
+    % corner. Keep it once; the edge assembly below closes the loop.
+    if norm(ringVertices_units(end, :) - ringVertices_units(1, :)) <= closureTolerance_units
+        ringVertices_units(end, :) = [];
     end
-    if size(ring_units, 1) < 2
+    if size(ringVertices_units, 1) < 2
         continue;
     end
 
     % Connect adjacent vertices, then the last vertex back to the first.
-    edgeStartByRing_units{runIndex} = ring_units;
-    edgeEndByRing_units{runIndex}   = ring_units([2:end, 1], :);
+    edgeStartByRing_units{ringIndex} = ringVertices_units;
+    edgeEndByRing_units{ringIndex}   = ringVertices_units([2:end, 1], :);
 end
 edgeStart_units = vertcat(edgeStartByRing_units{:});
 edgeEnd_units   = vertcat(edgeEndByRing_units{:});

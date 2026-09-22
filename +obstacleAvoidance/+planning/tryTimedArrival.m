@@ -8,8 +8,10 @@ function [result, accepted, directMotion] = tryTimedArrival( ...
 %       directMotion, maximumArrivalTime_s)
 %**************************************************************************
 % PURPOSE
-%   - Use timed visibility and BMTP for a fixed-arrival endpoint or a
-%     fixed-position free-arrival goal.
+%   - Find a route with a time at each point, then use BMTP to turn that
+%     route into motion and check it with the independent validator.
+%   - Support a required arrival time, or search for an earlier arrival
+%     at a fixed position when the vehicle starts and finishes at rest.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
@@ -21,12 +23,11 @@ function [result, accepted, directMotion] = tryTimedArrival( ...
 %   - elapsedTime_s (nonnegative scalar)
 %       Planner time accumulated before this timed attempt.
 %   - directMotion (scalar struct)
-%       Request-owned direct-motion product, or struct() before construction.
+%       Saved direct-motion calculation and checks, or struct() when no
+%       direct motion has been calculated for this request.
 %   - maximumArrivalTime_s (finite scalar)
-%       Upper search clock for earliest-arrival requests; the request horizon
-%       (goalState.time_s) searches the whole horizon. Otherwise it keeps the
-%       request horizon. Fixed-arrival requests always keep their given
-%       clock.
+%       Latest time to search for an earliest arrival, capped at the request's
+%       goal time. Fixed-arrival requests always use their required goal time.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -35,19 +36,21 @@ function [result, accepted, directMotion] = tryTimedArrival( ...
 %   - accepted (logical scalar)
 %       True only when the timed candidate passes validation.
 %   - directMotion (scalar struct)
-%       Unchanged input product or the direct motion and proof for reuse.
+%       Saved direct motion and checks, including any calculated by this call.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Check Eligibility And Create The Timed Route
+%% Section 1: Initialize The Result And Check The Arrival Requirements
 
 totalTimer   = tic;
 accepted     = false;
 initialState = request.initialState;
 goalState    = request.goalState;
 
+% Prepare the usual result fields before searching. If no route is found,
+% the caller still receives the request, attempts, and reason for stopping.
 timedVisibilityGraph = struct( ...
     'NodePosition_units',     zeros(0, 2), ...
     'AcceptedNodeIndex',      zeros(0, 2), ...
@@ -62,8 +65,8 @@ timedVisibilityGraph = struct( ...
     'TimedSearch',            struct());
 result = obstacleAvoidance.planning.createEmptyResult( ...
     preparedObstacles, request, timedVisibilityGraph, attempts, elapsedTime_s);
-result.Message                         = "The timed search has not completed.";
-result.Validation                      = struct( ...
+result.Message    = "The timed search has not completed.";
+result.Validation = struct( ...
     "Passed", false, "Message", "No timed motion is available.");
 result.MotionLength_units              = Inf;
 result.IntegratedSquaredJerk_units2_s5 = Inf;
@@ -74,6 +77,8 @@ result.AlternativeGuideEligible        = false;
 result.FailureStage                    = "notRun";
 result.FailureKind                     = "notRun";
 
+% An earlier successful method may already give us an arrival time to beat.
+% Shorten the search to that time only when arrival time is allowed to vary.
 validateattributes(maximumArrivalTime_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', '>', initialState.time_s});
 maximumArrivalTime_s = min(maximumArrivalTime_s, goalState.time_s);
@@ -81,118 +86,146 @@ if request.options.GoalTimeMode == "earliestArrival"
     goalState.time_s = maximumArrivalTime_s;
 end
 
-endpointDerivatives = [initialState.velocity_units_s(:); initialState.acceleration_units_s2(:); ...
+% With a moving target or nonzero endpoint velocity or acceleration, changing
+% arrival time needs separate fixed-time trials. This search cannot vary it.
+endpointDerivativeValues = [initialState.velocity_units_s(:); initialState.acceleration_units_s2(:); ...
     goalState.velocity_units_s(:); goalState.acceleration_units_s2(:)];
-endpointsAreAtRest = all(endpointDerivatives == 0);
-arrivalIsFixed     = request.options.GoalTimeMode == "fixedArrival";
-freeClockIsUnsupported = ~arrivalIsFixed && ...
+endpointsAreAtRest             = all(endpointDerivativeValues == 0);
+arrivalIsFixed                 = request.options.GoalTimeMode == "fixedArrival";
+arrivalTimeSearchIsUnsupported = ~arrivalIsFixed && ...
     (~isempty(goalState.targetMotion) || ~endpointsAreAtRest);
-if freeClockIsUnsupported
+if arrivalTimeSearchIsUnsupported
     result.Message = "Free-arrival timed visibility requires a fixed-position goal " + ...
         "with zero endpoint velocity and acceleration.";
     result.TerminationReason = "unsupportedTimedRequest";
     result.ElapsedTime_s     = elapsedTime_s + toc(totalTimer);
     return
 end
+
+%% Section 2: Find A Route And A Time For Each Point
+
+% Search positions and times together: an obstacle may block a connection
+% at one time and move away later. BMTP will check whether the vehicle can
+% follow the proposed route within its speed, acceleration, and jerk limits.
 searchTimer = tic;
-[route_units, routeTime_s, searchRecord] = obstacleAvoidance.search.createTimedRouteProposal( ...
+
+[route_units, routeTime_s, timedRouteDetails] = obstacleAvoidance.search.createTimedRouteProposal( ...
     preparedObstacles, initialState, goalState, request.originalInputs.requestedLimits, request.options);
-searchRecord.ElapsedTime_s = toc(searchTimer);
-result.VisibilityGraph.NodePosition_units = searchRecord.Nodes_units;
-result.VisibilityGraph.TimedSearch        = searchRecord;
-result.VisibilityGraph.ExpandedCount      = searchRecord.TimedSearch.ExpandedCount;
+timedRouteDetails.ElapsedTime_s = toc(searchTimer);
+
+result.VisibilityGraph.NodePosition_units = timedRouteDetails.Nodes_units;
+result.VisibilityGraph.TimedSearch        = timedRouteDetails;
+result.VisibilityGraph.ExpandedCount      = timedRouteDetails.TimedSearch.ExpandedCount;
 if isempty(routeTime_s)
-    result.Message                     = "No route reached the requested goal layer in the discrete timed graph.";
-    result.TerminationReason           = "noTimedRoute";
-    result.FailureStage                = "search";
-    result.FailureKind                 = "noTimedRoute";
-    result.ElapsedTime_s               = elapsedTime_s + toc(totalTimer);
+    result.Message           = "No route reached the requested goal layer in the discrete timed graph.";
+    result.TerminationReason = "noTimedRoute";
+    result.FailureStage      = "search";
+    result.FailureKind       = "noTimedRoute";
+    result.ElapsedTime_s     = elapsedTime_s + toc(totalTimer);
     return
 end
 if size(route_units, 1) > 2
-    % A constant-position run needs only its first and last times. Removing
-    % interior wait knots preserves the complete piecewise-linear timed guide
-    % and keeps the BMTP mesh independent of temporal-layer density.
-    segmentMoves        = any(diff(route_units, 1, 1) ~= 0, 2);
-    routeKnotIsRetained = [true; segmentMoves(1:end - 1) | segmentMoves(2:end); true];
-    route_units         = route_units(routeKnotIsRetained, :);
-    routeTime_s         = routeTime_s(routeKnotIsRetained);
+    % A wait needs only its start and end times. For example, the same position
+    % at t = 0, 1, and 2 s needs only t = 0 and 2 s. This preserves the wait
+    % without adding motion segments for the intermediate time samples.
+    segmentMoves         = any(diff(route_units, 1, 1) ~= 0, 2);
+    routePointIsRetained = [true; segmentMoves(1:end - 1) | segmentMoves(2:end); true];
+    route_units          = route_units(routePointIsRetained, :);
+    routeTime_s          = routeTime_s(routePointIsRetained);
 end
 result.VisibilityGraph.RouteTime_s       = routeTime_s;
 result.VisibilityGraph.Route_units       = route_units;
 result.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units), 2, 2));
 result.VisibilityGraph.IsConnected       = true;
-result.Route_units                        = route_units;
+result.Route_units                       = route_units;
 
-%% Section 2: Solve The Timed Route On Its Supplied Physical Clock
+%% Section 3: Turn The Route And Its Times Into BMTP Motion
 
-timedSearch          = searchRecord.TimedSearch;
-freeGoalWindowIsUsed = ~arrivalIsFixed;
-if freeGoalWindowIsUsed
-    goalWindowIsDeclared = isfield(timedSearch, 'SelectedGoalWindowEndTime_s');
-    freeGoalWindowIsUsed = goalWindowIsDeclared && timedSearch.SelectedGoalWindowEndTime_s > ...
+% For earliest arrival, BMTP may vary arrival within a time range when the
+% goal position stays clear. The range must extend beyond the route's arrival
+% by more than the time tolerance; otherwise, keep that one arrival time.
+% A fixed-arrival request always keeps its required time.
+timedSearchDetails         = timedRouteDetails.TimedSearch;
+arrivalCanVaryWithinWindow = ~arrivalIsFixed;
+if arrivalCanVaryWithinWindow
+    hasGoalArrivalWindow       = isfield(timedSearchDetails, 'SelectedGoalWindowEndTime_s');
+    arrivalCanVaryWithinWindow = hasGoalArrivalWindow && timedSearchDetails.SelectedGoalWindowEndTime_s > ...
         routeTime_s(end) + request.options.ArrivalTimeTolerance_s;
 end
-seedDuration_s = routeTime_s(end) - initialState.time_s;
+routeDuration_s = routeTime_s(end) - initialState.time_s;
 
-% The producer declares the physical clock this guide was built on.
-normalizedRouteTime = (routeTime_s - initialState.time_s) / seedDuration_s;
-seed = struct( ...
-    'position_units',      route_units, ...
-    'tau',                 normalizedRouteTime, ...
-    'UsesVariableClock',   false, ...
+% Keep the time assigned to each route point when creating the starting
+% path. tau = 0 is the motion start and tau = 1 is the route's planned arrival.
+normalizedRouteTime = (routeTime_s - initialState.time_s) / routeDuration_s;
+startingPath        = struct( ...
+    'position_units',       route_units, ...
+    'tau',                  normalizedRouteTime, ...
+    'UsesVariableClock',    false, ...
     'UsesTimeScopedSolver', false);
 motionGoalState = goalState;
 motionOptions   = request.options;
-if freeGoalWindowIsUsed
-    motionGoalState.time_s        = timedSearch.SelectedGoalWindowEndTime_s;
-    motionOptions.GoalTimeMode    = "earliestArrival";
-    minimumArrivalTime_s          = max(timedSearch.SelectedGoalWindowStartTime_s, ...
-        timedSearch.MinimumGoalArrivalTime_s);
-    [regions_units, coverage] = createTimedCoverage( ...
+if arrivalCanVaryWithinWindow
+    motionGoalState.time_s     = timedSearchDetails.SelectedGoalWindowEndTime_s;
+    motionOptions.GoalTimeMode = "earliestArrival";
+
+    % Arrival must be inside the clear time range and allow at least the
+    % minimum travel time required by the vehicle's motion limits.
+    minimumArrivalTime_s = max(timedSearchDetails.SelectedGoalWindowStartTime_s, ...
+        timedSearchDetails.MinimumGoalArrivalTime_s);
+    [obstacleRegions_units, obstacleTimeCoverage] = createTimedCoverage( ...
         preparedObstacles, initialState.time_s, motionGoalState.time_s);
-    coverage.MinimumMotionDuration_s = minimumArrivalTime_s - initialState.time_s;
-    coverage.SeedMotionDuration_s    = seedDuration_s;
-    seed.UsesVariableClock           = true;
+    obstacleTimeCoverage.MinimumMotionDuration_s = minimumArrivalTime_s - initialState.time_s;
+    obstacleTimeCoverage.SeedMotionDuration_s    = routeDuration_s;
+    startingPath.UsesVariableClock               = true;
 else
-    motionGoalState.time_s        = routeTime_s(end);
-    motionOptions.GoalTimeMode    = "fixedArrival";
-    [regions_units, coverage] = createTimedCoverage( ...
+    motionGoalState.time_s     = routeTime_s(end);
+    motionOptions.GoalTimeMode = "fixedArrival";
+
+    [obstacleRegions_units, obstacleTimeCoverage] = createTimedCoverage( ...
         preparedObstacles, initialState.time_s, motionGoalState.time_s);
-    seed.UsesTimeScopedSolver     = true;
+    startingPath.UsesTimeScopedSolver = true;
 end
-[candidate, diagnostics, directMotion] = bmtpEngine.solve(seed, ...
-    struct('regions_units', {regions_units}, 'coverage', coverage), ...
-    struct('initialState', initialState, ...
-    'goalState', motionGoalState, ...
-    'limits', request.originalInputs.requestedLimits, ...
-    'options', motionOptions), directMotion);
-if ~candidate.Success
+
+planningEnvironment = struct( ...
+    'regions_units', {obstacleRegions_units}, ...
+    'coverage',      obstacleTimeCoverage);
+motionRequest = struct( ...
+    'initialState', initialState, ...
+    'goalState',    motionGoalState, ...
+    'limits',       request.originalInputs.requestedLimits, ...
+    'options',      motionOptions);
+[motionCandidate, solverDiagnostics, directMotion] = bmtpEngine.solve( ...
+    startingPath, planningEnvironment, motionRequest, directMotion);
+if ~motionCandidate.Success
     result = obstacleAvoidance.planning.finalizeCandidate( ...
         preparedObstacles, request, result.VisibilityGraph, result, ...
-        candidate, diagnostics, struct());
+        motionCandidate, solverDiagnostics, struct());
     result.TerminationReason = "timedMotionInfeasible";
-    result.Message = "The timed route did not produce a feasible BMTP motion: " + ...
-        candidate.Message;
+    result.Message           = "The timed route did not produce a feasible BMTP motion: " + ...
+        motionCandidate.Message;
     result.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
     return
 end
 
-%% Section 3: Assemble And Independently Validate The Result
+%% Section 4: Assemble And Independently Validate The Result
 
-validationDeclarations = struct();
-if freeGoalWindowIsUsed
-    validationDeclarations.GoalArrivalWindow_s = ...
+% Give the validator the same arrival requirements used by BMTP. It checks
+% the actual motion times, not just the times proposed by the route search.
+validationTimingFields = struct();
+if arrivalCanVaryWithinWindow
+    validationTimingFields.GoalArrivalWindow_s = ...
         [minimumArrivalTime_s, motionGoalState.time_s];
-    validationDeclarations.TrajectoryCoverageEndTime_s = motionGoalState.time_s;
+    % Retain obstacle coverage through the end of the allowed arrival range,
+    % even when the returned motion reaches the goal earlier.
+    validationTimingFields.TrajectoryCoverageEndTime_s = motionGoalState.time_s;
 else
-    % Declare the given clock the motion was solved on, not the
-    % achieved arrival; the validator compares the two.
-    validationDeclarations.FixedArrivalTrialTime_s = motionGoalState.time_s;
+    % Store the required arrival time. The validator compares it with
+    % the actual arrival time in the returned motion.
+    validationTimingFields.FixedArrivalTrialTime_s = motionGoalState.time_s;
 end
 result = obstacleAvoidance.planning.finalizeCandidate( ...
     preparedObstacles, request, result.VisibilityGraph, result, ...
-    candidate, diagnostics, validationDeclarations);
+    motionCandidate, solverDiagnostics, validationTimingFields);
 result.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
 accepted             = result.Success;
 if ~accepted
@@ -200,34 +233,38 @@ if ~accepted
 end
 if arrivalIsFixed
     result.Message = "The given goal layer produced an independently validated timed BMTP motion.";
-elseif freeGoalWindowIsUsed
+elseif arrivalCanVaryWithinWindow
     result.Message = "The first reachable goal window produced an independently validated free-clock BMTP motion.";
 else
     result.Message = "The earliest reachable timed-route layer produced an independently validated BMTP motion.";
 end
 result.TerminationReason = "goalReached";
-minimumTravelTime_s = obstacleAvoidance.input.minimumTravelTime( ...
+minimumTravelTime_s      = obstacleAvoidance.input.minimumTravelTime( ...
     initialState, goalState, request.limits);
 earliestPossibleArrival_s = initialState.time_s + minimumTravelTime_s;
+
+% Finding motion from selected route points and times does not prove that
+% no earlier motion exists, so GlobalEarliestProven remains false.
 result.TemporalSearch = struct( ...
-    'Resolution_s',            request.options.TemporalResolution_s, ...
-    'TrialTime_s',             candidate.ArrivalTime_s, ...
-    'GlobalEarliestProven',    false, ...
+    'Resolution_s',              request.options.TemporalResolution_s, ...
+    'TrialTime_s',               motionCandidate.ArrivalTime_s, ...
+    'GlobalEarliestProven',      false, ...
     'EarliestPossibleArrival_s', earliestPossibleArrival_s, ...
-    'BestSoFarArrival_s',      NaN, ...
-    'BestSoFar',       false);
+    'BestSoFarArrival_s',        NaN, ...
+    'BestSoFar',                 false);
 result.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
 end
 
-%% Section 4: Local Functions
+%% Section 5: Local Functions
 
-function [regions_units, coverage] = createTimedCoverage(obstacles, startTime_s, finishTime_s)
-    % Give every timed BMTP path the same exact cells and reconstruction metadata.
-    cells         = obstacleAvoidance.obstacles.createTimeCells(obstacles, startTime_s, finishTime_s);
-    regions_units = cells.Regions_units;
-    coverage = struct( ...
-        'ExactRegionCount',     numel(regions_units), ...
-        'ActiveTimeInterval_s', cells.ActiveTimeInterval_s, ...
-        'EndRegions_units',     {cells.EndRegions_units}, ...
-        'BreakTime_s',          cells.BreakTime_s);
+function [obstacleRegions_units, obstacleTimeCoverage] = createTimedCoverage(obstacles, startTime_s, finishTime_s)
+    % Collect the obstacle regions and the times when each region applies.
+    % BMTP uses these to check motion against moving obstacles.
+    obstacleTimeCells     = obstacleAvoidance.obstacles.createTimeCells(obstacles, startTime_s, finishTime_s);
+    obstacleRegions_units = obstacleTimeCells.Regions_units;
+    obstacleTimeCoverage  = struct( ...
+        'ExactRegionCount',     numel(obstacleRegions_units), ...
+        'ActiveTimeInterval_s', obstacleTimeCells.ActiveTimeInterval_s, ...
+        'EndRegions_units',     {obstacleTimeCells.EndRegions_units}, ...
+        'BreakTime_s',          obstacleTimeCells.BreakTime_s);
 end

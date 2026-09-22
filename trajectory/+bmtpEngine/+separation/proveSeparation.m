@@ -1,78 +1,93 @@
-function [offset_units, signedGap_units, verified] = proveSeparation( ...
-        minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalNorm, ...
-        offset_units, roundoff_units, roundoffReserve_units, target_units)
+function [lineOffset_units, signedGap_units, separationIsVerified] = proveSeparation( ...
+    minimumObstacleSide_units, maximumTrajectorySide_units, maximumNormalLength, ...
+    lineOffset_units, offsetRoundoffAllowance_units, roundoffReserve_units, separationTarget_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [offset_units, signedGap_units, verified] = ...
+%   [lineOffset_units, signedGap_units, separationIsVerified] = ...
 %       bmtpEngine.separation.proveSeparation(minimumObstacleSide_units, ...
-%       maximumTrajectorySide_units, maximumNormalNorm, offset_units, ...
-%       roundoff_units, roundoffReserve_units, target_units)
+%       maximumTrajectorySide_units, maximumNormalLength, lineOffset_units, ...
+%       offsetRoundoffAllowance_units, roundoffReserve_units, separationTarget_units)
 %**************************************************************************
 % PURPOSE
-%   - Apply the shared separating-line acceptance decision.
+%   - Shift a separating line when possible, then require the obstacle and
+%     curve to remain on opposite sides with their required clearance.
+%     The caller supplies bounds that cover the complete time interval.
 %**************************************************************************
 % INPUTS
 %   - minimumObstacleSide_units (numeric scalar or R-by-1 array)
-%       Exact obstacle-side Bernstein bounds for each plane.
+%       Lower bound on normal x obstacle position + offset for each line.
 %   - maximumTrajectorySide_units (numeric scalar or R-by-1 array)
-%       Exact trajectory-side Bernstein bounds for each plane.
-%   - maximumNormalNorm (numeric scalar or R-by-1 array)
-%       Maximum normal norm for each plane.
-%   - offset_units (1-by-2 or R-by-2 numeric array)
-%       Endpoint offsets for each plane.
-%   - roundoff_units (numeric scalar or R-by-1 array)
-%       Admissible correction reserve for each plane.
+%       Upper bound on normal x curve position + offset for each line.
+%   - maximumNormalLength (numeric scalar or R-by-1 array)
+%       Largest length of each line's normal vector over the interval.
+%   - lineOffset_units (1-by-2 or R-by-2 numeric array)
+%       Each line's offset at the interval start and end.
+%   - offsetRoundoffAllowance_units (numeric scalar or R-by-1 array)
+%       Extra room sought at both ends of an allowed offset-shift interval.
 %   - roundoffReserve_units (nonnegative numeric scalar)
-%       Required trajectory-side reserve.
-%   - target_units (nonnegative numeric scalar)
-%       Required obstacle-side target.
+%       Required numerical gap on the curve side.
+%   - separationTarget_units (nonnegative numeric scalar)
+%       Required line-side value for the obstacle.
 %**************************************************************************
 % OUTPUTS
-%   - offset_units (1-by-2 or R-by-2 numeric array)
-%       Endpoint offsets shifted into the admissible correction interval.
+%   - lineOffset_units (1-by-2 or R-by-2 numeric array)
+%       Offsets after the common shift at both interval ends.
 %   - signedGap_units (numeric scalar or R-by-1 array)
-%       Proven obstacle-minus-trajectory gap after that shift.
-%   - verified (logical scalar or R-by-1 array)
-%       True only where every acceptance inequality holds together.
+%       Lower bound on obstacle-side value minus curve-side value.
+%   - separationIsVerified (logical scalar or R-by-1 array)
+%       True only where every final clearance and normal-length check passes.
 %**************************************************************************
 % UNITS
 %   - Sides, offsets, gaps, reserves, and targets are coordinate units.
 %**************************************************************************
 
-%% Section 1: Shift The Plane Into The Admissible Correction Interval
-minimumCorrection_units = target_units - minimumObstacleSide_units;
-maximumCorrection_units = -roundoffReserve_units - maximumTrajectorySide_units;
-robustMinimum_units      = minimumCorrection_units + roundoff_units;
-robustMaximum_units      = maximumCorrection_units - roundoff_units;
-correction_units         = zeros(size(minimumCorrection_units));
+%% Section 1: Find An Offset Shift That Preserves Both Required Gaps
 
-correctionIsPossible = minimumCorrection_units <= maximumCorrection_units;
-correctionIsRobust   = correctionIsPossible & robustMinimum_units <= robustMaximum_units;
-correction_units(correctionIsRobust) = min(max(0, robustMinimum_units(correctionIsRobust)), ...
-    robustMaximum_units(correctionIsRobust));
+% Adding the same shift to both offsets also adds it to both side bounds.
+% The obstacle requires shift >= target - obstacleSide.
+% The curve requires shift <= -reserve - curveSide. Both must hold.
+minimumOffsetShift_units       = separationTarget_units - minimumObstacleSide_units;
+maximumOffsetShift_units       = -roundoffReserve_units - maximumTrajectorySide_units;
+minimumShiftWithRoundoff_units = minimumOffsetShift_units + offsetRoundoffAllowance_units;
+maximumShiftWithRoundoff_units = maximumOffsetShift_units - offsetRoundoffAllowance_units;
+offsetShift_units              = zeros(size(minimumOffsetShift_units));
 
-% A correction interval narrower than roundoff still exists; take its midpoint.
-correctionIntervalIsNarrow = correctionIsPossible & ~correctionIsRobust;
-correction_units(correctionIntervalIsNarrow) = 0.5 * ( ...
-    minimumCorrection_units(correctionIntervalIsNarrow) + ...
-    maximumCorrection_units(correctionIntervalIsNarrow));
+% Leave extra room for rounding at both ends when possible. Keep zero
+% shift if it fits; otherwise use the nearest shift in that reduced interval.
+shiftIsPossible     = minimumOffsetShift_units <= maximumOffsetShift_units;
+shiftAllowsRoundoff = shiftIsPossible & minimumShiftWithRoundoff_units <= maximumShiftWithRoundoff_units;
+offsetShift_units(shiftAllowsRoundoff) = min(max(0, minimumShiftWithRoundoff_units(shiftAllowsRoundoff)), ...
+    maximumShiftWithRoundoff_units(shiftAllowsRoundoff));
 
-offset_units                = offset_units + correction_units;
-minimumObstacleSide_units   = minimumObstacleSide_units + correction_units;
-maximumTrajectorySide_units = maximumTrajectorySide_units + correction_units;
+% If an allowed interval exists but is too narrow for both rounding
+% allowances, use its midpoint. The final checks below still must pass.
+shiftIntervalIsNarrow = shiftIsPossible & ~shiftAllowsRoundoff;
+offsetShift_units(shiftIntervalIsNarrow) = 0.5 * ( ...
+    minimumOffsetShift_units(shiftIntervalIsNarrow) + ...
+    maximumOffsetShift_units(shiftIntervalIsNarrow));
 
-%% Section 2: Require Every Acceptance Inequality Together
-signedGap_units          = minimumObstacleSide_units - maximumTrajectorySide_units;
-normalNormLimit          = 1 + 2 ^ 20 * eps;
-clearanceTarget_units    = (target_units - roundoffReserve_units) / normalNormLimit;
-provenClearance_units = (signedGap_units - 2 * roundoffReserve_units) ./ max(maximumNormalNorm, realmin);
+lineOffset_units            = lineOffset_units + offsetShift_units;
+minimumObstacleSide_units   = minimumObstacleSide_units + offsetShift_units;
+maximumTrajectorySide_units = maximumTrajectorySide_units + offsetShift_units;
 
-obstacleSideIsValid       = minimumObstacleSide_units >= target_units;
-trajectorySideIsValid     = maximumTrajectorySide_units <= -roundoffReserve_units;
-signedGapIsValid          = signedGap_units >= target_units + roundoffReserve_units;
-provenClearanceIsValid = provenClearance_units >= clearanceTarget_units;
-normalNormIsValid         = maximumNormalNorm <= normalNormLimit;
+%% Section 2: Check The Shifted Line And Physical Clearance
 
-verified = obstacleSideIsValid & trajectorySideIsValid & signedGapIsValid & ...
-    provenClearanceIsValid & normalNormIsValid;
+% Divide the line-side gap by the largest normal length to bound physical
+% clearance. Account for numerical reserves before comparing that bound
+% with the required clearance. Normal length may exceed 1 only by the given
+% rounding allowance; realmin prevents division by zero.
+signedGap_units         = minimumObstacleSide_units - maximumTrajectorySide_units;
+normalLengthLimit       = 1 + 2 ^ 20 * eps;
+requiredClearance_units = (separationTarget_units - roundoffReserve_units) / normalLengthLimit;
+provenClearance_units   = (signedGap_units - 2 * roundoffReserve_units) ./ ...
+    max(maximumNormalLength, realmin);
+
+obstacleSideIsValid    = minimumObstacleSide_units >= separationTarget_units;
+trajectorySideIsValid  = maximumTrajectorySide_units <= -roundoffReserve_units;
+signedGapIsValid       = signedGap_units >= separationTarget_units + roundoffReserve_units;
+provenClearanceIsValid = provenClearance_units >= requiredClearance_units;
+normalLengthIsValid    = maximumNormalLength <= normalLengthLimit;
+
+separationIsVerified = obstacleSideIsValid & trajectorySideIsValid & signedGapIsValid & ...
+    provenClearanceIsValid & normalLengthIsValid;
 end

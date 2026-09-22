@@ -1,20 +1,21 @@
-function value = cross2d(first_units, second_units)
+function crossProduct_units2 = cross2d(firstVector_units, secondVector_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   value = obstacleAvoidance.geometry.cross2d(first_units, second_units)
+%   crossProduct_units2 = obstacleAvoidance.geometry.cross2d(firstVector_units, secondVector_units)
 %**************************************************************************
 % PURPOSE
 %   - Return row-wise signed two-dimensional cross products.
 %**************************************************************************
 % INPUTS
-%   - first_units (N-by-2 numeric array)
-%       First planar vector in each row.
-%   - second_units (N-by-2 numeric array)
-%       Second planar vector in each row.
+%   - firstVector_units (N-by-2 numeric array)
+%       First [x y] vector in each row.
+%   - secondVector_units (N-by-2 numeric array)
+%       Matching second [x y] vector in each row.
 %**************************************************************************
 % OUTPUTS
-%   - value (N-by-1 numeric vector)
-%       Signed planar cross product for each pair of rows.
+%   - crossProduct_units2 (N-by-1 numeric vector)
+%       Positive means a left turn from the first vector to the second;
+%       negative means a right turn. Zero means parallel vectors or a zero vector.
 %**************************************************************************
 % UNITS
 %   - Inputs use coordinate units; outputs use squared coordinate units.
@@ -22,6 +23,7 @@ function value = cross2d(first_units, second_units)
 
 %% Section 1: Compute Row-Wise Cross Products
 
-% Return row-wise signed two-dimensional cross products.
-value = first_units(:, 1) .* second_units(:, 2) - first_units(:, 2) .* second_units(:, 1);
+% Example: [1 0] points right and [0 1] points up; that left turn gives +1.
+crossProduct_units2 = firstVector_units(:, 1) .* secondVector_units(:, 2) - ...
+    firstVector_units(:, 2) .* secondVector_units(:, 1);
 end

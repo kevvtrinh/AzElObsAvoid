@@ -4,6 +4,10 @@ This document records the preferred presentation style for maintained MATLAB
 code in this repository. Style-only work must preserve behavior, public fields,
 validation strength, geometry, tolerances, and deterministic results.
 
+Use `ApplyCommentAndStyle.md` as the current reference for the user's commenting,
+naming, and readability preferences. This document supplies the matching MATLAB
+formatting rules. Update both together when a preference changes.
+
 ## Public Help Blocks
 
 Begin each public function with:
@@ -49,8 +53,8 @@ function result = functionName(requiredInput, optionOverrides)
 - Use numbered, title-cased sections in execution order.
 - Section names must describe the actual work performed.
 - Do not place top-level `%%` sections inside loops or conditionals.
-- Use a short `% --- Descriptive Stage ---` comment for an internal stage that
-  does not warrant a new top-level section.
+- Use a short, plain comment for an internal stage that does not warrant a new
+  top-level section. Do not add decorative `---` separators.
 
 Runnable examples will use this top-level order:
 
@@ -104,11 +108,12 @@ end
 
 - Keep a complete statement on one line whenever it remains readable. Reserve
   `...` for genuinely long or structurally complex statements.
-- Avoid a continuation immediately after an assignment operator when a shorter,
-  clear local name keeps the operation readable on one line.
+- Keep descriptive names when a statement needs to wrap. Break the call at a
+  natural argument boundary instead of abbreviating the values.
 
 ```matlab
-[~, tgtVel, tgtAcc] = targetPositionAtTime(targetMotion, time_s);
+[~, targetVelocity_units_s, targetAcceleration_units_s2] = ...
+    targetPositionAtTime(targetMotion, time_s);
 ```
 
 - Break long function calls at logical argument boundaries, not at arbitrary
@@ -140,8 +145,12 @@ options = struct( ...
 ## Naming And Units
 
 - Use descriptive lower-camel-case names and physical-unit suffixes.
-- Spell names out by default, but use an obvious compact local name such as
-  `tgtVel` or `tgtAcc` when it prevents an awkward wrapped assignment.
+- Use names that explain the value's role, such as `targetVelocity_units_s` and
+  `targetAcceleration_units_s2`. Avoid abbreviations such as `tgtVel` and `tgtAcc`.
+- Prefer `planningEnvironment` for prepared obstacle data and
+  `arrivalPlanningProgress` for the result and attempts carried between arrival
+  planning stages. Keep physical state names such as `initialState` and
+  `goalState`; their meaning is already specific.
 - Use singular names for one record and plural names for collections.
 - End indices with `Index`, counts with `Count`, and graphics handles with
   `Handle` or `Handles`.

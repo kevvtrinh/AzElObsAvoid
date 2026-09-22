@@ -1,78 +1,85 @@
-function [supported, shape, regions_units, addedArea_units2] = ...
-    buildEndpointHullCell(lower_units, upper_units, lowerShape, upperShape)
+function [modelIsSupported, enclosureShape, regions_units, addedArea_units2] = ...
+    buildEndpointHullCell(startBoundary_units, endBoundary_units, startShape, endShape)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [supported, shape, regions_units, addedArea_units2] = ...
+%   [modelIsSupported, enclosureShape, regions_units, addedArea_units2] = ...
 %       obstacleAvoidance.obstacles.buildEndpointHullCell( ...
-%       lower_units, upper_units, lowerShape, upperShape)
+%       startBoundary_units, endBoundary_units, startShape, endShape)
 %**************************************************************************
 % PURPOSE
-%   - Build one convex interval enclosure from both protected endpoints.
-%   - With unknown vertex correspondence, every linear interpolant
-%     (1-t)*a+t*b, for any lower vertex a and upper vertex b, lies in the
-%     convex hull of all endpoint vertices. No ring identity is assumed.
-%   - An empty endpoint contributes no vertices: the other endpoint's hull
-%     occupies the full interval, so emptiness never clears its neighbors.
+%   - Enclose both protected samples with one convex hull: imagine a rubber
+%     band stretched around every boundary point from both samples.
+%   - Use that whole enclosure for the interval when vertex matches are
+%     unknown. Every straight path between any start and end vertex stays
+%     inside it, although the enclosure may fill holes and add occupied area.
+%   - If one sample is empty, the other sample's hull still occupies the
+%     whole interval. An empty sample does not make nearby times obstacle-free.
 %**************************************************************************
 % INPUTS
-%   - lower_units (N-by-2 numeric array)
-%       Protected lower-sample rings separated by paired nonfinite rows.
-%   - upper_units (M-by-2 numeric array)
-%       Protected upper-sample rings separated by paired nonfinite rows.
-%   - lowerShape (scalar polyshape)
-%       Cached protected shape of the lower sample.
-%   - upperShape (scalar polyshape)
-%       Cached protected shape of the upper sample.
+%   - startBoundary_units (N-by-2 numeric array)
+%       Protected start boundary. Nonfinite rows separate boundary loops.
+%   - endBoundary_units (M-by-2 numeric array)
+%       Protected end boundary, with the same separator convention.
+%   - startShape (scalar polyshape)
+%       Prepared protected shape at the interval start.
+%   - endShape (scalar polyshape)
+%       Prepared protected shape at the interval end.
 %**************************************************************************
 % OUTPUTS
-%   - supported (logical scalar)
-%       True when at least one ring exists and every ring has at least three
-%       distinct vertices and a positive-area hull. Invalid input returns false.
-%   - shape (polyshape)
-%       Hull of every finite endpoint vertex, or empty when unsupported.
+%   - modelIsSupported (logical scalar)
+%       True when at least one boundary loop exists and every loop has at least
+%       three distinct vertices and a positive-area hull. Invalid boundary data
+%       returns false.
+%   - enclosureShape (polyshape)
+%       Hull of all finite vertices from both samples, or empty when unsupported.
 %   - regions_units (cell array)
-%       One convex vertex array, or empty when unsupported.
+%       One [x y] vertex array for the enclosure, or empty when unsupported.
 %   - addedArea_units2 (nonnegative numeric scalar)
-%       Hull area minus the area of the union of both protected end shapes.
+%       Area added beyond the two protected samples combined.
 %**************************************************************************
 % UNITS
 %   - Geometry uses coordinate units; area uses coordinate units squared.
 %**************************************************************************
 
-%% Section 1: Validate And Extract Boundary Rings
+%% Section 1: Check And Separate The Boundary Loops
 
-supported        = false;
-shape            = polyshape();
+modelIsSupported = false;
+enclosureShape   = polyshape();
 regions_units    = cell(0, 1);
 addedArea_units2 = 0;
-[lowerIsValid, lowerRings_units] = splitRings(lower_units);
-[upperIsValid, upperRings_units] = splitRings(upper_units);
-if ~lowerIsValid || ~upperIsValid || ...
-        isempty(lowerRings_units) && isempty(upperRings_units)
+
+[startBoundaryIsValid, startRings_units] = splitBoundaryLoops(startBoundary_units);
+[endBoundaryIsValid, endRings_units]     = splitBoundaryLoops(endBoundary_units);
+if ~startBoundaryIsValid || ~endBoundaryIsValid || ...
+        isempty(startRings_units) && isempty(endRings_units)
     return;
 end
 
-%% Section 2: Enclose Every Possible Cross-Sample Correspondence
+%% Section 2: Enclose Both Samples With One Convex Hull
 
-allRings_units = [lowerRings_units; upperRings_units];
-vertices_units = vertcat(allRings_units{:});
-hullIndex      = convhull(vertices_units(:, 1), vertices_units(:, 2));
-region_units   = vertices_units(hullIndex(1:end - 1), :);
-endpointHull   = polyshape(region_units, 'Simplify', false, 'KeepCollinearPoints', true);
-if isempty(endpointHull.Vertices) || area(endpointHull) <= 0
+allRings_units    = [startRings_units; endRings_units];
+vertices_units    = vertcat(allRings_units{:});
+hullVertexIndices = convhull(vertices_units(:, 1), vertices_units(:, 2));
+
+% The hull repeats its first vertex at the end. Store that corner only once.
+enclosureVertices_units = vertices_units(hullVertexIndices(1:end - 1), :);
+endpointHullShape       = polyshape(enclosureVertices_units, 'Simplify', false, 'KeepCollinearPoints', true);
+if isempty(endpointHullShape.Vertices) || area(endpointHullShape) <= 0
     return;
 end
 
-%% Section 3: Measure The Conservative Added Area
+%% Section 3: Measure The Extra Occupied Area
 
-endShapeUnion = union(lowerShape, upperShape);
-% Subtraction measures hull area minus the contained endpoint union without
-% cancellation between two large, nearly equal scalar areas.
-addedArea_units2 = area(subtract(endpointHull, endShapeUnion));
-supported        = isfinite(addedArea_units2) && addedArea_units2 >= 0;
-if supported
-    shape         = endpointHull;
-    regions_units = {region_units};
+combinedEndpointShape = union(startShape, endShape);
+
+% Subtract the combined endpoint shapes from the enclosure, then measure
+% what remains. This avoids losing a small area difference when subtracting
+% two large, nearly equal area values.
+addedArea_units2 = area(subtract(endpointHullShape, combinedEndpointShape));
+modelIsSupported = isfinite(addedArea_units2) && addedArea_units2 >= 0;
+if modelIsSupported
+    enclosureShape = endpointHullShape;
+    regions_units  = {enclosureVertices_units};
 else
     addedArea_units2 = 0;
 end
@@ -80,50 +87,53 @@ end
 
 %% Section 4: Local Functions
 
-function [valid, rings_units] = splitRings(vertices_units)
-    % Split paired-nonfinite separators without repairing input geometry.
-    valid       = isnumeric(vertices_units) && isreal(vertices_units) && ...
+function [boundaryIsValid, rings_units] = splitBoundaryLoops(vertices_units)
+    % Separate closed boundary loops and reject incomplete separators.
+    % Each loop must contain enough distinct points to enclose an area.
+    boundaryIsValid = isnumeric(vertices_units) && isreal(vertices_units) && ...
         size(vertices_units, 2) == 2;
     rings_units = cell(0, 1);
-    if ~valid || isempty(vertices_units)
+    if ~boundaryIsValid || isempty(vertices_units)
         return;
     end
-    finiteCoordinate = isfinite(vertices_units);
-    if any(xor(finiteCoordinate(:, 1), finiteCoordinate(:, 2)))
-        valid = false;
+    coordinateIsFinite = isfinite(vertices_units);
+    % A separator fills both columns: [NaN NaN] is valid; [NaN 2] is not.
+    if any(xor(coordinateIsFinite(:, 1), coordinateIsFinite(:, 2)))
+        boundaryIsValid = false;
         return;
     end
-    finiteRow   = all(finiteCoordinate, 2);
-    startIndex  = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
-    endIndex    = find(finiteRow & [~finiteRow(2:end); true]);
-    rings_units = cell(numel(startIndex), 1);
-    for ringIndex = 1:numel(startIndex)
-        ring_units       = vertices_units(startIndex(ringIndex):endIndex(ringIndex), :);
-        uniqueRing_units = unique(ring_units, 'rows', 'stable');
-        if size(uniqueRing_units, 1) < 3
-            valid       = false;
-            rings_units = cell(0, 1);
+    vertexIsFinite = all(coordinateIsFinite, 2);
+    ringStartIndex = find(vertexIsFinite & [true; ~vertexIsFinite(1:end - 1)]);
+    ringEndIndex   = find(vertexIsFinite & [~vertexIsFinite(2:end); true]);
+    rings_units    = cell(numel(ringStartIndex), 1);
+    for ringIndex = 1:numel(ringStartIndex)
+        ringVertices_units       = vertices_units(ringStartIndex(ringIndex):ringEndIndex(ringIndex), :);
+        uniqueRingVertices_units = unique(ringVertices_units, 'rows', 'stable');
+        if size(uniqueRingVertices_units, 1) < 3
+            boundaryIsValid = false;
+            rings_units     = cell(0, 1);
             return;
         end
-        % Three distinct points must also span positive area. This exact
-        % collinearity check avoids asking Qhull to process a degenerate ring.
-        relative_units = uniqueRing_units(2:end, :) - uniqueRing_units(1, :);
-        signedDoubleArea_units2 = relative_units(1, 1) * relative_units(2:end, 2) - ...
-            relative_units(1, 2) * relative_units(2:end, 1);
+        % Distinct points can still lie on one straight line. Each cross
+        % product below equals twice a triangle's signed area; all zeros mean
+        % there is no area to enclose, so do not call the hull builder.
+        vertexOffsets_units     = uniqueRingVertices_units(2:end, :) - uniqueRingVertices_units(1, :);
+        signedDoubleArea_units2 = vertexOffsets_units(1, 1) * vertexOffsets_units(2:end, 2) - ...
+            vertexOffsets_units(1, 2) * vertexOffsets_units(2:end, 1);
         if ~any(signedDoubleArea_units2 ~= 0)
-            valid       = false;
-            rings_units = cell(0, 1);
+            boundaryIsValid = false;
+            rings_units     = cell(0, 1);
             return;
         end
-        hullIndex = convhull(ring_units(:, 1), ring_units(:, 2));
-        ringHull  = polyshape(ring_units(hullIndex(1:end - 1), :), ...
+        hullVertexIndices = convhull(ringVertices_units(:, 1), ringVertices_units(:, 2));
+        ringHull          = polyshape(ringVertices_units(hullVertexIndices(1:end - 1), :), ...
             'Simplify', false, 'KeepCollinearPoints', true);
         if isempty(ringHull.Vertices) || area(ringHull) <= 0
-            valid       = false;
-            rings_units = cell(0, 1);
+            boundaryIsValid = false;
+            rings_units     = cell(0, 1);
             return;
         end
-        rings_units{ringIndex} = ring_units;
+        rings_units{ringIndex} = ringVertices_units;
     end
 end
 

@@ -1,188 +1,209 @@
-function [supported, shape, regions_units, counts, timing_s] = createMovingCells( ...
-    lower_units, upper_units, safetyMargin_units, usesSourceIndex)
+function [modelIsSupported, enclosureShape, regions_units, regionCounts, constructionTime_s] = createMovingCells( ...
+    startVertices_units, endVertices_units, safetyMargin_units, preserveAlignment)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [supported, shape, regions_units, counts, timing_s] = ...
+%   [modelIsSupported, enclosureShape, regions_units, regionCounts, constructionTime_s] = ...
 %       obstacleAvoidance.obstacles.createMovingCells( ...
-%       lower_units, upper_units, safetyMargin_units)
-%   [supported, shape, regions_units, counts, timing_s] = ...
+%       startVertices_units, endVertices_units, safetyMargin_units)
+%   [modelIsSupported, enclosureShape, regions_units, regionCounts, constructionTime_s] = ...
 %       obstacleAvoidance.obstacles.createMovingCells( ...
-%       lower_units, upper_units, safetyMargin_units, usesSourceIndex)
+%       startVertices_units, endVertices_units, safetyMargin_units, preserveAlignment)
 %**************************************************************************
 % PURPOSE
-%   - Build a conservative moving-cell enclosure for corresponding obstacle rings.
+%   - Build convex regions that enclose the obstacle's movement for the whole
+%     interval, including its margin. The regions remain occupied throughout
+%     that interval, so they may include space the obstacle does not use.
+%   - Match the two boundary samples, divide the start shape into triangles,
+%     enclose each triangle's movement, then combine and cover those enclosures.
 %**************************************************************************
 % INPUTS
-%   - lower_units (N-by-2 numeric array)
-%       Original ring at the interval start.
-%   - upper_units (N-by-2 numeric array)
-%       Original ring at the interval end, matching lower_units.
+%   - startVertices_units (N-by-2 numeric array)
+%       Original boundary vertices at the interval start, before adding a margin.
+%   - endVertices_units (N-by-2 numeric array)
+%       Original boundary at the interval end, with the same vertex count.
 %   - safetyMargin_units (nonnegative numeric scalar)
-%       Margin included in the conservative moving-cell enclosure.
-%   - usesSourceIndex (logical scalar, optional; default false)
-%       Whether incoming vertex indices already define correspondence.
+%       Margin to include around the original boundary's movement.
+%   - preserveAlignment (logical scalar, optional; default false)
+%       True when matching vertex indices already define the supplied motion.
+%       Otherwise choose the closest vertex ordering before building enclosures.
 %**************************************************************************
 % OUTPUTS
-%   - supported (logical scalar)
-%       True when the source rings admit a moving-cell enclosure.
-%   - shape (polyshape)
-%       Union of the conservative moving cells, or empty when unsupported.
+%   - modelIsSupported (logical scalar)
+%       True when the supplied boundaries support this enclosure model.
+%   - enclosureShape (polyshape)
+%       Combined occupied area of the enclosure, or empty when unsupported.
 %   - regions_units (cell array)
-%       Convex regions that exactly repartition shape.
-%   - counts (1-by-2 numeric row)
-%       Triangulation-face and final-region counts.
-%   - timing_s (1-by-4 numeric row)
-%       Elapsed time for the four construction phases. Invalid margin input
-%       throws an error; unsupported ring geometry returns supported = false.
+%       Convex pieces that together cover exactly enclosureShape.
+%   - regionCounts (1-by-2 numeric row)
+%       [starting triangle count, final convex region count].
+%   - constructionTime_s (1-by-4 numeric row)
+%       Times for triangulation, triangle enclosures, combining enclosures,
+%       and building the final cover. Invalid margin input throws an error;
+%       unsupported boundary geometry returns modelIsSupported = false.
 %**************************************************************************
 % UNITS
 %   - Coordinates and margin use coordinate units; timing uses seconds.
 %**************************************************************************
 
-%% Section 1: Require Source Correspondence
+%% Section 1: Check And Match The Boundary Vertices
 
 validateattributes(safetyMargin_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 if nargin < 4
-    usesSourceIndex = false;
+    preserveAlignment = false;
 end
-supported     = false;
-shape         = polyshape();
-regions_units = cell(0, 1);
-counts        = [0, 0];
-timing_s      = zeros(1, 4);
-if size(lower_units, 1) < 3 || ~isequal(size(lower_units), size(upper_units)) || ...
-        size(lower_units, 2) ~= 2 || ~all(isfinite([lower_units; upper_units]), 'all')
+
+modelIsSupported   = false;
+enclosureShape     = polyshape();
+regions_units      = cell(0, 1);
+regionCounts       = [0, 0];
+constructionTime_s = zeros(1, 4);
+if size(startVertices_units, 1) < 3 || ~isequal(size(startVertices_units), size(endVertices_units)) || ...
+        size(startVertices_units, 2) ~= 2 || ~all(isfinite([startVertices_units; endVertices_units]), 'all')
     return;
 end
-if size(unique(lower_units, 'rows'), 1) ~= size(lower_units, 1) || ...
-        size(unique(upper_units, 'rows'), 1) ~= size(upper_units, 1)
+if size(unique(startVertices_units, 'rows'), 1) ~= size(startVertices_units, 1) || ...
+        size(unique(endVertices_units, 'rows'), 1) ~= size(endVertices_units, 1)
     return;
 end
-if ~usesSourceIndex
-    upper_units = obstacleAvoidance.obstacles.alignCorrespondingRing(lower_units, upper_units);
+if ~preserveAlignment
+    endVertices_units = obstacleAvoidance.obstacles.alignCorrespondingRing( ...
+        startVertices_units, endVertices_units);
 end
-lowerShape = obstacleAvoidance.geometry.boundaryToShape(lower_units(:, 1), lower_units(:, 2));
-if isempty(lowerShape.Vertices) || area(lowerShape) <= 0
+startShape = obstacleAvoidance.geometry.boundaryToShape( ...
+    startVertices_units(:, 1), startVertices_units(:, 2));
+if isempty(startShape.Vertices) || area(startShape) <= 0
     return;
 end
 
-%% Section 2: Triangulate The Original Sample On Its Source Vertices
+%% Section 2: Divide The Start Shape Into Triangles
 
-% Triangles give the tightest hulls: a merged convex face would sweep the
-% hull of a larger vertex set. Every source vertex must appear so the
-% piecewise-linear map covers the complete interpolated boundary.
-stageTimer              = tic;
-mesh                    = triangulation(lowerShape);
-[found, sourceIndices] = ismember(mesh.Points, lower_units, 'rows');
-if ~all(found) || numel(unique(sourceIndices)) ~= size(lower_units, 1)
+% Enclose each triangle's movement separately. One hull around a larger
+% piece can include more unused space. Every boundary vertex must appear
+% in the triangles so the enclosure covers the complete boundary's movement.
+stageTimer   = tic;
+triangleMesh = triangulation(startShape);
+[vertexIsFromStartBoundary, sourceVertexIndices] = ismember( ...
+    triangleMesh.Points, startVertices_units, 'rows');
+if ~all(vertexIsFromStartBoundary) || numel(unique(sourceVertexIndices)) ~= size(startVertices_units, 1)
     return;
 end
-faceIndices = sourceIndices(mesh.ConnectivityList);
-timing_s(1) = toc(stageTimer);
-counts(1)   = size(faceIndices, 1);
-if counts(1) == 0
+triangleVertexIndices = sourceVertexIndices(triangleMesh.ConnectivityList);
+constructionTime_s(1) = toc(stageTimer);
+regionCounts(1)       = size(triangleVertexIndices, 1);
+if regionCounts(1) == 0
     return;
 end
 
-%% Section 3: Hull Every Carried Triangle With Its Margin Squares
+%% Section 3: Enclose Each Triangle's Movement And Margin
 
 stageTimer = tic;
-halfWidth_units     = sqrt(2) * safetyMargin_units;
-marginCorners_units = halfWidth_units * [-1, -1; -1, 1; 1, 1; 1, -1];
-sweeps(1, counts(1)) = polyshape();
-for faceIndex = 1:counts(1)
-    indices = faceIndices(faceIndex, :);
-    vertices_units = [lower_units(indices, :); upper_units(indices, :)];
+
+% Start from original vertices and include the margin once. A square with
+% half-width sqrt(2) x margin contains the square-corner protection used by
+% obstacle preparation, including corners that extend beyond the edge margin.
+marginHalfWidth_units = sqrt(2) * safetyMargin_units;
+marginCorners_units   = marginHalfWidth_units * [-1, -1; -1, 1; 1, 1; 1, -1];
+triangleEnclosures(1, regionCounts(1)) = polyshape();
+for triangleIndex = 1:regionCounts(1)
+    vertexIndices  = triangleVertexIndices(triangleIndex, :);
+    vertices_units = [startVertices_units(vertexIndices, :); endVertices_units(vertexIndices, :)];
+
+    % Add all four margin-square corners at each start and end vertex. Their
+    % common hull encloses every intermediate straight-line vertex position.
     if safetyMargin_units > 0
         vertices_units = reshape(permute( ...
             vertices_units + permute(marginCorners_units, [3, 2, 1]), [1, 3, 2]), [], 2);
     end
-    hullIndex = convhull(vertices_units(:, 1), vertices_units(:, 2));
-    sweeps(faceIndex) = polyshape(vertices_units(hullIndex(1:end - 1), :), ...
+    hullVertexIndices = convhull(vertices_units(:, 1), vertices_units(:, 2));
+    triangleEnclosures(triangleIndex) = polyshape(vertices_units(hullVertexIndices(1:end - 1), :), ...
         'Simplify', false, 'KeepCollinearPoints', true);
 end
-timing_s(2) = toc(stageTimer);
+constructionTime_s(2) = toc(stageTimer);
 
-%% Section 4: Union The Sweeps
+%% Section 4: Combine The Triangle Enclosures
 
 stageTimer = tic;
-movingCellUnion = balancedUnion(sweeps);
-timing_s(3) = toc(stageTimer);
-if isempty(movingCellUnion.Vertices)
+combinedTriangleEnclosure = combineShapesInPairs(triangleEnclosures);
+constructionTime_s(3) = toc(stageTimer);
+if isempty(combinedTriangleEnclosure.Vertices)
     return;
 end
 
-%% Section 5: Cover The Union At The Interval's Displacement Scale
+%% Section 5: Divide The Enclosure Into Convex Regions
 
 stageTimer = tic;
-% The cover is never finer than the sweep's own blur, and never finer than
-% a declared budget of grid squares per interval: a coarser cover is only
-% more conservative, so the budget trades routes for tractability, never
-% validity. It mirrors the visibility search's pair-work budget.
-cellBudget       = 256;
-extent_units     = max(movingCellUnion.Vertices, [], 1) - min(movingCellUnion.Vertices, [], 1);
-resolution_units = max([max(vecnorm(upper_units - lower_units, 2, 2)) + 2 * halfWidth_units, ...
-    sqrt(prod(max(extent_units, eps)) / cellBudget)]);
-if resolution_units <= 0
-    % No vertex moved and no margin applies: the union is the sample itself.
-    shape = movingCellUnion;
-    regions_units = obstacleAvoidance.geometry.convexRegions(shape);
+
+% Set grid width from the largest vertex movement plus the margin width.
+% Also use a minimum width based on a target of 256 squares over the bounding
+% box; rounding the row and column counts can exceed that target.
+% Taking hulls inside these squares may add occupied area and remove routes,
+% but must keep all space already covered by the triangle enclosures.
+gridCellTarget      = 256;
+enclosureSize_units = max(combinedTriangleEnclosure.Vertices, [], 1) - ...
+    min(combinedTriangleEnclosure.Vertices, [], 1);
+gridWidth_units = max([max(vecnorm(endVertices_units - startVertices_units, 2, 2)) + 2 * marginHalfWidth_units, ...
+    sqrt(prod(max(enclosureSize_units, eps)) / gridCellTarget)]);
+if gridWidth_units <= 0
+    % If no grid width is available, divide the combined shape directly.
+    enclosureShape = combinedTriangleEnclosure;
+    regions_units  = obstacleAvoidance.geometry.convexRegions(enclosureShape);
 else
-    minimum_units = min(movingCellUnion.Vertices, [], 1);
-    maximum_units = max(movingCellUnion.Vertices, [], 1);
-    columnCount = max(1, ceil((maximum_units(1) - minimum_units(1)) / resolution_units));
-    rowCount = max(1, ceil((maximum_units(2) - minimum_units(2)) / resolution_units));
-    regions_units = cell(0, 1);
-    for columnIndex = 1:columnCount
-        xRange_units = minimum_units(1) + [columnIndex - 1, columnIndex] * resolution_units;
-        for rowIndex = 1:rowCount
-            yRange_units = minimum_units(2) + [rowIndex - 1, rowIndex] * resolution_units;
-            squareShape = polyshape([xRange_units(1), yRange_units(1); xRange_units(2), yRange_units(1); ...
+    enclosureMinimum_units = min(combinedTriangleEnclosure.Vertices, [], 1);
+    enclosureMaximum_units = max(combinedTriangleEnclosure.Vertices, [], 1);
+    gridColumnCount        = max(1, ceil((enclosureMaximum_units(1) - enclosureMinimum_units(1)) / gridWidth_units));
+    gridRowCount           = max(1, ceil((enclosureMaximum_units(2) - enclosureMinimum_units(2)) / gridWidth_units));
+    regions_units          = cell(0, 1);
+    for columnIndex = 1:gridColumnCount
+        xRange_units = enclosureMinimum_units(1) + [columnIndex - 1, columnIndex] * gridWidth_units;
+        for rowIndex = 1:gridRowCount
+            yRange_units = enclosureMinimum_units(2) + [rowIndex - 1, rowIndex] * gridWidth_units;
+            gridSquare   = polyshape([xRange_units(1), yRange_units(1); xRange_units(2), yRange_units(1); ...
                 xRange_units(2), yRange_units(2); xRange_units(1), yRange_units(2)]);
-            pieceShape = intersect(movingCellUnion, squareShape);
-            if isempty(pieceShape.Vertices) || area(pieceShape) <= 0
+            shapeInsideSquare = intersect(combinedTriangleEnclosure, gridSquare);
+            if isempty(shapeInsideSquare.Vertices) || area(shapeInsideSquare) <= 0
                 continue;
             end
-            for componentShape = regions(pieceShape).'
-                vertices_units = componentShape.Vertices(all(isfinite(componentShape.Vertices), 2), :);
+            for shapePart = regions(shapeInsideSquare).'
+                vertices_units = shapePart.Vertices(all(isfinite(shapePart.Vertices), 2), :);
                 if size(unique(vertices_units, 'rows'), 1) < 3
                     continue;
                 end
-                hullIndex = convhull(vertices_units(:, 1), vertices_units(:, 2));
-                regions_units{end + 1, 1} = vertices_units(hullIndex(1:end - 1), :); %#ok<AGROW>
+                hullVertexIndices = convhull(vertices_units(:, 1), vertices_units(:, 2));
+                regions_units{end + 1, 1} = vertices_units(hullVertexIndices(1:end - 1), :); %#ok<AGROW>
             end
         end
     end
-    % The enclosure used by point queries is the union of the cover pieces.
-    % The cells are an exact convex repartition of that union, so queries
-    % and cells agree exactly and the cell count follows the enclosure's
-    % shape rather than the grid.
-    cover(1, numel(regions_units)) = polyshape();
+
+    % Use the same covered area for point checks and for motion planning.
+    % Combine the hulls, then divide their union into convex pieces so the
+    % returned polygon and region list describe exactly the same enclosure.
+    coverShapes(1, numel(regions_units)) = polyshape();
     for regionIndex = 1:numel(regions_units)
-        cover(regionIndex) = polyshape( ...
+        coverShapes(regionIndex) = polyshape( ...
             regions_units{regionIndex}, 'Simplify', false, 'KeepCollinearPoints', true);
     end
-    shape = balancedUnion(cover);
-    regions_units = obstacleAvoidance.geometry.convexRegions(shape);
+    enclosureShape = combineShapesInPairs(coverShapes);
+    regions_units  = obstacleAvoidance.geometry.convexRegions(enclosureShape);
 end
-timing_s(4) = toc(stageTimer);
-counts(2) = numel(regions_units);
-supported = ~isempty(regions_units);
+constructionTime_s(4) = toc(stageTimer);
+regionCounts(2)       = numel(regions_units);
+modelIsSupported = ~isempty(regions_units);
 end
 
 %% Section 6: Local Functions
 
-function shape = balancedUnion(pieces)
-    % Keep intermediate boundaries local instead of repeatedly unioning the
-    % complete accumulated boundary with one more piece.
-    while numel(pieces) > 1
-        pairCount = floor(numel(pieces) / 2);
-        merged    = union(pieces(1:2:2 * pairCount), pieces(2:2:2 * pairCount), ...
+function enclosureShape = combineShapesInPairs(shapesToCombine)
+    % Combine neighboring pairs, then combine those results in pairs again.
+    % This keeps early operations small. Carry an unpaired final shape into
+    % the next pass unchanged.
+    while numel(shapesToCombine) > 1
+        pairCount      = floor(numel(shapesToCombine) / 2);
+        combinedShapes = union(shapesToCombine(1:2:2 * pairCount), shapesToCombine(2:2:2 * pairCount), ...
             'KeepCollinearPoints', true);
-        if mod(numel(pieces), 2)
-            merged(end + 1) = pieces(end); %#ok<AGROW>
+        if mod(numel(shapesToCombine), 2)
+            combinedShapes(end + 1) = shapesToCombine(end); %#ok<AGROW>
         end
-        pieces = merged;
+        shapesToCombine = combinedShapes;
     end
-    shape = pieces;
+    enclosureShape = shapesToCombine;
 end

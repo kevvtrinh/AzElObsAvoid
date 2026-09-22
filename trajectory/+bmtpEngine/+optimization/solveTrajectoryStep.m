@@ -1,30 +1,31 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
-        solveTrajectoryStep(request, step)
+function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
+    solveTrajectoryStep(solverRequest, trajectoryStep)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
-%       bmtpEngine.optimization.solveTrajectoryStep(request, step)
+%   [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
+%       bmtpEngine.optimization.solveTrajectoryStep(solverRequest, trajectoryStep)
 %**************************************************************************
 % PURPOSE
-%   - Solve one convex trajectory step for fixed separating lines, timing
-%     policy, and derivative limits.
+%   - Solve for a new curve using fixed separating lines and duration ratios.
+%     Seek an earlier arrival, or shorten and optionally smooth the path at a
+%     fixed arrival time. The caller still checks the complete returned motion.
 %**************************************************************************
 % INPUTS
-%   - request (scalar struct)
+%   - solverRequest (scalar struct)
 %       The engine solve request from createSolveRequest. This step reads
 %       Degree, InitialState, GoalState, Limits, and TrajectoryOptions.
-%   - step (scalar struct)
+%   - trajectoryStep (scalar struct)
 %       What this one step is asked to do, every field required:
 %       SegmentCount (positive integer), Planes (S-by-R struct array of
-%       fixed separating lines whose TimeFraction scopes each active plane
-%       to a closed part of the span), RoundoffReserve_units (nonnegative
+%       fixed separating lines whose TimeFraction selects the part of the
+%       segment where each line applies), RoundoffReserve_units (nonnegative
 %       scalar), MaximumMotionDuration_s (positive scalar upper bound on the
 %       internal minimum-time solve), SegmentRatio (S-by-1 positive relative
 %       segment durations), FixedClock (logical: prescribe the segment
-%       clock), IntrinsicVariationEnabled (logical: surplus fixed-clock
-%       spans use the integrated-snap tie-break), and ConstraintBase (the
-%       reusable invariant constraint arrays from an earlier step with the
-%       same formulation, or struct() to build them).
+%       durations), IntrinsicVariationEnabled (logical: allow a jerk-variation
+%       objective for fixed-time quintic curves with more than eight segments),
+%       and ConstraintBase (saved workspace, endpoint, join, and motion-limit
+%       constraints from a matching earlier step, or struct() to build them).
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -34,91 +35,105 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %       Per-segment durations, or NaN on expected solve failure.
 %   - exitFlag (numeric scalar)
 %       Original coneprog status.
-%   - output (scalar struct)
+%   - solverOutput (scalar struct)
 %       Solver status, diagnostics, and measured solver time.
-%   - constraintBase (scalar struct)
-%       Invariant constraint arrays for reuse with the same formulation.
+%   - savedTrajectoryConstraints (scalar struct)
+%       Constraints and their inputs, for reuse when the next step matches.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Read The Step And The Request, Then Create Decision Bounds
-validateattributes(step, {'struct'}, {'scalar'});
-stepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
+%% Section 1: Read Inputs And Resolve Timing And Line Coverage
+
+validateattributes(trajectoryStep, {'struct'}, {'scalar'});
+requiredStepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
     "SegmentRatio", "FixedClock", "IntrinsicVariationEnabled", "ConstraintBase"];
-assert(all(isfield(step, stepFields)), 'bmtpEngine:InvalidStep', ...
-    'A trajectory step declares every one of: %s.', strjoin(stepFields, ', '));
-segmentCount              = step.SegmentCount;
-planes                    = step.Planes;
-roundoffReserve_units     = step.RoundoffReserve_units;
-maximumMotionDuration_s   = step.MaximumMotionDuration_s;
-segmentRatio              = step.SegmentRatio;
-fixedClock                = step.FixedClock;
-intrinsicVariationEnabled = step.IntrinsicVariationEnabled;
-constraintBase            = step.ConstraintBase;
-degree       = request.Degree;
-initialState = request.InitialState;
-goalState    = request.GoalState;
-limits       = request.Limits;
-options      = request.TrajectoryOptions;
-controlCount = segmentCount * (degree + 1) * 2;
-originalPlaneCount = nnz([planes.Active]);
-partialPlanes      = false;
-if ~isempty(planes)
-    fractions = reshape([planes.TimeFraction], 2, []).';
-    validateattributes(fractions, {'numeric'}, ...
+assert(all(isfield(trajectoryStep, requiredStepFields)), 'bmtpEngine:InvalidStep', ...
+    'A trajectory step declares every one of: %s.', strjoin(requiredStepFields, ', '));
+segmentCount                = trajectoryStep.SegmentCount;
+separatingPlanes            = trajectoryStep.Planes;
+roundoffReserve_units       = trajectoryStep.RoundoffReserve_units;
+maximumMotionDuration_s     = trajectoryStep.MaximumMotionDuration_s;
+segmentTimeRatios           = trajectoryStep.SegmentRatio;
+hasFixedSegmentTimes        = trajectoryStep.FixedClock;
+allowJerkVariationObjective = trajectoryStep.IntrinsicVariationEnabled;
+savedTrajectoryConstraints  = trajectoryStep.ConstraintBase;
+
+degree        = solverRequest.Degree;
+initialState  = solverRequest.InitialState;
+goalState     = solverRequest.GoalState;
+limits        = solverRequest.Limits;
+solverOptions = solverRequest.TrajectoryOptions;
+
+controlVariableCount   = segmentCount * (degree + 1) * 2;
+originalPlaneCount     = nnz([separatingPlanes.Active]);
+hasPartialSegmentLines = false;
+if ~isempty(separatingPlanes)
+    lineTimeFractions = reshape([separatingPlanes.TimeFraction], 2, []).';
+    validateattributes(lineTimeFractions, {'numeric'}, ...
         {'real', 'finite', 'ncols', 2, '>=', 0, '<=', 1});
-    assert(all(fractions(:, 1) < fractions(:, 2)), ...
+    assert(all(lineTimeFractions(:, 1) < lineTimeFractions(:, 2)), ...
         'bmtpEngine:InvalidPlaneTimeScope', ...
         'Every plane time scope must have positive duration.');
-    partialPlanes = any(fractions ~= [0, 1], 'all');
-    assert(fixedClock || ~partialPlanes, ...
+    hasPartialSegmentLines = any(lineTimeFractions ~= [0, 1], 'all');
+    assert(hasFixedSegmentTimes || ~hasPartialSegmentLines, ...
         'bmtpEngine:InvalidPlaneTimeScope', ...
         'Partial plane time scopes require a fixed trajectory clock.');
 end
-% Half-spaces on different physical intervals cannot eliminate each other.
-if fixedClock && ~partialPlanes && originalPlaneCount > segmentCount * degree
-    planes = bmtpEngine.separation.removeRedundantPlanes(planes, limits, 2 * roundoffReserve_units);
+% A line that applies from 2 to 3 s cannot replace one that applies from
+% 5 to 6 s. Remove redundant lines only when they cover whole segments.
+if hasFixedSegmentTimes && ~hasPartialSegmentLines && originalPlaneCount > segmentCount * degree
+    separatingPlanes = bmtpEngine.separation.removeRedundantPlanes( ...
+        separatingPlanes, limits, 2 * roundoffReserve_units);
 end
-% Larger clocks have surplus phases that can oscillate under length alone.
-% Preserve the compact eight-span steering solve used on sparse clocks.
-intrinsicVariation = intrinsicVariationEnabled && fixedClock && ...
+% More quintic segments give the curve freedom to wiggle even when its
+% control polygon is short. The optional smoothness objective is used only
+% with fixed times and more than eight segments.
+useJerkVariationObjective = allowJerkVariationObjective && hasFixedSegmentTimes && ...
     degree == 5 && segmentCount > 8;
-start_units        = initialState.position_units;
-goal_units         = goalState.position_units;
-endpointDerivatives = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
+start_units         = initialState.position_units;
+goal_units          = goalState.position_units;
+endpointMotionRates = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
     goalState.velocity_units_s, goalState.acceleration_units_s2];
-isRest = all(endpointDerivatives == 0);
-assert(fixedClock || isRest, 'bmtpEngine:NonrestRelaxedClock', ...
+endpointsAreAtRest = all(endpointMotionRates == 0);
+% Nonzero endpoint velocity or acceleration depends on the actual segment
+% duration, so this formulation requires fixed times for those endpoints.
+assert(hasFixedSegmentTimes || endpointsAreAtRest, 'bmtpEngine:NonrestRelaxedClock', ...
     'Nonzero boundary states require physical fixed durations.');
-boundaryControls = bmtpEngine.motion.imposeEndpointControls( ...
+
+%% Section 2: Build Endpoint, Join, And Motion-Limit Constraints
+
+% Solver variables contain x/y controls, four time powers, edge-length bounds,
+% optional clearance slack, and an optional smoothness-cost bound.
+endpointControlPoint_units = bmtpEngine.motion.imposeEndpointControls( ...
     zeros(segmentCount, degree + 1, 2), ...
-    maximumMotionDuration_s * segmentRatio / sum(segmentRatio), initialState, goalState);
-powerIndex = controlCount + (1:4);
-lengthCount = segmentCount * degree;
-planeActiveBySegment = reshape([planes.Active], size(planes));
+    maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios), initialState, goalState);
+timePowerIndices     = controlVariableCount + (1:4);
+edgeLengthBoundCount = segmentCount * degree;
+planeActiveBySegment = reshape([separatingPlanes.Active], size(separatingPlanes));
 activePlaneCount     = nnz(planeActiveBySegment);
 planeCountBySegment  = sum(planeActiveBySegment, 2);
-% Share elastic variables only when they dominate the length-cone variables.
-% The weighted maximum penalizes every retained plane; zero slack recovers
-% the same hard corridor, which is independently checked before acceptance.
-sharedSlack = fixedClock && originalPlaneCount > lengthCount;
-slackCount  = fixedClock * activePlaneCount;
-if sharedSlack
-    slackCount = nnz(planeCountBySegment);
+% Slack allows a temporary violation of a separating-line bound while the
+% solver seeks a clear curve. With many lines, use one slack value per segment
+% instead of per pair. Its cost is weighted by that segment's line count.
+% The caller still checks obstacle clearance before accepting the motion.
+shareSlackBySegment = hasFixedSegmentTimes && originalPlaneCount > edgeLengthBoundCount;
+slackVariableCount  = hasFixedSegmentTimes * activePlaneCount;
+if shareSlackBySegment
+    slackVariableCount = nnz(planeCountBySegment);
 end
-variableCount = controlCount + 4 + lengthCount + slackCount + ...
-    intrinsicVariation;
+decisionVariableCount = controlVariableCount + 4 + edgeLengthBoundCount + slackVariableCount + ...
+    useJerkVariationObjective;
 slackColumnByPair = zeros(size(planeActiveBySegment));
-if fixedClock && sharedSlack
-    segmentSlackColumn = controlCount + 4 + lengthCount + cumsum(planeCountBySegment > 0);
+if hasFixedSegmentTimes && shareSlackBySegment
+    segmentSlackColumn = controlVariableCount + 4 + edgeLengthBoundCount + cumsum(planeCountBySegment > 0);
     for segmentIndex = reshape(find(planeCountBySegment > 0), 1, [])
         slackColumnByPair(segmentIndex, planeActiveBySegment(segmentIndex, :)) = ...
             segmentSlackColumn(segmentIndex);
     end
-elseif fixedClock
-    nextSlackColumn = controlCount + 4 + lengthCount;
+elseif hasFixedSegmentTimes
+    nextSlackColumn = controlVariableCount + 4 + edgeLengthBoundCount;
     for segmentIndex = 1:segmentCount
         for regionIndex = reshape(find(planeActiveBySegment(segmentIndex, :)), 1, [])
             nextSlackColumn = nextSlackColumn + 1;
@@ -126,307 +141,364 @@ elseif fixedClock
         end
     end
 end
-physicalTimes_s = maximumMotionDuration_s * segmentRatio / sum(segmentRatio);
-jerkTimes_s = [];
-if intrinsicVariation
-    jerkTimes_s = physicalTimes_s;
+fixedSegmentTime_s  = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
+jerkObjectiveTime_s = [];
+if useJerkVariationObjective
+    jerkObjectiveTime_s = fixedSegmentTime_s;
 end
 constraintLimits = limits;
-% A finite stalled cone iterate can carry a constraint residual larger than
-% floating-point roundoff. Keep jerk controls strictly inside their physical
-% bounds so exact endpoint reconstruction remains provable.
-if ~intrinsicVariation
+% A stalled solver may leave a small constraint error. Reserve a small
+% fraction of the jerk limit here so later exact endpoint reconstruction
+% does not immediately push jerk beyond its physical limit.
+if ~useJerkVariationObjective
     constraintLimits.maxJerk_units_s3 = ...
         limits.maxJerk_units_s3 .* (1 - sqrt(eps));
 end
-initialPlanePairs = planeActiveBySegment;
-if fixedClock
-    initialPlanePairs(:) = false;
+initiallyLoadedPairs = planeActiveBySegment;
+if hasFixedSegmentTimes
+    initiallyLoadedPairs(:) = false;
 end
-constraintKey = struct( ...
+% Reuse matrices only when all their construction inputs match. Changing
+% line constraints does not require rebuilding these shared motion rows.
+sharedConstraintInputs = struct( ...
     "SegmentCount",     segmentCount, ...
     "Degree",           degree, ...
-    "BoundaryControls", boundaryControls, ...
+    "BoundaryControls", endpointControlPoint_units, ...
     "Limits",           constraintLimits, ...
-    "VariableCount",    variableCount, ...
-    "SegmentRatio",     segmentRatio, ...
-    "JerkTimes_s",      jerkTimes_s);
-canReuseConstraintBase = isstruct(constraintBase) && isscalar(constraintBase) && ...
-    isfield(constraintBase, 'Key') && isequaln(constraintBase.Key, constraintKey);
-if ~canReuseConstraintBase
-    [A, Aeq, beq, lb, ub, jerkMap] = bmtpEngine.optimization.createTrajectoryConstraints( ...
-        segmentCount, degree, boundaryControls, constraintLimits, variableCount, ...
-        segmentRatio, jerkTimes_s);
-    constraintBase = struct("A", A, "Aeq", Aeq, "beq", beq, ...
-        "lb", lb, "ub", ub, "jerkMap", jerkMap, "Key", constraintKey);
+    "VariableCount",    decisionVariableCount, ...
+    "SegmentRatio",     segmentTimeRatios, ...
+    "JerkTimes_s",      jerkObjectiveTime_s);
+canReuseSharedConstraints = isstruct(savedTrajectoryConstraints) && isscalar(savedTrajectoryConstraints) && ...
+    isfield(savedTrajectoryConstraints, 'Key') && isequaln(savedTrajectoryConstraints.Key, sharedConstraintInputs);
+if ~canReuseSharedConstraints
+    [inequalityMatrix, equalityMatrix, equalityValues, lowerBounds, upperBounds, jerkControlMap] = ...
+        bmtpEngine.optimization.createTrajectoryConstraints( ...
+        segmentCount, degree, endpointControlPoint_units, constraintLimits, decisionVariableCount, ...
+        segmentTimeRatios, jerkObjectiveTime_s);
+    savedTrajectoryConstraints = struct( ...
+        "A",       inequalityMatrix, ...
+        "Aeq",     equalityMatrix, ...
+        "beq",     equalityValues, ...
+        "lb",      lowerBounds, ...
+        "ub",      upperBounds, ...
+        "jerkMap", jerkControlMap, ...
+        "Key",     sharedConstraintInputs);
 else
-    A       = constraintBase.A;
-    Aeq     = constraintBase.Aeq;
-    beq     = constraintBase.beq;
-    lb      = constraintBase.lb;
-    ub      = constraintBase.ub;
-    jerkMap = constraintBase.jerkMap;
+    inequalityMatrix = savedTrajectoryConstraints.A;
+    equalityMatrix   = savedTrajectoryConstraints.Aeq;
+    equalityValues   = savedTrajectoryConstraints.beq;
+    lowerBounds      = savedTrajectoryConstraints.lb;
+    upperBounds      = savedTrajectoryConstraints.ub;
+    jerkControlMap   = savedTrajectoryConstraints.jerkMap;
 end
-% Fix endpoint position, velocity, and acceleration controls in the solver's
-% own variable space. Leaving them as approximate equality rows allows a
-% stalled finite iterate to satisfy derivative bounds before exact endpoint
-% reconstruction changes its terminal jerk.
-if ~intrinsicVariation
-    exactControl_units = NaN(segmentCount, degree + 1, 2);
-    exactControl_units(1, 1:3, :)           = boundaryControls(1, 1:3, :);
-    exactControl_units(end, end - 2:end, :) = boundaryControls(end, end - 2:end, :);
-    fixedValues         = reshape(permute(exactControl_units, [3, 2, 1]), [], 1);
-    fixedControlIndices = find(isfinite(fixedValues));
-    lb(fixedControlIndices) = fixedValues(fixedControlIndices);
-    ub(fixedControlIndices) = fixedValues(fixedControlIndices);
+% Set equal lower/upper bounds on the endpoint controls so position,
+% velocity, and acceleration are exact in the returned variable values.
+% Relying only on approximate equality rows could require a later endpoint
+% correction that changes the end jerk.
+if ~useJerkVariationObjective
+    fixedEndpointControl_units = NaN(segmentCount, degree + 1, 2);
+    fixedEndpointControl_units(1, 1:3, :)           = endpointControlPoint_units(1, 1:3, :);
+    fixedEndpointControl_units(end, end - 2:end, :) = endpointControlPoint_units(end, end - 2:end, :);
+    fixedVariableValues = reshape(permute(fixedEndpointControl_units, [3, 2, 1]), [], 1);
+    fixedControlIndices = find(isfinite(fixedVariableValues));
+    lowerBounds(fixedControlIndices) = fixedVariableValues(fixedControlIndices);
+    upperBounds(fixedControlIndices) = fixedVariableValues(fixedControlIndices);
 end
 
-%% Section 2: Add Separating-Line Bounds
-baseInequalityCount = 4 * segmentCount * (3 * degree - 3);
-b = zeros(baseInequalityCount, 1);
-[planeRows, planeBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
-    initialPlanePairs, degree, variableCount, slackColumnByPair, ...
-    (1 + fixedClock) * roundoffReserve_units);
-A = [A; planeRows];
-b = [b; planeBounds];
+%% Section 3: Add The Initial Separating-Line Rows
 
-%% Section 3: Create The Objective And Solve
-f                    = zeros(variableCount, 1);
-f(powerIndex(4))     = 1;
-maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
-timePowers_s         = [1; maximumSegmentTime_s; ...
-    maximumSegmentTime_s ^ 2; maximumSegmentTime_s ^ 3];
-ub(powerIndex) = timePowers_s;
-lengthIndex = controlCount + 4 + (1:lengthCount);
-lb(lengthIndex) = 0;
-if fixedClock
-    lb(powerIndex) = timePowers_s;
-    f(:) = 0;
-    f(lengthIndex) = 1;
-    slackIndices = controlCount + 4 + lengthCount + (1:slackCount);
-    lb(slackIndices) = 0;
-    % Elastic sequential convex programming: penalize clearance slack in the
-    % same distance units as control-polygon length. Only independently clear
-    % motion may be accepted by the outer solve.
-    f(slackIndices) = 1e3;
-    if sharedSlack
-        f(slackIndices) = 1e3 * planeCountBySegment(planeCountBySegment > 0);
+% Fixed-time solves start without line rows and add violated pairs below.
+% Variable-time solves include every active line immediately.
+motionLimitRowCount = 4 * segmentCount * (3 * degree - 3);
+inequalityBounds    = zeros(motionLimitRowCount, 1);
+[lineConstraintRows, lineConstraintBounds] = bmtpEngine.separation.createSelectedPlaneRows(separatingPlanes, ...
+    initiallyLoadedPairs, degree, decisionVariableCount, slackColumnByPair, ...
+    (1 + hasFixedSegmentTimes) * roundoffReserve_units);
+inequalityMatrix = [inequalityMatrix; lineConstraintRows];
+inequalityBounds = [inequalityBounds; lineConstraintBounds];
+
+%% Section 4: Choose The Arrival, Path-Length, And Smoothness Objectives
+
+% Minimize the cubic shared time scale for earliest arrival. With fixed
+% durations, minimize control-polygon length instead.
+objectiveWeights = zeros(decisionVariableCount, 1);
+objectiveWeights(timePowerIndices(4)) = 1;
+maximumTimeScale_s = maximumMotionDuration_s / sum(segmentTimeRatios);
+maximumTimePowers  = [1; maximumTimeScale_s; ...
+    maximumTimeScale_s ^ 2; maximumTimeScale_s ^ 3];
+upperBounds(timePowerIndices) = maximumTimePowers;
+edgeLengthBoundIndices = controlVariableCount + 4 + (1:edgeLengthBoundCount);
+lowerBounds(edgeLengthBoundIndices) = 0;
+if hasFixedSegmentTimes
+    lowerBounds(timePowerIndices) = maximumTimePowers;
+    objectiveWeights(:) = 0;
+    objectiveWeights(edgeLengthBoundIndices) = 1;
+    slackIndices = controlVariableCount + 4 + edgeLengthBoundCount + (1:slackVariableCount);
+    lowerBounds(slackIndices) = 0;
+    % Slack and control-polygon length have the same distance units. A cost
+    % of 1000 per unit makes line violations expensive compared with length.
+    % A shared slack value pays that cost once for every line it relaxes.
+    objectiveWeights(slackIndices) = 1e3;
+    if shareSlackBySegment
+        objectiveWeights(slackIndices) = 1e3 * planeCountBySegment(planeCountBySegment > 0);
     end
+    % Each edge bound z satisfies norm(nextControl - currentControl) <= z.
+    % Their sum measures the control polygon, not the exact curve length.
     emptyCone = secondordercone( ...
-        sparse(2, variableCount), zeros(2, 1), sparse(variableCount, 1), 0);
-    lengthCones = repmat(emptyCone, lengthCount, 1);
+        sparse(2, decisionVariableCount), zeros(2, 1), sparse(decisionVariableCount, 1), 0);
+    edgeLengthCones = repmat(emptyCone, edgeLengthBoundCount, 1);
     for segmentIndex = 1:segmentCount
-        for controlIndex = 1:degree
-            lengthConeIndex = (segmentIndex - 1) * degree + controlIndex;
-            coneA = sparse(2, variableCount);
-            coneA(:, bmtpEngine.optimization.controlIndexOf( ...
-                segmentIndex, controlIndex, 1:2, degree)) = eye(2);
-            coneA(:, bmtpEngine.optimization.controlIndexOf( ...
-                segmentIndex, controlIndex - 1, 1:2, degree)) = -eye(2);
-            coneD = sparse(variableCount, 1);
-            coneD(lengthIndex(lengthConeIndex)) = 1;
-            lengthCones(lengthConeIndex) = secondordercone( ...
-                coneA, zeros(2, 1), coneD, 0);
+        for controlPointIndex = 1:degree
+            edgeIndex   = (segmentIndex - 1) * degree + controlPointIndex;
+            leftSideMap = sparse(2, decisionVariableCount);
+            leftSideMap(:, bmtpEngine.optimization.controlIndexOf( ...
+                segmentIndex, controlPointIndex, 1:2, degree)) = eye(2);
+            leftSideMap(:, bmtpEngine.optimization.controlIndexOf( ...
+                segmentIndex, controlPointIndex - 1, 1:2, degree)) = -eye(2);
+            rightSideWeights = sparse(decisionVariableCount, 1);
+            rightSideWeights(edgeLengthBoundIndices(edgeIndex)) = 1;
+            edgeLengthCones(edgeIndex) = secondordercone( ...
+                leftSideMap, zeros(2, 1), rightSideWeights, 0);
         end
     end
-    cones = lengthCones;
-    if intrinsicVariation
-        smoothIndex = variableCount;
-        cones = [cones; bmtpEngine.optimization.createVariationCone( ...
-            jerkMap, physicalTimes_s, limits, smoothIndex)];
-        lb(smoothIndex) = 0;
-        f(smoothIndex)  = 0.005 * norm(goal_units - start_units);
+    solverCones = edgeLengthCones;
+    if useJerkVariationObjective
+        % The jerk-variation cost is dimensionless. Scale its weight by
+        % start-to-goal distance to compare it with the length objective.
+        smoothnessVariableIndex = decisionVariableCount;
+        solverCones             = [solverCones; bmtpEngine.optimization.createVariationCone( ...
+            jerkControlMap, fixedSegmentTime_s, limits, smoothnessVariableIndex)];
+        lowerBounds(smoothnessVariableIndex) = 0;
+        objectiveWeights(smoothnessVariableIndex) = 0.005 * norm(goal_units - start_units);
     end
 else
-    cones = bmtpEngine.optimization.createTimePowerCones(variableCount, powerIndex);
+    solverCones = bmtpEngine.optimization.createTimePowerCones(decisionVariableCount, timePowerIndices);
 end
-solverTimer = tic;
-solverTimes_s = [];
-if intrinsicVariation
-    solverTimes_s = physicalTimes_s;
+
+%% Section 5: Solve And Add The Selected Violated Line Constraints
+
+solverTimer             = tic;
+localStateSegmentTime_s = [];
+if useJerkVariationObjective
+    localStateSegmentTime_s = fixedSegmentTime_s;
 end
-% The conic program is one product; constraint generation grows its
-% inequality rows between solves.
-program = struct('f', f, 'cones', cones, 'A', A, 'b', b, 'Aeq', Aeq, 'beq', beq, ...
-    'lb', lb, 'ub', ub);
-retainedPlanePairs = initialPlanePairs;
-solveCount         = 0;
-constraintGenerationComplete   = ~fixedClock;
-maximumPlaneConstraintResidual = NaN;
+% Keep the solver matrices together while line rows are appended. After
+% each fixed-time solve, check every unloaded pair and add the largest
+% violation per segment. Later rounds continue checking all remaining pairs.
+solverProblem = struct( ...
+    'f',     objectiveWeights, ...
+    'cones', solverCones, ...
+    'A',     inequalityMatrix, ...
+    'b',     inequalityBounds, ...
+    'Aeq',   equalityMatrix, ...
+    'beq',   equalityValues, ...
+    'lb',    lowerBounds, ...
+    'ub',    upperBounds);
+loadedPlanePairs            = initiallyLoadedPairs;
+solveCount                  = 0;
+allLineConstraintsSatisfied = ~hasFixedSegmentTimes;
+maximumLineViolation        = NaN;
 while true
-    [x, exitFlag, output] = solveConic(program, options, ~intrinsicVariation, ...
-        solverTimes_s, limits);
+    [solverValues, exitFlag, solverOutput] = solveWithFixedValues( ...
+        solverProblem, solverOptions, ~useJerkVariationObjective, ...
+        localStateSegmentTime_s, limits);
     solveCount = solveCount + 1;
-    if ~fixedClock || ~bmtpEngine.optimization.hasUsableConicIterate(x, exitFlag)
+    if ~hasFixedSegmentTimes || ~bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag)
         break
     end
-    [violatedPairs, maximumOmittedResidual] = bmtpEngine.separation.findViolatedPlanePairs( ...
-        x, planes, planeActiveBySegment, ...
-        retainedPlanePairs, degree, slackColumnByPair, 2 * roundoffReserve_units, ...
-        options.ConstraintTolerance);
+    [violatedPairs, maximumUnloadedLineViolation] = bmtpEngine.separation.findViolatedPlanePairs( ...
+        solverValues, separatingPlanes, planeActiveBySegment, ...
+        loadedPlanePairs, degree, slackColumnByPair, 2 * roundoffReserve_units, ...
+        solverOptions.ConstraintTolerance);
     if ~any(violatedPairs, 'all')
-        loadedResidual = -Inf;
-        if size(program.A, 1) > baseInequalityCount
-            loadedResidual = max(program.A(baseInequalityCount + 1:end, :) * x - ...
-                program.b(baseInequalityCount + 1:end));
+        % Also check the loaded rows: no missing violations alone does not
+        % establish that the full line-constraint set passes.
+        maximumLoadedLineViolation = -Inf;
+        if size(solverProblem.A, 1) > motionLimitRowCount
+            maximumLoadedLineViolation = max(solverProblem.A(motionLimitRowCount + 1:end, :) * solverValues - ...
+                solverProblem.b(motionLimitRowCount + 1:end));
         end
-        maximumPlaneConstraintResidual = max(loadedResidual, maximumOmittedResidual);
-        constraintGenerationComplete = ...
-            maximumPlaneConstraintResidual <= options.ConstraintTolerance;
+        maximumLineViolation        = max(maximumLoadedLineViolation, maximumUnloadedLineViolation);
+        allLineConstraintsSatisfied = ...
+            maximumLineViolation <= solverOptions.ConstraintTolerance;
         break
     end
-    retainedPlanePairs = retainedPlanePairs | violatedPairs;
-    [newRows, newBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
-        violatedPairs, degree, variableCount, slackColumnByPair, 2 * roundoffReserve_units);
-    program.A = [program.A; newRows];
-    program.b = [program.b; newBounds];
+    loadedPlanePairs = loadedPlanePairs | violatedPairs;
+    [newLineRows, newLineBounds] = bmtpEngine.separation.createSelectedPlaneRows(separatingPlanes, ...
+        violatedPairs, degree, decisionVariableCount, slackColumnByPair, 2 * roundoffReserve_units);
+    solverProblem.A = [solverProblem.A; newLineRows];
+    solverProblem.b = [solverProblem.b; newLineBounds];
 end
-output.TotalTime_s                    = toc(solverTimer);
-output.SolveCount                     = solveCount;
-output.OptimizationConverged          = exitFlag > 0;
-output.OriginalPlaneCount             = originalPlaneCount;
-output.RetainedPlaneCount             = activePlaneCount;
-output.LoadedPlanePairCount           = nnz(retainedPlanePairs);
-output.ConstraintGenerationApplied    = fixedClock;
-output.ConstraintGenerationRoundCount = max(0, solveCount - 1);
-output.ConstraintGenerationComplete   = constraintGenerationComplete;
-output.MaximumPlaneConstraintResidual = maximumPlaneConstraintResidual;
-output.IntrinsicJerkVariation          = intrinsicVariation;
-if fixedClock && ~isempty(x)
-    output.MaximumClearanceSlack_units = max(x(slackIndices));
+
+%% Section 6: Return The Candidate And Solver Measurements
+
+solverOutput.TotalTime_s = toc(solverTimer);
+solverOutput.SolveCount = solveCount;
+solverOutput.OptimizationConverged = exitFlag > 0;
+solverOutput.OriginalPlaneCount = originalPlaneCount;
+solverOutput.RetainedPlaneCount = activePlaneCount;
+solverOutput.LoadedPlanePairCount = nnz(loadedPlanePairs);
+solverOutput.ConstraintGenerationApplied = hasFixedSegmentTimes;
+solverOutput.ConstraintGenerationRoundCount = max(0, solveCount - 1);
+solverOutput.ConstraintGenerationComplete = allLineConstraintsSatisfied;
+solverOutput.MaximumPlaneConstraintResidual = maximumLineViolation;
+solverOutput.IntrinsicJerkVariation = useJerkVariationObjective;
+if hasFixedSegmentTimes && ~isempty(solverValues)
+    solverOutput.MaximumClearanceSlack_units = max(solverValues(slackIndices));
 end
-% A stalled finite iterate remains a proposal, never a feasibility proof.
-% Independent physical checks decide whether it can become returned motion.
-if ~bmtpEngine.optimization.hasUsableConicIterate(x, exitFlag)
+% Finite values from a stalled solve remain a candidate for full motion
+% checks. A solver status alone cannot establish physical feasibility.
+if ~bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag)
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s      = NaN;
     return
 end
-segmentTime_s = max(x(powerIndex(4)), 0) ^ (1 / 3) * segmentRatio;
-if fixedClock
-    segmentTime_s = physicalTimes_s;
+% Recover the shared time scale from its cubic variable, then multiply by
+% each segment's ratio. Fixed-time solves keep the exact supplied durations.
+segmentTime_s = max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3) * segmentTimeRatios;
+if hasFixedSegmentTimes
+    segmentTime_s = fixedSegmentTime_s;
 end
-controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCount), [3 2 1]);
+controlPoint_units = permute(reshape(solverValues(1:controlVariableCount), 2, degree + 1, segmentCount), [3 2 1]);
 end
 
-%% Section 4: Local Functions
-function [x, exitFlag, output] = solveConic(program, options, givenAxis, phaseTimes_s, limits)
-    % Solve one conic program (f, cones, A, b, Aeq, beq, lb, ub) in a locally
-    % conditioned variable space when physical phase times are given, then
-    % restore the original decision vector.
-    f     = program.f;
-    cones = program.cones;
-    A     = program.A;
-    b     = program.b;
-    Aeq   = program.Aeq;
-    beq   = program.beq;
-    lb    = program.lb;
-    ub    = program.ub;
-    transform = [];
-    center    = [];
-    if ~isempty(phaseTimes_s)
-        % Use local position, velocity, acceleration and quadratic jerk as
-        % unknowns, avoiding high-order differences of absolute positions.
-        phaseCount    = numel(phaseTimes_s);
-        variableCount = numel(f);
-        transform     = speye(variableCount);
-        center        = zeros(variableCount, 1);
-        jerkMap       = sparse(6 * phaseCount, variableCount);
-        domain_units  = [limits.xInterval_units; limits.yInterval_units];
-        origin_units  = mean(domain_units, 2);
-        % Exact unit-duration integration template; only physical powers of
-        % time change between phases. Columns are p, v, a, j0, j1, j2.
-        unitBasis = [1, 0, 0, 0, 0, 0; 1, 1 / 5, 0, 0, 0, 0; ...
+%% Section 7: Local Functions
+
+function [solverValues, exitFlag, solverOutput] = solveWithFixedValues( ...
+        solverProblem, solverOptions, eliminateFixedValues, localStateSegmentTime_s, limits)
+    % With known segment durations, solve using local physical states to
+    % reduce roundoff in control-point differences. Remove fixed variables
+    % when requested or when using this transformation, then restore every
+    % original solver variable in the returned vector.
+    objectiveWeights   = solverProblem.f;
+    solverCones        = solverProblem.cones;
+    inequalityMatrix   = solverProblem.A;
+    inequalityBounds   = solverProblem.b;
+    equalityMatrix     = solverProblem.Aeq;
+    equalityValues     = solverProblem.beq;
+    lowerBounds        = solverProblem.lb;
+    upperBounds        = solverProblem.ub;
+    solverToControlMap = [];
+    coordinateOffset   = [];
+    if ~isempty(localStateSegmentTime_s)
+        % Replace absolute position controls with local position, velocity,
+        % acceleration, and three quadratic jerk controls. The relation is
+        % originalValues = coordinateOffset + solverToControlMap x localValues.
+        segmentCount             = numel(localStateSegmentTime_s);
+        decisionVariableCount    = numel(objectiveWeights);
+        solverToControlMap       = speye(decisionVariableCount);
+        coordinateOffset         = zeros(decisionVariableCount, 1);
+        jerkControlMap           = sparse(6 * segmentCount, decisionVariableCount);
+        workspaceIntervals_units = [limits.xInterval_units; limits.yInterval_units];
+        workspaceCenter_units    = mean(workspaceIntervals_units, 2);
+        % Integrating quadratic jerk three times gives these six position
+        % controls for a one-second segment. Columns are p, v, a, j0, j1, j2;
+        % multiply by duration, duration^2, or duration^3 for actual seconds.
+        unitDurationControlMap = [1, 0, 0, 0, 0, 0; 1, 1 / 5, 0, 0, 0, 0; ...
             1, 2 / 5, 1 / 20, 0, 0, 0; ...
             1, 3 / 5, 3 / 20, 1 / 60, 0, 0; ...
             1, 4 / 5, 3 / 10, 1 / 20, 1 / 60, 0; ...
             1, 1, 1 / 2, 1 / 10, 1 / 20, 1 / 60];
-        for phaseIndex = 1:phaseCount
-            phaseTime_s = phaseTimes_s(phaseIndex);
-            basis = unitBasis .* [1, phaseTime_s, phaseTime_s ^ 2, ...
-                phaseTime_s ^ 3, phaseTime_s ^ 3, phaseTime_s ^ 3];
+        for segmentIndex = 1:segmentCount
+            segmentDuration_s = localStateSegmentTime_s(segmentIndex);
+            segmentControlMap = unitDurationControlMap .* [1, segmentDuration_s, segmentDuration_s ^ 2, ...
+                segmentDuration_s ^ 3, segmentDuration_s ^ 3, segmentDuration_s ^ 3];
             for axisIndex = 1:2
-                columns = ((phaseIndex - 1) * 6 + (0:5)) * 2 + axisIndex;
-                transform(columns, columns) = basis;
-                center(columns)             = origin_units(axisIndex);
+                segmentCoordinateIndices = ((segmentIndex - 1) * 6 + (0:5)) * 2 + axisIndex;
+                solverToControlMap(segmentCoordinateIndices, segmentCoordinateIndices) = segmentControlMap;
+                coordinateOffset(segmentCoordinateIndices) = workspaceCenter_units(axisIndex);
             end
-            jerkRows    = (phaseIndex - 1) * 6 + (1:6);
-            jerkColumns = (phaseIndex - 1) * 12 + (7:12);
-            jerkMap(jerkRows, jerkColumns) = speye(6);
+            jerkRowIndices    = (segmentIndex - 1) * 6 + (1:6);
+            jerkColumnIndices = (segmentIndex - 1) * 12 + (7:12);
+            jerkControlMap(jerkRowIndices, jerkColumnIndices) = speye(6);
         end
-        b = b - A * center;
-        A = A * transform;
-        beq = beq - Aeq * center;
-        Aeq = Aeq * transform;
-        for coneIndex = 1:numel(cones)
-            cone = cones(coneIndex);
-            cones(coneIndex) = secondordercone( ...
-                cone.A * transform, cone.b - cone.A * center, ...
-                transform.' * cone.d, cone.gamma - cone.d.' * center);
+        % Substitute the same change of variables into every linear row,
+        % vector-length constraint, and objective so the physical problem agrees.
+        inequalityBounds = inequalityBounds - inequalityMatrix * coordinateOffset;
+        inequalityMatrix = inequalityMatrix * solverToControlMap;
+        equalityValues   = equalityValues - equalityMatrix * coordinateOffset;
+        equalityMatrix   = equalityMatrix * solverToControlMap;
+        for coneIndex = 1:numel(solverCones)
+            cone = solverCones(coneIndex);
+            solverCones(coneIndex) = secondordercone( ...
+                cone.A * solverToControlMap, cone.b - cone.A * coordinateOffset, ...
+                solverToControlMap.' * cone.d, cone.gamma - cone.d.' * coordinateOffset);
         end
-        cones(end) = bmtpEngine.optimization.createVariationCone( ...
-            jerkMap, phaseTimes_s, limits, variableCount);
-        f = transform.' * f;
-        fixedIndices    = find(lb == ub);
-        upperRowIndices = find(isfinite(ub) & lb ~= ub);
-        lowerRowIndices = find(isfinite(lb) & lb ~= ub);
-        A = [A; transform(upperRowIndices, :); -transform(lowerRowIndices, :)];
-        b = [b; ub(upperRowIndices) - center(upperRowIndices); ...
-            center(lowerRowIndices) - lb(lowerRowIndices)];
-        freeTransformIndices = setdiff(1:variableCount, fixedIndices);
-        assert(nnz(transform(fixedIndices, freeTransformIndices)) == 0);
-        fixedValues = transform(fixedIndices, fixedIndices) \ ...
-            (lb(fixedIndices) - center(fixedIndices));
-        lb(:) = -Inf;
-        ub(:) = Inf;
-        lb(fixedIndices) = fixedValues;
-        ub(fixedIndices) = fixedValues;
+        solverCones(end) = bmtpEngine.optimization.createVariationCone( ...
+            jerkControlMap, localStateSegmentTime_s, limits, decisionVariableCount);
+        objectiveWeights = solverToControlMap.' * objectiveWeights;
+        % Original coordinate bounds become linear rows in the local values.
+        % Preserve exact fixed values as equal lower/upper bounds.
+        fixedVariableIndices = find(lowerBounds == upperBounds);
+        upperRowIndices      = find(isfinite(upperBounds) & lowerBounds ~= upperBounds);
+        lowerRowIndices      = find(isfinite(lowerBounds) & lowerBounds ~= upperBounds);
+        inequalityMatrix     = [inequalityMatrix; solverToControlMap(upperRowIndices, :); ...
+            -solverToControlMap(lowerRowIndices, :)];
+        inequalityBounds = [inequalityBounds; upperBounds(upperRowIndices) - coordinateOffset(upperRowIndices); ...
+            coordinateOffset(lowerRowIndices) - lowerBounds(lowerRowIndices)];
+        nonFixedVariableIndices = setdiff(1:decisionVariableCount, fixedVariableIndices);
+        % Each fixed original value must depend only on fixed local values.
+        assert(nnz(solverToControlMap(fixedVariableIndices, nonFixedVariableIndices)) == 0);
+        fixedVariableValues = solverToControlMap(fixedVariableIndices, fixedVariableIndices) \ ...
+            (lowerBounds(fixedVariableIndices) - coordinateOffset(fixedVariableIndices));
+        lowerBounds(:) = -Inf;
+        upperBounds(:) = Inf;
+        lowerBounds(fixedVariableIndices) = fixedVariableValues;
+        upperBounds(fixedVariableIndices) = fixedVariableValues;
     end
-    % Eliminate given variables exactly. Leaving a complete analytic
-    % axis as equal bounds produces redundant, poorly scaled solver rows.
-    fixedIndices = find(lb == ub & isfinite(lb));
-    if (isempty(phaseTimes_s) && ~givenAxis) || isempty(fixedIndices)
-        [x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
+    % Substitute fixed values into every row and solve only for the free
+    % variables. This avoids redundant rows for values already known exactly.
+    fixedVariableIndices = find(lowerBounds == upperBounds & isfinite(lowerBounds));
+    if (isempty(localStateSegmentTime_s) && ~eliminateFixedValues) || isempty(fixedVariableIndices)
+        [solverValues, ~, exitFlag, solverOutput] = coneprog( ...
+            objectiveWeights, solverCones, inequalityMatrix, inequalityBounds, ...
+            equalityMatrix, equalityValues, lowerBounds, upperBounds, solverOptions);
         return
     end
-    freeIndices = find(lb ~= ub);
-    fixedValues = lb(fixedIndices);
-    b   = b - A(:, fixedIndices) * fixedValues;
-    beq = beq - Aeq(:, fixedIndices) * fixedValues;
-    A   = A(:, freeIndices);
-    Aeq = Aeq(:, freeIndices);
-    % Constant rows are checked at the existing conic tolerance; the complete
-    % physical motion is still subject to the unchanged independent validator.
-    keepRows = any(A ~= 0, 2) | b < -options.ConstraintTolerance;
-    A = A(keepRows, :);
-    b = b(keepRows);
-    keepRows = any(Aeq ~= 0, 2) | abs(beq) > options.ConstraintTolerance;
-    Aeq = Aeq(keepRows, :);
-    beq = beq(keepRows);
-    if ~isempty(phaseTimes_s)
-        inequalityScale = max(max(abs(A), [], 2), 1e-20);
-        A = A ./ inequalityScale;
-        b = b ./ inequalityScale;
-        equalityScale = max(max(abs(Aeq), [], 2), 1e-20);
-        Aeq = Aeq ./ equalityScale;
-        beq = beq ./ equalityScale;
+    freeVariableIndices = find(lowerBounds ~= upperBounds);
+    fixedVariableValues = lowerBounds(fixedVariableIndices);
+    inequalityBounds    = inequalityBounds - inequalityMatrix(:, fixedVariableIndices) * fixedVariableValues;
+    equalityValues      = equalityValues - equalityMatrix(:, fixedVariableIndices) * fixedVariableValues;
+    inequalityMatrix    = inequalityMatrix(:, freeVariableIndices);
+    equalityMatrix      = equalityMatrix(:, freeVariableIndices);
+    % A row with no remaining variable coefficients is already decided.
+    % Remove it only if its constant value satisfies the solver tolerance;
+    % retain a violated constant row so the solver can report infeasibility.
+    rowsToKeep       = any(inequalityMatrix ~= 0, 2) | inequalityBounds < -solverOptions.ConstraintTolerance;
+    inequalityMatrix = inequalityMatrix(rowsToKeep, :);
+    inequalityBounds = inequalityBounds(rowsToKeep);
+    rowsToKeep       = any(equalityMatrix ~= 0, 2) | abs(equalityValues) > solverOptions.ConstraintTolerance;
+    equalityMatrix   = equalityMatrix(rowsToKeep, :);
+    equalityValues   = equalityValues(rowsToKeep);
+    if ~isempty(localStateSegmentTime_s)
+        % Divide both sides by the largest coefficient in each row. The
+        % positive floor prevents division by zero without changing the bound.
+        inequalityRowScale = max(max(abs(inequalityMatrix), [], 2), 1e-20);
+        inequalityMatrix   = inequalityMatrix ./ inequalityRowScale;
+        inequalityBounds   = inequalityBounds ./ inequalityRowScale;
+        equalityRowScale   = max(max(abs(equalityMatrix), [], 2), 1e-20);
+        equalityMatrix     = equalityMatrix ./ equalityRowScale;
+        equalityValues     = equalityValues ./ equalityRowScale;
     end
-    for coneIndex = 1:numel(cones)
-        cone = cones(coneIndex);
-        cones(coneIndex) = secondordercone( ...
-            cone.A(:, freeIndices), cone.b - cone.A(:, fixedIndices) * fixedValues, ...
-            cone.d(freeIndices), cone.gamma - cone.d(fixedIndices).' * fixedValues);
+    for coneIndex = 1:numel(solverCones)
+        cone = solverCones(coneIndex);
+        solverCones(coneIndex) = secondordercone( ...
+            cone.A(:, freeVariableIndices), cone.b - cone.A(:, fixedVariableIndices) * fixedVariableValues, ...
+            cone.d(freeVariableIndices), cone.gamma - cone.d(fixedVariableIndices).' * fixedVariableValues);
     end
-    [reduced, ~, exitFlag, output] = coneprog( ...
-        f(freeIndices), cones, A, b, Aeq, beq, ...
-        lb(freeIndices), ub(freeIndices), options);
-    x = [];
-    if ~isempty(reduced)
-        x = zeros(size(f));
-        x(fixedIndices) = fixedValues;
-        x(freeIndices)  = reduced;
-        if ~isempty(transform)
-            x = center + transform * x;
+    [freeVariableValues, ~, exitFlag, solverOutput] = coneprog( ...
+        objectiveWeights(freeVariableIndices), solverCones, inequalityMatrix, inequalityBounds, ...
+        equalityMatrix, equalityValues, ...
+        lowerBounds(freeVariableIndices), upperBounds(freeVariableIndices), solverOptions);
+    % Put fixed and solved values back in their original positions, then
+    % undo the local-state transformation when one was used.
+    solverValues = [];
+    if ~isempty(freeVariableValues)
+        solverValues = zeros(size(objectiveWeights));
+        solverValues(fixedVariableIndices) = fixedVariableValues;
+        solverValues(freeVariableIndices)  = freeVariableValues;
+        if ~isempty(solverToControlMap)
+            solverValues = coordinateOffset + solverToControlMap * solverValues;
         end
     end
 end

@@ -1,4 +1,4 @@
-function obstacleField = combineObstacles(varargin)
+function obstacles = combineObstacles(varargin)
 %% Section 0: Header & Readme
 % SYNTAX
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles()
@@ -6,17 +6,17 @@ function obstacleField = combineObstacles(varargin)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacle1, obstacle2)
 %**************************************************************************
 % PURPOSE
-%   - Flatten and validate canonical obstacle inputs in caller order.
-%   - Return a field-preserving empty array for obstacle-free planning.
+%   - Combine individual records, arrays, and nested groups into one column
+%     of checked obstacle records, keeping the caller's order.
+%   - With no obstacles, return an empty array with the usual obstacle fields.
 %**************************************************************************
 % INPUTS
 %   - obstacleInputs (struct arrays, nested cells, or empty numeric values)
-%       Every nonempty leaf must be a canonical obstacle record.
+%       Each nonempty entry must be a standard obstacle record.
 %**************************************************************************
 % OUTPUTS
-%   - obstacleField (column struct array)
-%       Independently normalized obstacle records in caller order. Invalid
-%       input throws an error.
+%   - obstacles (column struct array)
+%       Checked obstacle records in caller order. Invalid input throws an error.
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates use coordinate units; time_s uses seconds.
@@ -24,47 +24,53 @@ function obstacleField = combineObstacles(varargin)
 
 %% Section 1: Flatten Nested Inputs
 
-% Flatten inputs while keeping their original index for error messages.
+% For example, {A, {B, C}} becomes [A; B; C]. Keep each original input index
+% so an error in a nested group can still identify the caller's argument.
 obstacleItems = cell(0, 1);
 for inputIndex = 1:nargin
-    obstacleItems = [obstacleItems; flattenValue(varargin{inputIndex}, inputIndex)]; %#ok<AGROW>
+    obstacleItems = [obstacleItems; flattenObstacleInputs(varargin{inputIndex}, inputIndex)]; %#ok<AGROW>
 end
 
-%% Section 2: Normalize The Public Format
+%% Section 2: Check Each Record And Build The Combined Array
 
 if isempty(obstacleItems)
-    obstacleField = createEmptyObstacleArray();
+    obstacles = createEmptyObstacleArray();
     return
 end
+
+% Standardize every record before joining them into one struct array.
+% createObstacle keeps original and protected geometry distinct.
 normalizedObstacles = cell(size(obstacleItems));
 for obstacleIndex = 1:numel(obstacleItems)
     normalizedObstacles{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle( ...
         obstacleItems{obstacleIndex});
 end
-obstacleField = vertcat(normalizedObstacles{:});
+obstacles = vertcat(normalizedObstacles{:});
 end
 
 %% Section 3: Local Functions
 
-function items = flattenValue(value, ownerIndex)
-    % Flatten nested cells in input order.
-    if isnumeric(value) && isempty(value)
-        items = cell(0, 1);
-    elseif isstruct(value)
-        items = num2cell(value(:));
-    elseif iscell(value)
-        items = cell(0, 1);
-        for childIndex = 1:numel(value)
-            items = [items; flattenValue(value{childIndex}, ownerIndex)]; %#ok<AGROW>
+function obstacleItems = flattenObstacleInputs(obstacleInput, inputIndex)
+    % Visit nested cells in order and collect one struct per obstacle.
+    % Keep the top-level inputIndex as we go deeper, for useful error messages.
+    if isnumeric(obstacleInput) && isempty(obstacleInput)
+        obstacleItems = cell(0, 1);
+    elseif isstruct(obstacleInput)
+        obstacleItems = num2cell(obstacleInput(:));
+    elseif iscell(obstacleInput)
+        obstacleItems = cell(0, 1);
+        for itemIndex = 1:numel(obstacleInput)
+            obstacleItems = [obstacleItems; flattenObstacleInputs(obstacleInput{itemIndex}, inputIndex)]; %#ok<AGROW>
         end
     else
         error("combineObstacles:InvalidInput", ...
-            "Input %d must contain only obstacle structs or empty values.", ownerIndex);
+            "Input %d must contain only obstacle structs or empty values.", inputIndex);
     end
 end
 
-function obstacleField = createEmptyObstacleArray()
-    % Keep the same fields for an empty obstacle array.
+function obstacles = createEmptyObstacleArray()
+    % Even with no obstacles, callers can use the usual field names.
+    % The template supplies those names; the returned array has no elements.
     template = struct( ...
         "targetName",               "", ...
         "time_s",                   zeros(0, 1), ...
@@ -77,5 +83,5 @@ function obstacleField = createEmptyObstacleArray()
         "NormalizationDiagnostics", struct(), ...
         "vertexCorrespondence",     "circularCorrelation", ...
         "UsesSourceIndex",          false);
-    obstacleField = repmat(template, 0, 1);
+    obstacles = repmat(template, 0, 1);
 end

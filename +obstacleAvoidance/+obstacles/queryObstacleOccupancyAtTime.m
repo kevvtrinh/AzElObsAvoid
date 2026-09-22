@@ -10,32 +10,36 @@ function [occupied, blockingIndex] = queryObstacleOccupancyAtTime( ...
 %       obstacles, x_units, y_units, time_s, options)
 %**************************************************************************
 % PURPOSE
-%   - Query protected obstacle occupancy at physical times.
+%   - Check whether each point is inside an obstacle at its specified time,
+%     including the obstacle's safety margin. This checks the given points;
+%     it does not check the path between them.
 %**************************************************************************
 % INPUTS
-%   - obstacles (canonical obstacle array)
-%       Obstacles to prepare over the query-time range.
+%   - obstacles (standard obstacle array)
+%       Obstacle histories to prepare over the range of requested times.
 %   - x_units (numeric array)
 %       Query x-coordinates.
 %   - y_units (numeric array)
 %       Query y-coordinates matching x_units.
 %   - time_s (numeric scalar or array)
-%       Query times; a scalar broadcasts to the coordinate-array size.
+%       A single time applies to every supplied point. Otherwise, time_s
+%       must have the same size as x_units and y_units.
 %   - options (scalar struct, optional; default struct())
-%       BoundaryIsOccupied defaults to true. Scalar time broadcasts.
+%       BoundaryIsOccupied defaults to true: a point on the protected
+%       boundary counts as occupied. Use false to count only interior points.
 %**************************************************************************
 % OUTPUTS
 %   - occupied (logical array)
-%       Occupancy for each query.
+%       True for occupied points; same size as x_units.
 %   - blockingIndex (integer array)
-%       First blocking obstacle index for each query. Invalid input throws
-%       an error.
+%       Index of the first obstacle covering each point, or 0 if clear.
+%       Invalid input throws an error.
 %**************************************************************************
 % UNITS
 %   - Position uses coordinate units; time uses seconds.
 %**************************************************************************
 
-%% Section 1: Validate Query Coordinates
+%% Section 1: Check Query Coordinates And The Boundary Option
 
 if nargin < 5
     options = struct();
@@ -48,6 +52,7 @@ if isscalar(time_s)
 end
 assert(isequal(size(time_s), size(x_units)), ...
     'queryObstacleOccupancyAtTime:SizeMismatch', 'Query arrays must have equal sizes.');
+
 boundaryIsOccupied = true;
 if isfield(options, 'BoundaryIsOccupied')
     boundaryIsOccupied = options.BoundaryIsOccupied;
@@ -55,16 +60,18 @@ end
 boundaryIsOccupied = obstacleAvoidance.input.normalizeLogicalScalar( ...
     boundaryIsOccupied, 'BoundaryIsOccupied', ...
     'queryObstacleOccupancyAtTime:InvalidBoundaryPolicy');
+
+%% Section 2: Check Points Against Prepared Obstacles
+
 occupied      = false(size(x_units));
 blockingIndex = zeros(size(x_units), 'uint32');
 if isempty(time_s)
     return;
 end
+% Prepare the geometry needed between the earliest and latest query times.
+% The point check then selects each obstacle's shape at each requested time.
 obstacles = obstacleAvoidance.obstacles.prepareObstacles( ...
     obstacles, [min(time_s(:)), max(time_s(:))]);
-
-%% Section 2: Query The Prepared Snapshot
-
 [occupied, blockingIndex] = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
     obstacles, x_units, y_units, time_s, boundaryIsOccupied);
 end

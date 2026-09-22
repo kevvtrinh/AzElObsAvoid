@@ -5,13 +5,12 @@ function obstacleCopies = copyObstaclesAcrossWraps(obstacles, intervals_units, w
 %       obstacles, intervals_units, wrapAxes, reachableRange_units)
 %**************************************************************************
 % PURPOSE
-%   - A wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped
-%     coordinates, so an obstacle must also appear one full turn up and one
-%     full turn down. This copies every obstacle to each whole-turn shift
-%     whose footprint reaches into the range the vehicle can reach in time.
-%   - Each copy is the same history shifted by whole turns, protected and
-%     original geometry alike, and is prepared on its own later. Copies that
-%     never reach the reachable range are left out: no motion can touch them.
+%   - Copy obstacles by whole turns so planning can continue across a wrapped
+%     interval's ends. For example, an obstacle at x = 10 also appears at
+%     x = 370 on a 360-unit axis.
+%   - Keep every copy whose coordinate bounds overlap the possible travel
+%     range. Move its original and protected boundaries by the same amount;
+%     obstacle preparation handles each copy later.
 %**************************************************************************
 % INPUTS
 %   - obstacles (any public obstacle input)
@@ -19,62 +18,77 @@ function obstacleCopies = copyObstaclesAcrossWraps(obstacles, intervals_units, w
 %   - intervals_units (2-by-2 numeric array)
 %       Wrapped workspace intervals [xmin xmax; ymin ymax].
 %   - wrapAxes (1-by-2 logical)
-%       Wrapped axes.
+%       [wrapX wrapY]; true enables wrapping on that axis.
 %   - reachableRange_units (2-by-2 numeric array)
-%       Unwrapped range the vehicle can reach in the time given,
-%       [xmin xmax; ymin ymax].
+%       Possible travel range [xmin xmax; ymin ymax], calculated from maximum
+%       speed x available time. Acceleration and obstacles may reduce travel.
 %**************************************************************************
 % OUTPUTS
 %   - copies (column struct array)
-%       Canonical copy records ordered by obstacle, then x offset, then y
-%       offset; empty input is returned unchanged.
+%       Obstacle records ordered by obstacle, then x offset, then y offset.
+%       Empty input returns an empty array with the standard obstacle fields.
 %**************************************************************************
 % UNITS
 %   - Coordinate units.
 %**************************************************************************
 
-%% Section 1: Copy Every Obstacle To Each Whole-Turn Shift That Reaches The Range
+%% Section 1: Prepare The Obstacle Inputs
 
 canonicalObstacles = obstacleAvoidance.obstacles.canonicalizeObstacles(obstacles);
-obstacleCopies = canonicalObstacles;
+obstacleCopies     = canonicalObstacles;
 if isempty(canonicalObstacles) || ~any(wrapAxes)
     return
 end
 
-period_units = diff(intervals_units, 1, 2).';
-obstacleCopyList    = cell(0, 1);
+%% Section 2: Copy Obstacles Within The Possible Travel Range
+
+wrapLength_units = diff(intervals_units, 1, 2).';
+obstacleCopyList = cell(0, 1);
 for obstacleIndex = 1:numel(canonicalObstacles)
     obstacle = canonicalObstacles(obstacleIndex);
-    x_units  = vertcat(obstacle.x_units{:});
-    y_units  = vertcat(obstacle.y_units{:});
-    isFinitePoint = isfinite(x_units) & isfinite(y_units);
-    if ~any(isFinitePoint)
+
+    % Use boundary points from every supplied time so the copies cover the
+    % obstacle's full recorded movement, not just its starting position.
+    boundaryX_units = vertcat(obstacle.x_units{:});
+    boundaryY_units = vertcat(obstacle.y_units{:});
+    pointIsFinite   = isfinite(boundaryX_units) & isfinite(boundaryY_units);
+    if ~any(pointIsFinite)
         continue
     end
-    extent_units = [min(x_units(isFinitePoint)), max(x_units(isFinitePoint)); ...
-        min(y_units(isFinitePoint)), max(y_units(isFinitePoint))];
+    obstacleBounds_units = [min(boundaryX_units(pointIsFinite)), max(boundaryX_units(pointIsFinite)); ...
+        min(boundaryY_units(pointIsFinite)), max(boundaryY_units(pointIsFinite))];
 
-    offsets_units = {0, 0};
+    % Shifted obstacle bounds must overlap the travel range on each wrapped
+    % axis. Ceil and floor select the first and last whole turns that fit.
+    wrapOffsets_units = {0, 0};
     for axisIndex = find(wrapAxes)
-        lowestCopy  = ceil((reachableRange_units(axisIndex, 1) - extent_units(axisIndex, 2)) / period_units(axisIndex));
-        highestCopy = floor((reachableRange_units(axisIndex, 2) - extent_units(axisIndex, 1)) / period_units(axisIndex));
-        offsets_units{axisIndex} = (lowestCopy:highestCopy) * period_units(axisIndex);
+        lowestWrapCount  = ceil((reachableRange_units(axisIndex, 1) - ...
+            obstacleBounds_units(axisIndex, 2)) / wrapLength_units(axisIndex));
+        highestWrapCount = floor((reachableRange_units(axisIndex, 2) - ...
+            obstacleBounds_units(axisIndex, 1)) / wrapLength_units(axisIndex));
+        wrapOffsets_units{axisIndex} = (lowestWrapCount:highestWrapCount) * wrapLength_units(axisIndex);
     end
 
-    for dx_units = offsets_units{1}
-        for dy_units = offsets_units{2}
+    % Shift both boundaries together. The protected boundary already includes
+    % its margin; copying it must not add that margin again.
+    for xOffset_units = wrapOffsets_units{1}
+        for yOffset_units = wrapOffsets_units{2}
             obstacleCopy = obstacle;
-            if dx_units ~= 0
-                obstacleCopy.x_units         = cellfun(@(v) v + dx_units, obstacle.x_units, 'UniformOutput', false);
-                obstacleCopy.originalX_units = cellfun(@(v) v + dx_units, obstacle.originalX_units, 'UniformOutput', false);
+            if xOffset_units ~= 0
+                obstacleCopy.x_units = cellfun(@(coordinates_units) coordinates_units + xOffset_units, ...
+                    obstacle.x_units, 'UniformOutput', false);
+                obstacleCopy.originalX_units = cellfun(@(coordinates_units) coordinates_units + xOffset_units, ...
+                    obstacle.originalX_units, 'UniformOutput', false);
             end
-            if dy_units ~= 0
-                obstacleCopy.y_units         = cellfun(@(v) v + dy_units, obstacle.y_units, 'UniformOutput', false);
-                obstacleCopy.originalY_units = cellfun(@(v) v + dy_units, obstacle.originalY_units, 'UniformOutput', false);
+            if yOffset_units ~= 0
+                obstacleCopy.y_units = cellfun(@(coordinates_units) coordinates_units + yOffset_units, ...
+                    obstacle.y_units, 'UniformOutput', false);
+                obstacleCopy.originalY_units = cellfun(@(coordinates_units) coordinates_units + yOffset_units, ...
+                    obstacle.originalY_units, 'UniformOutput', false);
             end
-            if dx_units ~= 0 || dy_units ~= 0
+            if xOffset_units ~= 0 || yOffset_units ~= 0
                 obstacleCopy.targetName = string(obstacle.targetName) + ...
-                    sprintf(" (wrap copy %+g, %+g)", dx_units, dy_units);
+                    sprintf(" (wrap copy %+g, %+g)", xOffset_units, yOffset_units);
             end
             obstacleCopyList{end + 1, 1} = obstacleCopy; %#ok<AGROW>
         end

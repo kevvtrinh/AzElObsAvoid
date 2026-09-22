@@ -1,76 +1,81 @@
-function bernstein_units = powerToBernstein(powerCoefficient_units, degree)
+function controlValues_units = powerToBernstein(powerCoefficients_units, degree)
 %% Section 0: Header & Readme
 % SYNTAX
-%   bernstein_units = bmtpEngine.motion.powerToBernstein(powerCoefficient_units)
-%   bernstein_units = bmtpEngine.motion.powerToBernstein(powerCoefficient_units, degree)
+%   controlValues_units = bmtpEngine.motion.powerToBernstein(powerCoefficients_units)
+%   controlValues_units = bmtpEngine.motion.powerToBernstein(powerCoefficients_units, degree)
 %**************************************************************************
 % PURPOSE
-%   - Convert ascending-power coefficients on normalized time to same-degree
-%     Bezier controls using the one exact transform
-%     nchoosek(b, p) / nchoosek(degree, p).
+%   - Express p(u) = c0 + c1 x u + c2 x u^2 + ... as Bezier controls for
+%     0 <= u <= 1. Conversion, including a higher requested degree, keeps
+%     the same curve.
 %**************************************************************************
 % INPUTS
-%   - powerCoefficient_units (P-by-M matrix or S-by-2-by-P page array)
-%       Ascending powers per column, or one page of ascending powers per
-%       motion span.
-%   - degree (positive integer scalar, optional)
-%       Target Bezier degree when the controls are elevated above the
-%       supplied power count. Defaults to the exact degree the coefficients
-%       already carry.
+%   - powerCoefficients_units (P-by-M matrix or S-by-2-by-P array)
+%       Matrix columns contain coefficients c0 through c(P-1). For a
+%       three-dimensional array, the dimensions are segment, x/y, and power.
+%   - degree (nonnegative integer scalar, optional)
+%       Requested Bezier degree, at least P - 1. Defaults to P - 1.
 %**************************************************************************
 % OUTPUTS
-%   - bernstein_units ((degree+1)-by-M matrix or S-by-(degree+1)-by-2 array)
+%   - controlValues_units ((degree+1)-by-M matrix or S-by-(degree+1)-by-2 array)
 %       Control points of the identical curve.
 %**************************************************************************
 % UNITS
-%   - Coefficients and controls share the caller's coordinate units;
-%     normalized time is dimensionless.
+%   - Coefficients and controls keep the units of the supplied quantity;
+%     segment fraction u is dimensionless.
 %**************************************************************************
 
-%% Section 1: Resolve The Requested Degree And Transform
+%% Section 1: Read The Coefficient Layout And Get Conversion Weights
 
-isPageArray = ndims(powerCoefficient_units) == 3;
-if isPageArray
-    powerCount = size(powerCoefficient_units, 3);
+hasSegmentLayout = ndims(powerCoefficients_units) == 3;
+if hasSegmentLayout
+    coefficientCount = size(powerCoefficients_units, 3);
 else
-    powerCount = size(powerCoefficient_units, 1);
+    coefficientCount = size(powerCoefficients_units, 1);
 end
 if nargin < 2
-    degree = powerCount - 1;
+    degree = coefficientCount - 1;
 end
-transform = createTransform(degree, powerCount);
+powerToControlMap = getPowerToControlMap(degree, coefficientCount);
 
-%% Section 2: Apply The Transform To Every Supplied Page
+%% Section 2: Convert Every Coefficient Set Without Changing Its Curve
 
-if ~isPageArray
-    bernstein_units = transform * powerCoefficient_units;
+if ~hasSegmentLayout
+    controlValues_units = powerToControlMap * powerCoefficients_units;
     return
 end
-powerPages      = permute(powerCoefficient_units, [3 1 2]);
-bernstein_units = permute(pagemtimes(transform, powerPages), [2 1 3]);
+
+% Put power first for multiplication, then return segment/control/x-y order.
+coefficientsByPower_units = permute(powerCoefficients_units, [3 1 2]);
+controlValues_units       = permute(pagemtimes(powerToControlMap, coefficientsByPower_units), [2 1 3]);
 end
 
 %% Section 3: Local Functions
 
-function transform = createTransform(degree, powerCount)
-    % The weights depend only on the two sizes, so cache each one once.
-    persistent transformBySize
-    if isempty(transformBySize)
-        transformBySize = cell(0, 0);
+function powerToControlMap = getPowerToControlMap(degree, coefficientCount)
+    % Conversion weights depend only on degree and coefficient count.
+    % Reuse a saved matrix when another curve has the same layout.
+    persistent savedConversionMaps
+    if isempty(savedConversionMaps)
+        savedConversionMaps = cell(0, 0);
     end
-    transformIsCached = size(transformBySize, 1) >= degree + 1 && ...
-        size(transformBySize, 2) >= powerCount && ...
-        ~isempty(transformBySize{degree + 1, powerCount});
-    if transformIsCached
-        transform = transformBySize{degree + 1, powerCount};
+    conversionMapWasSaved = size(savedConversionMaps, 1) >= degree + 1 && ...
+        size(savedConversionMaps, 2) >= coefficientCount && ...
+        ~isempty(savedConversionMaps{degree + 1, coefficientCount});
+    if conversionMapWasSaved
+        powerToControlMap = savedConversionMaps{degree + 1, coefficientCount};
         return
     end
-    transform = zeros(degree + 1, powerCount);
-    for bernsteinIndex = 0:degree
-        for powerIndex = 0:min(bernsteinIndex, powerCount - 1)
-            transform(bernsteinIndex + 1, powerIndex + 1) = ...
-                nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
+
+    % Control b uses weight choose(b,p) / choose(degree,p) for power p.
+    % At degree 1, the line c0 + c1 x u has controls c0 and c0 + c1.
+    % b and p start at 0, so add 1 when indexing MATLAB arrays.
+    powerToControlMap = zeros(degree + 1, coefficientCount);
+    for controlPointIndex = 0:degree
+        for powerDegree = 0:min(controlPointIndex, coefficientCount - 1)
+            powerToControlMap(controlPointIndex + 1, powerDegree + 1) = ...
+                nchoosek(controlPointIndex, powerDegree) / nchoosek(degree, powerDegree);
         end
     end
-    transformBySize{degree + 1, powerCount} = transform;
+    savedConversionMaps{degree + 1, coefficientCount} = powerToControlMap;
 end

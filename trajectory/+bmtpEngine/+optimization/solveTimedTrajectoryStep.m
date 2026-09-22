@@ -1,30 +1,31 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
-        solveTimedTrajectoryStep(request, step)
+function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
+    solveTimedTrajectoryStep(solverRequest, trajectoryStep)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] = ...
-%       bmtpEngine.optimization.solveTimedTrajectoryStep(request, step)
+%   [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
+%       bmtpEngine.optimization.solveTimedTrajectoryStep(solverRequest, trajectoryStep)
 %**************************************************************************
 % PURPOSE
-%   - Solve one convex trajectory step for fixed separating lines, timing
-%     policy, and derivative limits.
+%   - Solve for a new curve using fixed separating lines and duration ratios.
+%     Seek an earlier arrival, or shorten the path when arrival time is fixed.
+%     The returned candidate still requires the caller's full motion checks.
 %**************************************************************************
 % INPUTS
-%   - request (scalar struct)
+%   - solverRequest (scalar struct)
 %       The engine solve request from createSolveRequest. This step reads
 %       Degree, the InitialState and GoalState positions, Limits, and
 %       TimedTrajectoryOptions.
-%   - step (scalar struct)
+%   - trajectoryStep (scalar struct)
 %       What this one step is asked to do, every field required:
 %       SegmentCount (positive integer), Planes (S-by-R struct array of
 %       fixed active separating lines), RoundoffReserve_units (nonnegative
 %       scalar), MaximumMotionDuration_s (positive scalar upper bound or
 %       fixed duration), GoalTimeMode (earliestArrival or fixedArrival),
 %       MinimumMotionDuration_s (nonnegative scalar lower arrival bound, at
-%       most the maximum), SegmentRatio (S-by-1 positive relative span
+%       most the maximum), SegmentRatio (S-by-1 positive relative segment
 %       durations, or [] for one common segment time), and ConstraintBase
-%       (the reusable invariant constraint arrays from an earlier step with
-%       the same formulation, or struct() to build them).
+%       (saved workspace, endpoint, join, and motion-limit constraints from
+%       a matching earlier step, or struct() to build them).
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
@@ -35,246 +36,284 @@ function [controlPoint_units, segmentTime_s, exitFlag, output, constraintBase] =
 %       SegmentRatio. NaN on expected solve failure.
 %   - exitFlag (numeric scalar)
 %       Original coneprog status.
-%   - output (scalar struct)
-%       Solver status, diagnostics, and measured time. Finite fixed-clock -7
-%       iterates are proposals requiring final independent proof.
-%   - constraintBase (scalar struct)
-%       Invariant constraint arrays for reuse with the same formulation.
+%   - solverOutput (scalar struct)
+%       Status, measurements, and elapsed time for the returned solver values.
+%       A finite -7 result may be returned for checking, but is not yet accepted.
+%   - savedTrajectoryConstraints (scalar struct)
+%       Constraints and their inputs, for reuse when the next step matches.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Read The Step And The Request, Then Create Decision Bounds
-validateattributes(step, {'struct'}, {'scalar'});
-stepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
+%% Section 1: Read Inputs And Build Shared Motion Constraints
+
+validateattributes(trajectoryStep, {'struct'}, {'scalar'});
+requiredStepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
     "GoalTimeMode", "MinimumMotionDuration_s", "SegmentRatio", "ConstraintBase"];
-assert(all(isfield(step, stepFields)), 'bmtpEngine:InvalidStep', ...
-    'A timed trajectory step declares every one of: %s.', strjoin(stepFields, ', '));
-segmentCount            = step.SegmentCount;
-planes                  = step.Planes;
-roundoffReserve_units   = step.RoundoffReserve_units;
-maximumMotionDuration_s = step.MaximumMotionDuration_s;
-goalTimeMode            = step.GoalTimeMode;
-minimumMotionDuration_s = step.MinimumMotionDuration_s;
-segmentRatio            = step.SegmentRatio;
-constraintBase          = step.ConstraintBase;
-degree      = request.Degree;
-start_units = request.InitialState.position_units;
-goal_units  = request.GoalState.position_units;
-limits      = request.Limits;
-options     = request.TimedTrajectoryOptions;
-returnsCommonSegmentTime = isempty(segmentRatio);
+assert(all(isfield(trajectoryStep, requiredStepFields)), 'bmtpEngine:InvalidStep', ...
+    'A timed trajectory step declares every one of: %s.', strjoin(requiredStepFields, ', '));
+segmentCount               = trajectoryStep.SegmentCount;
+separatingPlanes           = trajectoryStep.Planes;
+roundoffReserve_units      = trajectoryStep.RoundoffReserve_units;
+maximumMotionDuration_s    = trajectoryStep.MaximumMotionDuration_s;
+goalTimeMode               = trajectoryStep.GoalTimeMode;
+minimumMotionDuration_s    = trajectoryStep.MinimumMotionDuration_s;
+segmentTimeRatios          = trajectoryStep.SegmentRatio;
+savedTrajectoryConstraints = trajectoryStep.ConstraintBase;
+
+degree        = solverRequest.Degree;
+start_units   = solverRequest.InitialState.position_units;
+goal_units    = solverRequest.GoalState.position_units;
+limits        = solverRequest.Limits;
+solverOptions = solverRequest.TimedTrajectoryOptions;
+
+returnsCommonSegmentTime = isempty(segmentTimeRatios);
 if returnsCommonSegmentTime
-    segmentRatio = ones(segmentCount, 1);
+    segmentTimeRatios = ones(segmentCount, 1);
 end
-segmentRatio = double(segmentRatio(:));
-validateattributes(segmentRatio, {'numeric'}, ...
+segmentTimeRatios = double(segmentTimeRatios(:));
+validateattributes(segmentTimeRatios, {'numeric'}, ...
     {'real', 'finite', 'positive', 'numel', segmentCount});
 validateattributes(minimumMotionDuration_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative', '<=', maximumMotionDuration_s});
 
-controlCount     = segmentCount * (degree + 1) * 2;
-powerIndex       = controlCount + (1:4);
-travelBoundCount = (goalTimeMode ~= "earliestArrival") * segmentCount * degree;
-travelBoundIndex = controlCount + 4 + (1:travelBoundCount);
-variableCount    = controlCount + 4 + travelBoundCount;
+% Solver values contain x/y control coordinates, four time-power variables,
+% and (for fixed arrival) one length bound for every control-polygon edge.
+controlVariableCount   = segmentCount * (degree + 1) * 2;
+timePowerIndices       = controlVariableCount + (1:4);
+edgeLengthBoundCount   = (goalTimeMode ~= "earliestArrival") * segmentCount * degree;
+edgeLengthBoundIndices = controlVariableCount + 4 + (1:edgeLengthBoundCount);
+decisionVariableCount  = controlVariableCount + 4 + edgeLengthBoundCount;
 
-planeActiveBySegment  = reshape([planes.Active], size(planes));
-maximumSegmentTime_s  = maximumMotionDuration_s / sum(segmentRatio);
+planeActiveBySegment = reshape([separatingPlanes.Active], size(separatingPlanes));
+maximumTimeScale_s   = maximumMotionDuration_s / sum(segmentTimeRatios);
 
-boundaryControls = zeros(segmentCount, degree + 1, 2);
-boundaryControls(1, 1:3, :)           = repmat(reshape(start_units, 1, 1, 2), 1, 3, 1);
-boundaryControls(end, end - 2:end, :) = repmat(reshape(goal_units, 1, 1, 2), 1, 3, 1);
-constraintKey = struct( ...
+% Three identical controls at each endpoint set zero velocity and
+% acceleration there. This timed step uses the requested endpoint positions.
+endpointControlPoint_units = zeros(segmentCount, degree + 1, 2);
+endpointControlPoint_units(1, 1:3, :)           = repmat(reshape(start_units, 1, 1, 2), 1, 3, 1);
+endpointControlPoint_units(end, end - 2:end, :) = repmat(reshape(goal_units, 1, 1, 2), 1, 3, 1);
+% Reuse the shared matrices only when every input used to build them matches.
+% Obstacle-line rows are added separately below.
+sharedConstraintInputs = struct( ...
     "SegmentCount",     segmentCount, ...
     "Degree",           degree, ...
-    "BoundaryControls", boundaryControls, ...
+    "BoundaryControls", endpointControlPoint_units, ...
     "Limits",           limits, ...
-    "VariableCount",    variableCount, ...
-    "SegmentRatio",     segmentRatio);
-canReuseConstraintBase = isstruct(constraintBase) && isscalar(constraintBase) && ...
-    isfield(constraintBase, 'Key') && isequaln(constraintBase.Key, constraintKey);
-if ~canReuseConstraintBase
-    [A, Aeq, beq, lb, ub] = bmtpEngine.optimization.createTrajectoryConstraints( ...
-        segmentCount, degree, boundaryControls, limits, variableCount, segmentRatio, []);
-    constraintBase = struct("A", A, "Aeq", Aeq, "beq", beq, ...
-        "lb", lb, "ub", ub, "Key", constraintKey);
+    "VariableCount",    decisionVariableCount, ...
+    "SegmentRatio",     segmentTimeRatios);
+canReuseSharedConstraints = isstruct(savedTrajectoryConstraints) && isscalar(savedTrajectoryConstraints) && ...
+    isfield(savedTrajectoryConstraints, 'Key') && isequaln(savedTrajectoryConstraints.Key, sharedConstraintInputs);
+if ~canReuseSharedConstraints
+    [inequalityMatrix, equalityMatrix, equalityValues, lowerBounds, upperBounds] = ...
+        bmtpEngine.optimization.createTrajectoryConstraints( ...
+        segmentCount, degree, endpointControlPoint_units, limits, decisionVariableCount, segmentTimeRatios, []);
+    savedTrajectoryConstraints = struct( ...
+        "A",   inequalityMatrix, ...
+        "Aeq", equalityMatrix, ...
+        "beq", equalityValues, ...
+        "lb",  lowerBounds, ...
+        "ub",  upperBounds, ...
+        "Key", sharedConstraintInputs);
 else
-    A   = constraintBase.A;
-    Aeq = constraintBase.Aeq;
-    beq = constraintBase.beq;
-    lb  = constraintBase.lb;
-    ub  = constraintBase.ub;
+    inequalityMatrix = savedTrajectoryConstraints.A;
+    equalityMatrix   = savedTrajectoryConstraints.Aeq;
+    equalityValues   = savedTrajectoryConstraints.beq;
+    lowerBounds      = savedTrajectoryConstraints.lb;
+    upperBounds      = savedTrajectoryConstraints.ub;
 end
-% The clock cones need only relative powers. Scaling the three physical-time
-% columns to a unit upper bound avoids conditioning the SOCP with seconds,
-% seconds squared, and seconds cubed that differ by several orders.
+% Use time as a fraction of its allowed maximum. For example, powers of
+% 1000 seconds are 1000, 1e6, and 1e9; scaled time powers stay between 0 and 1.
+% This avoids giving the solver columns with very different numeric scales.
+% Multiplying the matrix columns by the matching physical-time powers keeps
+% the speed, acceleration, and jerk constraints in physical units.
 for derivativeOrder = 1:3
-    A(:, powerIndex(derivativeOrder + 1)) = ...
-        A(:, powerIndex(derivativeOrder + 1)) * maximumSegmentTime_s ^ derivativeOrder;
+    inequalityMatrix(:, timePowerIndices(derivativeOrder + 1)) = ...
+        inequalityMatrix(:, timePowerIndices(derivativeOrder + 1)) * maximumTimeScale_s ^ derivativeOrder;
 end
-lb(travelBoundIndex) = 0;
+lowerBounds(edgeLengthBoundIndices) = 0;
 
-%% Section 2: Add Separating-Line Bounds
-baseInequalityCount = 4 * segmentCount * (3 * degree - 3);
-initialPlanePairs   = planeActiveBySegment;
-% Keep the full formulation for moderate earliest-arrival systems, where its
-% single solve is both compact and better conditioned. Beyond this exact row
-% count, exhaustive row generation avoids constructing the dominant dense
-% plane block while still scanning every omitted pair after each solve.
-maximumDirectPlanePairCount = 2048;
-useConstraintGeneration = goalTimeMode == "fixedArrival" || ...
-    nnz(planeActiveBySegment) > maximumDirectPlanePairCount;
-if useConstraintGeneration
-    initialPlanePairs(:) = false;
+%% Section 2: Choose Which Separating-Line Rows To Load First
+
+motionLimitRowCount  = 4 * segmentCount * (3 * degree - 3);
+initiallyLoadedPairs = planeActiveBySegment;
+% Load all lines for earliest arrival with at most 2048 active pairs. For
+% larger problems or fixed arrival, begin without line rows. Check every
+% omitted pair after each solve, then add the largest violation per segment.
+% Repeat until no omitted pair exceeds tolerance or the solve fails.
+maximumFullyLoadedPairCount = 2048;
+addLineConstraintsAsNeeded  = goalTimeMode == "fixedArrival" || ...
+    nnz(planeActiveBySegment) > maximumFullyLoadedPairCount;
+if addLineConstraintsAsNeeded
+    initiallyLoadedPairs(:) = false;
 end
+% Zero column indices mean this step has no variables that relax line bounds.
 slackColumnByPair = zeros(size(planeActiveBySegment));
-[planeRows, planeBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
-    initialPlanePairs, degree, variableCount, slackColumnByPair, roundoffReserve_units);
-A = [A; planeRows];
-b = [zeros(baseInequalityCount, 1); planeBounds];
+[lineConstraintRows, lineConstraintBounds] = bmtpEngine.separation.createSelectedPlaneRows(separatingPlanes, ...
+    initiallyLoadedPairs, degree, decisionVariableCount, slackColumnByPair, roundoffReserve_units);
+inequalityMatrix = [inequalityMatrix; lineConstraintRows];
+inequalityBounds = [zeros(motionLimitRowCount, 1); lineConstraintBounds];
 
-%% Section 3: Create The Objective And Solve
-cones = [bmtpEngine.optimization.createTimePowerCones(variableCount, powerIndex); ...
-    createTravelBoundCones(variableCount, travelBoundIndex, segmentCount, degree)];
-f     = zeros(variableCount, 1);
+%% Section 3: Solve And Add The Selected Violated Constraints
+
+solverCones = [bmtpEngine.optimization.createTimePowerCones(decisionVariableCount, timePowerIndices); ...
+    createTravelBoundCones(decisionVariableCount, edgeLengthBoundIndices, segmentCount, degree)];
+objectiveWeights = zeros(decisionVariableCount, 1);
+% Minimize the cubic scaled time to seek an earlier arrival.
+% For fixed arrival, minimize the sum of control-polygon edge lengths.
 if goalTimeMode == "earliestArrival"
-    f(powerIndex(4)) = 1;
+    objectiveWeights(timePowerIndices(4)) = 1;
 else
-    f(travelBoundIndex) = 1;
+    objectiveWeights(edgeLengthBoundIndices) = 1;
 end
+% A fixed duration uses all four scaled powers equal to 1. Otherwise bound
+% them between the requested minimum-duration powers and the maximum 1.
 if goalTimeMode == "fixedArrival"
-    lb(powerIndex) = 1;
-    ub(powerIndex) = 1;
+    lowerBounds(timePowerIndices) = 1;
+    upperBounds(timePowerIndices) = 1;
 else
-    ub(powerIndex) = 1;
-    minimumTimeRatio = minimumMotionDuration_s / maximumMotionDuration_s;
-    lb(powerIndex) = [1; minimumTimeRatio; ...
-        minimumTimeRatio ^ 2; minimumTimeRatio ^ 3];
+    upperBounds(timePowerIndices) = 1;
+    minimumTimeFraction = minimumMotionDuration_s / maximumMotionDuration_s;
+    lowerBounds(timePowerIndices) = [1; minimumTimeFraction; ...
+        minimumTimeFraction ^ 2; minimumTimeFraction ^ 3];
 end
 
-solverTimer        = tic;
-retainedPlanePairs = initialPlanePairs;
-solveCount         = 0;
-returnedX                              = [];
-returnedExitFlag                       = NaN;
-returnedOutput                         = struct();
-returnedPlanePairs                     = false(size(planeActiveBySegment));
-returnedMaximumPlaneConstraintResidual = NaN;
-returnedConstraintGenerationComplete   = false;
-returnedSolveIndex                     = 0;
+solverTimer      = tic;
+loadedPlanePairs = initiallyLoadedPairs;
+solveCount       = 0;
+
+savedSolverValues             = [];
+savedExitFlag                 = NaN;
+savedSolverOutput             = struct();
+savedPlanePairs               = false(size(planeActiveBySegment));
+savedMaximumLineViolation     = NaN;
+savedLineConstraintsSatisfied = false;
+savedSolveIndex               = 0;
 while true
-    attemptedPlanePairs = retainedPlanePairs;
-    [attemptX, ~, attemptExitFlag, attemptOutput] = ...
-        coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
-    solveCount = solveCount + 1;
-    lastAttemptExitFlag = attemptExitFlag;
-    if ~bmtpEngine.optimization.hasUsableConicIterate(attemptX, attemptExitFlag)
+    attemptedPlanePairs = loadedPlanePairs;
+    [attemptedSolverValues, ~, attemptedExitFlag, attemptedSolverOutput] = ...
+        coneprog(objectiveWeights, solverCones, inequalityMatrix, inequalityBounds, ...
+        equalityMatrix, equalityValues, lowerBounds, upperBounds, solverOptions);
+    solveCount          = solveCount + 1;
+    lastAttemptExitFlag = attemptedExitFlag;
+    if ~bmtpEngine.optimization.hasUsableConicIterate(attemptedSolverValues, attemptedExitFlag)
         break
     end
 
-    violatedPairs         = false(size(planeActiveBySegment));
-    attemptMaximumResidual = NaN;
-    attemptIsComplete      = ~useConstraintGeneration;
-    if useConstraintGeneration
-        [violatedPairs, maximumOmittedResidual] = ...
-            bmtpEngine.separation.findViolatedPlanePairs(attemptX, planes, planeActiveBySegment, ...
+    violatedPairs                   = false(size(planeActiveBySegment));
+    maximumAttemptLineViolation     = NaN;
+    attemptLineConstraintsSatisfied = ~addLineConstraintsAsNeeded;
+    if addLineConstraintsAsNeeded
+        % A positive row violation means a line bound was exceeded. Check
+        % both already-loaded rows and every pair not yet loaded.
+        [violatedPairs, maximumUnloadedLineViolation] = ...
+            bmtpEngine.separation.findViolatedPlanePairs( ...
+            attemptedSolverValues, separatingPlanes, planeActiveBySegment, ...
             attemptedPlanePairs, degree, slackColumnByPair, roundoffReserve_units, ...
-            options.ConstraintTolerance);
-        loadedResidual = -Inf;
-        if size(A, 1) > baseInequalityCount
-            loadedResidual = max(A(baseInequalityCount + 1:end, :) * attemptX - ...
-                b(baseInequalityCount + 1:end));
+            solverOptions.ConstraintTolerance);
+        maximumLoadedLineViolation = -Inf;
+        if size(inequalityMatrix, 1) > motionLimitRowCount
+            maximumLoadedLineViolation = max(inequalityMatrix(motionLimitRowCount + 1:end, :) * attemptedSolverValues - ...
+                inequalityBounds(motionLimitRowCount + 1:end));
         end
-        attemptMaximumResidual = max(loadedResidual, maximumOmittedResidual);
-        attemptIsComplete = ~any(violatedPairs, 'all') && ...
-            attemptMaximumResidual <= options.ConstraintTolerance;
+        maximumAttemptLineViolation     = max(maximumLoadedLineViolation, maximumUnloadedLineViolation);
+        attemptLineConstraintsSatisfied = ~any(violatedPairs, 'all') && ...
+            maximumAttemptLineViolation <= solverOptions.ConstraintTolerance;
     end
 
-    % Snapshot the last usable proposal before adding rows it has never
-    % solved. A later numerical failure cannot erase this truthful record;
-    % the caller still independently proves it before any retention.
-    returnedX                              = attemptX;
-    returnedExitFlag                       = attemptExitFlag;
-    returnedOutput                         = attemptOutput;
-    returnedPlanePairs                     = attemptedPlanePairs;
-    returnedMaximumPlaneConstraintResidual = attemptMaximumResidual;
-    returnedConstraintGenerationComplete   = attemptIsComplete;
-    returnedSolveIndex                     = solveCount;
-    if ~useConstraintGeneration || ~any(violatedPairs, 'all')
+    % Save values and diagnostics together before adding more constraints.
+    % If the next solve fails, return this candidate with its own checks and
+    % loaded-pair count. The caller must still validate the complete motion.
+    savedSolverValues             = attemptedSolverValues;
+    savedExitFlag                 = attemptedExitFlag;
+    savedSolverOutput             = attemptedSolverOutput;
+    savedPlanePairs               = attemptedPlanePairs;
+    savedMaximumLineViolation     = maximumAttemptLineViolation;
+    savedLineConstraintsSatisfied = attemptLineConstraintsSatisfied;
+    savedSolveIndex               = solveCount;
+    if ~addLineConstraintsAsNeeded || ~any(violatedPairs, 'all')
         break
     end
-    retainedPlanePairs = attemptedPlanePairs | violatedPairs;
-    [newRows, newBounds] = bmtpEngine.separation.createSelectedPlaneRows(planes, ...
-        violatedPairs, degree, variableCount, slackColumnByPair, roundoffReserve_units);
-    A = [A; newRows]; %#ok<AGROW>
-    b = [b; newBounds]; %#ok<AGROW>
+    loadedPlanePairs = attemptedPlanePairs | violatedPairs;
+    [newLineRows, newLineBounds] = bmtpEngine.separation.createSelectedPlaneRows(separatingPlanes, ...
+        violatedPairs, degree, decisionVariableCount, slackColumnByPair, roundoffReserve_units);
+    inequalityMatrix = [inequalityMatrix; newLineRows]; %#ok<AGROW>
+    inequalityBounds = [inequalityBounds; newLineBounds]; %#ok<AGROW>
 end
-if isempty(returnedX)
-    x        = attemptX;
-    exitFlag = attemptExitFlag;
-    output   = attemptOutput;
-    returnedPlanePairs = attemptedPlanePairs;
+
+%% Section 4: Return Matching Values, Durations, And Diagnostics
+
+if isempty(savedSolverValues)
+    solverValues    = attemptedSolverValues;
+    exitFlag        = attemptedExitFlag;
+    solverOutput    = attemptedSolverOutput;
+    savedPlanePairs = attemptedPlanePairs;
 else
-    x        = returnedX;
-    exitFlag = returnedExitFlag;
-    output   = returnedOutput;
+    solverValues = savedSolverValues;
+    exitFlag     = savedExitFlag;
+    solverOutput = savedSolverOutput;
 end
-output.TotalTime_s                    = toc(solverTimer);
-output.OptimizationConverged          = exitFlag > 0;
-output.SolveCount                     = solveCount;
-output.ConstraintGenerationApplied    = useConstraintGeneration;
-output.ConstraintGenerationRoundCount = max(0, solveCount - 1);
-output.ConstraintGenerationComplete   = returnedConstraintGenerationComplete;
-output.MaximumPlaneConstraintResidual = returnedMaximumPlaneConstraintResidual;
-output.LoadedPlanePairCount           = nnz(returnedPlanePairs);
-output.ReturnedSolveIndex             = returnedSolveIndex;
-output.LastAttemptExitFlag            = lastAttemptExitFlag;
-output.TerminatedAfterRetainedIterate = returnedSolveIndex > 0 && ...
-    returnedSolveIndex < solveCount;
-output.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);
-% An optimality stall does not establish physical infeasibility. Every finite
-% retained iterate remains only a proposal for independent proof.
-if ~bmtpEngine.optimization.hasUsableConicIterate(x, exitFlag)
+solverOutput.TotalTime_s                    = toc(solverTimer);
+solverOutput.OptimizationConverged          = exitFlag > 0;
+solverOutput.SolveCount                     = solveCount;
+solverOutput.ConstraintGenerationApplied    = addLineConstraintsAsNeeded;
+solverOutput.ConstraintGenerationRoundCount = max(0, solveCount - 1);
+solverOutput.ConstraintGenerationComplete   = savedLineConstraintsSatisfied;
+solverOutput.MaximumPlaneConstraintResidual = savedMaximumLineViolation;
+solverOutput.LoadedPlanePairCount           = nnz(savedPlanePairs);
+solverOutput.ReturnedSolveIndex             = savedSolveIndex;
+solverOutput.LastAttemptExitFlag            = lastAttemptExitFlag;
+solverOutput.TerminatedAfterRetainedIterate = savedSolveIndex > 0 && ...
+    savedSolveIndex < solveCount;
+solverOutput.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);
+% A retained finite result remains a candidate for the caller's checks.
+% When no usable values exist, return empty controls and a NaN duration.
+if ~bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag)
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s      = NaN;
     return;
 end
-segmentTime_s = maximumSegmentTime_s * max(x(powerIndex(4)), 0) ^ (1 / 3);
+% Convert the cubic scaled time back to seconds, then apply each segment's
+% duration ratio. Jerk limits depend on duration^3, hence the cube root.
+segmentTime_s = maximumTimeScale_s * max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3);
 if ~returnsCommonSegmentTime
-    segmentTime_s = segmentTime_s * segmentRatio;
+    segmentTime_s = segmentTime_s * segmentTimeRatios;
 end
-controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCount), [3 2 1]);
+controlPoint_units = permute(reshape(solverValues(1:controlVariableCount), 2, degree + 1, segmentCount), [3 2 1]);
 end
 
-%% Section 4: Local Functions
-function soc = createTravelBoundCones(variableCount, travelBoundIndex, segmentCount, degree)
-    % Bound travel by the sum of Bezier control-edge lengths.
-    if isempty(travelBoundIndex)
+%% Section 5: Local Functions
+
+function edgeLengthCones = createTravelBoundCones( ...
+        decisionVariableCount, edgeLengthBoundIndices, segmentCount, degree)
+    % Give each adjacent control-point pair a variable z with
+    % norm(nextPoint - currentPoint) <= z. Minimizing the sum of z shortens
+    % the control polygon, whose length bounds the Bezier curve length.
+    if isempty(edgeLengthBoundIndices)
         emptyCone = secondordercone( ...
-            zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0);
-        soc = repmat(emptyCone, 0, 1);
+            zeros(2, decisionVariableCount), zeros(2, 1), zeros(decisionVariableCount, 1), 0);
+        edgeLengthCones = repmat(emptyCone, 0, 1);
         return;
     end
-    emptyCone  = secondordercone( ...
-        zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0);
-    soc        = repmat(emptyCone, numel(travelBoundIndex), 1);
-    boundIndex = 0;
+    emptyCone = secondordercone( ...
+        zeros(2, decisionVariableCount), zeros(2, 1), zeros(decisionVariableCount, 1), 0);
+    edgeLengthCones = repmat(emptyCone, numel(edgeLengthBoundIndices), 1);
+    edgeIndex       = 0;
     for segmentIndex = 1:segmentCount
-        for controlIndex = 0:degree - 1
-            boundIndex = boundIndex + 1;
-            coneA      = zeros(2, variableCount);
+        for controlPointIndex = 0:degree - 1
+            edgeIndex   = edgeIndex + 1;
+            leftSideMap = zeros(2, decisionVariableCount);
             for axisIndex = 1:2
-                firstIndex = bmtpEngine.optimization.controlIndexOf( ...
-                    segmentIndex, controlIndex, axisIndex, degree);
-                secondIndex = bmtpEngine.optimization.controlIndexOf( ...
-                    segmentIndex, controlIndex + 1, axisIndex, degree);
-                coneA(axisIndex, [firstIndex secondIndex]) = [-1 1];
+                firstCoordinateIndex = bmtpEngine.optimization.controlIndexOf( ...
+                    segmentIndex, controlPointIndex, axisIndex, degree);
+                secondCoordinateIndex = bmtpEngine.optimization.controlIndexOf( ...
+                    segmentIndex, controlPointIndex + 1, axisIndex, degree);
+                leftSideMap(axisIndex, [firstCoordinateIndex secondCoordinateIndex]) = [-1 1];
             end
-            coneC = zeros(variableCount, 1);
-            coneC(travelBoundIndex(boundIndex)) = 1;
-            soc(boundIndex) = secondordercone(coneA, zeros(2, 1), coneC, 0);
+            rightSideWeights = zeros(decisionVariableCount, 1);
+            rightSideWeights(edgeLengthBoundIndices(edgeIndex)) = 1;
+            edgeLengthCones(edgeIndex) = secondordercone(leftSideMap, zeros(2, 1), rightSideWeights, 0);
         end
     end
 end

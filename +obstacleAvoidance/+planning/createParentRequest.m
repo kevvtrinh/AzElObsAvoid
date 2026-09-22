@@ -1,37 +1,39 @@
 function parentRequest = createParentRequest(request)
 %% Section 0: Header & Readme
 % SYNTAX
-%   parentRequest = obstacleAvoidance.planning.createParentRequest( ...
-%       request)
+%   parentRequest = obstacleAvoidance.planning.createParentRequest(request)
 %**************************************************************************
 % PURPOSE
-%   - Some requests are answered by planning other requests: a wrapped
-%     request as unwrapped copies, an earliest-arrival search as a series of
-%     fixed-arrival trials. Each inner run carries this record of the
-%     request the user actually made, so its result is declared against the
-%     original inputs and wrap options rather than the trial's own.
-%   - It also carries the trial clock (NaN until an arrival-time trial sets
-%     it) and two products a trial may reuse instead of rebuilding, the
-%     endpoint check and the vertex visibility, declared empty here and
-%     filled by the trial's producer under a key the trial rebuilds itself.
+%   - Save the original request when the planner tries different arrival
+%     times or wrapped goal copies. Each trial keeps these values so its
+%     motion can also be checked against the original requirements.
+%   - Keep the trial arrival time and space for two reusable results:
+%     endpoint validation and the initial obstacle-vertex connections. Each
+%     saved result includes its inputs so later calls can check for a match.
 %**************************************************************************
 % INPUTS
 %   - request (scalar struct)
 %       Normalized planner states, limits, and options of the parent request;
-%       its context holds the original inputs and provenance.
+%       includes the original obstacles and supplied input values.
 %**************************************************************************
 % OUTPUTS
 %   - parentRequest (scalar struct)
-%       The record a child request plans under, always the same shape. A
-%       NaN FixedArrivalTrialTime_s means no trial clock; an empty Key,
-%       and for the validation Feasible = false, means no product to reuse.
+%       Original request details passed to each trial. A NaN trial time
+%       means no exact arrival time has been assigned. Empty saved-check
+%       fields mean the trial must calculate those checks itself.
 %**************************************************************************
 % UNITS
 %   - Time is seconds and positions are coordinate units.
 %**************************************************************************
 
-%% Section 1: Declare The Parent Request
+%% Section 1: Save The Original Request For Planning Trials
 
+% For example, a trial may try arrival at 12 s under a 20 s deadline.
+% Keep the original 20 s deadline here while the trial uses its own goal time.
+% The trial sets FixedArrivalTrialTime_s when it chooses an exact arrival time.
+%
+% Each Key will hold the inputs used for a saved calculation. An empty Key
+% means there is no calculation to reuse; matching inputs are checked later.
 parentRequest = struct( ...
     'SuppliedLimits',          request.originalInputs.suppliedLimits, ...
     'SuppliedGoalState',       request.originalInputs.suppliedGoalState, ...
@@ -43,6 +45,12 @@ parentRequest = struct( ...
     'GoalTime_s',              request.goalState.time_s, ...
     'GoalTimeMode',            request.options.GoalTimeMode, ...
     'FixedArrivalTrialTime_s', NaN, ...
-    'EndpointValidation',      struct('Key', [], 'Feasible', false, 'Message', "", 'Reason', ""), ...
-    'InitialVertexVisibility',         struct('Key', [], 'VertexVisibility', []));
+    'EndpointValidation',      struct( ...
+        'Key',      [], ...
+        'Feasible', false, ...
+        'Message',  "", ...
+        'Reason',   ""), ...
+    'InitialVertexVisibility', struct( ...
+        'Key',              [], ...
+        'VertexVisibility', []));
 end

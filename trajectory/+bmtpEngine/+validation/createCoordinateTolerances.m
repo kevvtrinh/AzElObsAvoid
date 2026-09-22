@@ -1,15 +1,16 @@
 function [coordinateScale_units, roundoffReserve_units] = createCoordinateTolerances(varargin)
 %% Section 0: Header & Readme
 % SYNTAX
-%   coordinateScale_units = bmtpEngine.validation.createCoordinateTolerances(values_units)
+%   coordinateScale_units = bmtpEngine.validation.createCoordinateTolerances(coordinateValues_units)
 %   [coordinateScale_units, roundoffReserve_units] = ...
-%       bmtpEngine.validation.createCoordinateTolerances(values_units, ...)
+%       bmtpEngine.validation.createCoordinateTolerances(coordinateValues_units, ...)
 %**************************************************************************
 % PURPOSE
-%   - Derive the coordinate scale and shared geometric roundoff reserve.
+%   - Use the largest coordinate magnitude to size the numerical gap
+%     reserved for rounding error in geometry calculations.
 %**************************************************************************
 % INPUTS
-%   - values_units (numeric arrays or cells of numeric arrays)
+%   - coordinateValues_units (numeric arrays or cells of numeric arrays)
 %       Coordinate collections; nonfinite entries do not affect the scale.
 %**************************************************************************
 % OUTPUTS
@@ -23,32 +24,38 @@ function [coordinateScale_units, roundoffReserve_units] = createCoordinateTolera
 %   - Inputs, scale, and reserve are coordinate units.
 %**************************************************************************
 
-%% Section 1: Accumulate The Finite Coordinate Scale
+%% Section 1: Find The Coordinate Scale And Calculate Its Rounding Reserve
+
+% Larger coordinates can accumulate larger absolute rounding errors. Use at
+% least a scale of 1 so the reserve does not collapse for values near zero.
 coordinateScale_units = 1;
 for inputIndex = 1:nargin
-    values_units = varargin{inputIndex};
-    if iscell(values_units)
-        for cellIndex = 1:numel(values_units)
-            coordinateScale_units = updateScale(coordinateScale_units, values_units{cellIndex});
+    coordinateValues_units = varargin{inputIndex};
+    if iscell(coordinateValues_units)
+        for cellIndex = 1:numel(coordinateValues_units)
+            coordinateScale_units = includeCoordinateMagnitudes( ...
+                coordinateScale_units, coordinateValues_units{cellIndex});
         end
     else
-        coordinateScale_units = updateScale(coordinateScale_units, values_units);
+        coordinateScale_units = includeCoordinateMagnitudes(coordinateScale_units, coordinateValues_units);
     end
 end
 
-%% Section 2: Derive The Shared Reserve
+% Multiply the coordinate scale by the shared rounding factor. All geometry
+% checks using this function receive the same allowance for the same inputs.
 roundoffReserve_units = 2 ^ 20 * eps * coordinateScale_units;
 end
 
-%% Section 3: Local Functions
-function coordinateScale_units = updateScale(coordinateScale_units, values_units)
-    % Ignore nonfinite ring separators when measuring coordinate scale.
-    if ~isnumeric(values_units)
+%% Section 2: Local Functions
+function coordinateScale_units = includeCoordinateMagnitudes(coordinateScale_units, coordinateValues_units)
+    % NaN can separate polygon rings. Ignore it and other nonfinite values
+    % when measuring scale; they do not represent finite vertex coordinates.
+    if ~isnumeric(coordinateValues_units)
         error("createCoordinateTolerances:InvalidCoordinates", ...
             "Each coordinate collection must be numeric or a cell of numeric arrays.");
     end
-    finiteValues_units = abs(double(values_units(isfinite(values_units))));
-    if ~isempty(finiteValues_units)
-        coordinateScale_units = max(coordinateScale_units, max(finiteValues_units));
+    finiteMagnitudes_units = abs(double(coordinateValues_units(isfinite(coordinateValues_units))));
+    if ~isempty(finiteMagnitudes_units)
+        coordinateScale_units = max(coordinateScale_units, max(finiteMagnitudes_units));
     end
 end

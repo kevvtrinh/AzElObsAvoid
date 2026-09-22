@@ -6,15 +6,11 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %   result = planner(obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Prepare protected polygon histories and an exact visibility guide,
-%     then construct independently proven C3 quintic BMTP motion.
-%   - Fixed-arrival moving-obstacle requests use bounded initial- and
-%     arrival-snapshot shortcuts, then one time-expanded next method. Failed
-%     shortcuts never prove infeasibility, and every accepted motion passes
-%     independent validation.
-%   - Earliest-arrival requests use one capability-driven pipeline: an exact
-%     static BMTP solve, or a departure best plan so far followed by one timed
-%     timed search attempt, or arrival-time trials when required.
+%   - Prepare the obstacles, find a route, and use BMTP to calculate motion
+%     along it. Choose the planning method from the requested arrival time,
+%     endpoint motion, and whether obstacles change with time.
+%   - Return success only after the complete motion passes the independent
+%     validator's checks for motion limits, endpoints, and obstacle clearance.
 %**************************************************************************
 % INPUTS
 %   - obstacles (struct array)
@@ -26,25 +22,26 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %   - limits (scalar struct)
 %       Workspace intervals and scalar or per-axis motion limits.
 %   - options (scalar struct, optional; default struct())
-%       ArrivalTimeTolerance_s bounds every comparison in seconds and
-%       ConstraintTolerance bounds coordinates, derivatives, and algebraic
-%       residuals; the other options control the arrival mode, sampling,
-%       wrapping, endpoint matching, and search. SpatialProbeIterationLimit
-%       is the explicit BMTP budget for each fixed-arrival snapshot shortcut.
-%       BestSoFarRefinementTrialLimit is how many arrival-time trials may
-%       try to beat a valid earliest-arrival plan once one is found; zero
-%       keeps that plan without trying. A wrapped axis (WrapX, WrapY) is
-%       planned in plain unwrapped coordinates: obstacles are copied one
-%       turn up and down, a moving target's path is unwrapped so it never
-%       jumps at the seam, and every goal copy the vehicle can reach in time
-%       is planned and accepted against the wrapped request.
+%       Controls arrival time, sampling, wrapping, endpoint matching, and
+%       search limits. Call planner() to see all defaults.
+%       ArrivalTimeTolerance_s allows small differences in time comparisons.
+%       ConstraintTolerance sets the numerical tolerance for position and
+%       motion constraints and the calculations used to check them.
+%       SpatialProbeIterationLimit limits BMTP iterations for a route built
+%       from obstacle positions at one time.
+%       BestSoFarRefinementTrialLimit limits extra arrival-time trials after
+%       finding valid motion; zero keeps that motion without extra trials.
+%       WrapX and WrapY allow travel across the corresponding interval ends.
+%       For example, on a 360-unit axis, travel from 350 to 10 can use 350 to
+%       370. The planner copies obstacles throughout the possible travel
+%       range and keeps a moving target's path continuous across the seam.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Stable success-or-failure record containing resolved inputs, prepared
-%       geometry, visibility data, BMTP diagnostics, and Validation. Expected
-%       no-path or infeasible outcomes return Success = false; invalid inputs
-%       throw an error.
+%       Includes the request, prepared obstacles, route, motion, solver
+%       details, and Validation. Expected no-path or infeasible outcomes
+%       return Success = false with Message and TerminationReason explaining
+%       why. Invalid inputs throw an error.
 %   - options (scalar struct, zero-input call)
 %       Fully resolved planner defaults.
 %**************************************************************************
@@ -55,8 +52,8 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 
 %% Section 1: Prepare The Request
 
-% Recursive user path setup can put archived benchmark packages ahead of this
-% checkout's engine. Keep planning and validation bound to the same checkout.
+% MATLAB uses the first matching function on its search path. Put this
+% checkout first so archived copies cannot replace its planning or validation.
 plannerFolder  = fileparts(mfilename('fullpath'));
 engineFolder   = fullfile(plannerFolder, 'trajectory');
 productionPath = [plannerFolder pathsep engineFolder];
@@ -80,11 +77,13 @@ end
 if nargin < 5
     options = [];
 end
-request = obstacleAvoidance.planning.prepareRequest(obstacles, initialState, goalState, limits, options, []);
+request = obstacleAvoidance.planning.prepareRequest( ...
+    obstacles, initialState, goalState, limits, options, []);
 
 %% Section 2: Plan The Motion
 
-% Wrapped requests need equivalent goal copies before motion planning.
+% Wrapping gives several coordinates for the same goal, such as 10 and 370
+% on a 360-unit axis. Try the relevant copies before selecting the motion.
 if request.options.WrapX || request.options.WrapY
     result = obstacleAvoidance.planning.planWrappedMotion(request);
 else

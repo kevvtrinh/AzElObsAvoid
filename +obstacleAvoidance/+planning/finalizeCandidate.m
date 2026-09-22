@@ -1,40 +1,39 @@
 function result = finalizeCandidate(preparedObstacles, request, visibilityGraph, ...
-        priorResult, candidate, diagnostics, declaration)
+        priorResult, motionCandidate, solverDiagnostics, additionalValidationFields)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.finalizeCandidate( ...
 %       preparedObstacles, request, visibilityGraph, priorResult, ...
-%       candidate, diagnostics, declaration)
+%       motionCandidate, solverDiagnostics, additionalValidationFields)
 %**************************************************************************
 % PURPOSE
-%   - Assemble one complete planner record from explicit request, geometry,
-%     orchestration, and BMTP candidate inputs, then apply the independent
-%     validator.
+%   - Combine the request, route, planning attempts, and BMTP motion into
+%     one result, then check it with the independent validator.
 %**************************************************************************
 % INPUTS
 %   - preparedObstacles (struct array)
 %       Prepared obstacle geometry owned by the normalized request.
 %   - request (scalar struct)
 %       Normalized initial state, goal state, limits, and resolved options,
-%       with its context (original obstacles, supplied and requested
-%       provenance, and the parent request when this is a child request).
+%       plus the original inputs and the parent request, when this
+%       motion was planned as one trial of a larger request.
 %   - visibilityGraph (scalar struct)
-%       Spatial or timed guide associated with the candidate; its
-%       Route_units is the route the candidate was seeded from.
+%       Graph used to create the motion's starting route. Route_units holds
+%       that route, which may differ from the final optimized motion.
 %   - priorResult (scalar struct)
 %       The planner record so far; its Attempts and ElapsedTime_s carry
 %       into the assembled record.
-%   - candidate (scalar struct)
-%       BMTP motion candidate.
-%   - diagnostics (scalar struct)
-%       Solver diagnostic record.
-%   - declaration (scalar struct)
-%       Fields the validator must see beside the candidate (a fixed trial
-%       clock or a free goal window), or struct() when there are none.
+%   - motionCandidate (scalar struct)
+%       BMTP output, including motion data when the engine succeeds.
+%   - solverDiagnostics (scalar struct)
+%       Solver measurements and failure details.
+%   - additionalValidationFields (scalar struct)
+%       Extra timing requirements for validation: a required arrival time
+%       or an allowed arrival range. Use struct() when neither is needed.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Planner result after the uniform candidate-acceptance decision.
+%       Motion, planning details, and independent validation status.
 %       Motion that fails validation returns Success = false with a
 %       diagnostic Message and TerminationReason; invalid input throws.
 %**************************************************************************
@@ -42,43 +41,49 @@ function result = finalizeCandidate(preparedObstacles, request, visibilityGraph,
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Choose The Acceptance Declaration
+%% Section 1: Choose The Request Used For Validation
 
 attempts               = priorResult.Attempts;
 elapsedTime_s          = priorResult.ElapsedTime_s;
 route_units            = visibilityGraph.Route_units;
-validationDeclarations = declaration;
-% The declared request is the one the result answers: the request itself,
-% or, for an accepted child request, the parent request it was planned for.
-declaredRequest = request;
-parentRequest   = request.parentRequest;
-if ~isempty(parentRequest) && candidate.Success
-    declaredRequest.parentRequest = [];
-    declaredRequest.originalInputs.suppliedLimits     = parentRequest.SuppliedLimits;
-    declaredRequest.originalInputs.suppliedGoalState  = parentRequest.SuppliedGoalState;
-    declaredRequest.originalInputs.requestedGoalState = parentRequest.RequestedGoalState;
-    declaredRequest.originalInputs.requestedLimits    = parentRequest.RequestedLimits;
-    declaredRequest.obstacles = parentRequest.Obstacles;
-    declaredRequest.options.WrapX = parentRequest.WrapX;
-    declaredRequest.options.WrapY = parentRequest.WrapY;
-    % The declared goal keeps the whole effective inner goal except its clock,
-    % including the selected target unwrapping and resolved derivatives.
-    declaredRequest.goalState.time_s    = parentRequest.GoalTime_s;
-    declaredRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
-    % Only an arrival-time trial declares the clock it was asked to meet.
+validationTimingFields = additionalValidationFields;
+
+% A trial may use a different arrival time or a shifted goal copy.
+% If BMTP found motion, check it against the original request as well.
+validationRequest = request;
+parentRequest     = request.parentRequest;
+if ~isempty(parentRequest) && motionCandidate.Success
+    validationRequest.parentRequest = [];
+
+    validationRequest.originalInputs.suppliedLimits     = parentRequest.SuppliedLimits;
+    validationRequest.originalInputs.suppliedGoalState  = parentRequest.SuppliedGoalState;
+    validationRequest.originalInputs.requestedGoalState = parentRequest.RequestedGoalState;
+    validationRequest.originalInputs.requestedLimits    = parentRequest.RequestedLimits;
+
+    validationRequest.obstacles     = parentRequest.Obstacles;
+    validationRequest.options.WrapX = parentRequest.WrapX;
+    validationRequest.options.WrapY = parentRequest.WrapY;
+
+    % Keep the selected goal position, velocity, and acceleration. Restore
+    % the original goal time so validation also checks the requested deadline.
+    validationRequest.goalState.time_s     = parentRequest.GoalTime_s;
+    validationRequest.options.GoalTimeMode = parentRequest.GoalTimeMode;
+
+    % Also retain the exact arrival time required by this trial. For example,
+    % a 12 s trial under a 20 s deadline must arrive at 12 s and no later than 20 s.
     if ~isnan(parentRequest.FixedArrivalTrialTime_s)
-        validationDeclarations.FixedArrivalTrialTime_s = ...
+        validationTimingFields.FixedArrivalTrialTime_s = ...
             parentRequest.FixedArrivalTrialTime_s;
     end
 end
 
-%% Section 2: Assemble The Complete Candidate Record
+%% Section 2: Combine The Motion And Planning Details
 
 result = obstacleAvoidance.planning.createEmptyResult( ...
-    preparedObstacles, declaredRequest, visibilityGraph, attempts, elapsedTime_s);
+    preparedObstacles, validationRequest, visibilityGraph, attempts, elapsedTime_s);
 
-% Every record declares its outcome fields before the candidate fills them,
-% so the field order does not depend on which method produced the candidate.
+% Initialize these fields in a fixed order, then copy the BMTP values.
+% Every planning method returns the same field order, including on failure.
 result.MotionLength_units              = Inf;
 result.IntegratedSquaredJerk_units2_s5 = Inf;
 result.MaximumConstraintViolation      = Inf;
@@ -88,52 +93,56 @@ result.AlternativeGuideEligible        = false;
 result.FailureStage                    = "notRun";
 result.FailureKind                     = "notRun";
 
-for fieldName = reshape(string(fieldnames(candidate)), 1, [])
-    result.(fieldName) = candidate.(fieldName);
+for fieldName = reshape(string(fieldnames(motionCandidate)), 1, [])
+    result.(fieldName) = motionCandidate.(fieldName);
 end
 result.Route_units       = route_units;
-result.SolverDiagnostics = diagnostics;
+result.SolverDiagnostics = solverDiagnostics;
 
-for fieldName = reshape(string(fieldnames(validationDeclarations)), 1, [])
-    result.(fieldName) = validationDeclarations.(fieldName);
+for fieldName = reshape(string(fieldnames(validationTimingFields)), 1, [])
+    result.(fieldName) = validationTimingFields.(fieldName);
 end
 
 goalState = request.goalState;
-if candidate.Success && ~isempty(goalState.targetMotion)
+if motionCandidate.Success && ~isempty(goalState.targetMotion)
+    % Record where the target is at the actual arrival time so the caller
+    % can see the meeting point, including any requested velocity matching.
     targetMotion  = goalState.targetMotion;
-    arrivalTime_s = candidate.ArrivalTime_s;
-    % Target derivatives are evaluated only when a matching option needs
-    % them: a position-only intercept at a linear target corner is valid.
-    matchesDerivative = request.options.MatchTargetVelocity || ...
+    arrivalTime_s = motionCandidate.ArrivalTime_s;
+    % Calculate target velocity and acceleration only when matching them.
+    % Position alone is still defined where a piecewise-linear path turns.
+    targetDerivativeIsNeeded = request.options.MatchTargetVelocity || ...
         request.options.MatchTargetAcceleration;
-    if matchesDerivative
-        [tgtPosition_units, tgtVel_units_s, tgtAcc_units_s2] = ...
+    if targetDerivativeIsNeeded
+        [targetPosition_units, targetVelocity_units_s, targetAcceleration_units_s2] = ...
             obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
     else
-        tgtPosition_units = obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
+        targetPosition_units = obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
     end
     result.Intercept = struct( ...
-        'Time_s',                     arrivalTime_s, ...
-        'TargetPosition_units',       tgtPosition_units, ...
-        'TerminalVelocityPolicy',     "explicit");
-    if all(candidate.velocity_units_s(end, :) == 0)
+        'Time_s',                 arrivalTime_s, ...
+        'TargetPosition_units',   targetPosition_units, ...
+        'TerminalVelocityPolicy', "explicit");
+    if all(motionCandidate.velocity_units_s(end, :) == 0)
         result.Intercept.TerminalVelocityPolicy = "zero";
     end
     if request.options.MatchTargetVelocity
         result.Intercept.TerminalVelocityPolicy = "matched";
-        result.Intercept.TargetVelocity_units_s = tgtVel_units_s;
+        result.Intercept.TargetVelocity_units_s = targetVelocity_units_s;
     end
     if request.options.MatchTargetAcceleration
-        result.Intercept.TargetAcceleration_units_s2 = tgtAcc_units_s2;
+        result.Intercept.TargetAcceleration_units_s2 = targetAcceleration_units_s2;
     end
 end
 
-%% Section 3: Apply The One Public Acceptance Gate
+%% Section 3: Independently Validate The Returned Motion
 
+% Engine success alone is not planner success. The independent check must
+% confirm the returned motion satisfies the request and avoids obstacles.
 result.Validation = obstacleAvoidance.validateTrajectory(result);
-result.Success    = candidate.Success && result.Validation.Passed;
+result.Success    = motionCandidate.Success && result.Validation.Passed;
 
-if candidate.Success && ~result.Validation.Passed
+if motionCandidate.Success && ~result.Validation.Passed
     result.Message = "BMTP returned motion that failed independent validation: " + ...
         result.Validation.Message;
     result.TerminationReason = "invalidMotion";

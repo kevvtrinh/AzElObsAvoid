@@ -38,8 +38,9 @@ generation, independent validation, and plots of those returned core results.
 
 ## MATLAB Style
 
-- Follow `MATLAB_STYLE_PREFERENCES.md` for help blocks, spacing, alignment,
-  line continuations, and readable statement layout.
+- Use `ApplyCommentAndStyle.md` as the current commenting and readability
+  reference. Follow the matching `MATLAB_STYLE_PREFERENCES.md` for help blocks,
+  spacing, alignment, line continuations, and readable statement layout.
 - Public function help starts with `%% Section 0: Header & Readme` and includes
   `SYNTAX`, `PURPOSE`, `INPUTS`, `OUTPUTS`, and `UNITS`. Use numbered executable
   sections, descriptive lower-camel-case names, and physical-unit suffixes.

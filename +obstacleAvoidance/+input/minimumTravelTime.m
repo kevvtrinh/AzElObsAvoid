@@ -5,7 +5,8 @@ function duration_s = minimumTravelTime(initialState, goalState, limits)
 %       obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits)
 %**************************************************************************
 % PURPOSE
-%   - Bound obstacle-free travel time to a fixed terminal position.
+%   - Calculate a minimum time below which the vehicle cannot reach a fixed
+%     goal position. Obstacles and the full motion requirements may add time.
 %**************************************************************************
 % INPUTS
 %   - initialState (scalar struct)
@@ -17,39 +18,48 @@ function duration_s = minimumTravelTime(initialState, goalState, limits)
 %**************************************************************************
 % OUTPUTS
 %   - duration_s (nonnegative scalar)
-%       Necessary duration bound, not an attainable C3 motion duration;
-%       invalid input throws an error.
+%       Travel cannot take less than this many seconds. This calculation
+%       does not guarantee that a valid motion can achieve the returned time.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Bound The Displacement By The Velocity Limit
+%% Section 1: Estimate Time From Distance And Maximum Speed
 
+% time = distance / maximum speed. Both axes must finish, so use the larger
+% of the x and y times. This first estimate ignores acceleration and jerk.
 displacement_units = abs(goalState.position_units - initialState.position_units);
-duration_s          = max(displacement_units ./ limits.maxVelocity_units_s);
+duration_s         = max(displacement_units ./ limits.maxVelocity_units_s);
 
-endpointDerivatives = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
+% The stronger calculation below requires zero velocity and acceleration at
+% both endpoints. Otherwise, keep the distance / speed estimate.
+endpointVelocityAndAcceleration = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
     goalState.velocity_units_s, goalState.acceleration_units_s2];
-if any(endpointDerivatives ~= 0)
+if any(endpointVelocityAndAcceleration ~= 0)
     return
 end
 
-%% Section 2: Tighten The Bound With Exact Rest-To-Rest Axis Motion
+%% Section 2: Include Acceleration And Jerk For Stationary Endpoints
 
-% Allowing jerk jumps enlarges the C3 feasible set. The exact C2 axis time
-% is therefore a necessary bound shared by endpoint checks and arrival search.
+% Find the fastest motion on each axis when jerk may change instantly.
+% The planner requires continuous jerk, which can take more time but cannot
+% beat this less restrictive calculation.
 for axisIndex = 1:2
     if initialState.position_units(axisIndex) == goalState.position_units(axisIndex)
         continue;
     end
+
+    % The motion helper accepts [x y] positions. Place this axis's movement
+    % in x and hold y at zero to calculate its travel time on its own.
     axisLimits = struct( ...
         'maxVelocity_units_s',      repmat(limits.maxVelocity_units_s(axisIndex), 1, 2), ...
         'maxAcceleration_units_s2', repmat(limits.maxAcceleration_units_s2(axisIndex), 1, 2), ...
         'maxJerk_units_s3',         repmat(limits.maxJerk_units_s3(axisIndex), 1, 2));
-    initialAxisState = [initialState.position_units(axisIndex), 0];
-    goalAxisState    = [goalState.position_units(axisIndex), 0];
-    [~, times_s]     = bmtpEngine.motion.createJerkLimitedChord(initialAxisState, goalAxisState, axisLimits, 3);
-    duration_s       = max(duration_s, sum(times_s));
+    initialAxisPosition_units = [initialState.position_units(axisIndex), 0];
+    goalAxisPosition_units    = [goalState.position_units(axisIndex), 0];
+    [~, axisSegmentDurations_s] = bmtpEngine.motion.createJerkLimitedChord( ...
+        initialAxisPosition_units, goalAxisPosition_units, axisLimits, 3);
+    duration_s = max(duration_s, sum(axisSegmentDurations_s));
 end
 end

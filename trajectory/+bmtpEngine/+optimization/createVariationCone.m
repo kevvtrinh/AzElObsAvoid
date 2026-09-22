@@ -1,53 +1,63 @@
-function cones = createVariationCone(jerkMap, times_s, limits, objectiveIndex)
+function variationCone = createVariationCone( ...
+    jerkControlMap, segmentTime_s, limits, objectiveVariableIndex)
 %% Section 0: Header & Readme
 % SYNTAX
-%   cones = bmtpEngine.optimization.createVariationCone(jerkMap, times_s, limits, objectiveIndex)
+%   variationCone = bmtpEngine.optimization.createVariationCone( ...
+%       jerkControlMap, segmentTime_s, limits, objectiveVariableIndex)
 %**************************************************************************
 % PURPOSE
-%   - Penalize jerk variation within the motion-generation solve.
+%   - Give the solver a measure of how quickly jerk changes, so it can
+%     prefer smoother motion. Snap is the rate of change of jerk.
 %**************************************************************************
 % INPUTS
-%   - jerkMap (sparse matrix)
-%       Physical quadratic-jerk map over the decision vector.
-%   - times_s (numeric column)
-%       Physical phase durations, one per span.
+%   - jerkControlMap (sparse matrix)
+%       Maps solver values to three quadratic jerk controls per axis and segment.
+%   - segmentTime_s (numeric column)
+%       Duration of each motion segment.
 %   - limits (scalar struct)
 %       Per-axis jerk limits used to normalize the measure.
-%   - objectiveIndex (numeric scalar)
-%       Epigraph variable for the complete integrated variation.
+%   - objectiveVariableIndex (numeric scalar)
+%       Solver variable that must be at least the calculated jerk-variation cost.
 %**************************************************************************
 % OUTPUTS
-%   - cones (secondordercone array)
-%       Cone bounding normalized integrated squared snap.
+%   - variationCone (secondordercone object)
+%       Vector-length constraint requiring cost <= objective variable.
 %**************************************************************************
 % UNITS
 %   - Time is seconds; the objective measure is dimensionless.
 %**************************************************************************
 
-%% Section 1: Integrate The Linear Snap Exactly
-spanCount         = numel(times_s);
-snapQuadratureMap = sparse(4 * spanCount, 6 * spanCount);
-quadratureTau     = (1 + [-1, 1] / sqrt(3)) / 2;
-for spanIndex = 1:spanCount
-    localSnapWeights = sqrt(2 / times_s(spanIndex)) * ...
-        [-(1 - quadratureTau(:)), 1 - 2 * quadratureTau(:), quadratureTau(:)];
-    snapQuadratureMap((spanIndex - 1) * 4 + (1:4), ...
-            (spanIndex - 1) * 6 + (1:6)) = ...
-        kron(localSnapWeights, diag(1 ./ limits.maxJerk_units_s3));
+%% Section 1: Measure How Quickly Jerk Changes
+
+% Quadratic jerk has linear snap. These two integration points and weights
+% give the exact integral of snap^2, without sampling the whole segment.
+% Divide each axis by its jerk limit so both axes use a comparable scale.
+segmentCount         = numel(segmentTime_s);
+weightedSnapMap      = sparse(4 * segmentCount, 6 * segmentCount);
+integrationFractions = (1 + [-1, 1] / sqrt(3)) / 2;
+for segmentIndex = 1:segmentCount
+    segmentSnapWeights = sqrt(2 / segmentTime_s(segmentIndex)) * ...
+        [-(1 - integrationFractions(:)), 1 - 2 * integrationFractions(:), integrationFractions(:)];
+    weightedSnapMap((segmentIndex - 1) * 4 + (1:4), ...
+        (segmentIndex - 1) * 6 + (1:6)) = ...
+        kron(segmentSnapWeights, diag(1 ./ limits.maxJerk_units_s3));
 end
 
-%% Section 2: Bound The Complete Normalized Snap With One Cone
-% For three jerk controls in [-1,1], the maximum integrated squared
-% normalized snap is 16/(3*h) per axis. One quadratic epigraph for the
-% concatenated samples is exactly equivalent to summing one epigraph per
-% span, while avoiding redundant auxiliary variables and cone blocks.
-normalizer    = sqrt((32 / 3) * sum(1 ./ times_s));
-snapMap       = snapQuadratureMap * jerkMap / normalizer;
-variableCount = size(jerkMap, 2);
-coneLinearMap = [2 * snapMap; sparse(1, variableCount)] + ...
-    sparse(4 * spanCount + 1, objectiveIndex, 1, ...
-    4 * spanCount + 1, variableCount);
-coneBoundVector = sparse(objectiveIndex, 1, 1, variableCount, 1);
-cones = secondordercone( ...
-    coneLinearMap, [zeros(4 * spanCount, 1); 1], coneBoundVector, -1);
+%% Section 2: Convert The Total Cost Into A Solver Constraint
+
+% For normalized jerk controls between -1 and 1, the largest integral of
+% snap^2 is 16 / (3 x duration) per axis. Divide by the two-axis total
+% across all segments so the cost is between 0 and 1 for these controls.
+maximumVariationScale = sqrt((32 / 3) * sum(1 ./ segmentTime_s));
+normalizedSnapMap     = weightedSnapMap * jerkControlMap / maximumVariationScale;
+decisionVariableCount = size(jerkControlMap, 2);
+% Let q = normalizedSnapMap x solverValues and z = the objective variable.
+% The constraint norm([2 x q; z - 1]) <= z + 1 gives sum(q.^2) <= z.
+% Minimizing z therefore minimizes the measured jerk variation.
+leftSideMap = [2 * normalizedSnapMap; sparse(1, decisionVariableCount)] + ...
+    sparse(4 * segmentCount + 1, objectiveVariableIndex, 1, ...
+    4 * segmentCount + 1, decisionVariableCount);
+rightSideWeights = sparse(objectiveVariableIndex, 1, 1, decisionVariableCount, 1);
+variationCone = secondordercone( ...
+    leftSideMap, [zeros(4 * segmentCount, 1); 1], rightSideWeights, -1);
 end

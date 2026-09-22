@@ -1,75 +1,91 @@
-function [selected, selectedQEnter, selectedQExit, activeStart_s, activeEnd_s] = ...
-    computePairCellEntry(first_units, second_units, cellLower_units, ...
-    cellUpper_units, activeIntervals_s)
+function [regionIndices, boxEntryFractions, boxExitFractions, activeStartTimes_s, activeEndTimes_s] = ...
+    computePairCellEntry(segmentStart_units, segmentEnd_units, boxMinimum_units, ...
+    boxMaximum_units, activeIntervals_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [selected, selectedQEnter, selectedQExit, activeStart_s, activeEnd_s] = ...
-%       obstacleAvoidance.search.computePairCellEntry(first_units, second_units, ...
-%       cellLower_units, cellUpper_units, activeIntervals_s)
+%   [regionIndices, boxEntryFractions, boxExitFractions, activeStartTimes_s, activeEndTimes_s] = ...
+%       obstacleAvoidance.search.computePairCellEntry(segmentStart_units, segmentEnd_units, ...
+%       boxMinimum_units, boxMaximum_units, activeIntervals_s)
 %**************************************************************************
 % PURPOSE
-%   - Conservative segment/box parameter clocks for one directed node
-%     pair: the cells the segment can meet, ordered by active start, and
-%     the guarded parameter interval over which it can meet each.
+%   - Find obstacle-region boxes that a straight segment can meet, and the
+%     fractions of the segment spent inside each box. Include rounding
+%     allowance so possible collisions reach the full geometry check.
+%   - Order candidates by the time each region becomes active.
 %**************************************************************************
 % INPUTS
-%   - first_units, second_units (1-by-2 numeric)
+%   - segmentStart_units, segmentEnd_units (1-by-2 numeric)
 %       Segment endpoints.
-%   - cellLower_units, cellUpper_units (C-by-2 numeric)
-%       Cell boxes from createCellBoxes.
+%   - boxMinimum_units, boxMaximum_units (C-by-2 numeric)
+%       Lower and upper [x y] box corners from createCellBoxes.
 %   - activeIntervals_s (C-by-2 numeric)
-%       Active clock of every cell.
+%       [start end] times when each region is active.
 %**************************************************************************
 % OUTPUTS
-%   - selected (K-by-1 numeric)
-%       Indices of the cells the segment can meet.
-%   - selectedQEnter, selectedQExit (K-by-1 numeric)
-%       Guarded segment parameter interval per selected cell.
-%   - activeStart_s, activeEnd_s (K-by-1 numeric)
-%       Active clock per selected cell.
+%   - regionIndices (K-by-1 numeric)
+%       Indices of regions whose boxes may meet the segment.
+%   - boxEntryFractions, boxExitFractions (K-by-1 numeric)
+%       Start/end fractions in [0 1] of the possible box overlap.
+%   - activeStartTimes_s, activeEndTimes_s (K-by-1 numeric)
+%       Active time interval for each selected region.
 %**************************************************************************
 % UNITS
-%   - Positions are coordinate units and clocks are seconds.
+%   - Positions use coordinate units; times use seconds. Segment fractions
+%     are unitless: 0 = the start point and 1 = the end point.
 %**************************************************************************
 
-%% Section 1: Intersect The Segment With Every Cell Box
+%% Section 1: Find The Segment Fractions Inside Each Box
 
-% Conservative segment/box parameter clocks for one directed node pair.
-cellCount   = size(cellLower_units, 1);
-delta_units = second_units - first_units;
-qEnter      = zeros(cellCount, 1);
-qExit       = ones(cellCount, 1);
-canMeet     = true(cellCount, 1);
-uncertain   = any(isnan(cellLower_units) | isnan(cellUpper_units), 2);
-for dimensionIndex = 1:2
-    if delta_units(dimensionIndex) == 0
-        canMeet = canMeet & ( ...
-            first_units(dimensionIndex) >= cellLower_units(:, dimensionIndex) & ...
-            first_units(dimensionIndex) <= cellUpper_units(:, dimensionIndex));
+% Intersect the x and y ranges. For x = 0 -> 10 and box x = [4 6],
+% the x range gives fractions [0.4 0.6]; the y range can narrow this further.
+regionCount         = size(boxMinimum_units, 1);
+segmentVector_units = segmentEnd_units - segmentStart_units;
+entryFractions      = zeros(regionCount, 1);
+exitFractions       = ones(regionCount, 1);
+segmentCouldMeetBox = true(regionCount, 1);
+boxHasUnknownBounds = any(isnan(boxMinimum_units) | isnan(boxMaximum_units), 2);
+for axisIndex = 1:2
+    % With no movement on this axis, the entire segment has one coordinate.
+    % That coordinate must lie inside the box's range.
+    if segmentVector_units(axisIndex) == 0
+        segmentCouldMeetBox = segmentCouldMeetBox & ( ...
+            segmentStart_units(axisIndex) >= boxMinimum_units(:, axisIndex) & ...
+            segmentStart_units(axisIndex) <= boxMaximum_units(:, axisIndex));
     else
-        firstIntersection = (cellLower_units(:, dimensionIndex) - ...
-            first_units(dimensionIndex)) / delta_units(dimensionIndex);
-        secondIntersection = (cellUpper_units(:, dimensionIndex) - ...
-            first_units(dimensionIndex)) / delta_units(dimensionIndex);
-        qEnter = max(qEnter, min(firstIntersection, secondIntersection));
-        qExit  = min(qExit, max(firstIntersection, secondIntersection));
+        minimumBoundaryFraction = (boxMinimum_units(:, axisIndex) - ...
+            segmentStart_units(axisIndex)) / segmentVector_units(axisIndex);
+        maximumBoundaryFraction = (boxMaximum_units(:, axisIndex) - ...
+            segmentStart_units(axisIndex)) / segmentVector_units(axisIndex);
+        % Min/max handles either travel direction along the axis.
+        entryFractions = max(entryFractions, min(minimumBoundaryFraction, maximumBoundaryFraction));
+        exitFractions  = min(exitFractions, max(minimumBoundaryFraction, maximumBoundaryFraction));
     end
 end
-qGuard = 256 * eps(max(1, max(abs([qEnter, qExit]), [], 2)));
-qGuard(~isfinite(qGuard)) = 0;
-canMeet = canMeet & qEnter <= qExit + qGuard & ...
-    qExit >= -qGuard & qEnter <= 1 + qGuard;
-canMeet(uncertain) = true;
-qEnter(uncertain)  = 0;
-qExit(uncertain)   = 1;
-selected = find(canMeet);
-if ~isempty(selected)
-    [~, activeOrder] = sortrows( ...
-        [activeIntervals_s(selected, 1), selected], [1, 2]);
-    selected = selected(activeOrder);
+
+%% Section 2: Allow For Rounding And Keep Boxes With Unknown Bounds
+
+fractionRoundingAllowance = 256 * eps(max(1, max(abs([entryFractions, exitFractions]), [], 2)));
+fractionRoundingAllowance(~isfinite(fractionRoundingAllowance)) = 0;
+segmentCouldMeetBox = segmentCouldMeetBox & entryFractions <= exitFractions + fractionRoundingAllowance & ...
+    exitFractions >= -fractionRoundingAllowance & entryFractions <= 1 + fractionRoundingAllowance;
+
+% Unknown bounds cannot prove that a segment is clear. Keep the region
+% for the full collision check over the whole segment.
+segmentCouldMeetBox(boxHasUnknownBounds) = true;
+entryFractions(boxHasUnknownBounds)      = 0;
+exitFractions(boxHasUnknownBounds)       = 1;
+
+%% Section 3: Return Candidates In Active-Time Order
+
+regionIndices = find(segmentCouldMeetBox);
+% Break equal start-time ties by region index for repeatable ordering.
+if ~isempty(regionIndices)
+    [~, activationSortOrder] = sortrows( ...
+        [activeIntervals_s(regionIndices, 1), regionIndices], [1, 2]);
+    regionIndices = regionIndices(activationSortOrder);
 end
-selectedQEnter = max(0, qEnter(selected) - qGuard(selected));
-selectedQExit  = min(1, qExit(selected) + qGuard(selected));
-activeStart_s  = activeIntervals_s(selected, 1);
-activeEnd_s    = activeIntervals_s(selected, 2);
+boxEntryFractions  = max(0, entryFractions(regionIndices) - fractionRoundingAllowance(regionIndices));
+boxExitFractions   = min(1, exitFractions(regionIndices) + fractionRoundingAllowance(regionIndices));
+activeStartTimes_s = activeIntervals_s(regionIndices, 1);
+activeEndTimes_s   = activeIntervals_s(regionIndices, 2);
 end
