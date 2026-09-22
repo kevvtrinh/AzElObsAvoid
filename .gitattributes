@@ -1,0 +1,15 @@
+# Line endings are pinned here so they do not depend on each machine's
+# core.autocrlf setting. Text files are stored as LF in the repository and
+# checked out with native endings, which keeps CRLF working copies on Windows.
+* text=auto
+
+# MATLAB sources and the tracked documentation, data, and report formats.
+*.m    text
+*.md   text
+*.csv  text
+*.json text
+*.html text
+
+# Binary payloads must never be line-ending converted.
+*.mat  binary
+*.xlsx binary

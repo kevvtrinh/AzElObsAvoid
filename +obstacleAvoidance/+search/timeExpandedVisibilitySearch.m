@@ -1,537 +1,929 @@
-function [route_units, routeTime_s, record] = timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units, obstacles, initialState, goalState, limits, sampleTimes_s, options)
+function [route_units, routeTime_s, timedSearchDetails] = timeExpandedVisibilitySearch( ...
+    nodePosition_units, edgeCost_units, obstacles, initialState, goalState, ...
+    limits, sampleTimes_s, options)
 %% Section 0: Header & Readme
-% SYNTAX: [route_units, routeTime_s, record] =
-%   obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units,
-%   obstacles, initialState, goalState, limits, sampleTimes_s, options)
-% PURPOSE: Search forward reachability using waits and moving edges at every supplied planning time.
-% INPUTS: nodePosition_units (N-by-2 numeric matrix) Nodes with start first and goal second.
-%   edgeCost_units (N-by-N numeric matrix) Finite entries enable motion edges. obstacles (canonical
-%   protected obstacle struct array) initialState, goalState, limits, options (scalar structs)
-%   sampleTimes_s (numeric vector) Candidate times retained exactly as temporal search layers.
-% OUTPUTS: route_units (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector) Selected timed
-%   route, or documented empty arrays on exhaustion. record (scalar struct) Search counts, frontier,
-%   and best partial ancestry.
-% UNITS: Position and edge cost are coordinate units; time is seconds.
+% SYNTAX
+%   [route_units, routeTime_s, timedSearchDetails] = ...
+%       obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+%       nodePosition_units, edgeCost_units, obstacles, initialState, ...
+%       goalState, limits, sampleTimes_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Search routes that move between candidate positions or wait at them.
+%     Each position is considered at several times, so a blocked passage
+%     can become usable after an obstacle moves.
+%   - Check each connection throughout its travel time. The returned route
+%     is a proposal for BMTP, not yet a complete validated vehicle motion.
+%**************************************************************************
+% INPUTS
+%   - nodePosition_units (N-by-2 numeric array)
+%       Search nodes with the start first and goal second.
+%   - edgeCost_units (N-by-N numeric array)
+%       Finite entries allow a connection; Inf disables it. Connection
+%       lengths are calculated from nodePosition_units during the search.
+%   - obstacles (standard protected obstacle array)
+%       Static and moving geometry.
+%   - initialState (scalar struct)
+%       Normalized initial endpoint state.
+%   - goalState (scalar struct)
+%       Normalized goal endpoint state.
+%   - limits (scalar struct)
+%       Checked workspace, speed, acceleration, and jerk limits.
+%   - sampleTimes_s (numeric vector)
+%       Candidate search times. One layer contains every node at one time.
+%   - options (scalar struct)
+%       Normalized timed-search options.
+%**************************************************************************
+% OUTPUTS
+%   - route_units (N-by-2 numeric array)
+%       Selected route positions, or empty if the search finds no route.
+%   - routeTime_s (N-by-1 numeric array)
+%       Time at each route point, or empty if the search finds no route.
+%   - timedSearchDetails (scalar struct)
+%       Search counts, the selected period when the goal stays clear, and
+%       an additional route allowing a later arrival within that period.
+%       Finding no route is a normal outcome; invalid input throws an error.
+%**************************************************************************
+% UNITS
+%   - Position and edge cost are coordinate units; time is seconds.
+%**************************************************************************
 
-%% Section 1: Propagate The Reachability Frontier
-layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); goalState.time_s]);
-layerTimes_s = layerTimes_s(layerTimes_s >= initialState.time_s & layerTimes_s <= goalState.time_s);
-layerCount   = numel(layerTimes_s);
-nodeCount    = size(nodePosition_units, 1);
-initialPosition_units=nodePosition_units(1,:);
-goalPosition_units=nodePosition_units(2,:);
-if isfield(initialState,'position_units')
-    initialPosition_units=initialState.position_units;
-end
-if isfield(goalState,'position_units')
-    goalPosition_units=goalState.position_units;
-end
-minimumGoalArrivalTime_s = initialState.time_s + ...
-    max(abs(goalPosition_units-initialPosition_units)./ ...
-    limits.maxVelocity_units_s);
-hasEndpointDerivatives = all(isfield(initialState, ...
-    {'position_units','velocity_units_s','acceleration_units_s2'})) && ...
-    all(isfield(goalState, ...
-    {'position_units','velocity_units_s','acceleration_units_s2'}));
-hasDerivativeLimits = all(isfield(limits, ...
-    {'maxAcceleration_units_s2','maxJerk_units_s3'}));
-if hasEndpointDerivatives && hasDerivativeLimits
-    minimumGoalArrivalTime_s = initialState.time_s + ...
-        obstacleAvoidance.input.minimumTravelTime(initialState,goalState,limits);
-end
-timeTolerance_s = 256*eps(max(1,max(abs(layerTimes_s))));
-goalLayerIsEligible = true(layerCount,1);
-if options.GoalTimeMode == "earliestArrival"
-    goalLayerIsEligible = ...
-        layerTimes_s >= minimumGoalArrivalTime_s-timeTolerance_s;
-end
-% The local obstacle snapshot stays unchanged throughout this search.
-obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles,[initialState.time_s,goalState.time_s]);
-% Keep cached boundaries local, with fewer entries for larger boundaries or more obstacles.
-for j=1:numel(obstacles)
-    obstacles(j).InternalPreparation.QueryGeometryCache=containers.Map('KeyType','double','ValueType','any');
-    obstacles(j).InternalPreparation.QueryGeometryCacheCapacity=floor(2^14 / max(1,numel(obstacles)) / ...
-        max([1;cellfun(@numel,obstacles(j).x_units(:))]));
-end
-[geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacles);
+%% Section 1: Set The Positions And Times To Search
 
-% Cache unknown/free/occupied as 0/1/2 within 300 MiB. Eviction only repeats
-% authoritative queries; it never removes a search candidate.
-bytesPerGeometry = 13 * nodeCount ^ 2;
+% A layer contains all route points at one time. The search can move to
+% a different point at a later layer, or wait at the same point if it stays clear.
+layerTimes_s          = unique([initialState.time_s; sampleTimes_s(:); goalState.time_s]);
+layerTimes_s          = layerTimes_s(layerTimes_s >= initialState.time_s & layerTimes_s <= goalState.time_s);
+layerCount            = numel(layerTimes_s);
+nodeCount             = size(nodePosition_units, 1);
+initialPosition_units = nodePosition_units(1, :);
+goalPosition_units    = nodePosition_units(2, :);
+if isfield(initialState, 'position_units')
+    initialPosition_units = initialState.position_units;
+end
+if isfield(goalState, 'position_units')
+    goalPosition_units = goalState.position_units;
+end
+% Even without obstacles, distance / maximum speed limits how early the
+% vehicle can arrive. Use acceleration and jerk limits too when available.
+displacement_units       = abs(goalPosition_units - initialPosition_units);
+minimumDuration_s        = max(displacement_units ./ limits.maxVelocity_units_s);
+minimumGoalArrivalTime_s = initialState.time_s + minimumDuration_s;
+
+endpointFieldNames           = {'position_units', 'velocity_units_s', 'acceleration_units_s2'};
+hasEndpointMotionValues      = all(isfield(initialState, endpointFieldNames)) && all(isfield(goalState, endpointFieldNames));
+hasAccelerationAndJerkLimits = all(isfield(limits, {'maxAcceleration_units_s2', 'maxJerk_units_s3'}));
+if hasEndpointMotionValues && hasAccelerationAndJerkLimits
+    minimumDuration_s        = obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
+    minimumGoalArrivalTime_s = initialState.time_s + minimumDuration_s;
+end
+% Allow for roundoff when comparing large absolute times.
+timeTolerance_s                = 256 * eps(max(1, max(abs(layerTimes_s))));
+goalLayerIsEligible            = layerTimes_s >= minimumGoalArrivalTime_s - timeTolerance_s;
+hasGoalVelocityAndAcceleration = all(isfield(goalState, ...
+    {'velocity_units_s', 'acceleration_units_s2'}));
+if options.GoalTimeMode == "fixedArrival" && hasGoalVelocityAndAcceleration && ...
+        any([goalState.velocity_units_s, goalState.acceleration_units_s2] ~= 0)
+    % A goal with nonzero velocity or acceleration cannot be reached early
+    % and held still. Require arrival at the specified goal time.
+    goalLayerIsEligible(:)   = false;
+    goalLayerIsEligible(end) = true;
+end
+
+%% Section 2: Prepare Obstacles And Reusable Collision Checks
+
+% Keep one prepared obstacle history for all route checks in this search.
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles, [initialState.time_s, goalState.time_s]);
+% Save shapes for repeated queries at the same time. Reduce the number
+% saved for large boundaries or many obstacles to limit memory use.
+for obstacleIndex = 1:numel(obstacles)
+    obstacles(obstacleIndex).InternalPreparation.QueryGeometryCache = containers.Map( ...
+        'KeyType', 'double', 'ValueType', 'any');
+    maximumBoundaryRowCount = max([1; cellfun(@numel, obstacles(obstacleIndex).x_units(:))]);
+    shapeCacheCapacity      = floor(2^14 / max(1, numel(obstacles)) / maximumBoundaryRowCount);
+    obstacles(obstacleIndex).InternalPreparation.QueryGeometryCacheCapacity = shapeCacheCapacity;
+end
 maximumCacheBytes = 300 * 1024 ^ 2;
-batchPositions_units = zeros(0, 2);
-batchPointIndices = zeros(0, 1);
-hasStationarySpan = any(stationaryTimeCell(3:2:end - 2));
-% Cache directed-edge samples only for exactly unchanged source boundaries.
-staticObstacles = obstacles([]);
-dynamicObstacles = obstacles;
-staticEdgeCache = zeros(0,1,'uint8');
-staticTimeRange_s = [-Inf,Inf];
-if ~hasStationarySpan && nodeCount^2 <= maximumCacheBytes
-    isStatic = false(size(obstacles));
-    for j = 1:numel(obstacles)
-        obstacle = obstacles(j);
-        isStatic(j) = obstacle.InternalPreparation.SamplesExactlyEqual;
-        if isStatic(j) && numel(obstacle.time_s)>1
-            staticTimeRange_s = [max(staticTimeRange_s(1),obstacle.time_s(1)), ...
-                min(staticTimeRange_s(2),obstacle.time_s(end))];
-        end
+% Check each static obstacle only during the times it exists. Use its
+% prepared boundary, which already includes the safety margin.
+obstacleIsStationary = arrayfun(@(obstacle) obstacle.InternalPreparation.SamplesExactlyEqual, obstacles);
+dynamicObstacles     = obstacles(~obstacleIsStationary);
+staticObstacles      = obstacles(obstacleIsStationary);
+staticShapeCount     = numel(staticObstacles);
+movingObstacleCells  = obstacleAvoidance.obstacles.createTimeCells( ...
+    dynamicObstacles, initialState.time_s, goalState.time_s);
+staticShapes            = cell(staticShapeCount, 1);
+staticEdgeStart_units   = cell(staticShapeCount, 1);
+staticEdgeEnd_units     = cell(staticShapeCount, 1);
+staticActiveIntervals_s = repmat([-Inf, Inf], staticShapeCount, 1);
+staticShapeIsPrepared   = false(staticShapeCount, 1);
+for staticObstacleIndex = 1:staticShapeCount
+    obstacle            = staticObstacles(staticObstacleIndex);
+    preparation         = obstacle.InternalPreparation;
+    preparedSampleIndex = find(preparation.SamplePrepared, 1, "first");
+    if isempty(preparedSampleIndex)
+        continue;
     end
-    staticObstacles = obstacles(isStatic);
-    dynamicObstacles = obstacles(~isStatic);
-    if any(isStatic,'all'), staticEdgeCache = zeros(nodeCount^2,1,'uint8'); end
-end
-if hasStationarySpan && 24 * bytesPerGeometry <= maximumCacheBytes / 2
-    % Every edge uses the same 13 spatial fractions regardless of its clock.
-    % Keep exact arithmetic and merge only numerically identical positions.
-    [firstNode, secondNode] = ndgrid(1:nodeCount, 1:nodeCount);
-    firstPosition_units = nodePosition_units(firstNode(:), :);
-    secondPosition_units = nodePosition_units(secondNode(:), :);
-    batchPositions_units = zeros(bytesPerGeometry, 2);
-    fractions = linspace(0, 1, 13);
-    for fractionIndex = 1:13
-        batchIndices = (fractionIndex - 1) * nodeCount ^ 2 + (1:nodeCount ^ 2);
-        batchPositions_units(batchIndices, :) = firstPosition_units + fractions(fractionIndex) .* (secondPosition_units - firstPosition_units);
+    staticShapeIsPrepared(staticObstacleIndex) = true;
+    staticShapes{staticObstacleIndex}          = preparation.SampleShapes{preparedSampleIndex};
+    staticEdgeStart_units{staticObstacleIndex} = preparation.SampleEdgeStart_units{preparedSampleIndex};
+    staticEdgeEnd_units{staticObstacleIndex}   = preparation.SampleEdgeEnd_units{preparedSampleIndex};
+    if numel(obstacle.time_s) > 1
+        staticActiveIntervals_s(staticObstacleIndex, :) = [obstacle.time_s(1), obstacle.time_s(end)];
     end
-    [batchPositions_units, ~, batchPointIndices] = unique(batchPositions_units, 'rows');
 end
-lookupBytes = 8 * (numel(batchPositions_units) + numel(batchPointIndices));
-cacheSlotCount = min(numel(stationaryTimeCell), floor((maximumCacheBytes - lookupBytes) / max(1, bytesPerGeometry)));
-occupancyCache = cell(cacheSlotCount, 1);
-occupancyCacheKey = zeros(cacheSlotCount, 1);
-nodeIsFree   = false(layerCount, nodeCount);
+% Some moving obstacles use a fixed enclosure covering their whole motion
+% between samples. Check that saved shape only during its active interval,
+% together with the other stationary shapes.
+[stationaryShapes, stationaryStarts_units, stationaryEnds_units, stationaryActive_s, movingObstacleCells] = ...
+    extractStationaryEnclosures(dynamicObstacles, movingObstacleCells);
+staticShapes            = [staticShapes; stationaryShapes];
+staticEdgeStart_units   = [staticEdgeStart_units; stationaryStarts_units];
+staticEdgeEnd_units     = [staticEdgeEnd_units; stationaryEnds_units];
+staticActiveIntervals_s = [staticActiveIntervals_s; stationaryActive_s];
+staticShapeIsPrepared   = [staticShapeIsPrepared; true(numel(stationaryShapes), 1)];
+staticShapeCount        = numel(staticShapes);
+% Reuse a static-edge check only when the obstacle exists for the entire
+% edge travel time. Otherwise, check just the overlapping part of the edge.
+% Each cache row represents one directed node pair; columns are shapes.
+staticEdgeClearanceCache = zeros(0, 0, 'uint8');
+if staticShapeCount > 0 && nodeCount^2 * staticShapeCount <= maximumCacheBytes
+    staticEdgeClearanceCache = zeros(nodeCount^2, staticShapeCount, 'uint8');
+end
+% Prepare region bounds and edge timing data for moving-obstacle checks.
+% These reject impossible overlaps before the detailed collision calculation.
+movingCellLookup = obstacleAvoidance.search.createMovingCellIndex(movingObstacleCells, nodePosition_units);
+
+%% Section 3: Find Clear Positions And Waiting Periods
+
+nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-        obstacles,nodePosition_units(:,1),nodePosition_units(:,2),layerTimes_s(layerIndex),false).';
+        obstacles, nodePosition_units(:, 1), nodePosition_units(:, 2), layerTimes_s(layerIndex), false).';
 end
 waitIsClear = false(max(0, layerCount - 1), nodeCount);
 for layerIndex = 1:layerCount - 1
-    candidateNodeIndices = find(nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
-    % Test a stationary wait only at nodes that are free in both adjacent layers; all other waits remain unavailable.
+    candidateNodeIndices = find( ...
+        nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
+    % Test stationary waits only at nodes free in both adjacent layers.
     if ~isempty(candidateNodeIndices)
-        waitIsClear(layerIndex, candidateNodeIndices) = edgeIsClear(candidateNodeIndices, candidateNodeIndices, layerTimes_s(layerIndex), layerTimes_s(layerIndex + 1));
+        waitIsClear(layerIndex, candidateNodeIndices) = edgeIsClear( ...
+            candidateNodeIndices, candidateNodeIndices, layerTimes_s(layerIndex), layerTimes_s(layerIndex + 1));
     end
 end
 
-% Within a clear-wait interval, an earlier arrival can wait to match a later one.
-isWaitComponentStart = nodeIsFree;
-isWaitComponentStart(2:end, :) = nodeIsFree(2:end, :) & ~waitIsClear;
-waitComponentFinalLayerIndex = repmat(uint32((1:layerCount).'), 1, nodeCount);
+% A wait window is a consecutive group of layers joined by clear waits.
+% For example, a vehicle arriving at t = 1 can wait until t = 3 if that
+% position stays clear throughout. Earlier arrival in this window remains usable.
+waitWindowStartsHere           = nodeIsFree;
+waitWindowStartsHere(2:end, :) = nodeIsFree(2:end, :) & ~waitIsClear;
+waitWindowEndLayerIndex        = repmat(uint32((1:layerCount).'), 1, nodeCount);
 for layerIndex = layerCount - 1:-1:1
     continuingNodeIndices = find(waitIsClear(layerIndex, :));
-    waitComponentFinalLayerIndex(layerIndex, continuingNodeIndices) = waitComponentFinalLayerIndex(layerIndex + 1, continuingNodeIndices);
+    waitWindowEndLayerIndex(layerIndex, continuingNodeIndices) = ...
+        waitWindowEndLayerIndex(layerIndex + 1, continuingNodeIndices);
 end
 motionEdgeExists = isfinite(edgeCost_units);
 motionEdgeExists(1:nodeCount + 1:end) = false;
 minimumEdgeDuration_s = zeros(nodeCount, nodeCount);
 motionEdgeLengths_units = zeros(nodeCount, nodeCount);
-for sourceIndex = 1:nodeCount
-    displacement_units = nodePosition_units - nodePosition_units(sourceIndex, :);
-    minimumEdgeDuration_s(sourceIndex, :) = max(abs(displacement_units) ./ limits.maxVelocity_units_s, [], 2).';
-    for targetIndex = reshape(find(motionEdgeExists(sourceIndex, :)), 1, [])
-        motionEdgeLengths_units(sourceIndex, targetIndex) = norm(displacement_units(targetIndex, :));
+for sourceNodeIndex = 1:nodeCount
+    displacement_units = nodePosition_units - nodePosition_units(sourceNodeIndex, :);
+    minimumEdgeDuration_s(sourceNodeIndex, :) = ...
+        max(abs(displacement_units) ./ limits.maxVelocity_units_s, [], 2).';
+    for targetNodeIndex = reshape(find(motionEdgeExists(sourceNodeIndex, :)), 1, [])
+        motionEdgeLengths_units(sourceNodeIndex, targetNodeIndex) = ...
+            norm(displacement_units(targetNodeIndex, :));
     end
 end
-distanceToGoal_units = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
-goalCanWaitToFinal = nodeIsFree(:, 2) & double(waitComponentFinalLayerIndex(:, 2)) == layerCount;
-preferNearGoalWait=options.GoalTimeMode=="earliestArrival" && ...
-    nnz(isWaitComponentStart(:,2) & nodeIsFree(:,2))>1;
-reachable        = false(layerCount, nodeCount);
-spatialCost_units  = Inf(layerCount, nodeCount);
-goalExposure_units_s = Inf(layerCount,nodeCount);
-parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
-parentNodeIndex  = zeros(layerCount, nodeCount, "uint16");
-reachable(1, 1) = nodeIsFree(1, 1);
-spatialCost_units(1, 1) = 0;
-goalExposure_units_s(1,1) = 0;
-[waitCount, motionCount, rejectedCount, expandedCount, goalBoundRejectionCount, candidateBatchSplitCount] = deal(0);
-goalCostBound_units=Inf;
-exploredNodes_units = zeros(0, 2);
-for layerIndex = 1:layerCount - 1
-    % Once the goal is reached, retain its complete clear wait component.
-    % That gives BMTP a kinematically useful arrive-then-wait seed without
-    % crossing a later interval in which the goal becomes occupied.
-    firstGoalLayerIndex=find(reachable(1:layerIndex,2) & ...
-        goalLayerIsEligible(1:layerIndex),1,"first");
-    if options.GoalTimeMode == "earliestArrival" && ~isempty(firstGoalLayerIndex)
-        selectedGoalLayerIndex=double(waitComponentFinalLayerIndex(firstGoalLayerIndex,2));
-        if selectedGoalLayerIndex==layerCount
-            selectedGoalLayerIndex=firstGoalLayerIndex;
+% Keep the timing and waiting information with the allowed node connections.
+% The candidate-building helpers use these arrays to list possible moves.
+timedConnectionData = struct( ...
+    'LayerTimes_s',                 layerTimes_s, ...
+    'NodeIsFree',                   nodeIsFree, ...
+    'IsWaitComponentStart',         waitWindowStartsHere, ...
+    'WaitComponentFinalLayerIndex', waitWindowEndLayerIndex, ...
+    'MotionEdgeExists',             motionEdgeExists, ...
+    'MinimumEdgeDuration_s',        minimumEdgeDuration_s, ...
+    'MotionEdgeLengths_units',      motionEdgeLengths_units);
+
+%% Section 4: Search For A Route Through Successive Times
+
+distanceToGoal_units           = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
+isEarliestArrival              = options.GoalTimeMode == "earliestArrival";
+goalArrivalCompletesRequest    = false(layerCount, 1);
+nextValidGoalArrivalLayerIndex = zeros(layerCount, 1);
+% For fixed arrival, an earlier visit to the goal can finish the request
+% only if waiting there stays clear through the required arrival time.
+if ~isEarliestArrival
+    goalArrivalCompletesRequest = goalLayerIsEligible & nodeIsFree(:, 2) & ...
+        double(waitWindowEndLayerIndex(:, 2)) == layerCount;
+    nextValidGoalLayerIndex = 0;
+    for layerIndex = layerCount:-1:1
+        if goalArrivalCompletesRequest(layerIndex)
+            nextValidGoalLayerIndex = layerIndex;
         end
-        if layerIndex>=selectedGoalLayerIndex, break; end
+        nextValidGoalArrivalLayerIndex(layerIndex) = nextValidGoalLayerIndex;
     end
-    currentNodeIndices          = find(reachable(layerIndex, :));
+end
+% Each search state is a node at a layer. Save the shortest route reaching
+% it and the preceding node/layer, so the selected route can be traced back.
+nodeIsReachable         = false(layerCount, nodeCount);
+routeLengthToNode_units = Inf(layerCount, nodeCount);
+parentLayerIndex        = zeros(layerCount, nodeCount, "uint32");
+parentNodeIndex         = zeros(layerCount, nodeCount, "uint32");
+
+nodeIsReachable(1, 1)         = nodeIsFree(1, 1);
+routeLengthToNode_units(1, 1) = 0;
+
+[rejectedCount, expandedCount, provenSkipCount] = deal(0);
+
+bestGoalRouteLength_units       = Inf;
+selectedGoalEdgeStartLayerIndex = 0;
+selectedGoalEdgeStartNodeIndex  = 0;
+selectedGoalArrivalLayerIndex   = 0;
+if isEarliestArrival
+    % Process possible arrivals in time order. Continue through the first
+    % reachable goal wait window when a later route in that window is needed.
+    % Every move advances time, so the search cannot loop backward.
+    % Edge-check columns: departure layer, source node, target node, last
+    % allowed arrival layer, edge length, ordering index, last proven blocked layer.
+    pendingEdgeChecks   = cell(layerCount, 1);
+    pendingNodeArrivals = cell(layerCount, 1);
+    for layerIndex = 1:layerCount
+        checkPendingEdges(layerIndex);
+        applyPendingNodeArrivals(layerIndex);
+        goalWaitWindowIsComplete = hasReachedGoalWaitWindowEnd(layerIndex);
+        if goalWaitWindowIsComplete
+            break
+        end
+        if layerIndex == layerCount
+            break
+        end
+        scheduleLayerExpansion(layerIndex);
+    end
+else
+    for layerIndex = 1:layerCount - 1
+        propagateFixedArrivalLayer(layerIndex);
+    end
+end
+
+%% Section 5: Reconstruct The Selected Route And Its Arrival Times
+
+% Earliest-arrival mode selects the first reachable eligible goal layer.
+% Fixed-arrival mode uses the shortest selected route and includes any wait
+% at the goal needed to finish at the requested time.
+if isEarliestArrival
+    firstGoalLayerIndex = find(nodeIsReachable(:, 2) & goalLayerIsEligible, 1, "first");
+    goalLayerIndex      = firstGoalLayerIndex;
+    % Keep a later-arrival route within the same clear goal window to give
+    % BMTP more timing room. The selected earliest route remains separate.
+    waitRouteGoalLayerIndex = firstGoalLayerIndex;
+    if ~isempty(firstGoalLayerIndex)
+        waitRouteGoalLayerIndex = double(waitWindowEndLayerIndex(firstGoalLayerIndex, 2));
+        if waitRouteGoalLayerIndex == layerCount
+            waitRouteGoalLayerIndex = firstGoalLayerIndex;
+        end
+    end
+    [route_units, routeTime_s] = reconstructTimedRoute( ...
+        nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
+    [waitRoute_units, waitRouteTime_s] = reconstructTimedRoute( ...
+        nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, waitRouteGoalLayerIndex, 2);
+else
+    goalLayerIndex = zeros(0, 1);
+    route_units    = zeros(0, 2);
+    routeTime_s    = zeros(0, 1);
+    if selectedGoalArrivalLayerIndex > 0
+        [route_units, routeTime_s] = reconstructTimedRoute( ...
+            nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, ...
+            selectedGoalEdgeStartLayerIndex, selectedGoalEdgeStartNodeIndex);
+        route_units(end + 1, :) = nodePosition_units(2, :);
+        routeTime_s(end + 1, 1) = layerTimes_s(selectedGoalArrivalLayerIndex);
+        if selectedGoalArrivalLayerIndex < layerCount
+            route_units(end + 1, :) = nodePosition_units(2, :);
+            routeTime_s(end + 1, 1) = layerTimes_s(end);
+        end
+        goalLayerIndex = layerCount;
+    end
+    waitRoute_units = route_units;
+    waitRouteTime_s = routeTime_s;
+end
+selectedGoalWindowStartTime_s = NaN;
+selectedGoalWindowEndTime_s   = NaN;
+if ~isempty(goalLayerIndex)
+    goalWindowStartLayerIndices = find( ...
+        waitWindowStartsHere(:, 2) & nodeIsFree(:, 2));
+    selectedGoalWindowIndex           = nnz(goalWindowStartLayerIndices <= goalLayerIndex);
+    selectedGoalWindowStartLayerIndex = goalWindowStartLayerIndices(selectedGoalWindowIndex);
+    selectedGoalWindowEndLayerIndex   = double( ...
+        waitWindowEndLayerIndex(selectedGoalWindowStartLayerIndex, 2));
+    selectedGoalWindowStartTime_s = layerTimes_s(selectedGoalWindowStartLayerIndex);
+    selectedGoalWindowEndTime_s   = layerTimes_s(selectedGoalWindowEndLayerIndex);
+end
+timedSearchDetails = struct( ...
+    "NodeCount",                     nodeCount, ...
+    "RejectedTransitionCount",       rejectedCount, ...
+    "ProvenSkippedTransitionCount",  provenSkipCount, ...
+    "ExpandedCount",                 expandedCount, ...
+    "SelectedGoalWindowStartTime_s", selectedGoalWindowStartTime_s, ...
+    "SelectedGoalWindowEndTime_s",   selectedGoalWindowEndTime_s, ...
+    "MinimumGoalArrivalTime_s",      minimumGoalArrivalTime_s, ...
+    "WaitRoute_units",               waitRoute_units, ...
+    "WaitRouteTime_s",               waitRouteTime_s);
+
+%% Section 6: Search Steps And Shared Collision Checks
+
+% These nested functions share the current search arrays and obstacle data.
+% Their updates remain in this search call; they are not separate planners.
+
+function checkPendingEdges(layerIndex)
+    % Test moves scheduled to arrive at this layer. A blocked move may try
+    % the next arrival layer within the same target wait window.
+    edgeChecks = pendingEdgeChecks{layerIndex};
+    pendingEdgeChecks{layerIndex} = zeros(0, 7);
+    if ~isempty(edgeChecks)
+        edgeChecks         = sortrows(edgeChecks, [1, 6]);
+        sourceLayerIndices = unique(edgeChecks(:, 1), "stable").';
+        for sourceLayerIndex = sourceLayerIndices
+            sourceEventRows      = find(edgeChecks(:, 1) == sourceLayerIndex);
+            eventIsProvenBlocked = ...
+                layerIndex <= edgeChecks(sourceEventRows, 7);
+            eventIsClear          = false(numel(sourceEventRows), 1);
+            blockingCellIndices   = zeros(numel(sourceEventRows), 1, "uint32");
+            collisionTimes_s      = NaN(numel(sourceEventRows), 1);
+            uncheckedEventOffsets = find(~eventIsProvenBlocked);
+            if ~isempty(uncheckedEventOffsets)
+                eventRowsToCheck = sourceEventRows(uncheckedEventOffsets);
+                [checkedEdgeIsClear, checkedBlockingCellIndices, checkedCollisionTimes_s] = edgeIsClear( ...
+                    edgeChecks(eventRowsToCheck, 2), edgeChecks(eventRowsToCheck, 3), ...
+                    layerTimes_s(sourceLayerIndex), layerTimes_s(layerIndex));
+                eventIsClear(uncheckedEventOffsets)        = checkedEdgeIsClear;
+                blockingCellIndices(uncheckedEventOffsets) = checkedBlockingCellIndices;
+                collisionTimes_s(uncheckedEventOffsets)    = checkedCollisionTimes_s;
+            end
+
+            clearEventRows = sourceEventRows(eventIsClear);
+            if ~isempty(clearEventRows)
+                clearProposals = [ ...
+                    edgeChecks(clearEventRows, 1:3), ...
+                    edgeChecks(clearEventRows, 5), ...
+                    ones(numel(clearEventRows), 1), ...
+                    edgeChecks(clearEventRows, 6)];
+                pendingNodeArrivals{layerIndex} = [ ...
+                    pendingNodeArrivals{layerIndex}; clearProposals];
+            end
+
+            failedEventOffsets = find(~eventIsClear);
+            provenSkipCount    = provenSkipCount + nnz(eventIsProvenBlocked);
+            rejectedCount      = rejectedCount + numel(failedEventOffsets);
+            for failureIndex = 1:numel(failedEventOffsets)
+                eventOffset = failedEventOffsets(failureIndex);
+                eventRow    = sourceEventRows(eventOffset);
+                if ~eventIsProvenBlocked(eventOffset)
+                    blockedLayerCount = provenBlockedLayerCount( ...
+                        edgeChecks(eventRow, 2), edgeChecks(eventRow, 3), ...
+                        sourceLayerIndex, layerIndex, edgeChecks(eventRow, 4), ...
+                        blockingCellIndices(eventOffset), collisionTimes_s(eventOffset));
+                    edgeChecks(eventRow, 7) = layerIndex + blockedLayerCount - 1;
+                end
+                if layerIndex < edgeChecks(eventRow, 4)
+                    pendingEdgeChecks{layerIndex + 1}(end + 1, :) = ...
+                        edgeChecks(eventRow, :);
+                end
+            end
+        end
+    end
+end
+
+function applyPendingNodeArrivals(layerIndex)
+    % Arrival columns: departure layer, source node, target node, edge length,
+    % move kind (0 = wait, 1 = travel), and ordering index. Sort first so
+    % equal-length routes keep the same winner on repeated runs.
+    arrivalProposals = pendingNodeArrivals{layerIndex};
+    if ~isempty(arrivalProposals)
+        arrivalProposals = sortrows(arrivalProposals, [1, 5, 6]);
+        for proposalIndex = 1:size(arrivalProposals, 1)
+            [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = keepShorterRouteAtNodeAndTime( ...
+                nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex, ...
+                arrivalProposals(proposalIndex, 1), arrivalProposals(proposalIndex, 2), ...
+                layerIndex, arrivalProposals(proposalIndex, 3), arrivalProposals(proposalIndex, 4));
+        end
+    end
+end
+
+function goalWaitWindowIsComplete = hasReachedGoalWaitWindowEnd(layerIndex)
+    % After the first eligible goal arrival, finish its clear wait window
+    % so a later-arrival route is available to BMTP. If the window already
+    % reaches the request deadline, the first arrival is enough.
+    goalWaitWindowIsComplete = false;
+    firstGoalLayerIndex      = find( ...
+        nodeIsReachable(1:layerIndex, 2) & goalLayerIsEligible(1:layerIndex), 1, "first");
+    if ~isempty(firstGoalLayerIndex)
+        selectedGoalLayerIndex = double(waitWindowEndLayerIndex(firstGoalLayerIndex, 2));
+        if selectedGoalLayerIndex == layerCount
+            selectedGoalLayerIndex = firstGoalLayerIndex;
+        end
+        if layerIndex >= selectedGoalLayerIndex
+            goalWaitWindowIsComplete = true;
+        end
+    end
+end
+
+function scheduleLayerExpansion(layerIndex)
+    % Queue clear waits for the next layer and moving connections for their
+    % earliest allowed arrival layers. Collision checks run when due.
+    currentNodeIndices = find(nodeIsReachable(layerIndex, :));
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
-        exploredNodes_units(end + 1, :) = nodePosition_units(currentNodeIndex, :); %#ok<AGROW>
-        % Add the same-node transition only when the obstacle sweep permits waiting through the full layer interval.
         if waitIsClear(layerIndex, currentNodeIndex)
-            waitCount = waitCount + 1;
-            exposureIncrement_units_s=(layerTimes_s(layerIndex+1)-layerTimes_s(layerIndex))* ...
-                distanceToGoal_units(currentNodeIndex);
-            [reachable, spatialCost_units, goalExposure_units_s, ...
-                parentLayerIndex,parentNodeIndex] = updateTemporalState( ...
-                reachable,spatialCost_units,goalExposure_units_s, ...
-                parentLayerIndex,parentNodeIndex,layerIndex,currentNodeIndex, ...
-                layerIndex+1,currentNodeIndex,0,exposureIncrement_units_s, ...
-                preferNearGoalWait);
+            waitProposal = [layerIndex, currentNodeIndex, currentNodeIndex, ...
+                0, 0, currentNodeIndex];
+            pendingNodeArrivals{layerIndex + 1}(end + 1, :) = waitProposal;
         else
             rejectedCount = rejectedCount + 1;
         end
     end
-    goalCostBound_units=min([goalCostBound_units;spatialCost_units(goalCanWaitToFinal,2)]);
-    [motionCandidates, candidateRejections, batchSplitCount] = buildLayerCandidates(currentNodeIndices, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
-    rejectedCount = rejectedCount + candidateRejections;
-    candidateBatchSplitCount = candidateBatchSplitCount + batchSplitCount;
-    motionCandidateCount = size(motionCandidates, 1);
-    pendingMotion    = true(motionCandidateCount, 1);
 
-    % Keep the first clear entry per wait interval; later entries can be reached by waiting.
-    while any(pendingMotion)
-        queriedTargetLayers = unique(motionCandidates(pendingMotion, 3));
-        for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
-            queryIndices = find(pendingMotion & motionCandidates(:, 3) == targetLayerIndex);
-            % Use the prescribed final layer for fixed-arrival requests; earliest-arrival selection was resolved during forward search.
-            if options.GoalTimeMode ~= "earliestArrival"
-                trialCost_units  = reshape(spatialCost_units(layerIndex, motionCandidates(queryIndices, 1)), [], 1) + motionCandidates(queryIndices, 5);
-                storedCost_units = reshape(spatialCost_units(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
-                isDominated=trialCost_units>storedCost_units+1e-12;
-                pendingMotion(queryIndices(isDominated)) = false;
-                rejectedCount = rejectedCount + nnz(isDominated);
-                queryIndices  = queryIndices(~isDominated);
-                trialCost_units=trialCost_units(~isDominated);
-                cannotImproveGoal=trialCost_units+ ...
-                    distanceToGoal_units(motionCandidates(queryIndices,2))> ...
-                    goalCostBound_units+1e-12;
-                pendingMotion(queryIndices(cannotImproveGoal))=false;
-                rejectedCount=rejectedCount+nnz(cannotImproveGoal);
-                goalBoundRejectionCount=goalBoundRejectionCount+nnz(cannotImproveGoal);
-                queryIndices=queryIndices(~cannotImproveGoal);
-            end
+    [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
+        currentNodeIndices, layerIndex, timedConnectionData);
+    rejectedCount      = rejectedCount + candidateRejectedCount;
+    targetLayerIndices = unique(motionCandidates(:, 3)).';
+    for targetLayerIndex = targetLayerIndices
+        candidateRows = find(motionCandidates(:, 3) == targetLayerIndex);
+        eventBlock    = [ ...
+            repmat(layerIndex, numel(candidateRows), 1), ...
+            motionCandidates(candidateRows, [1, 2, 4, 5]), ...
+            candidateRows, zeros(numel(candidateRows), 1)];
+        pendingEdgeChecks{targetLayerIndex} = [ ...
+            pendingEdgeChecks{targetLayerIndex}; eventBlock];
+    end
+end
+
+function propagateFixedArrivalLayer(layerIndex)
+    % Extend every reachable node by waiting or moving. Keep shorter routes
+    % to each state, while retaining goal arrivals that can finish on time.
+    currentNodeIndices = find(nodeIsReachable(layerIndex, :));
+    for currentNodeIndex = reshape(currentNodeIndices, 1, [])
+        expandedCount = expandedCount + 1;
+        if waitIsClear(layerIndex, currentNodeIndex)
+            [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = keepShorterRouteAtNodeAndTime( ...
+                nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex, ...
+                layerIndex, currentNodeIndex, layerIndex + 1, currentNodeIndex, 0);
+        else
+            rejectedCount = rejectedCount + 1;
+        end
+    end
+    [motionCandidates, candidateRejectedCount] = buildLayerCandidates( ...
+        currentNodeIndices, layerIndex, timedConnectionData);
+    rejectedCount        = rejectedCount + candidateRejectedCount;
+    motionCandidateCount = size(motionCandidates, 1);
+    motionIsPending      = true(motionCandidateCount, 1);
+    while any(motionIsPending)
+        queriedTargetLayerIndices = unique(motionCandidates(motionIsPending, 3));
+        for targetLayerIndex = reshape(queriedTargetLayerIndices, 1, [])
+            queryIndices           = find(motionIsPending & motionCandidates(:, 3) == targetLayerIndex);
+            trialRouteLength_units = reshape( ...
+                routeLengthToNode_units(layerIndex, motionCandidates(queryIndices, 1)), [], 1) + ...
+                motionCandidates(queryIndices, 5);
+            knownRouteLength_units = reshape( ...
+                routeLengthToNode_units(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
+            % A longer route to the same node/time cannot improve that state.
+            % Keep a goal candidate if a later arrival in its wait window may
+            % complete the fixed-time request.
+            hasShorterKnownRoute          = trialRouteLength_units > knownRouteLength_units + 1e-12;
+            candidateTerminalLayerIndices = ...
+                nextValidGoalArrivalLayerIndex(motionCandidates(queryIndices, 3));
+            allowsRequiredGoalArrival = motionCandidates(queryIndices, 2) == 2 & ...
+                candidateTerminalLayerIndices > 0 & ...
+                candidateTerminalLayerIndices <= motionCandidates(queryIndices, 4);
+            hasShorterKnownRoute(allowsRequiredGoalArrival)     = false;
+            motionIsPending(queryIndices(hasShorterKnownRoute)) = false;
+
+            rejectedCount          = rejectedCount + nnz(hasShorterKnownRoute);
+            queryIndices           = queryIndices(~hasShorterKnownRoute);
+            trialRouteLength_units = trialRouteLength_units(~hasShorterKnownRoute);
+            % The straight distance to the goal is the least additional
+            % route length possible. Skip a route already longer than the
+            % best completed route even with that optimistic remainder.
+            remainingDistance_units = distanceToGoal_units(motionCandidates(queryIndices, 2));
+            cannotShortenGoalRoute = trialRouteLength_units + remainingDistance_units > bestGoalRouteLength_units + 1e-12;
+            motionIsPending(queryIndices(cannotShortenGoalRoute)) = false;
+
+            rejectedCount = rejectedCount + nnz(cannotShortenGoalRoute);
+            queryIndices  = queryIndices(~cannotShortenGoalRoute);
             if isempty(queryIndices)
-                continue;
+                continue
             end
-            queryIsClear = edgeIsClear(motionCandidates(queryIndices, 1), motionCandidates(queryIndices, 2), layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
+            queryIsClear = edgeIsClear( ...
+                motionCandidates(queryIndices, 1), motionCandidates(queryIndices, 2), ...
+                layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
             clearIndices = queryIndices(queryIsClear);
-            motionCount  = motionCount + numel(clearIndices);
             for motionIndex = reshape(clearIndices, 1, [])
-                sourceNodeIndex=motionCandidates(motionIndex,1);
-                targetNodeIndex=motionCandidates(motionIndex,2);
-                candidateTargetLayerIndex=motionCandidates(motionIndex,3);
-                edgeDuration_s=layerTimes_s(candidateTargetLayerIndex)-layerTimes_s(layerIndex);
-                exposureIncrement_units_s=0.5*edgeDuration_s* ...
-                    (distanceToGoal_units(sourceNodeIndex)+distanceToGoal_units(targetNodeIndex));
-                [reachable, spatialCost_units, goalExposure_units_s, ...
-                    parentLayerIndex,parentNodeIndex] = updateTemporalState( ...
-                    reachable,spatialCost_units,goalExposure_units_s, ...
-                    parentLayerIndex,parentNodeIndex,layerIndex,sourceNodeIndex, ...
-                    candidateTargetLayerIndex,targetNodeIndex,motionCandidates(motionIndex,5), ...
-                    exposureIncrement_units_s,preferNearGoalWait);
+                [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = keepShorterRouteAtNodeAndTime( ...
+                    nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex, ...
+                    layerIndex, motionCandidates(motionIndex, 1), ...
+                    motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), ...
+                    motionCandidates(motionIndex, 5));
             end
-            clearGoalIndices=clearIndices(motionCandidates(clearIndices,2)==2 & ...
-                goalCanWaitToFinal(motionCandidates(clearIndices,3)));
-            if ~isempty(clearGoalIndices)
-                clearGoalLayers=motionCandidates(clearGoalIndices,3);
-                goalCostBound_units=min([goalCostBound_units; ...
-                    spatialCost_units(clearGoalLayers,2)]);
-            end
-            rejectedCount = rejectedCount + nnz(~queryIsClear);
-            pendingMotion(queryIndices) = false;
-            advanceIndices = queryIndices(~queryIsClear & motionCandidates(queryIndices, 3) < motionCandidates(queryIndices, 4));
-            motionCandidates(advanceIndices, 3) = motionCandidates(advanceIndices, 3) + 1;
-            pendingMotion(advanceIndices) = true;
-        end
-    end
-end
-%% Section 2: Reconstruct Goal And Best-Partial Routes
-deepestLayerIndex = find(any(reachable, 2), 1, "last");
-[frontier_units, bestPartial_units] = deal(zeros(0, 2));
-% Report no partial timed route when even the start layer has no reachable state.
-if ~isempty(deepestLayerIndex)
-    frontierNodeIndices = find(reachable(deepestLayerIndex, :));
-    frontier_units        = nodePosition_units(frontierNodeIndices, :);
-    [~, bestIndex]       = min(vecnorm(frontier_units - nodePosition_units(2, :), 2, 2));
-    [bestPartial_units, ~] = reconstructTimedRoute(nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, deepestLayerIndex, frontierNodeIndices(bestIndex));
-end
-% Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
-firstReachableGoalLayerIndex = find(reachable(:,2),1,"first");
-if options.GoalTimeMode == "earliestArrival"
-    firstGoalLayerIndex = find(reachable(:, 2) & goalLayerIsEligible, 1, "first");
-    goalLayerIndex=firstGoalLayerIndex;
-    waitSeedGoalLayerIndex=firstGoalLayerIndex;
-    if ~isempty(firstGoalLayerIndex)
-        waitSeedGoalLayerIndex=double(waitComponentFinalLayerIndex(firstGoalLayerIndex,2));
-        if waitSeedGoalLayerIndex==layerCount
-            waitSeedGoalLayerIndex=firstGoalLayerIndex;
-        end
-    end
-else
-    goalLayerIndex = find(reachable(:, 2) & (1:layerCount).' == layerCount, 1, "first");
-    waitSeedGoalLayerIndex=goalLayerIndex;
-end
-[route_units, routeTime_s] = reconstructTimedRoute(nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
-[waitRoute_units,waitRouteTime_s]=reconstructTimedRoute(nodePosition_units, ...
-    layerTimes_s,parentLayerIndex,parentNodeIndex,waitSeedGoalLayerIndex,2);
-selectedGoalWindowIndex=0;
-selectedGoalWindowStartTime_s=NaN;
-selectedGoalWindowEndTime_s=NaN;
-if ~isempty(goalLayerIndex)
-    goalWindowStartLayerIndices=find(isWaitComponentStart(:,2) & nodeIsFree(:,2));
-    selectedGoalWindowIndex=nnz(goalWindowStartLayerIndices<=goalLayerIndex);
-    selectedGoalWindowStartLayerIndex= ...
-        goalWindowStartLayerIndices(selectedGoalWindowIndex);
-    selectedGoalWindowEndLayerIndex=double( ...
-        waitComponentFinalLayerIndex(selectedGoalWindowStartLayerIndex,2));
-    selectedGoalWindowStartTime_s= ...
-        layerTimes_s(selectedGoalWindowStartLayerIndex);
-    selectedGoalWindowEndTime_s=layerTimes_s(selectedGoalWindowEndLayerIndex);
-end
-record = struct("LayerTimes_s", layerTimes_s, ...
-    "CandidateLayerCount", layerCount, "NodeCount", nodeCount, ...
-    "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
-    "RejectedTransitionCount", rejectedCount, ...
-    "GoalCostBoundRejectionCount", goalBoundRejectionCount, ...
-    "CandidateBatchSplitCount", candidateBatchSplitCount, ...
-    "ExpandedCount", expandedCount, ...
-    "ExploredNodes_units", exploredNodes_units, "FrontierNodes_units", frontier_units, ...
-    "BestPartialRoute_units", bestPartial_units, ...
-    "SelectedGoalLayerIndex", goalLayerIndex, ...
-    "FirstReachableGoalLayerIndex",firstReachableGoalLayerIndex, ...
-    "DynamicBoundChangedGoalLayer", ...
-    ~isempty(goalLayerIndex) && goalLayerIndex~=firstReachableGoalLayerIndex, ...
-    "SelectedGoalWindowIndex",selectedGoalWindowIndex, ...
-    "SelectedGoalWindowStartTime_s",selectedGoalWindowStartTime_s, ...
-    "SelectedGoalWindowEndTime_s",selectedGoalWindowEndTime_s, ...
-    "MinimumGoalArrivalTime_s",minimumGoalArrivalTime_s, ...
-    "EligibleGoalLayerCount",nnz(goalLayerIsEligible), ...
-    "WaitSeedGoalLayerIndex",waitSeedGoalLayerIndex, ...
-    "WaitRoute_units",waitRoute_units,"WaitRouteTime_s",waitRouteTime_s, ...
-    "ReachableGoalLayerCount", nnz(reachable(:, 2)));
-function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, second_s)
-    % A blocked sample rejects the edge. Check interior samples first, then keep
-    % all remaining samples for edges that could still be clear.
-    fraction     = linspace(0, 1, 13).';
-    firstNodeIndices = firstNodeIndices(:);
-    secondNodeIndices = secondNodeIndices(:);
-    first_units = nodePosition_units(firstNodeIndices, :);
-    second_units = nodePosition_units(secondNodeIndices, :);
-    edgeCount    = numel(firstNodeIndices);
-    time_s       = first_s + fraction * (second_s - first_s);
-    middleIndex  = ceil(numel(fraction) / 2);
-    sampleOrder  = [middleIndex, 1:middleIndex - 1, middleIndex + 1:numel(fraction)];
-    clear        = true(edgeCount, 1);
-    if ~hasStationarySpan
-        % A cached edge retains all thirteen original sample checks. Only use
-        % it while every cached obstacle is active at every sampled time.
-        queryObstacles = obstacles;
-        if ~isempty(staticEdgeCache) && all(time_s>=staticTimeRange_s(1) & time_s<=staticTimeRange_s(2))
-            cacheKeys = firstNodeIndices + nodeCount*(secondNodeIndices-1);
-            unknown = find(staticEdgeCache(cacheKeys)==0);
-            batchSize = max(1,floor(2^18/numel(fraction)));
-            for batchStart = 1:batchSize:numel(unknown)
-                indices = unknown(batchStart:min(numel(unknown),batchStart+batchSize-1));
-                x_units = first_units(indices,1) + fraction.' .* (second_units(indices,1)-first_units(indices,1));
-                y_units = first_units(indices,2) + fraction.' .* (second_units(indices,2)-first_units(indices,2));
-                occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                    staticObstacles,x_units,y_units,repmat(time_s.',numel(indices),1),false);
-                staticEdgeCache(cacheKeys(indices)) = 1+uint8(any(occupied,2));
-            end
-            clear = staticEdgeCache(cacheKeys)==1;
-            queryObstacles = dynamicObstacles;
-        end
-        % Test the quarter, midpoint, and three-quarter samples together.
-        % Reject blocked edges before batching the remaining original samples.
-        for sampleGroup = {[4,7,10],[1:3,5:6,8:9,11:13]}
-            samples = sampleGroup{1};
-            candidates = find(clear);
-            edgeBatchSize = max(1,floor(2^18/numel(samples)));
-            for batchStart = 1:edgeBatchSize:numel(candidates)
-                indices = candidates(batchStart:min(numel(candidates),batchStart+edgeBatchSize-1));
-                x_units = first_units(indices,1) + fraction(samples).' .* ...
-                    (second_units(indices,1)-first_units(indices,1));
-                y_units = first_units(indices,2) + fraction(samples).' .* ...
-                    (second_units(indices,2)-first_units(indices,2));
-                occupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                    queryObstacles,x_units,y_units,repmat(time_s(samples).',numel(indices),1),false);
-                clear(indices) = ~any(occupied,2);
-            end
-        end
-        return;
-    end
-    for sampleIndex = sampleOrder
-        candidate = find(clear);
-        if isempty(candidate)
-            break;
-        end
-        if sampleIndex == 1 || sampleIndex == numel(fraction)
-            % Reachability already checked both endpoint nodes. Reuse that
-            % result only when the sampled arithmetic reaches the same point and time.
-            sampledEndpoint_units = first_units(candidate, :) + fraction(sampleIndex) .* (second_units(candidate, :) - first_units(candidate, :));
-            if sampleIndex == 1
-                checkedEndpoint_units = first_units(candidate, :);
-                checkedTime_s = first_s;
-            else
-                checkedEndpoint_units = second_units(candidate, :);
-                checkedTime_s = second_s;
-            end
-            candidate = candidate(~(all(sampledEndpoint_units == checkedEndpoint_units, 2) & time_s(sampleIndex) == checkedTime_s));
-            if isempty(candidate), continue; end
-        end
-        geometryKey = 1 + 2 * nnz(geometryTimes_s < time_s(sampleIndex)) + any(geometryTimes_s == time_s(sampleIndex));
-        useCache = cacheSlotCount > 0 && isfinite(time_s(sampleIndex)) && stationaryTimeCell(geometryKey);
-        if useCache
-            cacheSlot = 1 + mod(geometryKey - 1, cacheSlotCount);
-            if occupancyCacheKey(cacheSlot) ~= geometryKey
-                if ~isempty(batchPointIndices) && mod(geometryKey, 2) == 1
-                    % Populate stationary intervals in one query. Exact sample
-                    % times retain lazy entries; moving intervals bypass reuse.
-                    batchOccupied = obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-                        obstacles,batchPositions_units(:,1),batchPositions_units(:,2),time_s(sampleIndex),false);
-                    occupancyCache{cacheSlot} = reshape(1 + uint8(batchOccupied(batchPointIndices)), nodeCount ^ 2, 13);
-                else
-                    occupancyCache{cacheSlot} = zeros(nodeCount ^ 2, 13, 'uint8');
+            arrivalCompletesRequest = motionCandidates(clearIndices, 2) == 2 & ...
+                goalArrivalCompletesRequest(motionCandidates(clearIndices, 3));
+            terminalIndices = clearIndices(arrivalCompletesRequest);
+            if ~isempty(terminalIndices)
+                goalRouteLengths_units = reshape( ...
+                    routeLengthToNode_units(layerIndex, motionCandidates(terminalIndices, 1)), [], 1) + ...
+                    motionCandidates(terminalIndices, 5);
+                [trialGoalRouteLength_units, shortestGoalRouteOffset] = min(goalRouteLengths_units);
+                if trialGoalRouteLength_units < bestGoalRouteLength_units - 1e-12
+                    terminalIndex = terminalIndices(shortestGoalRouteOffset);
+
+                    bestGoalRouteLength_units       = trialGoalRouteLength_units;
+                    selectedGoalEdgeStartLayerIndex = layerIndex;
+                    selectedGoalEdgeStartNodeIndex  = motionCandidates(terminalIndex, 1);
+                    selectedGoalArrivalLayerIndex   = motionCandidates(terminalIndex, 3);
                 end
-                occupancyCacheKey(cacheSlot) = geometryKey;
             end
-            cacheIndices = firstNodeIndices(candidate) + nodeCount * (secondNodeIndices(candidate) - 1) + nodeCount ^ 2 * (sampleIndex - 1);
-            priorOccupancy = occupancyCache{cacheSlot}(cacheIndices);
-            clear(candidate(priorOccupancy == 2)) = false;
-            candidate = candidate(priorOccupancy == 0);
-            cacheIndices = cacheIndices(priorOccupancy == 0);
-        end
-        if isempty(candidate), continue; end
-        position_units = first_units(candidate, :) + fraction(sampleIndex) .* (second_units(candidate, :) - first_units(candidate, :));
-        clear(candidate) = ~obstacleAvoidance.obstacles.queryPreparedOccupancy( ...
-            obstacles,position_units(:,1),position_units(:,2),time_s(sampleIndex),false);
-        if useCache
-            occupancyCache{cacheSlot}(cacheIndices) = 2 - uint8(clear(candidate));
+            rejectedCount                 = rejectedCount + nnz(~queryIsClear);
+            motionIsPending(queryIndices) = false;
+            advanceIndices                = queryIndices( ...
+                ~queryIsClear & motionCandidates(queryIndices, 3) < motionCandidates(queryIndices, 4));
+            motionCandidates(advanceIndices, 3) = motionCandidates(advanceIndices, 3) + 1;
+            motionIsPending(advanceIndices)     = true;
+            % A clear visit to the goal may be too early or unable to wait
+            % through the deadline. Try the next allowed finishing layer
+            % within this connection's target wait window.
+            clearTransitGoalIndices = queryIndices( ...
+                queryIsClear & motionCandidates(queryIndices, 2) == 2 & ...
+                ~goalArrivalCompletesRequest(motionCandidates(queryIndices, 3)));
+            for motionIndex = reshape(clearTransitGoalIndices, 1, [])
+                currentTargetLayerIndex = motionCandidates(motionIndex, 3);
+                if currentTargetLayerIndex == layerCount
+                    continue
+                end
+                futureTerminalLayerIndex = ...
+                    nextValidGoalArrivalLayerIndex(currentTargetLayerIndex + 1);
+                if futureTerminalLayerIndex > 0 && ...
+                        futureTerminalLayerIndex <= motionCandidates(motionIndex, 4)
+                    motionCandidates(motionIndex, 3) = futureTerminalLayerIndex;
+                    motionIsPending(motionIndex)     = true;
+                end
+            end
         end
     end
 end
+
+function [isClear, blockingCellIndices, collisionTimes_s] = ...
+        edgeIsClear(firstNodeIndices, secondNodeIndices, departureTime_s, arrivalTime_s)
+    % Check the entire travel interval against static and moving regions.
+    % Equal start and end positions represent waiting at a point.
+    firstNodeIndices        = firstNodeIndices(:);
+    secondNodeIndices       = secondNodeIndices(:);
+    departurePosition_units = nodePosition_units(firstNodeIndices, :);
+    arrivalPosition_units   = nodePosition_units(secondNodeIndices, :);
+    edgeCount               = numel(firstNodeIndices);
+    isClear                 = true(edgeCount, 1);
+    blockingCellIndices     = zeros(edgeCount, 1, "uint32");
+    collisionTimes_s        = NaN(edgeCount, 1);
+
+    % Check only the part of travel during which a stationary obstacle
+    % exists. For a wait, the same check tests one fixed position.
+    % Cached values: 0 = unchecked, 1 = clear, 2 = blocked.
+    cacheKeys = firstNodeIndices + nodeCount * (secondNodeIndices - 1);
+    for staticGeometryIndex = find(staticShapeIsPrepared).'
+        activeTimeIntervals_s = staticActiveIntervals_s(staticGeometryIndex, :);
+        overlapStart_s        = max(departureTime_s, activeTimeIntervals_s(1));
+        overlapEnd_s          = min(arrivalTime_s, activeTimeIntervals_s(2));
+        if overlapStart_s > overlapEnd_s
+            continue
+        end
+        edgeIndicesToCheck = find(isClear);
+        if isempty(edgeIndicesToCheck)
+            break
+        end
+        obstacleCoversTravelInterval = overlapStart_s <= departureTime_s && overlapEnd_s >= arrivalTime_s;
+        if obstacleCoversTravelInterval && ~isempty(staticEdgeClearanceCache)
+            cachedClearanceState = staticEdgeClearanceCache(cacheKeys(edgeIndicesToCheck), staticGeometryIndex);
+            isClear(edgeIndicesToCheck(cachedClearanceState == 2)) = false;
+            edgeIndicesToCheck = edgeIndicesToCheck(cachedClearanceState == 0);
+            if isempty(edgeIndicesToCheck)
+                continue
+            end
+        end
+        startFraction = 0;
+        endFraction   = 1;
+        if arrivalTime_s > departureTime_s
+            edgeDuration_s = arrivalTime_s - departureTime_s;
+            startFraction  = (overlapStart_s - departureTime_s) / edgeDuration_s;
+            endFraction    = (overlapEnd_s - departureTime_s) / edgeDuration_s;
+        end
+        displacement_units   = arrivalPosition_units(edgeIndicesToCheck, :) - departurePosition_units(edgeIndicesToCheck, :);
+        subStart_units       = departurePosition_units(edgeIndicesToCheck, :) + startFraction * displacement_units;
+        subEnd_units         = departurePosition_units(edgeIndicesToCheck, :) + endFraction * displacement_units;
+        staticSegmentIsClear = obstacleAvoidance.search.checkVisibilitySegments( ...
+            subStart_units, subEnd_units, staticShapes{staticGeometryIndex}, ...
+            staticEdgeStart_units{staticGeometryIndex}, staticEdgeEnd_units{staticGeometryIndex});
+        isClear(edgeIndicesToCheck) = staticSegmentIsClear;
+        if obstacleCoversTravelInterval && ~isempty(staticEdgeClearanceCache)
+            staticEdgeClearanceCache(cacheKeys(edgeIndicesToCheck), staticGeometryIndex) = 1 + uint8(~staticSegmentIsClear);
+        end
+    end
+    if isempty(movingObstacleCells.Regions_units) || ~any(isClear)
+        return
+    end
+    edgeIndicesToCheck = find(isClear);
+    [dynamicIsClear, dynamicBlockingCellIndices, dynamicCollisionTimes_s] = ...
+        obstacleAvoidance.search.affineEdgesAreClear( ...
+        firstNodeIndices(edgeIndicesToCheck), secondNodeIndices(edgeIndicesToCheck), ...
+        departureTime_s, arrivalTime_s, movingCellLookup);
+    isClear(edgeIndicesToCheck)             = dynamicIsClear;
+    blockingCellIndices(edgeIndicesToCheck) = dynamicBlockingCellIndices;
+    collisionTimes_s(edgeIndicesToCheck)    = dynamicCollisionTimes_s;
 end
-%% Section 3: Local Functions
-function [candidates, rejectedCount, batchSplitCount] = buildLayerCandidates(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
-    % Enumerate [entry layer, target node, source node] in the original order.
-    % Bound the temporary logical tensor while retaining the vectorized path
-    % for ordinary inputs and the velocity-only duration lower bound.
-    candidates = zeros(0, 5);
-    rejectedCount = 0;
-    batchSplitCount = 0;
-    if isempty(sourceNodes), return; end
-    layerCount = numel(layerTimes_s);
-    nodeCount = size(nodeIsFree, 2);
-    sourceCount = numel(sourceNodes);
-    maximumCandidateTensorElements = 1024 ^ 2;
-    sourceBatchSize = max(1, floor(maximumCandidateTensorElements / max(1, layerCount * nodeCount)));
-    batchCount = ceil(sourceCount / sourceBatchSize);
-    batchSplitCount = batchCount - 1;
+
+function blockedLayerCount = provenBlockedLayerCount( ...
+        sourceNodeIndex, targetNodeIndex, sourceLayerIndex, targetLayerIndex, ...
+        finalTargetLayerIndex, cellIndex, collisionTime_s)
+    % Reuse a known collision to prove that later arrivals are also blocked.
+    % At that same collision time, a slower trip is less far along the edge.
+    % Count consecutive arrival layers whose positions still lie clearly
+    % inside the same obstacle region. If the check is uncertain, count only
+    % the current layer and let the search check the next one normally.
+    blockedLayerCount = 1;
+    if cellIndex == 0 || ~isfinite(collisionTime_s)
+        return
+    end
+    cellIndex = double(cellIndex);
+    if any(~isfinite([movingCellLookup.CellLower_units(cellIndex, :), ...
+            movingCellLookup.CellUpper_units(cellIndex, :)]))
+        return
+    end
+
+    sourceTime_s   = layerTimes_s(sourceLayerIndex);
+    arrivalTimes_s = layerTimes_s(targetLayerIndex:finalTargetLayerIndex);
+    if collisionTime_s < sourceTime_s || collisionTime_s > arrivalTimes_s(1)
+        return
+    end
+
+    activeTimeIntervals_s = movingObstacleCells.ActiveTimeInterval_s(cellIndex, :);
+    cellDuration_s        = diff(activeTimeIntervals_s);
+    if ~(cellDuration_s > 0) || collisionTime_s < activeTimeIntervals_s(1) || collisionTime_s > activeTimeIntervals_s(2)
+        return
+    end
+    cellTimeFraction  = (collisionTime_s - activeTimeIntervals_s(1)) / cellDuration_s;
+    regionStart_units = movingObstacleCells.Regions_units{cellIndex};
+    region_units      = regionStart_units + cellTimeFraction .* ...
+        (movingObstacleCells.EndRegions_units{cellIndex} - regionStart_units);
+    vertexCount            = size(region_units, 1);
+    nextVertexIndices      = [2:vertexCount, 1];
+    regionEdgeVector_units = region_units(nextVertexIndices, :) - region_units;
+    signedArea_units2      = sum( ...
+        region_units(:, 1) .* region_units(nextVertexIndices, 2) - ...
+        region_units(:, 2) .* region_units(nextVertexIndices, 1)) / 2;
+
+    source_units      = nodePosition_units(sourceNodeIndex, :);
+    target_units      = nodePosition_units(targetNodeIndex, :);
+    collisionOffset_s = collisionTime_s - sourceTime_s;
+    firstPathFraction = collisionOffset_s / (arrivalTimes_s(1) - sourceTime_s);
+    if ~isfinite(firstPathFraction)
+        return
+    end
+    % Along the travel edge, each polygon-edge cross product changes
+    % linearly: edge side = side at source + path fraction x side change.
+    displacement_units      = target_units - source_units;
+    relativeSourceX_units   = source_units(1) - region_units(:, 1);
+    relativeSourceY_units   = source_units(2) - region_units(:, 2);
+    edgeSideAtSource_units2 = regionEdgeVector_units(:, 1) .* relativeSourceY_units - ...
+        regionEdgeVector_units(:, 2) .* relativeSourceX_units;
+    edgeSideChange_units2 = regionEdgeVector_units(:, 1) .* displacement_units(2) - ...
+        regionEdgeVector_units(:, 2) .* displacement_units(1);
+    coordinateScale_units = max([1; abs(region_units(:)); ...
+        abs(source_units(:)); abs(target_units(:))]);
+    interiorCheckTolerance_units2 = 16 * obstacleAvoidance.search.createResidualBound(coordinateScale_units);
+    if abs(signedArea_units2) <= interiorCheckTolerance_units2
+        return
+    end
+
+    % Multiply cross products by the polygon direction so positive means
+    % inside each edge. Require more than the numerical tolerance: touching
+    % or an uncertain sign must not justify skipping a later collision check.
+    orientationSign           = sign(signedArea_units2);
+    inwardSideAtSource_units2 = orientationSign * edgeSideAtSource_units2;
+    inwardSideChange_units2   = orientationSign * edgeSideChange_units2;
+    firstInwardSide_units2    = inwardSideAtSource_units2 + ...
+        firstPathFraction .* inwardSideChange_units2;
+    if any(firstInwardSide_units2 <= interiorCheckTolerance_units2)
+        return
+    end
+
+    % Find the smallest progress fraction still inside every region edge.
+    % It sets the latest arrival that this known collision can rule out.
+    edgeCanBecomeClear = inwardSideChange_units2 > 0;
+    if ~any(edgeCanBecomeClear)
+        blockedLayerCount = numel(arrivalTimes_s);
+        return
+    end
+    minimumBlockedPathFraction = max( ...
+        (interiorCheckTolerance_units2 - inwardSideAtSource_units2(edgeCanBecomeClear)) ./ ...
+        inwardSideChange_units2(edgeCanBecomeClear));
+    if minimumBlockedPathFraction <= 0 || collisionOffset_s == 0
+        blockedLayerCount = numel(arrivalTimes_s);
+        return
+    end
+    firstUnprovenArrival_s   = sourceTime_s + collisionOffset_s / minimumBlockedPathFraction;
+    lastBlockedArrivalOffset = min(numel(arrivalTimes_s), ...
+        obstacleAvoidance.search.sortedUpperBound(arrivalTimes_s, firstUnprovenArrival_s));
+    lastBlockedArrivalOffset = max(1, lastBlockedArrivalOffset);
+    % Recheck the final candidate directly so roundoff at the threshold
+    % cannot include an arrival that is only on the boundary.
+    while lastBlockedArrivalOffset > 1
+        trialPathFraction = collisionOffset_s / ...
+            (arrivalTimes_s(lastBlockedArrivalOffset) - sourceTime_s);
+        trialInwardSide_units2 = inwardSideAtSource_units2 + ...
+            trialPathFraction .* inwardSideChange_units2;
+        if all(trialInwardSide_units2 > interiorCheckTolerance_units2)
+            break
+        end
+        lastBlockedArrivalOffset = lastBlockedArrivalOffset - 1;
+    end
+    blockedLayerCount = lastBlockedArrivalOffset;
+end
+end
+
+%% Section 7: Local Functions
+
+function [motionCandidates, rejectedCount] = buildLayerCandidates( ...
+        sourceNodeIndices, sourceLayerIndex, timedConnectionData)
+    % List possible moves in the same layer/node order for every batch.
+    % Batching limits temporary memory; the speed limit still determines the
+    % earliest time each connection could finish.
+    % Columns: source node, target node, first arrival layer to try, last
+    % layer in that target wait window, and physical connection length.
+    motionCandidates = zeros(0, 5);
+    rejectedCount    = 0;
+    if isempty(sourceNodeIndices)
+        return
+    end
+
+    layerCount  = numel(timedConnectionData.LayerTimes_s);
+    nodeCount   = size(timedConnectionData.NodeIsFree, 2);
+    sourceCount = numel(sourceNodeIndices);
+
+    maximumCandidateArrayElements = 1024 ^ 2;
+    sourceBatchSize               = max(1, ...
+        floor(maximumCandidateArrayElements / max(1, layerCount * nodeCount)));
+    batchCount      = ceil(sourceCount / sourceBatchSize);
     candidateBlocks = cell(batchCount, 1);
     for batchIndex = 1:batchCount
-        firstSourceOffset = 1 + (batchIndex - 1) * sourceBatchSize;
-        finalSourceOffset = min(sourceCount, batchIndex * sourceBatchSize);
-        batchSources = sourceNodes(firstSourceOffset:finalSourceOffset);
-        [candidateBlocks{batchIndex}, batchRejectedCount] = buildCandidateBatch(batchSources, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
+        firstSourceOffset      = 1 + (batchIndex - 1) * sourceBatchSize;
+        finalSourceOffset      = min(sourceCount, batchIndex * sourceBatchSize);
+        batchSourceNodeIndices = sourceNodeIndices(firstSourceOffset:finalSourceOffset);
+        [candidateBlocks{batchIndex}, batchRejectedCount] = buildCandidateBatch( ...
+            batchSourceNodeIndices, sourceLayerIndex, timedConnectionData);
         rejectedCount = rejectedCount + batchRejectedCount;
     end
-    candidates = vertcat(candidateBlocks{:});
+    motionCandidates = vertcat(candidateBlocks{:});
 end
 
-function [candidates, rejectedCount] = buildCandidateBatch(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
-    % Vectorize one bounded block and preserve source/target/layer ordering.
-    layerCount = numel(layerTimes_s);
-    nodeCount = size(nodeIsFree, 2);
-    sourceCount = numel(sourceNodes);
-    earliestTime_s = sourceTime_s + minimumEdgeDuration_s(sourceNodes, :).' - 1e-12;
-    firstFeasibleLayers = 1 + sum(reshape(layerTimes_s, [], 1, 1) <= reshape(earliestTime_s, 1, nodeCount, sourceCount), 1);
-    firstFeasibleLayers(isnan(earliestTime_s)) = layerCount + 1;
-    starts = reshape(isWaitComponentStart, layerCount, nodeCount, 1) & (reshape((1:layerCount).', [], 1, 1) >= firstFeasibleLayers);
-    feasiblePairs = find(firstFeasibleLayers <= layerCount);
-    firstEntries = firstFeasibleLayers(feasiblePairs) + layerCount * (feasiblePairs - 1);
-    targetNodes = 1 + mod(feasiblePairs - 1, nodeCount);
-    firstStates = firstFeasibleLayers(feasiblePairs) + layerCount * (targetNodes - 1);
-    starts(firstEntries) = nodeIsFree(firstStates);
-    enabledEdges = motionEdgeExists(sourceNodes, :).';
-    starts = starts & reshape(enabledEdges, 1, nodeCount, sourceCount);
-    rejectedCount = nnz(enabledEdges & ~reshape(any(starts, 1), nodeCount, sourceCount));
-    % Column-major enumeration matches the original source/target/layer loops.
-    [entryLayers, targetNodes, sourceOffsets] = ind2sub([layerCount, nodeCount, sourceCount], find(starts));
-    selectedSources = reshape(sourceNodes(sourceOffsets), [], 1);
-    finalStates = entryLayers + layerCount * (targetNodes - 1);
-    finalLayers = double(waitComponentFinalLayerIndex(finalStates));
-    edgeIndices = selectedSources + nodeCount * (targetNodes - 1);
-    candidates = [selectedSources, targetNodes, entryLayers, finalLayers, motionEdgeLengths_units(edgeIndices)];
+function [motionCandidates, rejectedCount] = buildCandidateBatch( ...
+        sourceNodeIndices, sourceLayerIndex, timedConnectionData)
+    % Candidate arrays use [arrival layer, target node, source node].
+    % Check a bounded group of sources while keeping the same result order.
+    layerTimes_s            = timedConnectionData.LayerTimes_s;
+    nodeIsFree              = timedConnectionData.NodeIsFree;
+    waitWindowStartsHere    = timedConnectionData.IsWaitComponentStart;
+    waitWindowEndLayerIndex = timedConnectionData.WaitComponentFinalLayerIndex;
+    motionEdgeExists        = timedConnectionData.MotionEdgeExists;
+    minimumEdgeDuration_s   = timedConnectionData.MinimumEdgeDuration_s;
+    motionEdgeLengths_units = timedConnectionData.MotionEdgeLengths_units;
+
+    sourceTime_s = layerTimes_s(sourceLayerIndex);
+    layerCount   = numel(layerTimes_s);
+    nodeCount    = size(nodeIsFree, 2);
+    sourceCount  = numel(sourceNodeIndices);
+
+    earliestEdgeArrivalTimes_s      = sourceTime_s + minimumEdgeDuration_s(sourceNodeIndices, :).' - 1e-12;
+    firstAllowedArrivalLayerIndices = 1 + sum( ...
+        reshape(layerTimes_s, [], 1, 1) <= ...
+        reshape(earliestEdgeArrivalTimes_s, 1, nodeCount, sourceCount), 1);
+    firstAllowedArrivalLayerIndices(isnan(earliestEdgeArrivalTimes_s)) = layerCount + 1;
+    % Every move to a different node takes positive time. Require a later
+    % destination layer even when the computed minimum time is extremely small.
+    firstAllowedArrivalLayerIndices = max(firstAllowedArrivalLayerIndices, sourceLayerIndex + 1);
+    % Try the first speed-allowed layer and the start of each later wait
+    % window. If that arrival is blocked, the search advances within the
+    % window; after a clear arrival it can wait there instead.
+    candidateCanStart = reshape(waitWindowStartsHere, layerCount, nodeCount, 1) & ...
+        (reshape((1:layerCount).', [], 1, 1) >= firstAllowedArrivalLayerIndices);
+    feasiblePairIndices = find(firstAllowedArrivalLayerIndices <= layerCount);
+    firstEntryIndices   = firstAllowedArrivalLayerIndices(feasiblePairIndices) + ...
+        layerCount * (feasiblePairIndices - 1);
+    targetNodeIndices = 1 + mod(feasiblePairIndices - 1, nodeCount);
+    % The occupancy array has layers as rows and nodes as columns. With
+    % 4 layers, node 3 at layer 2 is element 2 + 4 x (3 - 1) = 10.
+    firstStateIndices = firstAllowedArrivalLayerIndices(feasiblePairIndices) + ...
+        layerCount * (targetNodeIndices - 1);
+    candidateCanStart(firstEntryIndices) = nodeIsFree(firstStateIndices);
+    edgeIsEnabled = motionEdgeExists(sourceNodeIndices, :).';
+    candidateCanStart = candidateCanStart & ...
+        reshape(edgeIsEnabled, 1, nodeCount, sourceCount);
+    rejectedCount = nnz( ...
+        edgeIsEnabled & ~reshape(any(candidateCanStart, 1), nodeCount, sourceCount));
+
+    % List arrival layers first within each target/source pair. This matches
+    % looping over source nodes, then target nodes, then arrival layers.
+    [entryLayerIndices, targetNodeIndices, sourceOffsetIndices] = ind2sub( ...
+        [layerCount, nodeCount, sourceCount], find(candidateCanStart));
+    selectedSourceNodeIndices = reshape(sourceNodeIndices(sourceOffsetIndices), [], 1);
+    finalStateIndices         = entryLayerIndices + layerCount * (targetNodeIndices - 1);
+    finalLayerIndices         = double(waitWindowEndLayerIndex(finalStateIndices));
+    edgeIndices               = selectedSourceNodeIndices + nodeCount * (targetNodeIndices - 1);
+    motionCandidates          = [selectedSourceNodeIndices, targetNodeIndices, ...
+        entryLayerIndices, finalLayerIndices, ...
+        motionEdgeLengths_units(edgeIndices)];
 end
 
-function [geometryTimes_s, stationaryTimeCell] = stationaryGeometryCells(obstacles)
-    % Exact history samples and open intervals have distinct geometry keys.
-    geometryTimes_s = zeros(0, 1);
-    for obstacleIndex = 1:numel(obstacles)
-        geometryTimes_s = [geometryTimes_s; double(obstacles(obstacleIndex).time_s(:))]; %#ok<AGROW>
+function [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = ...
+        keepShorterRouteAtNodeAndTime(nodeIsReachable, routeLengthToNode_units, parentLayerIndex, ...
+        parentNodeIndex, sourceLayerIndex, sourceNodeIndex, targetLayerIndex, ...
+        targetNodeIndex, edgeLength_units)
+    % Compare routes reaching the same node at the same time. Keep the
+    % shorter route; improvements within 1e-12 keep the first stored route.
+    % Save its preceding node/layer so reconstruction can follow it backward.
+    trialRouteLength_units = routeLengthToNode_units(sourceLayerIndex, sourceNodeIndex) + edgeLength_units;
+    knownRouteLength_units = routeLengthToNode_units(targetLayerIndex, targetNodeIndex);
+    if trialRouteLength_units >= knownRouteLength_units - 1e-12
+        return
     end
-    geometryTimes_s = unique(geometryTimes_s);
-    stationaryTimeCell = true(2 * numel(geometryTimes_s) + 1, 1);
+
+    nodeIsReachable(targetLayerIndex, targetNodeIndex)         = true;
+    routeLengthToNode_units(targetLayerIndex, targetNodeIndex) = trialRouteLength_units;
+    parentLayerIndex(targetLayerIndex, targetNodeIndex)        = uint32(sourceLayerIndex);
+    parentNodeIndex(targetLayerIndex, targetNodeIndex)         = uint32(sourceNodeIndex);
+end
+
+function [route_units, routeTime_s] = reconstructTimedRoute( ...
+        nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, ...
+        goalLayerIndex, goalNodeIndex)
+    % Follow the saved preceding node/layer from goal back to start.
+    % A wait repeats a position at a later time and must remain in the route.
+    route_units = zeros(0, 2);
+    routeTime_s = zeros(0, 1);
+    if isempty(goalLayerIndex)
+        return
+    end
+    layerPathIndices = goalLayerIndex;
+    nodePathIndices  = goalNodeIndex;
+    while ~(layerPathIndices(1) == 1 && nodePathIndices(1) == 1)
+        priorLayerIndex = double(parentLayerIndex(layerPathIndices(1), nodePathIndices(1)));
+        priorNodeIndex  = double(parentNodeIndex(layerPathIndices(1), nodePathIndices(1)));
+        % Index 0 means no preceding state was saved. If this happens before
+        % reaching the start, return no route rather than an incomplete route.
+        if priorLayerIndex == 0 || priorNodeIndex == 0
+            route_units = zeros(0, 2);
+            routeTime_s = zeros(0, 1);
+            return
+        end
+        layerPathIndices = [priorLayerIndex; layerPathIndices]; %#ok<AGROW>
+        nodePathIndices  = [priorNodeIndex; nodePathIndices]; %#ok<AGROW>
+    end
+    route_units = nodePosition_units(nodePathIndices, :);
+    routeTime_s = layerTimes_s(layerPathIndices);
+end
+
+function [enclosureShapes, enclosureEdgeStart_units, enclosureEdgeEnd_units, activeTimeIntervals_s, remainingCells] = ...
+        extractStationaryEnclosures(obstacles, remainingCells)
+    % A moving-cell enclosure stays fixed throughout its active interval.
+    % Check its whole saved shape as stationary geometry during that time,
+    % and remove those cells from the separate moving-region checks.
+    enclosureShapes          = cell(0, 1);
+    enclosureEdgeStart_units = cell(0, 1);
+    enclosureEdgeEnd_units   = cell(0, 1);
+    activeTimeIntervals_s    = zeros(0, 2);
+    cellIsRetained           = true(numel(remainingCells.Regions_units), 1);
+
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
         preparation = obstacle.InternalPreparation;
-        movingIntervals = find(preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s > 0);
-        for intervalIndex = reshape(movingIntervals, 1, [])
-            inInterval = geometryTimes_s >= obstacle.time_s(intervalIndex) & geometryTimes_s < obstacle.time_s(intervalIndex + 1);
-            stationaryTimeCell(2 * find(inInterval) + 1) = false;
+        movingCellIntervalIndices = find(preparation.IntervalUsesMovingCells);
+        for intervalIndex = reshape(movingCellIntervalIndices, 1, [])
+            interval_s     = obstacle.time_s(intervalIndex:intervalIndex + 1).';
+            cellIsSelected = remainingCells.SourceObstacleIndex == obstacleIndex & ...
+                remainingCells.ActiveTimeInterval_s(:, 1) >= interval_s(1) & ...
+                remainingCells.ActiveTimeInterval_s(:, 2) <= interval_s(2);
+            if ~any(cellIsSelected)
+                continue
+            end
+
+            firstSelectedCellIndex               = find(cellIsSelected, 1);
+            enclosureShapes{end + 1, 1}          = preparation.IntervalUnionShapes{intervalIndex}; %#ok<AGROW>
+            enclosureEdgeStart_units{end + 1, 1} = preparation.IntervalUnionEdgeStart_units{intervalIndex}; %#ok<AGROW>
+            enclosureEdgeEnd_units{end + 1, 1}   = preparation.IntervalUnionEdgeEnd_units{intervalIndex}; %#ok<AGROW>
+            activeTimeIntervals_s(end + 1, :)    = remainingCells.ActiveTimeInterval_s(firstSelectedCellIndex, :); %#ok<AGROW>
+            cellIsRetained(cellIsSelected)       = false;
         end
     end
-end
-function [reachable, spatialCost_units, goalExposure_units_s, parentLayerIndex, parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, goalExposure_units_s, parentLayerIndex, parentNodeIndex, sourceLayerIndex, sourceNodeIndex, targetLayerIndex, targetNodeIndex, edgeLength_units, exposureIncrement_units_s, preferNearGoalWait)
-    % When the goal disappears and reopens, place unavoidable waiting near
-    % it. Otherwise retain spatial length as the primary route objective.
-    trialCost_units          = spatialCost_units(sourceLayerIndex, sourceNodeIndex) + edgeLength_units;
-    storedCost_units         = spatialCost_units(targetLayerIndex, targetNodeIndex);
-    trialExposure_units_s = goalExposure_units_s(sourceLayerIndex,sourceNodeIndex)+ ...
-        exposureIncrement_units_s;
-    storedExposure_units_s = goalExposure_units_s(targetLayerIndex,targetNodeIndex);
-    if preferNearGoalWait
-        costIsEqual=abs(trialCost_units-storedCost_units)<=1e-12;
-        exposureIsBetter=trialExposure_units_s<storedExposure_units_s-1e-12;
-        if trialCost_units>storedCost_units+1e-12 || ...
-                (costIsEqual && ~exposureIsBetter)
-            return;
-        end
-    else
-        costIsEqual=abs(trialCost_units-storedCost_units)<=1e-12;
-        isLaterFinalTransition=targetLayerIndex==size(reachable,1) && ...
-            edgeLength_units>0 && sourceLayerIndex> ...
-            double(parentLayerIndex(targetLayerIndex,targetNodeIndex));
-        if trialCost_units>storedCost_units+1e-12 || ...
-                (costIsEqual && ~isLaterFinalTransition)
-            return;
-        end
-    end
-    reachable(targetLayerIndex, targetNodeIndex) = true;
-    spatialCost_units(targetLayerIndex, targetNodeIndex) = trialCost_units;
-    goalExposure_units_s(targetLayerIndex,targetNodeIndex)=trialExposure_units_s;
-    parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint32(sourceLayerIndex);
-    parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
-end
-function [route_units, routeTime_s] = reconstructTimedRoute(nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, goalNodeIndex)
-    % Follow temporal parents backward, including waits.
-    route_units   = zeros(0, 2);
-    routeTime_s = zeros(0, 1);
-    if isempty(goalLayerIndex)
-        return;
-    end
-    layerPath = goalLayerIndex;
-    nodePath  = goalNodeIndex;
-    while ~(layerPath(1) == 1 && nodePath(1) == 1)
-        priorLayerIndex = double(parentLayerIndex(layerPath(1), nodePath(1)));
-        priorNodeIndex  = double(parentNodeIndex(layerPath(1), nodePath(1)));
-        % Stop backtracking at the recorded start sentinel; encountering it earlier would indicate corrupt parent data.
-        if priorLayerIndex == 0 || priorNodeIndex == 0
-            route_units   = zeros(0, 2);
-            routeTime_s = zeros(0, 1);
-            return;
-        end
-        layerPath = [priorLayerIndex; layerPath]; %#ok<AGROW>
-        nodePath  = [priorNodeIndex; nodePath]; %#ok<AGROW>
-    end
-    route_units   = nodePosition_units(nodePath, :);
-    routeTime_s = layerTimes_s(layerPath);
+
+    remainingCells.Regions_units        = remainingCells.Regions_units(cellIsRetained);
+    remainingCells.EndRegions_units     = remainingCells.EndRegions_units(cellIsRetained);
+    remainingCells.ActiveTimeInterval_s = remainingCells.ActiveTimeInterval_s(cellIsRetained, :);
+    remainingCells.SourceObstacleIndex  = remainingCells.SourceObstacleIndex(cellIsRetained);
 end

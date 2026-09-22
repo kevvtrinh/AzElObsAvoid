@@ -1,26 +1,26 @@
-function [result, diagnosis] = exampleVietnamKeepoutSlew(exampleOverrides)
+function result = exampleVietnamKeepoutSlew(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleVietnamKeepoutSlew()
 %   result = exampleVietnamKeepoutSlew(exampleOverrides)
-%
+%**************************************************************************
 % PURPOSE
 %   - Plan a fixed-arrival slew through eight time-varying protected regions.
 %   - Exercise the maintained timed-visibility and timed-cell BMTP path.
-%
+%**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%
+%**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
-%
+%       Unmodified public planner result. Ordinary planning failure returns
+%       Success = false; invalid input throws.
+%**************************************************************************
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
 %     units/s^2, and units/s^3.
-%
+%**************************************************************************
 
 %% Section 1: Resolve Example Controls
 
@@ -30,9 +30,9 @@ function [result, diagnosis] = exampleVietnamKeepoutSlew(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-exampleRoot = fileparts(mfilename("fullpath"));
-source = load(fullfile(exampleRoot, "data", "vietnamKeepoutSlewInput.mat"));
-scenarioDefaults = source.options;
+exampleRoot            = fileparts(mfilename("fullpath"));
+source                 = load(fullfile(exampleRoot, "data", "vietnamKeepoutSlewInput.mat"));
+scenarioDefaults       = source.options;
 scenarioDefaults.Title = "Vietnam keep-out slew";
 [options, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults, source.limits.maxJerk_units_s3);
 
@@ -58,7 +58,7 @@ limits.maxJerk_units_s3 = displayOptions.MaxJerk_units_s3;
 % Use the public entry point so the example exercises normalization, timed
 % search, motion construction, independent validation, and diagnostics.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -74,7 +74,7 @@ end
 % Show the complete moving histories, selected route, search, and kinematics.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

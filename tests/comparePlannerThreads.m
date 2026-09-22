@@ -11,7 +11,7 @@ function summary = comparePlannerThreads(caseNames,repetitions,threadCounts)
 root=fileparts(fileparts(mfilename('fullpath')));
 addpath(root,fullfile(root,'trajectory'),fullfile(root,'examples'));
 previousThreads=maxNumCompThreads;
-restoreThreads=onCleanup(@() maxNumCompThreads(previousThreads)); %#ok<NASGU>
+restoreThreads=onCleanup(@() maxNumCompThreads(previousThreads));
 if nargin<1 || isempty(caseNames)
     caseNames=["exampleMovingDeformingUSOutlineVisibility", ...
         "exampleStaticUShapedObstacle","exampleUSOutlineExtremeVisibility"];

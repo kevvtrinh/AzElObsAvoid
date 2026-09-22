@@ -24,6 +24,9 @@ MATLAB with Java and Optimization Toolbox is required.
 ## Build and inspect a scene
 
 - Place endpoints on the canvas or enter exact x/y coordinates and apply them.
+  Select the goal to open its editor, then enter or drag its deadline position.
+  The browser derives linear motion capped at 1 coordinate unit/s and keeps the
+  complete target path inside the workspace.
 - Draw polygons, rectangles, circles, or freehand obstacles. Select a shape to
   move it, edit its vertices, resize, rotate, copy, or delete it.
 - Set physical limits, workspace bounds, mission time, and safety margins.
@@ -33,7 +36,7 @@ MATLAB with Java and Optimization Toolbox is required.
   velocity, acceleration, jerk, final status, and independent validation.
 - Play or scrub the mission. After arrival, the vehicle marker stays at its
   terminal position while obstacle playback continues; this extension is a
-  display convention, not an additional certified trajectory.
+  display convention, not an additional proven trajectory.
 - Enable the graph/guide overlays, or use **Start replay** and **Super deep
   dive** to inspect the current core's preparation, graph, motion, and checks.
 
@@ -104,14 +107,16 @@ Requests use `offlineSandboxRequest/v1` with `requestId`, `obstacles`,
 `initialState`, `goalState`, `limits`, and `options`. Each obstacle has `name`,
 `safetyMargin_units`, and ordered `keyframes` containing `time_s` and finite
 N-by-2 `vertices_units`. Endpoints contain time and position; omitted velocity
-and acceleration default to zero in the core. The browser emits per-axis
-derivative limits. External requests may use all scalars or all pairs, following
-the core's combined-magnitude contract.
+and acceleration default to zero in the core. A moving goal additionally
+carries `targetMotion.time_s`, `targetMotion.position_units`, and linear
+interpolation metadata. The browser emits per-axis derivative limits. External
+requests may use all scalars or all pairs, following the core's
+combined-magnitude contract.
 
 Responses use `offlineSandboxResult/v1`:
 
 ```text
-requestId, generatedAtUtc
+requestId
 result
   Success, Message, TerminationReason, Options, Inputs
   Request (original endpoints, limits, options), RequestedLimits
@@ -119,7 +124,6 @@ result
   acceleration_units_s2, jerk_units_s3
   ArrivalTime_s, TrajectoryDuration_s, MotionLength_units, ElapsedTime_s
 diagnosis
-  Planner = "build-core"
   Search
     Nodes_units, AcceptedEdges_units, RejectedEdges_units
     NodeCount, AcceptedEdgeCount, ExpandedCount, RejectedTransitionCount
@@ -135,7 +139,7 @@ obstacles[]
 The graph overlay contains actual returned nodes and examined connections.
 Unexamined connections remain implicit; they are not classified as blocked.
 The core does not record expansion order or frontier identities. For moving
-scenes the spatial guide alone cannot certify collision freedom over time.
+scenes the spatial guide alone cannot prove collision freedom over time.
 The geometric guide can remain available after a failed solve. No cleanup seed
 counts, candidate-selection histories, or exclusive stage times are fabricated.
 The walkthrough reports the actual C3, endpoint, derivative, history, and plane
@@ -161,10 +165,12 @@ with `Success=false`; malformed requests return bounded error responses.
 - A result loaded without its matching editable request is inspection-only
   when it contains obstacle histories. Reset to author a fresh scene.
 - External topology-changing histories may be rendered using the nearer
-  keyframe. MATLAB's protected geometry and independent certification remain
-  authoritative; browser interpolation does not validate collision freedom.
-- The editor sets zero endpoint velocity and acceleration. Full endpoint states
-  and moving-target histories can be supplied through JSON or replay bundles.
+  keyframe. MATLAB's protected geometry and independent proof remain
+  supplied; browser interpolation does not validate collision freedom.
+- The editor keeps vehicle endpoint velocity and acceleration at zero. Goal
+  motion controls author a constant-velocity target history; richer target
+  histories and full endpoint states can be supplied through JSON or replay
+  bundles.
 - Offline mode requires explicit file download/load. MAT decoding and bundle
   replay require MATLAB. Clipboard access from a local file can be restricted
   by the browser; the command can also be copied manually.

@@ -7,7 +7,7 @@ function exportInfo = exportSandboxDiagnosis(filePath, sandboxState, modeName)
 % PURPOSE
 %   - Save sandbox data in one MAT file for later fault investigation.
 %   - Preserve a request before planning or evidence after planning.
-%   - Preserve scene geometry, controls, logs, and reproduction commands.
+%   - Preserve scene geometry, controls, logs, and reproducible planner inputs.
 %   - Exclude graphics handles and callbacks. They cannot reproduce a plan.
 %**************************************************************************
 % INPUTS
@@ -21,7 +21,7 @@ function exportInfo = exportSandboxDiagnosis(filePath, sandboxState, modeName)
 %**************************************************************************
 % OUTPUTS
 %   - exportInfo (scalar struct)
-%       Absolute path, byte count, mode, HasPlannerResult, planner status,
+%       Absolute path, byte count, HasPlannerResult, planner status,
 %       termination reason, and file-format version. An export before planning
 %       reports notRun.
 %**************************************************************************
@@ -81,16 +81,14 @@ if ~isstruct(modeState) || ~isscalar(modeState) || ~all(isfield(modeState, requi
     error("exportSandboxDiagnosis:InvalidModeState", "The selected mode record does not have the stable sandbox format.");
 end
 result    = modeState.LastPlannerResult;
-diagnosis = struct();
-if isfield(modeState, "LastDiagnosis"), diagnosis = modeState.LastDiagnosis; end
 hasPlannerResult = isstruct(result) && isscalar(result) && ~isempty(fieldnames(result));
+solverDiagnostics = struct();
 if hasPlannerResult && (~isfield(result, "Inputs") || ~isfield(result, "Options"))
     error("exportSandboxDiagnosis:InvalidResult", "The retained planner result must contain Inputs and Options.");
 end
 if hasPlannerResult
     % A completed plan contains the exact normalized inputs and resolved
     % options. These values are the preferred reproduction data.
-    planningState         = "completed";
     plannerInputs         = result.Inputs;
     plannerOptions        = result.Options;
     if isfield(modeState, "LastPlannerRequest") && isfield(modeState.LastPlannerRequest, "PlannerInputs")
@@ -102,11 +100,13 @@ if hasPlannerResult
         if isfield(result, "SuppliedLimits"), plannerInputs.limits = result.SuppliedLimits; end
     end
     independentValidation = modeState.LastValidation;
+    if isfield(result,"SolverDiagnostics")
+        solverDiagnostics = result.SolverDiagnostics;
+    end
     plannerSuccess        = logical(result.Success);
     terminationReason     = string(result.TerminationReason);
     exportRequest         = struct();
 elseif isfield(modeState, "ExportRequest") && isstruct(modeState.ExportRequest) && isscalar(modeState.ExportRequest)
-    planningState         = "notRun";
     exportRequest         = modeState.ExportRequest;
     plannerInputs         = exportRequest.PlannerInputs;
     plannerOptions        = exportRequest.PlannerOptions;
@@ -116,7 +116,6 @@ elseif isfield(modeState, "ExportRequest") && isstruct(modeState.ExportRequest) 
 else
     % Older or incomplete state can contain neither result nor request. Export
     % the available scene, but leave reproduction inputs empty and visible.
-    planningState         = "notRun";
     exportRequest         = struct();
     plannerInputs         = struct();
     plannerOptions        = struct();
@@ -138,44 +137,21 @@ scene = struct("StartPosition_units", modeState.StartPosition_units, ...
     "PolygonMotionProfiles", modeState.PolygonMotionProfiles, ...
     "CanonicalObstacles", modeState.CanonicalObstacles, ...
     "ResolvedControls", modeState.ResolvedControls);
-% Record the MATLAB environment. Geometry and optimization behavior can differ
-% across MATLAB releases and operating systems.
-environment = struct("MATLABVersion", string(version), ...
-    "MATLABRelease", string(version('-release')), ...
-    "Computer", string(computer), ...
-    "WorkingDirectory", string(pwd));
-hasReplayableInputs = all(isfield(plannerInputs, {'obstacles', 'initialState', 'goalState', 'limits'}));
-plannerCommand      = "";
-validationCommand   = "";
-if hasReplayableInputs
-    % Store commands as guidance only. The exporter does not run the planner.
-    % A developer can load the file and use these commands in a clean session.
-    plannerCommand    = "[reproduced, reproducedDiagnosis] = planner(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);";
-    validationCommand = "reproducedValidation = obstacleAvoidance.validateTrajectory(reproduced);";
-end
-reproduction = struct("LoadCommand", ...
-        "loaded = load(filePath, 'diagnosisBundle');", "PlannerCommand", plannerCommand, "ValidationCommand", validationCommand);
-% Keep related data in named groups. First inspect PlanningState,
-% Result.TerminationReason, IndependentValidation, and PlannerLog. Then use
-% Scene and PlannerInputs to reproduce the exact request.
+% Keep related data in named groups. Inspect Result.TerminationReason,
+% IndependentValidation, and PlannerLog, then use Scene and PlannerInputs to
+% reproduce the exact request.
 diagnosisBundle = struct("Format", "obstacleAvoidanceSandboxDiagnosis-v2", ...
-    "CreatedUTC", string(datetime('now', 'TimeZone', 'UTC', ...
-        'Format', 'yyyy-MM-dd''T''HH:mm:ss.SSSXXX')), ...
-    "Mode", modeName, ...
-    "PlanningState", planningState, ...
     "HasPlannerResult", hasPlannerResult, ...
-    "Environment", environment, ...
     "SandboxOptions", sandboxState.Options, ...
     "Scene", scene, ...
     "ExportRequest", exportRequest, ...
     "PlannerInputs", plannerInputs, ...
     "PlannerOptions", plannerOptions, ...
     "Result", result, ...
-    "Diagnosis", diagnosis, ...
+    "SolverDiagnostics", solverDiagnostics, ...
     "IndependentValidation", independentValidation, ...
     "Status", string(modeState.Status), ...
-    "PlannerLog", string(modeState.PlannerLog), ...
-    "Reproduction", reproduction);
+    "PlannerLog", string(modeState.PlannerLog));
 
 %% Section 3: Save And Report The Export
 
@@ -195,7 +171,6 @@ if ~hasDiagnosisBundle
 end
 exportInfo = struct("FilePath", absoluteFilePath, ...
     "Bytes", double(fileRecord.bytes), ...
-    "Mode", modeName, ...
     "HasPlannerResult", hasPlannerResult, ...
     "PlannerSuccess", plannerSuccess, ...
     "TerminationReason", terminationReason, ...

@@ -1,109 +1,215 @@
-function regions_units = convexRegions(shape, longestSharedEdgeFirst)
+function regions_units = convexRegions(shape)
 %% Section 0: Header & Readme
-% SYNTAX: regions_units = obstacleAvoidance.geometry.convexRegions(shape)
-%         regions_units = obstacleAvoidance.geometry.convexRegions(shape,true)
-% PURPOSE: Exactly cover a polygon (including holes) with convex regions.
-% INPUTS: A valid polyshape and optional deterministic merge ordering.
-% OUTPUTS: Column cell array of convex vertex arrays.
-% UNITS: Coordinate units.
+% SYNTAX
+%   regions_units = obstacleAvoidance.geometry.convexRegions(shape)
+%**************************************************************************
+% PURPOSE
+%   - Divide the polygon's occupied area into convex pieces: polygons with
+%     no inward corners. Preserve holes and return the pieces in a repeatable
+%     order for later obstacle-separation checks.
+%**************************************************************************
+% INPUTS
+%   - shape (scalar polyshape)
+%       Valid polygon to divide into convex pieces.
+%**************************************************************************
+% OUTPUTS
+%   - regions_units (N-by-1 cell array)
+%       One [x y] vertex array per piece. Together, the pieces cover exactly
+%       the input polygon. An empty shape returns a 0-by-1 cell array;
+%       invalid input throws an error.
+%**************************************************************************
+% UNITS
+%   - Region vertices are coordinate units.
+%**************************************************************************
 
-%% Section 1: Keep Convex Components Or Triangulate Exact Geometry
-if nargin < 2, longestSharedEdgeFirst = false; end
+%% Section 1: Divide Each Separate Part Into Convex Pieces
+
 regions_units = cell(0, 1);
-components = regions(shape);
-for k = 1:numel(components)
-    vertices_units = components(k).Vertices;
-    if components(k).NumHoles == 0 && all(isfinite(vertices_units), 'all')
-        edges_units = circshift(vertices_units, -1) - vertices_units;
-        next_units = circshift(edges_units, -1);
-        turns_units2 = edges_units(:,1).*next_units(:,2) - edges_units(:,2).*next_units(:,1);
-        if all(turns_units2 >= 0) || all(turns_units2 <= 0)
-            regions_units{end+1,1} = vertices_units; %#ok<AGROW>
+shapeParts    = regions(shape);
+for partIndex = 1:numel(shapeParts)
+    shapePart      = shapeParts(partIndex);
+    vertices_units = shapePart.Vertices;
+
+    % A part with no holes is convex when its boundary turns only left or
+    % only right. Keep it whole in that case. Zero marks a straight edge,
+    % so extra points along a straight edge do not change this decision.
+    partHasOneBoundary = shapePart.NumHoles == 0 && all(isfinite(vertices_units), 'all');
+    if partHasOneBoundary
+        edgeVectors_units        = circshift(vertices_units, -1) - vertices_units;
+        nextEdgeVectors_units    = circshift(edgeVectors_units, -1);
+        turnCrossProducts_units2 = edgeVectors_units(:, 1) .* nextEdgeVectors_units(:, 2) - ...
+            edgeVectors_units(:, 2) .* nextEdgeVectors_units(:, 1);
+        partIsConvex = all(turnCrossProducts_units2 >= 0) || all(turnCrossProducts_units2 <= 0);
+        if partIsConvex
+            regions_units{end + 1, 1} = vertices_units; %#ok<AGROW>
             continue;
         end
     end
-    mesh = triangulation(components(k));
-    faces = mergeConvexFaces(mesh,longestSharedEdgeFirst);
-    for j = 1:numel(faces)
-        regions_units{end+1,1} = mesh.Points(faces{j},:); %#ok<AGROW>
+
+    % Triangles cover the occupied area without filling holes. Join adjacent
+    % triangles when their combined boundary still has no inward corners.
+    triangleMesh        = triangulation(shapePart);
+    regionVertexIndices = mergeAdjacentTriangles(triangleMesh);
+    for regionIndex = 1:numel(regionVertexIndices)
+        regions_units{end + 1, 1} = triangleMesh.Points(regionVertexIndices{regionIndex}, :); %#ok<AGROW>
     end
 end
-if longestSharedEdgeFirst && numel(regions_units) > 1
-    sortKeys = zeros(numel(regions_units),5);
+
+%% Section 2: Give The Regions A Repeatable Order
+
+% Sort by minimum x, minimum y, maximum x, maximum y, then area. Repeated
+% calls with the same geometry therefore use the same region ordering.
+if numel(regions_units) > 1
+    regionSortKeys = zeros(numel(regions_units), 5);
     for regionIndex = 1:numel(regions_units)
         vertices_units = regions_units{regionIndex};
-        sortKeys(regionIndex,:) = [min(vertices_units,[],1), ...
-            max(vertices_units,[],1),polyarea(vertices_units(:,1),vertices_units(:,2))];
+        regionSortKeys(regionIndex, :) = [min(vertices_units, [], 1), max(vertices_units, [], 1), ...
+            polyarea(vertices_units(:, 1), vertices_units(:, 2))];
     end
-    [~,order] = sortrows(sortKeys,1:size(sortKeys,2));
-    regions_units = regions_units(order);
+    [~, sortOrder] = sortrows(regionSortKeys, 1:size(regionSortKeys, 2));
+    regions_units = regions_units(sortOrder);
 end
 end
 
-%% Section 2: Remove Interior Diagonals Without Changing Geometry
-function faces = mergeConvexFaces(mesh,longestSharedEdgeFirst)
-    % Every accepted merge removes one shared diagonal from two exact faces.
-    % Original vertices and the occupied union remain unchanged. Concave or
-    % multiply connected unions are rejected, with no geometric tolerance.
-    count = size(mesh.ConnectivityList,1);
-    faces = mat2cell(mesh.ConnectivityList,ones(count,1),3);
-    adjacent = neighbors(mesh);
-    owner = (1:count).';
-    first = repmat(owner,1,3);
-    pairs = [first(:),adjacent(:)];
-    pairs = pairs(isfinite(pairs(:,2)) & pairs(:,1)<pairs(:,2),:);
-    if longestSharedEdgeFirst && ~isempty(pairs)
-        edgeKey_units = zeros(size(pairs,1),5);
-        for pairIndex = 1:size(pairs,1)
-            shared = intersect(faces{pairs(pairIndex,1)},faces{pairs(pairIndex,2)});
-            endpoints_units = mesh.Points(shared,:);
-            endpoints_units = sortrows(endpoints_units,[1 2]);
-            edgeKey_units(pairIndex,:) = [-sum(diff(endpoints_units,1,1).^2), ...
-                reshape(endpoints_units.',1,4)];
-        end
-        [~,order] = sortrows(edgeKey_units,1:size(edgeKey_units,2));
-        pairs = pairs(order,:);
+%% Section 3: Local Functions
+
+function regionVertexIndices = mergeAdjacentTriangles(triangleMesh)
+    % Start with one region per triangle. Joining two regions removes their
+    % shared edge while keeping the original vertices and occupied area.
+    % Keep a merge only when the combined boundary remains convex.
+    triangleCount = size(triangleMesh.ConnectivityList, 1);
+
+    regionVertexIndices        = mat2cell(triangleMesh.ConnectivityList, ones(triangleCount, 1), 3);
+    neighboringTriangleIndices = neighbors(triangleMesh);
+    mergedRegionIndex          = (1:triangleCount).';
+
+    % List each neighboring triangle pair once. Missing neighbors are NaN;
+    % requiring first index < second index removes the reverse duplicates.
+    triangleIndexGrid     = repmat(mergedRegionIndex, 1, 3);
+    adjacentTrianglePairs = [triangleIndexGrid(:), neighboringTriangleIndices(:)];
+    adjacentTrianglePairs = adjacentTrianglePairs(isfinite(adjacentTrianglePairs(:, 2)) & ...
+        adjacentTrianglePairs(:, 1) < adjacentTrianglePairs(:, 2), :);
+    if ~isempty(adjacentTrianglePairs)
+        % Neighbor column k lies across the edge opposite vertex k. For
+        % example, column 1 identifies the edge joining vertices 2 and 3.
+        % Find both endpoints of every shared edge together.
+        vertexColumns = repmat(1:3, triangleCount, 1);
+        pairIsValid   = isfinite(neighboringTriangleIndices) & ...
+            triangleIndexGrid < neighboringTriangleIndices;
+        oppositeVertexColumn  = vertexColumns(pairIsValid);
+        firstEndpointColumn   = mod(oppositeVertexColumn, 3) + 1;
+        secondEndpointColumn  = mod(oppositeVertexColumn + 1, 3) + 1;
+        triangleVertexIndices = triangleMesh.ConnectivityList;
+
+        firstEndpointLinearIndex = sub2ind( ...
+            size(triangleVertexIndices), adjacentTrianglePairs(:, 1), firstEndpointColumn);
+        secondEndpointLinearIndex = sub2ind( ...
+            size(triangleVertexIndices), adjacentTrianglePairs(:, 1), secondEndpointColumn);
+        edgeStart_units = triangleMesh.Points(triangleVertexIndices(firstEndpointLinearIndex), :);
+        edgeEnd_units   = triangleMesh.Points(triangleVertexIndices(secondEndpointLinearIndex), :);
+
+        % Put the smaller x endpoint first, using y to break an x tie. Both
+        % triangles then describe their shared edge in the same order.
+        endpointsNeedSwap = edgeStart_units(:, 1) > edgeEnd_units(:, 1) | ...
+            (edgeStart_units(:, 1) == edgeEnd_units(:, 1) & edgeStart_units(:, 2) > edgeEnd_units(:, 2));
+        savedEdgeStart_units = edgeStart_units(endpointsNeedSwap, :);
+        edgeStart_units(endpointsNeedSwap, :) = edgeEnd_units(endpointsNeedSwap, :);
+        edgeEnd_units(endpointsNeedSwap, :)   = savedEdgeStart_units;
+
+        % Try longer shared edges first. Endpoint coordinates break length
+        % ties so the merge order is repeatable.
+        sharedEdgeSortKeys = [-sum((edgeEnd_units - edgeStart_units) .^ 2, 2), ...
+            edgeStart_units, edgeEnd_units];
+        [~, sharedEdgeOrder] = sortrows(sharedEdgeSortKeys, 1:size(sharedEdgeSortKeys, 2));
+        adjacentTrianglePairs = adjacentTrianglePairs(sharedEdgeOrder, :);
     end
-    changed = true;
-    while changed
-        changed = false;
-        for k = 1:size(pairs,1)
-            left = pairs(k,1); right = pairs(k,2);
-            while owner(left)~=left, left = owner(left); end
-            while owner(right)~=right, right = owner(right); end
-            if left==right, continue; end
-            a = faces{left}; b = faces{right};
-            % Face indices are unique. Avoid general set-operation setup for
-            % short faces, while bounding the temporary comparison array.
-            if numel(a)*numel(b)<=1024
-                shared = sort(a(any(a(:)==b(:).',2)));
+
+    % Repeat until a full pass can no longer join any regions.
+    mergedAnyRegion = true;
+    while mergedAnyRegion
+        mergedAnyRegion = false;
+        for pairIndex = 1:size(adjacentTrianglePairs, 1)
+            % Earlier merges may have put either triangle into a larger
+            % region. Follow its saved indices to the region that is active now.
+            firstRegionIndex  = adjacentTrianglePairs(pairIndex, 1);
+            secondRegionIndex = adjacentTrianglePairs(pairIndex, 2);
+            while mergedRegionIndex(firstRegionIndex) ~= firstRegionIndex
+                firstRegionIndex = mergedRegionIndex(firstRegionIndex);
+            end
+            while mergedRegionIndex(secondRegionIndex) ~= secondRegionIndex
+                secondRegionIndex = mergedRegionIndex(secondRegionIndex);
+            end
+            if firstRegionIndex == secondRegionIndex
+                continue;
+            end
+            firstRegionVertexIndices  = regionVertexIndices{firstRegionIndex};
+            secondRegionVertexIndices = regionVertexIndices{secondRegionIndex};
+
+            % Find the vertices shared by these regions. Compare all pairs
+            % for small regions (at most 1024 comparisons); use intersect for
+            % larger ones to avoid creating a large temporary array.
+            if numel(firstRegionVertexIndices) * numel(secondRegionVertexIndices) <= 1024
+                sharedVertexIndices = sort(firstRegionVertexIndices( ...
+                    any(firstRegionVertexIndices(:) == secondRegionVertexIndices(:).', 2)));
             else
-                shared = intersect(a,b);
+                sharedVertexIndices = intersect(firstRegionVertexIndices, secondRegionVertexIndices);
             end
-            if numel(shared)~=2, continue; end
-            index = find(a==shared(1));
-            if a(mod(index,numel(a))+1)~=shared(2)
-                index = find(a==shared(2));
-                if a(mod(index,numel(a))+1)~=shared(1), continue; end
+            if numel(sharedVertexIndices) ~= 2
+                continue;
             end
-            next = a(mod(index,numel(a))+1);
-            other = find(b==next);
-            if b(mod(other,numel(b))+1)~=a(index)
-                b = fliplr(b); other = find(b==next);
-                if b(mod(other,numel(b))+1)~=a(index), continue; end
+
+            % The shared vertices must be neighbors along both boundaries.
+            % Walk the common edge in opposite directions so removing it joins
+            % the two boundaries into one loop.
+            firstSharedEdgeIndex = find(firstRegionVertexIndices == sharedVertexIndices(1));
+            if firstRegionVertexIndices(mod(firstSharedEdgeIndex, numel(firstRegionVertexIndices)) + 1) ~= ...
+                    sharedVertexIndices(2)
+                firstSharedEdgeIndex = find(firstRegionVertexIndices == sharedVertexIndices(2));
+                if firstRegionVertexIndices(mod(firstSharedEdgeIndex, numel(firstRegionVertexIndices)) + 1) ~= ...
+                        sharedVertexIndices(1)
+                    continue;
+                end
             end
-            a = a([index+1:end,1:index]);
-            b = b([other+1:end,1:other]);
-            merged = [a,b(2:end-1)];
-            points_units = mesh.Points(merged,:);
-            edges_units = circshift(points_units,-1)-points_units;
-            nextEdge_units = circshift(edges_units,-1);
-            turns_units2 = edges_units(:,1).*nextEdge_units(:,2)-edges_units(:,2).*nextEdge_units(:,1);
-            if ~(all(turns_units2>=0) || all(turns_units2<=0)), continue; end
-            faces{left} = merged; faces{right} = [];
-            owner(right) = left;
-            changed = true;
+            sharedEdgeEndVertexIndex = firstRegionVertexIndices( ...
+                mod(firstSharedEdgeIndex, numel(firstRegionVertexIndices)) + 1);
+            secondSharedEdgeIndex   = find(secondRegionVertexIndices == sharedEdgeEndVertexIndex);
+            if secondRegionVertexIndices(mod(secondSharedEdgeIndex, numel(secondRegionVertexIndices)) + 1) ~= ...
+                    firstRegionVertexIndices(firstSharedEdgeIndex)
+                secondRegionVertexIndices = fliplr(secondRegionVertexIndices);
+                secondSharedEdgeIndex     = find(secondRegionVertexIndices == sharedEdgeEndVertexIndex);
+                if secondRegionVertexIndices(mod(secondSharedEdgeIndex, numel(secondRegionVertexIndices)) + 1) ~= ...
+                        firstRegionVertexIndices(firstSharedEdgeIndex)
+                    continue;
+                end
+            end
+
+            % Start both vertex lists just after the shared edge. Combine
+            % the lists, keeping each shared endpoint once.
+            firstRegionVertexIndices  = firstRegionVertexIndices( ...
+                [firstSharedEdgeIndex + 1:end, 1:firstSharedEdgeIndex]);
+            secondRegionVertexIndices = secondRegionVertexIndices( ...
+                [secondSharedEdgeIndex + 1:end, 1:secondSharedEdgeIndex]);
+            mergedVertexIndices = [firstRegionVertexIndices, secondRegionVertexIndices(2:end - 1)];
+
+            % Cross-product signs describe left and right turns. Mixed signs
+            % mean an inward corner, so leave those regions separate.
+            mergedVertices_units     = triangleMesh.Points(mergedVertexIndices, :);
+            edgeVectors_units        = circshift(mergedVertices_units, -1) - mergedVertices_units;
+            nextEdgeVectors_units    = circshift(edgeVectors_units, -1);
+            turnCrossProducts_units2 = edgeVectors_units(:, 1) .* nextEdgeVectors_units(:, 2) - ...
+                edgeVectors_units(:, 2) .* nextEdgeVectors_units(:, 1);
+            mergeStaysConvex = all(turnCrossProducts_units2 >= 0) || all(turnCrossProducts_units2 <= 0);
+            if ~mergeStaysConvex
+                continue;
+            end
+
+            % Keep the merged boundary under the first region's index. Later
+            % pairs involving the second region will follow this saved link.
+            regionVertexIndices{firstRegionIndex}  = mergedVertexIndices;
+            regionVertexIndices{secondRegionIndex} = [];
+            mergedRegionIndex(secondRegionIndex) = firstRegionIndex;
+            mergedAnyRegion = true;
         end
     end
-    faces = faces(~cellfun(@isempty,faces));
+    regionVertexIndices = regionVertexIndices(~cellfun(@isempty, regionVertexIndices));
 end

@@ -1,290 +1,215 @@
 # MATLAB planning core
 
-The `build-core` branch starts at `bmtp-emptycore` commit `26c343b` and extends
-the shared BMTP equations to prescribed position, velocity, and acceleration
-at both endpoints. Reaching the terminal state ends the segment; stopping is
-optional. See [BUILD_CORE.md](BUILD_CORE.md) for the implementation and measured
-audit at commit `bdb3a65`. The subsequent C3 quintic change and its
-verification are documented in [C3_QUINTIC.md](C3_QUINTIC.md).
-The subsequent runtime investigation and controlled comparisons are in
-[RUNTIME_OPTIMIZATION.md](RUNTIME_OPTIMIZATION.md).
+This repository contains one public planner:
+
+```matlab
+result = planner(obstacles, initialState, goalState, limits, options);
+```
+
+The planner prepares protected polygon geometry, constructs exact visibility
+evidence, generates C3 motion with BMTP, and accepts a result only after the
+public independent validator passes it. Expected no-path and infeasible outcomes
+return `Success=false` with stable `Message` and `TerminationReason` fields.
+
+MATLAB R2024b and Optimization Toolbox are the behavioral reference. Parallel
+Computing Toolbox is optional: large obstacle interval preparations use at most four
+available background workers when the pool is idle. The serial path remains
+the reference for geometry, proofs, and cache semantics. Add only the
+root and BMTP package parent to the path:
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
-result = planner(obstacles, initialState, goalState, limits, options);
+```
+
+## Pipeline
+
+The production flow has no caller-selectable planner profile:
+
+```text
+validate request
+  -> prepare original and protected geometry once
+  -> build the applicable exact visibility proposal
+  -> generate one BMTP motion for that proposal and clock
+  -> continuously prove geometry, dynamics, and C3 continuity
+  -> run the public independent validator
+  -> return one stable result
+```
+
+Static visibility graphs exhaustively classify all endpoint and prepared
+boundary-node pairs. Timed visibility uses one deterministic staging-node set
+and one temporal search. A moving edge is checked over its complete time
+interval: affine point motion against every affine convex obstacle cell is
+reduced to quadratic half-space residuals, whose real roots partition all
+possible contact intervals. Collision acceptance does not depend on sampling.
+
+Fixed-arrival requests use one deterministic policy. The planner evaluates the
+exact initial- and arrival-snapshot visibility guides as bounded runtime
+shortcuts, then constructs one time-expanded guide when neither shortcut
+returns a complete motion. A shortcut failure is not evidence of request
+infeasibility. Every stage is recorded in `result.Attempts`, including its
+declared iteration limit, typed failure, selection, and child-attempt evidence.
+A validator rejection terminates as a defect; it never starts another attempt.
+
+Earliest-arrival requests pass through one coordinator that runs the planning
+methods in a fixed order. Static fixed-position rest-to-rest requests use the
+exact spatial graph and variable-clock BMTP. Dynamic fixed-position rest-to-rest
+requests first try the direct-departure family, keep any validated motion as the
+best plan so far, then run one variable-clock timed search that may only beat
+that plan. Moving targets and non-rest endpoint requests skip the families that
+cannot handle their endpoint physics and go straight to arrival-time trials, each
+a fixed-clock request on its own clock. A typed search, timing, or proposal miss
+lets the next method run; validation, geometric proof, reconstruction,
+numerical, and unknown failures end the sequence.
+A complete continuous curve that passes workspace, continuity, and geometry
+checks but exceeds derivative limits is a clock-local timing miss, not a
+weakened proof.
+
+By default, a validated best plan so far is kept when the timed search fails,
+instead of launching an unbounded arrival-time search. The result reports the
+unsearched interval and does not claim global optimality. Callers may spend an
+explicit, bounded `BestSoFarRefinementTrialLimit` of arrival-time trials to look
+for earlier clocks, without changing the public validator or discarding the plan
+already found. Every route, motion, and clock attempt is recorded in
+`result.Attempts`; an arrival-time parent attempt keeps its fixed-arrival child
+evidence. `EarliestArrival` records the capabilities, the selected attempt, the
+best plan so far, the bounded-search state, and whether the earliest possible
+arrival was actually attained.
+
+There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
+repairs, connectivity-recovery passes, fixture-specific seeds, hidden
+waypoints, fabricated direct seeds, or silent motion fallbacks. The two
+snapshot shortcuts are deterministic, use exact exhaustive snapshot graphs,
+and cannot weaken the independent acceptance gate.
+
+BMTP checks that supplied coverage metadata is internally consistent before it
+solves. That check is not treated as proof of coverage completeness: the public
+validator reconstructs supplied obstacle coverage from the original
+request before any motion is accepted.
+
+## Inputs
+
+`obstacles` may contain static polygons or canonical polygon histories created
+with `obstacleAvoidance.obstacles.createObstacle`. Safety margins are applied
+exactly once. Original and protected geometry remain distinct in the result.
+Unsupported continuous deformation is reported explicitly rather than sampled
+or relabeled as free space.
+
+`initialState` and `goalState` contain:
+
+- `time_s`
+- `position_units`
+- optional `velocity_units_s` and `acceleration_units_s2`, which default to
+  `[0 0]`
+
+A moving goal may instead supply `targetMotion.time_s`,
+`targetMotion.position_units`, and `InterpolationMethod` (`linear` or `pchip`).
+Target velocity and acceleration matching are explicit options.
+
+`limits` contains:
+
+- `xInterval_units`, `yInterval_units`
+- `maxVelocity_units_s`
+- `maxAcceleration_units_s2`
+- `maxJerk_units_s3`
+
+A scalar derivative limit is a combined magnitude and is conservatively split
+equally between axes. A two-element vector is an explicit per-axis limit.
+
+Public planner options are:
+
+- `GoalTimeMode`: `fixedArrival` or `earliestArrival`
+- `SampleTime_s`
+- `ConstraintTolerance`
+- `CollisionClearanceTolerance_units`
+- `ArrivalTimeTolerance_s`
+- `WrapX`, `WrapY`
+- `MatchTargetVelocity`, `MatchTargetAcceleration`
+- `TemporalResolution_s`
+- `SpatialProbeIterationLimit`: BMTP iteration budget for each fixed-arrival
+  snapshot shortcut (default `2`, maximum `35`)
+- `MaxArrivalTrials`: maximum fixed-clock planner solves
+- `MaxArrivalCandidates`: maximum regular-grid clocks screened; exact declared
+  obstacle, target, and horizon boundaries inside that grid window are retained
+- `BestSoFarRefinementTrialLimit`: how many arrival-time trials may try to
+  beat a validated best plan so far after the timed search fails
+  (default `0`; never exceeds `MaxArrivalTrials`)
+
+Unknown options issue one warning and do not change planner behavior. A
+wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped coordinates
+inside the range the vehicle can reach in the time given: every obstacle is
+copied one full turn up and down, a moving target's path is unwrapped so it
+never jumps at the seam, and every copy of the goal inside that range is
+planned as an ordinary request and accepted against the wrapped request in the
+one acceptance gate (earliest arrival first, or shortest motion for a fixed
+arrival). The validator rebuilds the obstacle copies, the unwrapped target path,
+and the goal copy from the supplied request. Returned positions stay in
+unwrapped coordinates.
+
+## Outputs and validation
+
+Successful results contain sampled position, velocity, acceleration, and jerk;
+the supplied piecewise polynomial; the selected route and visibility
+evidence; prepared geometry; BMTP diagnostics; continuous plane proofs;
+and the independent validation record.
+
+Validate and plot without rerunning planning:
+
+```matlab
 validation = obstacleAvoidance.validateTrajectory(result);
-obstacleAvoidance.plotting.plotTrajectory(result);
-```
-
-`planner` is the single public planning entry point. Calling `planner()` runs
-a fixed-arrival static detour. MATLAB and Optimization Toolbox are required.
-Expected no-path and infeasible outcomes use stable `Success`, `Message`, and
-`TerminationReason` fields.
-
-The planner prioritizes its own root and `trajectory` folders on the MATLAB
-path. This keeps archived benchmark engines out of active planning when a
-session has used `addpath(genpath(pwd))`. Prefer the explicit paths above;
-for the graphical examples, also add `fullfile(pwd,'examples')`.
-
-Run `exampleMovingObstacle220()` for the narrow moving-obstacle detour with
-220 vertices per snapshot, 4,829 source snapshots, and a 230-second simulated
-motion window. It complements the mixed static/rotating-obstacle example in the
-maintained suite. The example and
-[timing benchmark](benchmarks/220_vertex_timing.md) share identical default inputs.
-
-Run `exampleVietnamBoundarySlew()` for the supplied Vietnam az/el boundary:
-three source snapshots interpolate to 921 input slices of 280 vertices. The
-default request arrives at 3000 s from a 2770 s start. Use
-`struct('PlotOutputs',false)` to time it without plots. The
-[source CSV](examples/data/vietnamBoundaryPoints.csv), [plan](plan.md), and
-[benchmark report](benchmarks/vietnam_boundary.md) document the data, declared
-interpolation, continuous motion, and measured preparation improvement.
-
-Fixed-arrival requests can explicitly select the existing time-expanded guide:
-
-```matlab
-options = struct('GoalTimeMode','fixedArrival','FixedArrivalSearch','timeExpanded');
-result = planner(obstacles,initialState,goalState,limits,options);
-```
-
-`FixedArrivalSearch` defaults to `'spatial'`. The timed option supports a
-fixed-position goal and zero endpoint velocity and acceleration; intermediate
-motion carries derivatives continuously through BMTP joins. It returns an
-explicit failure if the timed method cannot produce validated motion. See the
-[fixed-arrival comparison](benchmarks/fixed_arrival_timed_visibility.md): it
-solves a moving-detour request that the spatial method fails, but costs more
-time and produces a slightly longer path on the supplied Vietnam fixture.
-
-The plotter is ported from `bmtp-cleanup-codex` (`c04f3b2`). It provides
-workspace/visibility, four kinematic panels, animation, GIF export, and paired
-wrapped/continuous views using this branch's retained results. Query its display
-defaults with `obstacleAvoidance.plotting.plotTrajectory()`, or select views:
-
-```matlab
 handles = obstacleAvoidance.plotting.plotTrajectory(result, ...
     struct('ShowAnimation', false, 'FigureVisible', 'off'));
 ```
 
-Passing Cartesian axes as the second argument keeps the existing single-view
-call. The core `Axes`, `Trajectory`, and geometry handles remain available.
-Moving targets use `targetMotion`; obstacle margins are not reapplied.
-Legacy seed-path, swept-surface, and snapshot-count controls remain accepted
-for example compatibility but have no effect because the core does not return
-those diagnostic histories.
+Position spans are quintic for fixed and timed clocks and degree eight for
+static variable-clock BMTP. Position, velocity, acceleration, and jerk are
+continuous at internal joins. Endpoint position, velocity, and acceleration
+remain given. No post-solve time stretching or tolerance weakening is
+used to make a candidate pass.
 
-## Interactive sandboxes
+## Examples
 
-The HTML and MATLAB sandboxes are ported from `bmtp-cleanup-codex` (`c04f3b2`)
-and use this branch's `planner` and independent validator. Run from the root:
+Add the examples directory, then call any maintained example with plots off:
 
 ```matlab
-% MATLAB figure sandbox
+addpath(fullfile(pwd, 'examples'));
+result = exampleMovingBarrierWait( ...
+    struct('PlotOutputs', false, 'Verbose', false));
+```
+
+The maintained suite covers obstacle-free motion, static detours, concave and
+dense geometry, expected no-path outcomes, moving obstacles, rotating obstacles,
+moving targets, and large source histories. `exampleSpinningUAtStartAndGoal`
+exercises rotating cavities at both endpoints. `exampleMovingObstacle220`
+exercises 220-vertex moving geometry over a 230-second simulated horizon.
+
+The MATLAB and browser sandboxes call the same public planner and validator:
+
+```matlab
 addpath(fullfile(pwd, 'sandbox'));
 ui = obstacleAvoidanceSandbox();
 
-% HTML sandbox: run in a MATLAB session, then open the printed loopback URL
 addpath(fullfile(pwd, 'offlinesandbox'));
 offlineSandbox.serveSandbox();
 ```
 
-The server blocks that MATLAB session until Ctrl+C or its printed stop file.
-The HTML file also supports offline JSON handoff. Both retain drawing, moving
-obstacle histories, replay bundles, and core-result plots. Their initial
-arrival choice is earliest arrival; core tolerances remain unchanged.
-See the [MATLAB sandbox guide](sandbox/README.md) and
-[HTML sandbox guide](offlinesandbox/README.md) for controls and reproduction.
+## Verification
 
-## Endpoint states, limits, and optional capabilities
-
-Omitted or empty `velocity_units_s` and `acceleration_units_s2` default to
-`[0 0]`; supplied values are preserved. Fixed-arrival BMTP constrains the first
-and last span using their own physical durations. Shared joins are C3 and
-do not impose stops at route-guide vertices. Motion is never
-stretched after solving. Static earliest arrival integrates the full initial
-state, optimizes physical jerk and phase times, and repairs at those exact
-durations. This local optimization does not prove a global earliest arrival.
-The default arrival mode remains `fixedArrival`.
-
-```matlab
-initial = struct('time_s',0,'position_units',[-4 0], ...
-    'velocity_units_s',[-0.2 0.1],'acceleration_units_s2',[0.04 -0.02]);
-goal = struct('time_s',12,'position_units',[4 1], ...
-    'velocity_units_s',[0.3 -0.1],'acceleration_units_s2',[-0.03 0.02]);
-result = planner([],initial,goal);
-```
-
-Velocity, acceleration, and jerk limits must all use the same scalar/vector
-form. A scalar `L` is a combined magnitude, resolved once to
-`[L/sqrt(2) L/sqrt(2)]`. A two-element vector is an explicit per-axis bound.
-Equal allocation is conservative and cannot transfer unused capacity between
-axes. Supply `[L L]` to retain the former scalar-broadcast physical case.
-`SuppliedLimits` retains the supplied input, `RequestedLimits` contains resolved
-physical limits, and `Limits` contains the solver workspace and resolved
-physical limits. Internal calls pass resolved vectors. Maintained examples
-already use explicit vectors and retain their physical inputs.
-
-A goal may supply `targetMotion.time_s`, `targetMotion.position_units`, and
-`InterpolationMethod` (`linear` or `pchip`). Set `MatchTargetVelocity` and/or
-`MatchTargetAcceleration` in options to match derivatives of that same
-interpolant at the actual meeting time. Both default false, preserving explicit
-goal derivatives. Conflicting explicit/matched derivatives are rejected.
-Linear corners have undefined derivatives and are rejected when matching is
-requested. PCHIP uses the right-hand piece at interior knots and the left-hand
-piece at the final knot, including one-sided acceleration. Source history and
-matching policies remain available for independent validation.
-
-`WrapX` and `WrapY` enable periodic coordinates for obstacle-free,
-fixed-position goals. The corresponding workspace width defines the period;
-the nearest equivalent endpoint is selected, with positive half-period ties.
-This coordinate policy is not a global timing guarantee. The solver uses a
-finite velocity-reachable unwrapped interval on enabled axes and preserves
-bounds on disabled axes. Returned polynomials and samples remain continuous
-and unwrapped; plots wrap coordinates and break lines at display seams.
-Periodic obstacle and moving-target requests are explicitly unsupported.
-
-Rest-to-rest dynamic chords can include a stationary wait joined with zero
-jerk. A positive triangular smoothing kernel turns the former bang-bang
-profile into continuous quadratic jerk and quintic position, increasing its
-duration. Other earliest dynamic and target requests use chronological
-fixed-arrival trials, with `TemporalResolution_s` (default 0.5 s) and
-`MaxArrivalTrials` (default 100). Source/activity boundaries are included.
-For fixed-position goals, physically impossible times are excluded using the
-same necessary travel-time bound as endpoint validation before applying the
-trial budget. A validated delayed straight crossing remains an incumbent while
-earlier detours are tested. Those trials are skipped when the exact initial
-visibility route is disconnected or its optimistic route-length/maximum-speed
-bound cannot beat the incumbent. Immediate certified crossings keep their
-direct path. `SolverDiagnostics.DepartureSchedule.InitialRouteTimeBound_s`
-records the skip bound.
-When trials run, `TemporalSearch` reports their budget, unsearched intervals, and the absence
-of a global earliest proof. `arrivalSearchExhausted` means no tested time was
-certified; it does not prove physical infeasibility.
-
-## Planning method
-
-Obstacle preparation, planning, independent validation, and plotting remain
-separate. Original and protected geometry are retained; obstacle margins are
-applied once. Concave regions are triangulated, and adjacent faces merge only
-when their exact union is convex. Visibility search uses the protected occupied
-union, including holes and disconnected components. It classifies every graph
-edge exactly; proven boundary-cone rejections avoid unnecessary full intersection
-queries without pruning an edge from the returned graph evidence.
-
-Returned position spans use degree-five polynomials, with continuous position,
-velocity, acceleration, and jerk at every internal join. Endpoint position,
-velocity, and acceleration remain prescribed; endpoint jerk is free unless
-joining a stationary wait. No new snap limit is imposed.
-
-Direct earliest-arrival rest motion uses the jerk-limited chord with continuous
-jerk smoothing. Fixed-arrival direct motion retains its minimum-jerk quintic.
-Static detours alternate between a common-clock BMTP trajectory and separating
-planes only for curve-region pairs encountered by the current iterate. After
-finding the earliest retained feasible motion, the solver minimizes travel at
-that same arrival time and keeps it only after exact continuous certification.
-Fixed-arrival motion enforces C3 joins in the shared Bernstein equations. Timed
-obstacles retain their exact affine cells and absolute activity intervals. No
-example identity selects a production method.
-
-Export preserves the physical clock. A global continuity projection stays in
-the quintic spline space, and every corrected motion is checked again. Exact
-subdivision exposes collision clearance without changing the curve. Historical
-C2 timing bounds generally cannot be attained with continuous jerk; the
-workbook references remain unchanged so regressions stay visible.
-
-Finite solver iterates are proposals. Success requires the public independent
-validator to reconstruct source geometry and the final motion and check
-endpoints, physical derivatives, workspace, clearance, and every applicable
-source pair. Static plane checks are batched with the same scalar Bernstein
-products, roundoff reserve, normal bound, and clearance inequalities. Comparison
-against the scalar verifier found identical decisions and signed gaps on all
-48,312 geographic pairs. Randomized, near-clearance, and single-region tests
-also check equivalence. No validation tolerance or protected geometry was relaxed.
-
-## Reproduce the compact regression and benchmark audit
+Run the complete test suite and maintained example audit from the repository
+root:
 
 ```matlab
 addpath('trajectory', 'examples', 'tests');
 assertSuccess(runtests('tests'));
-checkBenchmarkTimingContract();
-summary = runExampleBenchmarks([], 3);
-disp(summary(:, {'Case','Valid','MeetsHistoricalQuality'}));
-disp(summary(:, {'Case','WallTime_s','ReferenceWallTime_s','MeetsAllHistorical'}));
+summary = runExampleBenchmarks();
+assert(all(summary.Valid));
 ```
 
-Inspect validity and historical quality/runtime gates separately. C3 results
-and limitations are recorded in C3_QUINTIC.md. The unchanged references are in
-`benchmarks/bmtp_emptycore_benchmark.xlsx`.
-The runner times the entire example with plotting disabled and profiling off,
-uses identical inputs, reports all runs, and requires independent validity.
-Runtime gates use the three-run median, not a cold-start guarantee. Physical
-production lines include the root entry point and all `.m` files in both
-production packages; tests, examples, and scratch experiments are excluded.
-Generated CSV/MAT/log artifacts remain outside source control.
+The maintained decision-flow audit is recorded in
+[`benchmarks/planner_decision_flow.md`](benchmarks/planner_decision_flow.md).
+Dynamic-obstacle behavior and geometry contracts are documented in the focused
+benchmark reports and
+[`obstacle_history_contract.md`](obstacle_history_contract.md).
 
-The geographic example executes Hawaii, Croatia, and the Philippines in order.
-Every regional result is captured and independently validated. Its historical
-arrival and length row describes the final Philippines result; its runtime
-covers the complete three-region example. All nine regional results in the
-historical C2 three-run audit passed. The no-path example passes only with the expected
-explicit no-route outcome and no returned motion.
-
-The workbook's seed-route length may describe a blocked direct chord, while its
-returned motion detours around obstacles. The audit therefore compares
-executable polynomial motion length for path quality. It also reports the seed
-length separately. `MotionLength_units` now uses adaptive integration of speed
-on each polynomial span, independent of output sampling. This strengthens the
-comparison against historical lengths measured from sampled output. A coarse
-sampling regression verifies that the reported arc length remains unchanged.
-
-The table below preserves the **historical `26c343b` audit / workbook reference**
-values. It is not a measurement of this branch; see BUILD_CORE.md for the new
-baseline and changed-branch comparison.
-
-| Example | Arrival (s) | Motion length | Full example runtime (s) |
-| --- | ---: | ---: | ---: |
-| `exampleAlternatingSlalom` | 10.500000 / 10.550094 | 16.020012 / 16.034754 | 0.240 / 7.490 |
-| `exampleDenseConcaveObstacle` | 8.500000 / 8.500000 | 12.755775 / 12.761105 | 0.495 / 3.835 |
-| `exampleFourAcceleratingCircles` | 22.000000 / 22.000000 | 20.000000 / 20.000000 | 3.895 / 7.152 |
-| `exampleInterceptMovingTargetAtSetTime` | 12.000000 / 12.000000 | 9.538941 / 9.538941 | 0.011 / 0.195 |
-| `exampleInterceptMovingTargetEarliest` | 6.111111 / 6.111111 | 7.308890 / 7.308890 | 0.017 / 0.149 |
-| `exampleMovingBarrierWait` | 10.090089 / 10.090302 | 10.000000 / 10.000000 | 0.055 / 1.107 |
-| `exampleMovingCircleNoWrap` | 8.500000 / 8.500000 | 12.448798 / 12.453788 | 0.271 / 2.097 |
-| `exampleMovingDeformingUSOutlineVisibility` | 7.916667 / 7.916667 | 40.238053 / 40.248219 | 15.087 / 30.805 |
-| `exampleMovingRotatingObstacleField` | 9.041667 / 9.041667 | 20.455931 / 20.716209 | 0.359 / 2.380 |
-| `exampleNoPath` | expected no path | expected no path | 0.059 / 0.567 |
-| `exampleObstacleFree` | 4.531129 / 4.531129 | 4.472136 / 4.472136 | 0.016 / 0.101 |
-| `exampleOpeningUShapedObstacle` | 11.584333 / 13.617522 | 10.000000 / 10.000000 | 0.142 / 1.770 |
-| `exampleStaticUShapedObstacle` | 20.762801 / 20.872548 | 37.779253 / 38.678082 | 5.289 / 6.497 |
-| `exampleStraightTargetAlternatingOcclusion` | 20.869565 / 20.869565 | 13.556360 / 13.610416 | 1.970 / 2.467 |
-| `exampleTargetExitsObstacle` | 24.000000 / 24.000000 | 20.504272 / 20.685147 | 0.987 / 4.628 |
-| `exampleTwoOpposingUVisibilityGraph` | 21.633333 / 22.100628 | 24.048035 / 24.205764 | 0.366 / 2.092 |
-| `exampleUSOutlineExtremeVisibility` | 5.204940 / 5.827605 | 18.801408 / 23.257993 | 19.186 / 24.871 |
-| `exampleVietnamKeepoutSlew` | 30.000000 / 30.000000 | 17.144141 / 17.305375 | 2.497 / 21.210 |
-
-The compact suite contains 31 executable tests across seven focused files. It
-covers direct motion, detours, expected no-path and invalid-input outcomes,
-one-time margins, holes and concavities, exhaustive exact visibility, saved
-arrival-search incumbents, bounded 220-vertex correspondence, affine and clipped
-moving cells, nonzero endpoint velocities, certificate-cache invalidation, the
-saved moving-detour earliest-arrival fast path, and the maintained 220-vertex
-result. See [the saved-request diagnosis](benchmarks/saved_xy_diagnosis.md)
-for measured failures, the general fix, and the plane-reduction experiment.
-
-The deferred Vietnam route-quality gate is intentionally not in the compact
-suite. Its current guide-route length is 17.366977678962233 versus the retained
-17.2979913158 reference. That remains a known issue; no threshold was relaxed.
-
-## Scope and limitations
-
-Passing this suite is a measured result, not a universal optimality or runtime
-guarantee. Static optimization uses a visibility-selected topology and a finite
-polynomial family. Dense rest-to-rest histories first use a time-expanded
-visibility proposal over declared source, midpoint, and uniform time layers.
-The selected layer is not a continuous-time global-optimality proof. Sparse
-histories and unsuccessful timed proposals use a certified delayed chord when
-available; chronological fixed-arrival search continues only when the initial
-spatial-route bound can beat it. Feasible times may be disconnected and open
-gaps remain unsearched.
-Nonlinear optimization and fixed-clock conic failures do not prove physical
-infeasibility. These cases return stable failure outcomes without weakening
-validation.
+Generated benchmark, profiling, plot, and scratch outputs are ignored and must
+not be committed. The benchmark workbook and supplied MAT/CSV fixtures are
+intentional reproducible test inputs.

@@ -46,17 +46,154 @@ function testDirect(testCase)
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyEqual(testCase,r.ArrivalTime_s,12,'AbsTol',1e-8);
+    verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,r.VisibilityGraph.GraphIsFullyEnumerated);
+end
+
+function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
+    initial = struct('time_s', 0, 'position_units', [-1, 0]);
+    goal    = struct('time_s', 10, 'position_units', [1, 0]);
+    limits  = struct( ...
+        'xInterval_units',          [-5, 5], ...
+        'yInterval_units',          [-5, 5], ...
+        'maxVelocity_units_s',      [10, 10], ...
+        'maxAcceleration_units_s2', [10, 10], ...
+        'maxJerk_units_s3',         [10, 10]);
+    looseTolerance      = 1e-3;
+    tightTolerance      = 1e-8;
+    crossedTolerances  = [looseTolerance, tightTolerance; tightTolerance, looseTolerance];
+    expectedAcceptance = [false; true];
+    clockOffset_s       = 1e-4;
+    controlPoint_units  = zeros(1, 6, 2);
+    controlPoint_units(1, :, 1) = [-1, -1, -1, 1, 1, 1];
+
+    for settingIndex = 1:size(crossedTolerances, 1)
+        options = struct( ...
+            'GoalTimeMode',          'fixedArrival', ...
+            'ConstraintTolerance',   crossedTolerances(settingIndex, 1), ...
+            'ArrivalTimeTolerance_s', crossedTolerances(settingIndex, 2));
+        baseResult = planner([], initial, goal, limits, options);
+        assertTrue(testCase, baseResult.Success, baseResult.Message);
+        assertTrue(testCase, obstacleAvoidance.validateTrajectory(baseResult).Passed);
+
+        seed = struct( ...
+            'position_units', [initial.position_units; goal.position_units], ...
+            'tau',            [0; 1]);
+        request = bmtpEngine.pipeline.createSolveRequest(seed, ...
+            struct('regions_units', {cell(0, 1)}, ...
+            'coverage', struct('Passed', true, 'ExactRegionCount', 0)), ...
+            struct('initialState', baseResult.Inputs.initialState, ...
+            'goalState', baseResult.Inputs.goalState, ...
+            'limits', baseResult.Limits, ...
+            'options', baseResult.Options));
+        preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controlPoint_units, ...
+            request.MotionHorizon_s + clockOffset_s);
+        output = createProvenOutput(baseResult, request, preparedMotion);
+        validation = obstacleAvoidance.validateTrajectory(output);
+
+        verifyEqual(testCase, preparedMotion.Success, expectedAcceptance(settingIndex));
+        verifyEqual(testCase, validation.Passed, expectedAcceptance(settingIndex));
+    end
+
+    for constraintTolerance = [tightTolerance, looseTolerance]
+        options = struct( ...
+            'GoalTimeMode',          'fixedArrival', ...
+            'ConstraintTolerance',   constraintTolerance, ...
+            'ArrivalTimeTolerance_s', tightTolerance);
+        result = planner([], initial, goal, limits, options);
+        assertTrue(testCase, result.Success, result.Message);
+        result.Inputs.goalState.time_s = result.Polynomial.FinalTime_s + clockOffset_s;
+        validation = obstacleAvoidance.validateTrajectory(result);
+        verifyFalse(testCase, validation.Passed);
+        verifyFalse(testCase, validation.EndpointStatesMatched);
+
+        if constraintTolerance == looseTolerance
+            altered = result;
+            altered.Polynomial.FinalTime_s = altered.Polynomial.FinalTime_s + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SegmentTimingConsistent);
+
+            altered = result;
+            altered.Polynomial.SegmentStartTime_s(1) = ...
+                altered.Polynomial.SegmentStartTime_s(1) + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SegmentTimingConsistent);
+            verifyFalse(testCase, validation.EndpointStatesMatched);
+
+            altered           = result;
+            altered.time_s(1) = altered.time_s(1) + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SampledHistoriesMatched);
+
+            altered             = result;
+            altered.time_s(end) = altered.time_s(end) - clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SampledHistoriesMatched);
+
+            altered = result;
+            altered.Inputs.initialState.time_s = ...
+                altered.Inputs.initialState.time_s + clockOffset_s;
+            validation = obstacleAvoidance.validateTrajectory(altered);
+            verifyFalse(testCase, validation.SeparationProofValid);
+        end
+    end
+end
+
+function testC3ChordDropsRoundoffZeroPhases(testCase)
+    % A regime-boundary hold can evaluate to a positive 1e-16-second
+    % remnant. It must not become the smoothing kernel and erase the chord.
+    limits = struct('maxVelocity_units_s',[10,10], ...
+        'maxAcceleration_units_s2',[10,10], ...
+        'maxJerk_units_s3',[10,10]);
+    start_units = [-5,0];
+    goal_units = [0.201,2.999];
+    [controls_units,durations_s,powers_units] = ...
+        bmtpEngine.motion.createC3Chord(start_units,goal_units,limits);
+    verifyGreaterThan(testCase,min(durations_s),1e-6);
+    verifyEqual(testCase,squeeze(controls_units(1,1,:)).', ...
+        start_units,'AbsTol',1e-12);
+    verifyEqual(testCase,squeeze(controls_units(end,end,:)).', ...
+        goal_units,'AbsTol',1e-10);
+    verifyEqual(testCase,sum(squeeze(powers_units(end,:,:)),2).', ...
+        goal_units,'AbsTol',1e-10);
+end
+
+function testJerkChordPreservesShortPhysicalRampsBesideLongCruise(testCase)
+    limits = struct('maxVelocity_units_s',[1e-9,1e-9], ...
+        'maxAcceleration_units_s2',[1e5,1e5], ...
+        'maxJerk_units_s3',[1e18,1e18]);
+    [controls_units,durations_s] = bmtpEngine.motion.createJerkLimitedChord( ...
+        [0,0],[1,0],limits,3);
+    verifyGreaterThan(testCase,numel(durations_s),1);
+    verifyGreaterThan(testCase,min(durations_s),0);
+    verifyEqual(testCase,squeeze(controls_units(1,1,:)).',[0,0], ...
+        'AbsTol',1e-14);
+    verifyEqual(testCase,squeeze(controls_units(end,end,:)).',[1,0], ...
+        'AbsTol',1e-12);
 end
 
 function testDetourAndTampering(testCase)
-    r = planner();
+    options = planner();
+    verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
+    verifyFalse(testCase, isfield(options, "Success"));
+    obstacle = struct("Name", "center block", ...
+        "Vertices_units", [-1 -1; 1 -1; 1 1; -1 1], ...
+        "SafetyMargin_units", 0.25);
+    initial = struct("time_s", 0, "position_units", [-4 0]);
+    goal = struct("time_s", 12, "position_units", [4 0]);
+    limits = struct("xInterval_units", [-180 180], "yInterval_units", [-90 90], ...
+        "maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [2 2], ...
+        "maxJerk_units_s3", [4 4]);
+    r = planner(obstacle, initial, goal, limits, options);
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
+    verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,r.VisibilityGraph.GraphIsFullyEnumerated);
     altered = r; altered.position_units(2,1) = altered.position_units(2,1)+0.1;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
     altered = r; altered.Polynomial.jerkPower_units_s3(1,1,1) = 1e4;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
-    altered = r; altered.PlaneCertificate.Regions_units = {};
+    altered = r; altered.SeparationProof.Regions_units = {};
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
 
@@ -66,6 +203,33 @@ function testNoPath(testCase)
     verifyFalse(testCase,r.Success);
     verifyEqual(testCase,r.TerminationReason,"noVisibilityRoute");
     verifyEmpty(testCase,r.time_s);
+    earliest = planner(obstacle,testCase.TestData.Initial,testCase.TestData.Goal, ...
+        testCase.TestData.Limits,struct('GoalTimeMode','earliestArrival'));
+    verifyFalse(testCase,earliest.Success);
+    verifyEqual(testCase,earliest.TerminationReason,"noVisibilityRoute");
+    verifyEqual(testCase,earliest.Attempts.FailureKind,"noSpatialRoute");
+end
+
+function testMovingCellFringeBlocksTerminalReachability(testCase)
+    % The moving-cell enclosure hulls carried triangles with margin squares, so it
+    % reaches past every protected sample. A fixed goal that is free of the
+    % samples but inside that fringe must still be proven unreachable before
+    % any planning stage runs.
+    lower = [-1,-1;1,-1;1,1;-1,1];
+    upper = [-1,-1;1,-1;0.5,1;-1,1];
+    obstacle = obstacleAvoidance.obstacles.createObstacle('swept fringe',[0;10], ...
+        {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},1, ...
+        struct('vertexCorrespondence','sourceIndex'));
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,10],true);
+    goal = struct('time_s',10,'position_units',[2.3,0]);
+    verifyTrue(testCase,all(cellfun(@max,prepared.x_units) < goal.position_units(1)));
+    verifyTrue(testCase,prepared.InternalPreparation.IntervalUsesMovingCells(1));
+    initial = struct('time_s',0,'position_units',[-5,0]);
+    limits = struct('xInterval_units',[-8,8],'yInterval_units',[-8,8], ...
+        'maxVelocity_units_s',[3,3],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
+    result = planner(obstacle,initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
+    verifyFalse(testCase,result.Success);
+    verifyEqual(testCase,result.TerminationReason,"terminalReachabilityBlocked");
 end
 
 function testInvalidInputs(testCase)
@@ -88,9 +252,10 @@ function testHoleAndDisconnectedRegions(testCase)
     shape = subtract(outer,inner);
     scene = struct('ProtectedShape',shape);
     opts = struct('ConstraintTolerance',1e-8);
-    graph = obstacleAvoidance.search.createVisibilityGraph(scene,[-0.5 0],[0.5 0],testCase.TestData.Limits,opts);
+    vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,testCase.TestData.Limits,opts);
+    graph = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,[-0.5 0],[0.5 0]);
     verifyEqual(testCase,graph.RouteLength_units,1,'AbsTol',1e-12);
-    graph = obstacleAvoidance.search.createVisibilityGraph(scene,[0 0],[4 0],testCase.TestData.Limits,opts);
+    graph = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,[0 0],[4 0]);
     verifyFalse(testCase,graph.IsConnected);
 end
 
@@ -108,7 +273,8 @@ function testVisibilityMatchesExhaustiveReference(testCase)
         end
         initial_units = [-9,rand*2-1]; goal_units = [9,rand*2-1];
         reference = createVisibilityGraphBaseline(scene,initial_units,goal_units,limits,options);
-        actual = obstacleAvoidance.search.createVisibilityGraph(scene,initial_units,goal_units,limits,options);
+        vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,initial_units,goal_units);
         verifyEqual(testCase,actual.IsConnected,reference.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
         verifyTrue(testCase,actual.GraphIsFullyEnumerated);
@@ -133,7 +299,8 @@ function testBatchedContactsHolesAndConcavities(testCase)
     expectedLength_units = [16+sqrt(29);sqrt(2);18;14;14];
     for k = 1:numel(shapes)
         scene = struct('ProtectedShape',shapes{k},'ProtectedVertices_units',shapes{k}.Vertices);
-        actual = obstacleAvoidance.search.createVisibilityGraph(scene,starts(k,:),goals(k,:),limits,options);
+        vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,starts(k,:),goals(k,:));
         verifyTrue(testCase,actual.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,expectedLength_units(k),'AbsTol',1e-8);
     end
@@ -154,11 +321,22 @@ function testReflectedAndTranslatedConcavities(testCase)
                 vertices=shapes{k}.Vertices*rotation+offset;
                 shape=polyshape(vertices(:,1),vertices(:,2));
                 scene=struct('ProtectedShape',shape);
-                graph=obstacleAvoidance.search.createVisibilityGraph(scene,starts(k,:)*rotation+offset, ...
-                    goals(k,:)*rotation+offset,limits,struct('ConstraintTolerance',1e-8));
+                vertexVisibility=obstacleAvoidance.search.createVertexVisibility(scene,limits,struct('ConstraintTolerance',1e-8));
+                graph=obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,starts(k,:)*rotation+offset, ...
+                    goals(k,:)*rotation+offset);
                 verifyTrue(testCase,graph.IsConnected);
                 verifyEqual(testCase,graph.RouteLength_units,lengths(k),'AbsTol',1e-8);
             end
         end
     end
+end
+
+function output = createProvenOutput(baseResult, request, preparedMotion)
+    % Build an adversarial validator fixture without stale planner decisions.
+    roundoffReserve_units = baseResult.SeparationProof.RoundoffReserve_units;
+    target_units  = baseResult.SeparationProof.RequiredGap_units - roundoffReserve_units;
+    output = rmfield(baseResult, {'Validation', 'SolverDiagnostics', 'SeparationProof'});
+    output = bmtpEngine.pipeline.createMotionOutput(output, request, preparedMotion);
+    output.SeparationProof = bmtpEngine.validation.checkFinalMotion( ...
+        request, preparedMotion, roundoffReserve_units, target_units);
 end

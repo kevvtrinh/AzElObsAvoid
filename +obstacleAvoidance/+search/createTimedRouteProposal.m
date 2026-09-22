@@ -1,90 +1,160 @@
-function [route_units, routeTime_s, record] = createTimedRouteProposal(obstacles, initialState, goalState, limits, options)
+function [route_units, routeTime_s, timedRouteDetails] = createTimedRouteProposal( ...
+    obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX: [route_units,routeTime_s,record] = obstacleAvoidance.search.createTimedRouteProposal(
-%   obstacles,initialState,goalState,limits,options)
-% PURPOSE: Build a deterministic time-expanded route proposal for moving obstacles. The returned
-%   route initializes BMTP and cannot approve a final motion.
-% INPUTS: Prepared obstacles, normalized endpoint states, limits, and options.
-% OUTPUTS: Timed route arrays, or empty arrays on exhaustion, plus search evidence.
-% UNITS: Position is coordinate units and time is seconds.
+% SYNTAX
+%   [route_units, routeTime_s, timedRouteDetails] = ...
+%       obstacleAvoidance.search.createTimedRouteProposal( ...
+%       obstacles, initialState, goalState, limits, options)
+%**************************************************************************
+% PURPOSE
+%   - Propose route points and times around moving obstacles. The search
+%     checks where the vehicle can travel as the obstacle shapes change.
+%     BMTP then uses the route as a starting point for complete vehicle motion.
+%**************************************************************************
+% INPUTS
+%   - obstacles (prepared obstacle array)
+%       Protected geometry already prepared over at least the request
+%       time range. The timed search prepares its own working copy.
+%   - initialState (scalar struct)
+%       Normalized initial endpoint state.
+%   - goalState (scalar struct)
+%       Normalized goal endpoint state.
+%   - limits (scalar struct)
+%       Checked workspace, speed, acceleration, and jerk limits.
+%   - options (scalar struct)
+%       Normalized timed-search options.
+%**************************************************************************
+% OUTPUTS
+%   - route_units (N-by-2 numeric array)
+%       Route positions, or an empty array if the search finds no route.
+%   - routeTime_s (N-by-1 numeric array)
+%       Time at each route point, or an empty array if the search finds no route.
+%   - timedRouteDetails (scalar struct)
+%       Candidate nodes and search details. Finding no route is a normal outcome;
+%       invalid input throws an error.
+%**************************************************************************
+% UNITS
+%   - Position is coordinate units and time is seconds.
+%**************************************************************************
 
-%% Section 1: Build The Sampled Swept Proposal
-obstacles = obstacleAvoidance.obstacles.prepareObstacles( ...
-    obstacles,[initialState.time_s,goalState.time_s]);
-sampleTimes_s = obstacleAvoidance.search.createTimeLayers( ...
+%% Section 1: Combine Obstacle Shapes At The Selected Times
+
+% Use obstacle sample times, interval midpoints, and times across the
+% requested trip to collect shapes for choosing candidate route positions.
+searchTimes_s = obstacleAvoidance.search.createTimeLayers( ...
     obstacles, initialState.time_s, goalState.time_s);
-parts = cell(numel(sampleTimes_s) * numel(obstacles), 1);
-partCount = 0;
-for timeIndex = 1:numel(sampleTimes_s)
+sampleShapes     = cell(numel(searchTimes_s) * numel(obstacles), 1);
+sampleShapeCount = 0;
+for timeIndex = 1:numel(searchTimes_s)
     for obstacleIndex = 1:numel(obstacles)
-        shape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-            obstacles(obstacleIndex), sampleTimes_s(timeIndex));
-        if isempty(shape.Vertices), continue; end
-        partCount = partCount + 1;
-        parts{partCount} = shape;
+        obstacleShape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+            obstacles(obstacleIndex), searchTimes_s(timeIndex));
+        if isempty(obstacleShape.Vertices)
+            continue;
+        end
+        sampleShapeCount = sampleShapeCount + 1;
+        sampleShapes{sampleShapeCount} = obstacleShape;
     end
 end
-proposalShape = polyshape();
-if partCount > 0
-    proposalShape = union([parts{1:partCount}]);
+combinedSampleShape = polyshape();
+if sampleShapeCount > 0
+    combinedSampleShape = unionShapeParts(sampleShapes(1:sampleShapeCount));
 end
 
-%% Section 2: Build The Exact-Boundary Node Set
-allPositions_units = [initialState.position_units; ...
-    goalState.position_units; proposalShape.Vertices];
-coordinateScale_units = bmtpEngine.createCoordinateTolerances(allPositions_units);
-candidateOffset_units = max(1e-3, 256 * eps(coordinateScale_units));
-maximumOffset_units = max([diff(limits.xInterval_units), diff(limits.yInterval_units)]);
-workBudget = 1e6;
-offsetRetryCount = 0;
-while true
-    attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
-        proposalShape, initialState.position_units, goalState.position_units, ...
-        limits, candidateOffset_units, offsetRetryCount, workBudget);
-    if offsetRetryCount == 0
-        attempts = attempt;
-    else
-        attempts(end + 1, 1) = attempt; %#ok<AGROW>
-    end
-    if attempt.IsConnected || candidateOffset_units >= maximumOffset_units
-        break;
-    end
-    candidateOffset_units = min(4 * candidateOffset_units, maximumOffset_units);
-    offsetRetryCount = offsetRetryCount + 1;
+%% Section 2: Place Route Points Around Obstacle Boundaries
+
+allPositions_units    = [initialState.position_units; goalState.position_units; combinedSampleShape.Vertices];
+coordinateScale_units = bmtpEngine.validation.createCoordinateTolerances(allPositions_units);
+% Place candidate points away from corners to give BMTP room to turn.
+% turning distance scale = maximum speed^2 / maximum acceleration.
+% Limit that contribution using the workspace size, with a small minimum
+% offset for numerical separation. This places points; it does not change
+% the protected obstacle shapes used for collision checks.
+turningDistanceScale_units = max(limits.maxVelocity_units_s .^ 2 ./ limits.maxAcceleration_units_s2);
+workspaceOffsetScale_units = max([diff(limits.xInterval_units), diff(limits.yInterval_units)]) / 64;
+candidateOffset_units      = max([1e-3, 256 * eps(coordinateScale_units), ...
+    min(turningDistanceScale_units, workspaceOffsetScale_units)]);
+nodes_units = obstacleAvoidance.search.createTimedVisibilityNodes( ...
+    combinedSampleShape, initialState.position_units, goalState.position_units, limits, candidateOffset_units);
+% The combined shapes can hide a stationary boundary that becomes useful
+% after another obstacle moves away. Include its candidate points as well.
+stationaryNodes_units = createStationaryIntervalNodes( ...
+    obstacles, initialState.time_s, goalState.time_s, limits, candidateOffset_units);
+nodes_units = unique([nodes_units(1:2, :); stationaryNodes_units; nodes_units(3:end, :)], ...
+    "rows", "stable");
+
+%% Section 3: Find Clear Connections At Successive Times
+
+% The search checks connections for collisions throughout their travel time.
+% A found route gives BMTP positions and times to work from; BMTP and the
+% independent validator still determine whether the complete motion is valid.
+% Matrix entry (i, j) is the straight-line distance from node i to node j.
+connectionLength_units = hypot( ...
+    nodes_units(:, 1) - nodes_units(:, 1).', nodes_units(:, 2) - nodes_units(:, 2).');
+[route_units, routeTime_s, timedSearchDetails] = obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodes_units, connectionLength_units, obstacles, initialState, goalState, limits, searchTimes_s, options);
+timedRouteDetails = struct( ...
+    'Nodes_units', nodes_units, ...
+    'TimedSearch', timedSearchDetails);
 end
 
-%% Section 3: Search Physical Time Layers
-% Search the closest exact-boundary nodes first. A swept envelope can
-% disconnect start and goal even while its moving geometry opens a route,
-% so spatial disconnection does not justify discarding these staging nodes.
-[route_units,routeTime_s]=deal(zeros(0,2),zeros(0,1));
-timedRecord=struct();
-timedNodeAttemptIndex=0;
-attemptOrder=numel(attempts):-1:1;
-if options.GoalTimeMode=="earliestArrival" && numel(attempts)>1
-    % Preserve a connected recovered graph when one exists. If its enlarged
-    % envelope discarded temporal staging nodes, recover from the exact-side
-    % attempts starting with the closest boundary.
-    attemptOrder=[numel(attempts),1:numel(attempts)-1];
-end
-for attemptIndex=attemptOrder
-    nodes_units = attempts(attemptIndex).Nodes.Positions_units;
-    timedCost_units = hypot(nodes_units(:,1) - nodes_units(:,1).', ...
-        nodes_units(:,2) - nodes_units(:,2).');
-    [attemptRoute_units,attemptRouteTime_s,timedRecord] = ...
-        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
-        nodes_units,timedCost_units,obstacles,initialState,goalState, ...
-        limits,sampleTimes_s,options);
-    timedNodeAttemptIndex=attemptIndex;
-    if ~isempty(attemptRouteTime_s)
-        route_units=attemptRoute_units;
-        routeTime_s=attemptRouteTime_s;
-        break;
+%% Section 4: Local Functions
+
+function combinedShape = unionShapeParts(sampleShapes)
+    % Combine all shapes in small batches to limit temporary memory use.
+    % Every supplied shape is included; only the grouping of unions changes.
+    maximumBatchSize = 32;
+    while numel(sampleShapes) > maximumBatchSize
+        batchCount      = ceil(numel(sampleShapes) / maximumBatchSize);
+        combinedBatches = cell(batchCount, 1);
+        for batchIndex = 1:batchCount
+            firstPartIndex = 1 + (batchIndex - 1) * maximumBatchSize;
+            finalPartIndex = min(numel(sampleShapes), batchIndex * maximumBatchSize);
+            combinedBatches{batchIndex} = union([sampleShapes{firstPartIndex:finalPartIndex}]);
+        end
+        sampleShapes = combinedBatches;
     end
+    combinedShape = union([sampleShapes{:}]);
 end
-record = struct('ProposalShape',proposalShape,'SampleTimes_s',sampleTimes_s, ...
-    'Attempts',attempts,'CandidateOffset_units',candidateOffset_units, ...
-    'OffsetRetryCount',offsetRetryCount, ...
-    'TimedNodeAttemptIndex',timedNodeAttemptIndex, ...
-    'TimedSearch',timedRecord);
+
+function nodes_units = createStationaryIntervalNodes( ...
+        obstacles, startTime_s, endTime_s, limits, candidateOffset_units)
+    % Combining shapes across time can hide a stationary boundary behind
+    % another obstacle's occupied area at a different time. Add points around
+    % that boundary because those routes may become clear later in the trip.
+    nodes_units = zeros(0, 2);
+    for obstacleIndex = 1:numel(obstacles)
+        obstacle    = obstacles(obstacleIndex);
+        preparation = obstacle.InternalPreparation;
+        if isscalar(obstacle.time_s)
+            sampleIndices = 1;
+        else
+            intervalOverlapsRequest = obstacle.time_s(1:end - 1) < endTime_s & ...
+                obstacle.time_s(2:end) > startTime_s;
+            intervalIsStationary = preparation.IntervalIsStationary | ...
+                (preparation.MatchingTopology & ...
+                preparation.IntervalSpeedBound_units_s == 0);
+            stationaryIntervalIndices = find( ...
+                preparation.IntervalPrepared & intervalIsStationary & intervalOverlapsRequest);
+            % A stationary interval keeps its starting sample's shape.
+            sampleIndices = unique(stationaryIntervalIndices);
+        end
+        for sampleIndex = reshape(sampleIndices, 1, [])
+            obstacleShape = preparation.SampleShapes{sampleIndex};
+            if isempty(obstacleShape.Vertices)
+                continue;
+            end
+            % Offset only the candidate points; keep the obstacle geometry
+            % unchanged for the later collision checks.
+            offsetShape = polybuffer( ...
+                obstacleShape, candidateOffset_units, "JointType", "miter");
+            candidatePositions_units   = offsetShape.Vertices;
+            candidateIsInsideWorkspace = candidatePositions_units(:, 1) >= limits.xInterval_units(1) & ...
+                candidatePositions_units(:, 1) <= limits.xInterval_units(2) & ...
+                candidatePositions_units(:, 2) >= limits.yInterval_units(1) & ...
+                candidatePositions_units(:, 2) <= limits.yInterval_units(2);
+            nodes_units = [nodes_units; candidatePositions_units(candidateIsInsideWorkspace, :)]; %#ok<AGROW>
+        end
+    end
+    nodes_units = unique(nodes_units, "rows", "stable");
 end

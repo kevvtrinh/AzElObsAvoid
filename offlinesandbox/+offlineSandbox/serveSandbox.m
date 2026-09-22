@@ -123,7 +123,7 @@ function [wasPlanRequest, wasBundleRequest] = serveClient(clientSocket, pageByte
         if isUserInterruption(exception)
             rethrow(exception);
         end
-        writeErrorResponse(clientSocket, requestErrorStatus(exception), exception.identifier, exception.message, "");
+        writeErrorResponse(clientSocket, requestErrorStatus(exception), exception.message, "");
         return;
     end
 
@@ -131,7 +131,7 @@ function [wasPlanRequest, wasBundleRequest] = serveClient(clientSocket, pageByte
     path       = request.Path;
     corsOrigin = allowedCorsOrigin(request.Origin, request.HasOrigin, port);
     if request.HasOrigin && strlength(corsOrigin) == 0
-        writeErrorResponse(clientSocket, 403, "serveSandbox:OriginNotAllowed", "Browser requests are accepted only from this loopback page or " + "from the local file page.", "");
+        writeErrorResponse(clientSocket, 403, "Browser requests are accepted only from this loopback page or " + "from the local file page.", "");
         return;
     end
     knownPath = any(path == ["/", "/health", "/plan", "/bundle", "/save-bundle", "/run-bundle"]);
@@ -155,9 +155,9 @@ function [wasPlanRequest, wasBundleRequest] = serveClient(clientSocket, pageByte
         wasBundleRequest = true;
         serveBundleRequest(clientSocket, request.BodyBytes, corsOrigin, bundleFilePath, bundleRequestIdPath, true);
     elseif knownPath
-        writeErrorResponse(clientSocket, 405, "serveSandbox:MethodNotAllowed", "The requested HTTP method is not supported for this path.", corsOrigin);
+        writeErrorResponse(clientSocket, 405, "The requested HTTP method is not supported for this path.", corsOrigin);
     else
-        writeErrorResponse(clientSocket, 404, "serveSandbox:NotFound", "The requested path was not found.", corsOrigin);
+        writeErrorResponse(clientSocket, 404, "The requested path was not found.", corsOrigin);
     end
     clear clientCleanup;
 end
@@ -165,7 +165,7 @@ end
 function servePlanningRequest(clientSocket, requestBytes, corsOrigin, bundleFilePath, bundleRequestIdPath)
     % Run the unchanged file adapter and return its exact result JSON bytes.
     if isempty(requestBytes)
-        writeErrorResponse(clientSocket, 400, "serveSandbox:EmptyPlanRequest", "POST /plan requires a JSON request body.", corsOrigin);
+        writeErrorResponse(clientSocket, 400, "POST /plan requires a JSON request body.", corsOrigin);
         return;
     end
 
@@ -184,9 +184,9 @@ function servePlanningRequest(clientSocket, requestBytes, corsOrigin, bundleFile
             rethrow(exception);
         end
         if isRequestFailure(exception)
-            writeErrorResponse(clientSocket, 400, exception.identifier, exception.message, corsOrigin);
+            writeErrorResponse(clientSocket, 400, exception.message, corsOrigin);
         else
-            writeErrorResponse(clientSocket, 500, "serveSandbox:PlanningFailed", exception.message, corsOrigin);
+            writeErrorResponse(clientSocket, 500, exception.message, corsOrigin);
         end
         return;
     end
@@ -203,7 +203,7 @@ end
 function serveBundleReplayRequest(clientSocket, bundleBytes, corsOrigin, bundleFilePath, bundleRequestIdPath)
     % Run one uploaded diagnosis bundle and return the fresh browser result.
     if isempty(bundleBytes)
-        writeErrorResponse(clientSocket, 400, "serveSandbox:EmptyBundleReplayRequest", "POST /run-bundle requires a diagnosis MAT-file body.", corsOrigin);
+        writeErrorResponse(clientSocket, 400, "POST /run-bundle requires a diagnosis MAT-file body.", corsOrigin);
         return;
     end
 
@@ -221,9 +221,9 @@ function serveBundleReplayRequest(clientSocket, bundleBytes, corsOrigin, bundleF
             rethrow(exception);
         end
         if isRequestFailure(exception) || startsWith(string(exception.identifier), "replayDiagnosisBundle:")
-            writeErrorResponse(clientSocket, 400, exception.identifier, exception.message, corsOrigin);
+            writeErrorResponse(clientSocket, 400, exception.message, corsOrigin);
         else
-            writeErrorResponse(clientSocket, 500, "serveSandbox:BundleReplayFailed", exception.message, corsOrigin);
+            writeErrorResponse(clientSocket, 500, exception.message, corsOrigin);
         end
         return;
     end
@@ -242,16 +242,16 @@ function serveBundleRequest(clientSocket, requestBytes, corsOrigin, bundleFilePa
     if nargin < 6, saveWithDialog = false; end
     requestId = previewRequestId(requestBytes);
     if strlength(requestId) == 0
-        writeErrorResponse(clientSocket, 400, "serveSandbox:InvalidBundleRequest", "Bundle export requires a nonempty JSON requestId.", corsOrigin);
+        writeErrorResponse(clientSocket, 400, "Bundle export requires a nonempty JSON requestId.", corsOrigin);
         return;
     end
     if ~isfile(bundleFilePath) || ~isfile(bundleRequestIdPath)
-        writeErrorResponse(clientSocket, 404, "serveSandbox:BundleNotAvailable", "No completed live plan is available for bundle export.", corsOrigin);
+        writeErrorResponse(clientSocket, 404, "No completed live plan is available for bundle export.", corsOrigin);
         return;
     end
     cachedRequestId = strtrim(string(native2unicode(readFileBytes(bundleRequestIdPath), "UTF-8")));
     if cachedRequestId ~= requestId
-        writeErrorResponse(clientSocket, 409, "serveSandbox:BundleRequestMismatch", "The requested result is not the latest live plan on this server.", corsOrigin);
+        writeErrorResponse(clientSocket, 409, "The requested result is not the latest live plan on this server.", corsOrigin);
         return;
     end
     if saveWithDialog
@@ -260,7 +260,7 @@ function serveBundleRequest(clientSocket, requestBytes, corsOrigin, bundleFilePa
             writeJsonResponse(clientSocket, 200, "OK", outcome, strings(0, 1), corsOrigin);
         catch exception
             if isUserInterruption(exception), rethrow(exception); end
-            writeErrorResponse(clientSocket, 500, "serveSandbox:BundleSaveFailed", exception.message, corsOrigin);
+            writeErrorResponse(clientSocket, 500, exception.message, corsOrigin);
         end
         return;
     end
@@ -433,11 +433,10 @@ function writeJsonResponse(clientSocket, statusCode, reason, value, headers, cor
     writeHttpResponse(clientSocket, statusCode, reason, "application/json; charset=utf-8", bodyBytes, headers, corsOrigin);
 end
 
-function writeErrorResponse(clientSocket, statusCode, identifier, message, corsOrigin)
+function writeErrorResponse(clientSocket, statusCode, message, corsOrigin)
     % Return a stable transport error without representing it as a plan result.
     body = struct("schemaVersion", "offlineSandboxError/v1", ...
-        "error", struct("identifier", string(identifier), ...
-            "message", string(message)));
+        "error", struct("message", string(message)));
     writeJsonResponse(clientSocket, statusCode, httpReason(statusCode), body, strings(0, 1), corsOrigin);
 end
 
@@ -493,7 +492,6 @@ function body = createHealthBody(status, port, sandboxFolder)
     % Identify this exact loopback service and expose the fallback MATLAB path.
     body = struct("schemaVersion", "offlineSandboxTransport/v1", ...
         "status", string(status), ...
-        "mode", "live", ...
         "port", port, ...
         "sandboxFolder", string(sandboxFolder));
 end

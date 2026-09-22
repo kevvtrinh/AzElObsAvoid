@@ -1,25 +1,25 @@
-function [result, diagnosis] = exampleObstacleFree(exampleOverrides)
+function result = exampleObstacleFree(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleObstacleFree()
 %   result = exampleObstacleFree(exampleOverrides)
-%
+%**************************************************************************
 % PURPOSE
 %   - Demonstrate earliest-arrival motion without obstacle constraints.
-%
+%**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%
+%**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Unmodified public planner result.
-%   - diagnosis (optional second output): search attempts and solver details.
-%
+%       Unmodified public planner result. Ordinary planning failure returns
+%       Success = false; invalid input throws.
+%**************************************************************************
 % UNITS
-%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
-%     and units/s^3.
-%
+%   - Position is coordinate units; time is seconds; derivatives use
+%     units/s, units/s^2, and units/s^3.
+%**************************************************************************
 
 %% Section 1: Resolve Example Controls
 
@@ -28,7 +28,8 @@ function [result, diagnosis] = exampleObstacleFree(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
+scenarioDefaults = struct("GoalTimeMode", "earliestArrival");
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults, [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -43,22 +44,27 @@ obstacles = [];
 % is the direct line because no obstacle blocks it.
 
 initialState = struct();
-initialState.time_s              = 0;
-initialState.position_units        = [0 0];
-initialState.velocity_units_s      = [0 0];
-initialState.acceleration_units_s2 = [0 0];
+initialState.time_s                  = 0;
+initialState.position_units          = [0 0];
+initialState.velocity_units_s        = [0 0];
+initialState.acceleration_units_s2   = [0 0];
+
 goalState = struct();
-goalState.time_s              = 8;
-goalState.position_units        = [4 2];
-goalState.velocity_units_s      = [0 0];
-goalState.acceleration_units_s2 = [0 0];
-limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
+goalState.time_s                  = 8;
+goalState.position_units          = [4 2];
+goalState.velocity_units_s        = [0 0];
+goalState.acceleration_units_s2   = [0 0];
+
+limits = struct( ...
+    "maxVelocity_units_s",      [2 2], ...
+    "maxAcceleration_units_s2", [1 1], ...
+    "maxJerk_units_s3",         displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 
 % Run the public planner and let it find the minimum feasible arrival time.
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -75,7 +81,7 @@ end
 % Use this plot as the simplest reference for more complex example plots.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions);
 end
 
 end

@@ -20,6 +20,16 @@ generation, independent validation, and plots of those returned core results.
 - Build the visibility graph exhaustively from exact prepared geometry. Do not
   add route heuristics, preferred detours, hidden waypoints, route-class pruning,
   retry schedules, fixture-specific seeds, or silent fallbacks.
+- Treat the planning pipeline like a factory: every stage must emit a truthful,
+  usable intermediate for the next stage. When an output is invalid, trace the
+  defect to the earliest stage that introduced it and eliminate it there. Do not
+  carry a known-bad seed, clock, corridor, or geometry representation downstream,
+  and do not add compensating filters, repair branches, retry machines, or cleanup
+  stages around it.
+- Before changing a downstream solver or validator, reproduce the failure by hand
+  at each stage boundary and distinguish proposal, timing, kinematic, clearance,
+  proof, and selection failures. Preserve the physical inputs while doing
+  so; diagnostic labels and provenance must never change planner behavior.
 - Use BMTP for motion generation. Keep any future heuristic out until identical,
   deterministic benchmarks demonstrate a necessary benefit without a correctness
   or motion-quality regression.
@@ -28,6 +38,9 @@ generation, independent validation, and plots of those returned core results.
 
 ## MATLAB Style
 
+- Use `ApplyCommentAndStyle.md` as the current commenting and readability
+  reference. Follow the matching `MATLAB_STYLE_PREFERENCES.md` for help blocks,
+  spacing, alignment, line continuations, and readable statement layout.
 - Public function help starts with `%% Section 0: Header & Readme` and includes
   `SYNTAX`, `PURPOSE`, `INPUTS`, `OUTPUTS`, and `UNITS`. Use numbered executable
   sections, descriptive lower-camel-case names, and physical-unit suffixes.
@@ -35,8 +48,26 @@ generation, independent validation, and plots of those returned core results.
   helper only when logic is genuinely shared or moving it out materially improves
   clarity; avoid sprawling layers of tiny functions.
 - Keep the main function body flush left and local helper bodies indented four
-  spaces. Validate public inputs before computation and explain only non-obvious
-  geometry, tolerances, or approximations.
+  spaces. Validate public inputs before computation and explain non-obvious
+  logic, geometry, tolerances, or approximations.
+
+### Commenting Style
+
+- Write for a junior or associate engineer. Use plain, direct language while
+  preserving the engineering meaning and accuracy.
+- Explain what the code does and why when it is not obvious; do not narrate
+  routine syntax. Keep comments short and close to the relevant code.
+- Prefer familiar wording over jargon such as "residual," "broadcast," or
+  "outer bound" when a simpler explanation conveys the same meaning.
+- Use short equations and symbols when they help, for example:
+  `maximum travel distance = maximum speed x available time`.
+- Give concrete numerical examples for unfamiliar concepts, especially wrapped
+  coordinates: `start = 350, goal = 10; use goal = 370, distance = 20` on a
+  360-unit axis.
+- Explain edge cases by their outcome, for example: "If two copies are equally
+  close, choose the higher coordinate."
+- Use clear, consistent variable names so comments do not need to decode
+  abbreviations. Distinguish supplied goal values from target motion values.
 
 ## Verification
 

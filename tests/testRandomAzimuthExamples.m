@@ -60,6 +60,12 @@ function testRejectInvalidInputs(testCase)
         'MATLAB:invalidType');
 end
 
+function testExampleResolverForwardsCandidateBudget(testCase)
+    [options,~] = resolveExampleOptions( ...
+        struct('MaxArrivalCandidates',17),struct());
+    verifyEqual(testCase,options.MaxArrivalCandidates,17);
+end
+
 function testSuiteReturnsValidatedCoreResults(testCase)
     results = exampleRandomAzimuthSuite([2,53],struct('PlotOutputs',false));
     verifySize(testCase,results,[2,2]);
@@ -71,4 +77,27 @@ function testSuiteReturnsValidatedCoreResults(testCase)
     single = exampleRandomAzimuth(6,true,struct('PlotOutputs',false));
     verifyTrue(testCase,single.Success,single.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(single).Passed);
+end
+
+function testFixedArrivalCascadeRepairsSpatialSeedFailures(testCase)
+    caseIndices=[26,36,62,62];
+    withStatic=[true,true,false,true];
+    expectedSources=["arrivalSpatialSnapshot","timeExpandedVisibilityGraph", ...
+        "timeExpandedVisibilityGraph","arrivalSpatialSnapshot"];
+    overrides=struct('PlotOutputs',false,'Verbose',false);
+    for caseNumber=1:numel(caseIndices)
+        result=exampleRandomAzimuth(caseIndices(caseNumber), ...
+            withStatic(caseNumber),overrides);
+        verifyTrue(testCase,result.Success,result.Message);
+        verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+        verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+            expectedSources(caseNumber));
+        verifyGreaterThanOrEqual(testCase,numel(result.Attempts),2);
+        verifyTrue(testCase,result.Attempts(1).IsShortcut);
+        verifyTrue(testCase,result.Attempts(1).NextAttemptAllowed);
+        snapshotAttempts=result.Attempts([result.Attempts.IsShortcut]);
+        verifyEqual(testCase,[snapshotAttempts.IterationLimit], ...
+            2*ones(1,numel(snapshotAttempts)));
+        verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-10);
+    end
 end

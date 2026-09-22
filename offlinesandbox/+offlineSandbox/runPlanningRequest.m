@@ -28,8 +28,8 @@ function [response, diagnosisBundle] = runPlanningRequest(requestFilePath, resul
 %       with result.Success=false; invalid requests throw identified errors.
 %   - diagnosisBundle (scalar struct)
 %       Handle-free obstacleAvoidanceSandboxDiagnosis-v2 record containing
-%       the exact canonical request, unprojected result, validation, browser
-%       scene geometry, environment metadata, and reproduction commands.
+%       the exact canonical request, unprojected result, validation, and
+%       browser scene geometry.
 %**************************************************************************
 % UNITS
 %   - Positions and polygon vertices are [x y] in coordinate units.
@@ -95,7 +95,7 @@ obstacles = createObstacles(request.obstacles);
 
 %% Section 3: Run The Public Planner & Independent Validator
 
-[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
+result = planner(obstacles, initialState, goalState, limits, options);
 if result.Success
     validation = obstacleAvoidance.validateTrajectory(result);
 else
@@ -107,8 +107,6 @@ end
 projectedObstacles = projectObstacles(result.Inputs.obstacles);
 response           = struct("schemaVersion", "offlineSandboxResult/v1", ...
     "requestId", requestId, ...
-    "generatedAtUtc", string(datetime("now", "TimeZone", "UTC", ...
-        "Format", "yyyy-MM-dd'T'HH:mm:ss'Z'")), ...
     "result", projectPlannerResult(result, request), ...
     "diagnosis", projectSearchDiagnostics(result), ...
     "validation", validation, ...
@@ -116,7 +114,7 @@ response           = struct("schemaVersion", "offlineSandboxResult/v1", ...
 if nargout > 1
     request.initialState = initialState;
     request.goalState = goalState;
-    diagnosisBundle = offlineSandbox.createDiagnosisBundle(request, result, validation, diagnosis);
+    diagnosisBundle = offlineSandbox.createDiagnosisBundle(request, result, validation);
 end
 
 % MATLAB's documented JSON conversion maps unavailable NaN/Inf values to
@@ -332,8 +330,8 @@ function projection = projectSearchDiagnostics(result)
     if isfield(graph, "CollisionQueryCount"), search.CollisionQueryCount = graph.CollisionQueryCount; end
     search.TraceDownsampleRule = "All returned graph nodes and examined edges are displayed. " + ...
         "Unexamined edges remain implicit; expanded-node identities and frontier are not recorded. " + ...
-        "For moving obstacles this spatial guide alone does not certify timed collision freedom.";
-    projection = struct("Planner", "build-core", "Search", search, ...
+        "For moving obstacles this spatial guide alone does not prove timed collision freedom.";
+    projection = struct("Search", search, ...
         "SolverDiagnostics", result.SolverDiagnostics);
     if isfield(result, "TemporalSearch"), projection.TemporalSearch = result.TemporalSearch; end
 end
