@@ -69,7 +69,24 @@ instead of launching an unbounded arrival-time search. The result reports the
 unsearched interval and does not claim global optimality. Callers may spend an
 explicit, bounded `BestSoFarRefinementTrialLimit` of arrival-time trials to look
 for earlier clocks, without changing the public validator or discarding the plan
-already found. Every route, motion, and clock attempt is recorded in
+already found.
+
+The timed search samples time in layers spaced by the horizon. When it succeeds
+but waiting at the goal from the layer just before its goal window was not
+clear, no layer sampled the times in between, and the goal may have cleared
+anywhere there. The planner then tries the arrival-time grid in that one
+interval, below the timed arrival, with the `MaxArrivalTrials` budget
+(`BestSoFarRefinementTrialLimit` does not apply). It keeps the timed motion if
+no trial passes or a trial fails; only an independent-validation rejection is
+returned instead. The grid does not move with the horizon. Measured example: a
+square that clears the goal at 16.3 s arrives at 17.000 s with either a 24 s or
+a 30 s horizon (18.750 s at 30 s before this step).
+
+This is not a general proof that arrival is independent of the horizon: the
+timed layers, route, and interval ends still depend on it, and a 27 s horizon
+arrives at 16.888 s.
+
+Every route, motion, and clock attempt is recorded in
 `result.Attempts`; an arrival-time parent attempt keeps its fixed-arrival child
 evidence. `EarliestArrival` records the capabilities, the selected attempt, the
 best plan so far, the bounded-search state, and whether the earliest possible

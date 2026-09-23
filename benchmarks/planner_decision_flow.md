@@ -92,6 +92,9 @@ flowchart TD
         ET --> ETA{"Result"}
         ETA -- "validated" --> ECMP["Compare candidate with best plan so far<br/>within tolerance keep departure best plan so far"]
         ECMP --> ESELECT["Select policy-preferred validated motion"]
+        ESELECT --> EGAP{"Timed motion selected and the goal wait from the layer<br/>before its selected goal window to the window start blocked?"}
+        EGAP -- "yes: search the clocks between those layers" --> CH
+        EGAP -- no --> O
         ETA -- "validator rejected" --> EDEFECT
         ETA -- "typed method-local miss" --> ER{"Validated best plan so far exists?"}
         ETA -- "geometry proof, reconstruction,<br/>numerical, or unknown failure" --> ESTOP
@@ -102,13 +105,16 @@ flowchart TD
         RB -- 0 --> KEEP["⚠ Retain best plan so far; publish unsearched interval<br/>do not claim global earliest"]
         RB -- "> 0" --> CH
 
-        CH["⚠ Arrival-time search"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
+        CH["⚠ Arrival-time search<br/>(after a timed success: only that unsampled interval,<br/>below the timed arrival)"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
         CG --> CP["⚠ Prescreen endpoint physics and per-clock<br/>minimum travel time before solver"]
         CP -- "rejected cheaply" --> CN{"More candidates and budget?"}
         CP -- "passes" --> CS["Call fixed-arrival planner on that physical clock<br/>store its attempts as child evidence"]
         CS --> CSA{"Fixed child outcome"}
         CSA -- "validated" --> COK["Select earliest tried valid clock"]
-        CSA -- "validator or ineligible typed failure" --> CTERM["Terminal failure"]
+        CSA -- "validator rejection" --> CTERM["Terminal failure"]
+        CSA -- "ineligible typed failure: stop trials" --> CSTOP{"Validated best plan so far exists?"}
+        CSTOP -- yes --> CSTOPKEEP["Retain best plan so far; record the stopping<br/>trial in TemporalSearch.StoppingTrial"]
+        CSTOP -- no --> CTERM
         CSA -- "typed clock-local miss" --> CN
         CN -- yes --> CP
         CN -- no --> CX{"Validated best plan so far exists?"}
@@ -124,10 +130,10 @@ flowchart TD
     FTSUCCESS --> O
     ESOK --> O
     EPROOF --> O
-    ESELECT --> O
     KEEP --> O
     COK --> O
     CRETAIN --> O
+    CSTOPKEEP --> O
 
     VAL["Public independent validator runs inside finalizeCandidate<br/>before Success, best plan so far retention, or selection"]
     VAL -. governs .-> FBA

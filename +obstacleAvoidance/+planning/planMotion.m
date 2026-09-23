@@ -449,7 +449,8 @@ function arrivalPlanningProgress = runTimedSearchStage(arrivalPlanningProgress, 
         totalTimer, earliestPossibleArrival_s)
     % Search once using both position and time, allowing segment durations to vary.
     % If a valid motion exists, search only for an earlier arrival.
-    % Stop after selecting a valid result, or if a returned motion is invalid.
+    % After selecting a timed result, try arrival times only in the unsampled
+    % interval just before its goal window. Stop if a returned motion is invalid.
     % For other failures, nextMethodAllowed decides whether another method can run.
     hasValidatedMotion     = arrivalPlanningProgress.BestSoFarAttemptIndex > 0;
     arrivalTimeTolerance_s = request.options.ArrivalTimeTolerance_s;
@@ -480,6 +481,30 @@ function arrivalPlanningProgress = runTimedSearchStage(arrivalPlanningProgress, 
     independentValidationFailed = string(timedResult.TerminationReason) == "invalidMotion";
     arrivalPlanningProgress     = applyEarliestAttempt(arrivalPlanningProgress, timedResult, attempt, ...
         independentValidationFailed, true, earliestPossibleArrival_s, arrivalTimeTolerance_s);
+
+    % The timed search samples time in layers spaced by the horizon, so its
+    % arrival can sit on the first layer of the goal's clear window. When
+    % waiting at the goal from the layer before was not clear, no layer
+    % sampled the times in between, and the goal may have cleared anywhere
+    % there. Try the arrival-time grid in that one interval; the grid does not
+    % move with the horizon. Example: a goal that clears at 16.3 s gives
+    % layers 15 and 18 s for a 24 s horizon but 15 and 18.75 s for 30 s.
+    % Both try 15.5, 16, ... s. The budget is MaxArrivalTrials, and a failed
+    % or exhausted search keeps the timed motion (a validator rejection does not).
+    timedMotionSelected = arrivalPlanningProgress.Attempts(end).Selected;
+    if timedMotionSelected
+        timedSearchDetails = timedResult.VisibilityGraph.TimedSearch.TimedSearch;
+        if isfinite(timedSearchDetails.GoalWindowPreviousLayerTime_s)
+            unsampledInterval_s = [timedSearchDetails.GoalWindowPreviousLayerTime_s, ...
+                timedSearchDetails.SelectedGoalWindowStartTime_s];
+            resultBeforeTrials               = arrivalPlanningProgress.Result;
+            resultBeforeTrials.ElapsedTime_s = toc(totalTimer);
+            arrivalPlanningProgress.Result   = obstacleAvoidance.planning.searchArrivalTimes( ...
+                request, planningEnvironment, resultBeforeTrials, arrivalPlanningProgress.Attempts, ...
+                request.options.MaxArrivalTrials, unsampledInterval_s);
+            arrivalPlanningProgress.Attempts = arrivalPlanningProgress.Result.Attempts;
+        end
+    end
 end
 
 function arrivalPlanningProgress = applyEarliestAttempt(arrivalPlanningProgress, attemptResult, attempt, ...

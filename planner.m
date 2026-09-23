@@ -30,7 +30,8 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       SpatialProbeIterationLimit limits BMTP iterations for a route built
 %       from obstacle positions at one time.
 %       BestSoFarRefinementTrialLimit limits extra arrival-time trials after
-%       finding valid motion; zero keeps that motion without extra trials.
+%       the timed search fails but valid motion exists; zero keeps that
+%       motion without extra trials.
 %       WrapX and WrapY allow travel across the corresponding interval ends.
 %       For example, on a 360-unit axis, travel from 350 to 10 can use 350 to
 %       370. The planner copies obstacles throughout the possible travel

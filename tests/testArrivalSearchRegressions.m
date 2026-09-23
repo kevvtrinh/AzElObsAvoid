@@ -2,7 +2,8 @@ function tests = testArrivalSearchRegressions
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testArrivalSearchRegressions.m')
 % PURPOSE: Exercise late feasible arrivals, free-clock selection against
-%   waiting motions, and arrival-time fixed-arrival recovery.
+%   waiting motions, arrival-time fixed-arrival recovery, and arrivals that
+%   do not depend on the horizon when an obstacle clears the goal.
 % INPUTS: MATLAB unit test framework and deterministic public planner inputs.
 % OUTPUTS: Independent validation and arrival-search regression checks.
 % UNITS: Coordinate units, seconds, and physical derivatives.
@@ -842,6 +843,88 @@ function testTimedHomotopyPrecedesDelayedDeparture(testCase)
     verifyTrue(testCase,result.Attempts(2).Selected);
     verifyLessThan(testCase,result.Attempts(2).CandidateArrival_s, ...
         result.Attempts(1).CandidateArrival_s);
+end
+
+function testHorizonDoesNotMoveSquareGoalClearing(testCase)
+    % A square covers the goal and moves off it at 0.5 units/s; the goal
+    % clears at 16.3 s. Timed layers sit at horizon / 8, so the goal window
+    % starts at 18 s for a 24 s horizon but at 18.75 s for 30 s. Before the
+    % unsampled interval was searched, these arrived at 17.0 s and 18.75 s.
+    horizons_s = [24, 30];
+    arrivals_s = zeros(size(horizons_s));
+    for horizonIndex = 1:numel(horizons_s)
+        result = planRisingSquare(horizons_s(horizonIndex), struct('GoalTimeMode', 'earliestArrival'));
+        verifySelectedValidMotion(testCase, result);
+        arrivals_s(horizonIndex) = result.ArrivalTime_s;
+    end
+    arrivalTolerance_s = result.Options.ArrivalTimeTolerance_s;
+    verifyLessThanOrEqual(testCase, abs(diff(arrivals_s)), arrivalTolerance_s);
+    verifyLessThanOrEqual(testCase, max(arrivals_s), 17 + arrivalTolerance_s);
+end
+
+function testUnsampledIntervalWithoutClocksKeepsTimedMotion(testCase)
+    % With a 30 s arrival grid, the interval between the 15 s layer and the
+    % 18.75 s goal window holds no grid clock. The search tries nothing and
+    % the validated timed motion stays selected.
+    result = planRisingSquare(30, struct('GoalTimeMode', 'earliestArrival', ...
+        'TemporalResolution_s', 30));
+    verifySelectedValidMotion(testCase, result);
+    selectedAttempt = result.Attempts(result.EarliestArrival.SelectedAttemptIndex);
+    verifyEqual(testCase, selectedAttempt.Kind, "timedVisibility");
+    verifyEqual(testCase, result.TemporalSearch.TrialInterval_s, [15, 18.75]);
+    verifyEqual(testCase, result.TemporalSearch.SolverTrialCount, 0);
+    verifyGreaterThan(testCase, result.ArrivalTime_s, 18.75 - result.Options.ArrivalTimeTolerance_s);
+end
+
+function testHorizonDoesNotMoveDriftingTriangleClearing(testCase)
+    % A different shape, direction, and set of limits: a triangle covers the
+    % goal and drifts away diagonally. Before the unsampled interval was
+    % searched, a 20 s horizon arrived at 17.5 s while 32 s arrived at 16.5 s.
+    horizons_s       = [20, 32];
+    arrivals_s       = zeros(size(horizons_s));
+    triangle_units   = [-2, -1.5; 2, -1.5; 0, 2];
+    triangleLimits   = struct('maxVelocity_units_s', [1.5, 1.5], ...
+        'maxAcceleration_units_s2', [0.6, 0.6], 'maxJerk_units_s3', [2, 2]);
+    for horizonIndex = 1:numel(horizons_s)
+        horizon_s       = horizons_s(horizonIndex);
+        endCenter_units = [9, 3] + [0.12, 0.1] * horizon_s;
+        obstacle        = obstacleAvoidance.obstacles.createObstacle('drifting triangle', [0; horizon_s], ...
+            {triangle_units(:, 1) + 9; triangle_units(:, 1) + endCenter_units(1)}, ...
+            {triangle_units(:, 2) + 3; triangle_units(:, 2) + endCenter_units(2)}, 0.1);
+        result = planner(obstacle, restState(0, [-3, 0]), restState(horizon_s, [9, 3]), ...
+            triangleLimits, struct('GoalTimeMode', 'earliestArrival'));
+        verifySelectedValidMotion(testCase, result);
+        arrivals_s(horizonIndex) = result.ArrivalTime_s;
+    end
+    arrivalTolerance_s = result.Options.ArrivalTimeTolerance_s;
+    verifyLessThanOrEqual(testCase, abs(diff(arrivals_s)), arrivalTolerance_s);
+    verifyLessThanOrEqual(testCase, max(arrivals_s), 16.5 + arrivalTolerance_s);
+end
+
+function verifySelectedValidMotion(testCase, result)
+    % The returned motion must pass the public validator, and exactly one
+    % successful attempt, the one that produced it, must be selected.
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
+    selectedIndices = find([result.Attempts.Selected]);
+    verifyEqual(testCase, numel(selectedIndices), 1);
+    verifyEqual(testCase, result.EarliestArrival.SelectedAttemptIndex, selectedIndices(1));
+    selectedAttempt = result.Attempts(selectedIndices(1));
+    verifyTrue(testCase, selectedAttempt.Success);
+    verifyEqual(testCase, selectedAttempt.CandidateArrival_s, result.ArrivalTime_s, ...
+        'AbsTol', result.Options.ArrivalTimeTolerance_s);
+end
+
+function result = planRisingSquare(horizon_s, options)
+    % A 4-by-4 square centered on (8, -6) at 0 s moves up at 0.5 units/s
+    % and covers the goal (8, 0) until 16.3 s, counting its 0.15 margin.
+    square_units = [-2, -2; 2, -2; 2, 2; -2, 2];
+    obstacle     = obstacleAvoidance.obstacles.createObstacle('rising square', [0; horizon_s], ...
+        {square_units(:, 1) + 8; square_units(:, 1) + 8}, ...
+        {square_units(:, 2) - 6; square_units(:, 2) - 6 + 0.5 * horizon_s}, 0.15);
+    limits = struct('maxVelocity_units_s', [2, 2], ...
+        'maxAcceleration_units_s2', [0.8, 0.8], 'maxJerk_units_s3', [2.5, 2.5]);
+    result = planner(obstacle, restState(0, [-8, 0]), restState(horizon_s, [8, 0]), limits, options);
 end
 
 function state = restState(time_s,position_units)
