@@ -664,7 +664,7 @@ function testWrappedBestSoFarRefinementRetainsValidatedDeparture(testCase)
     verifyTrue(testCase,result.Attempts(1).Selected);
     verifyFalse(testCase,result.Attempts(3).Success);
     verifyFalse(testCase,result.Attempts(3).Selected);
-    verifyTrue(testCase,result.Options.WrapX);
+    verifyEqual(testCase,result.Options.WrapX,"both");
     verifyEqual(testCase,result.SuppliedLimits,limits);
     verifyEqual(testCase,result.RequestedLimits.xInterval_units,[-180,180]);
     verifyEqual(testCase,result.Limits.xInterval_units,[-29,19]);
@@ -725,7 +725,7 @@ function testPlanarRequestSelectsRefinementOverWrappedBestSoFar(testCase)
     verifyEqual(testCase,result.Inputs.goalState.position_units, ...
         request.goalState.position_units);
     verifyEqual(testCase,result.Limits,request.limits);
-    verifyTrue(testCase,result.Options.WrapX);
+    verifyEqual(testCase,result.Options.WrapX,"both");
     verifyEqual(testCase,result.FixedArrivalTrialTime_s,6,'AbsTol',1e-12);
     verifyEqual(testCase,result.ArrivalTime_s,6,'AbsTol',1e-12);
     verifyFalse(testCase,result.TemporalSearch.BestSoFar);

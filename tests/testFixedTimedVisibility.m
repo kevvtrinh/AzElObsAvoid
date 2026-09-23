@@ -354,7 +354,7 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyEqual(testCase,rawFailure.FailureStage,"proposal");
     verifyEqual(testCase,rawFailure.FailureKind,"trajectorySubproblemInfeasible");
     verifyFalse(testCase,rawFailure.SolverDiagnostics.Accepted);
-    verifyFalse(testCase,rawFailure.Options.WrapX);
+    verifyEqual(testCase,rawFailure.Options.WrapX,"false");
     verifyTrue(testCase,isfield(rawFailure,'ParentRequest'));
 
     rejectedRequest=request;
@@ -364,11 +364,13 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyFalse(testCase,accepted);
     verifyTrue(testCase,rejected.SolverDiagnostics.Accepted);
     verifyEqual(testCase,rejected.TerminationReason,"invalidMotion");
+    % The parent claims x wrapping, but the trial's limits were built without
+    % it, so the validator rejects the record before the motion checks.
     verifyEqual(testCase,rejected.Message, ...
         "BMTP returned motion that failed independent validation: " + ...
-        "One or more independent core trajectory checks failed.");
+        "The requested wrapped limits do not match the supplied limits.");
     verifyEqual(testCase,rejected.Validation.Message, ...
-        "One or more independent core trajectory checks failed.");
+        "The requested wrapped limits do not match the supplied limits.");
     verifyEqual(testCase,rejected.FixedArrivalTrialTime_s,5);
     verifyTrue(testCase,rejected.Options.WrapX);
     verifyFalse(testCase,isfield(rejected,'ParentRequest'));

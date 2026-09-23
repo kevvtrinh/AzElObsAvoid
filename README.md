@@ -139,7 +139,10 @@ Public planner options are:
 - `ConstraintTolerance`
 - `CollisionClearanceTolerance_units`
 - `ArrivalTimeTolerance_s`
-- `WrapX`, `WrapY`
+- `WrapX`, `WrapY`: `"false"` (default), `"both"`, `"forward"` (the path
+  may pass the upper interval end but not the lower), or `"backward"` (the
+  lower end but not the upper). `true` and `false` still mean `"both"` and
+  `"false"`
 - `MatchTargetVelocity`, `MatchTargetAcceleration`
 - `TemporalResolution_s`
 - `SpatialProbeIterationLimit`: BMTP iteration budget for each fixed-arrival
@@ -153,11 +156,35 @@ Public planner options are:
 
 Unknown options issue one warning and do not change planner behavior. A
 wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped coordinates
-inside the range the vehicle can reach in the time given: every obstacle is
-copied one full turn up and down, a moving target's path is unwrapped so it
-never jumps at the seam, and every copy of the goal inside that range is
-planned as an ordinary request and accepted against the wrapped request in the
-one acceptance gate (earliest arrival first, or shortest motion for a fixed
+inside the range the vehicle can reach in the time given. A `"forward"` range
+stops at the lower interval end and a `"backward"` range at the upper end.
+Every obstacle is copied across the ends that range covers: an x copy is
+shifted by whole turns, and a y copy over an end is a pole copy, as for
+elevation on a sphere: y is mirrored about that end and x turns by half the x
+interval. On x [0 360], y [-90 90], the pole copy of (190, 89) is (10, 91), so
+a slew from (10, 89) to (190, 89) can cross the pole in 2 degrees instead of
+turning 180 in azimuth. The x interval width is treated as one full turn.
+With `WrapY` on, x repeats every turn even when `WrapX` is `"false"`, as
+azimuth does on a sphere: ordinary and pole copies are both placed by whole
+turns, and `WrapX` only decides whether the motion may cross the x ends. For
+example, an obstacle spanning x = 358..362 also has a copy at -2..2 on
+[0 360]. A goal or target with no copy inside the speed-based planning range
+returns `Success = false` and `TerminationReason = "timeWindowInfeasible"`,
+after the same obstacle-interval and endpoint checks an unwrapped request
+gets: an obstacle interval without a usable model, or an endpoint derivative
+beyond its limit, is reported first.
+With `WrapY` on, a moving target's goal y velocity and acceleration must be
+zero or matched to the target: over a pole their sign depends on where the
+target is met. To match one, leave that whole field out of the goal; a
+supplied velocity with `MatchTargetVelocity` is rejected even if its y part
+is zero. A moving obstacle whose vertex matching between samples is an
+exact tie cannot be mirrored consistently; declare its matching with
+`vertexCorrespondence = "sourceIndex"`. A moving target's path is
+unwrapped so it never jumps at the seam. For fixed arrival, copies are listed
+at the deadline; for earliest arrival, a moving target's whole path through
+the horizon is considered. Each listed copy is planned as an ordinary
+request and accepted against the wrapped request in the one acceptance gate
+(earliest arrival first, or shortest motion for a fixed
 arrival). The validator rebuilds the obstacle copies, the unwrapped target path,
 and the goal copy from the supplied request. Returned positions stay in
 unwrapped coordinates.

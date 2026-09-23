@@ -41,8 +41,10 @@ The sandbox defaults to earliest arrival. The public planner still owns all
 motion construction and validation, with its unchanged C3 tolerances. A
 geometric guide shown after failure is not a validated motion. The cleanup
 branch's Ruckig fallback selector and seed-count overrides are removed because
-this core does not implement them. Wrapping supports obstacle-free,
-fixed-position goals only. See the [core README](../README.md) for arrival-search
-and moving-obstacle limitations.
+this core does not implement them. The wrap checkboxes enable both directions;
+a configured `forward` or `backward` mode stays active while its box is checked.
+The core supports wrapped obstacles and moving targets, with the pole-target
+derivative and moving-obstacle matching rules described in the
+[core README](../README.md). See that README for arrival-search limitations.
 
 The [HTML sandbox](../offlinesandbox/README.md) can also replay these MAT bundles.

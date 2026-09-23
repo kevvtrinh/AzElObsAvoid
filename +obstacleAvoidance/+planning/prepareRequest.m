@@ -104,8 +104,96 @@ options = resolveOptions(options, defaultOptions);
 requestedLimits    = limits;
 requestedGoalState = goalState;
 
-%% Section 2: Match The Requested Target Velocity Or Acceleration
+%% Section 2: Unwrap Periodic Coordinates
 
+% Convert wrapped axes to continuous coordinates so crossing an end does
+% not look like a large jump. For example, 359 -> 1 becomes 359 -> 361 on
+% a 360-unit x axis. The planner can then use ordinary coordinate differences.
+% A y copy over an end is a pole copy: y is mirrored and x turns half a turn.
+wrapModes = [options.WrapX options.WrapY];
+if any(wrapModes ~= "false")
+    intervalFieldNames       = ["xInterval_units", "yInterval_units"];
+    workspaceIntervals_units = [limits.xInterval_units; limits.yInterval_units];
+    if ~isempty(goalState.targetMotion)
+        % Anchor the target path near the start, then choose each sample's
+        % equivalent copy nearest the preceding unwrapped sample.
+        goalState.targetMotion   = obstacleAvoidance.input.unwrapTargetPath( ...
+            goalState.targetMotion, initialState.position_units, workspaceIntervals_units, wrapModes);
+        % Read the arrival position from the continuous target path.
+        goalState.position_units = obstacleAvoidance.input.targetPositionAtTime( ...
+            goalState.targetMotion, goalState.time_s);
+    end
+    for axisIndex = find(wrapModes ~= "false")
+        wrapMode            = wrapModes(axisIndex);
+        interval_units      = workspaceIntervals_units(axisIndex, :);
+        wrapLength_units    = diff(interval_units);
+        startPosition_units = initialState.position_units(axisIndex);
+        goalPosition_units  = goalState.position_units(axisIndex);
+        % Maximum travel distance = maximum speed x available time.
+        % Acceleration limits and obstacles may reduce how far the vehicle can reach.
+        maxDisplacement_units = limits.maxVelocity_units_s(axisIndex) * (goalState.time_s - initialState.time_s);
+        if isempty(goalState.targetMotion) && axisIndex == 1
+            % Shift the goal by whole loops to place it closest to the start.
+            % Example: start = 350, goal = 10, loop length = 360.
+            % Use goal = 10 + 360 = 370, so the distance is 20 instead of 340.
+            % If two copies are equally close, choose the higher coordinate.
+            goalWrapCount = floor((startPosition_units - goalPosition_units) / wrapLength_units + 0.5);
+            % "forward" may not pass the lower end and "backward" may not pass
+            % the upper end, so keep the copy on the allowed side. Example:
+            % start = 10, goal = 350: the nearest copy -10 is below 0, so
+            % "forward" keeps 350.
+            if wrapMode == "forward"
+                goalWrapCount = max(goalWrapCount, ceil((interval_units(1) - goalPosition_units) / wrapLength_units));
+            elseif wrapMode == "backward"
+                goalWrapCount = min(goalWrapCount, floor((interval_units(2) - goalPosition_units) / wrapLength_units));
+            end
+            goalState.position_units(axisIndex) = goalPosition_units + wrapLength_units * goalWrapCount;
+        end
+        % A fixed goal keeps its y here. Its pole copies change x and y
+        % together, so planWrappedMotion lists every goal copy in the range
+        % and tries the nearest first: from (10, 89), goal (190, 89) is
+        % tried first as its pole copy (10, 91).
+
+        % Search from the start out to the maximum travel distance, beyond the
+        % interval ends. "forward" stops at the lower end and "backward" at
+        % the upper end. Example on [0 360], start = 350, reach = 30: "both"
+        % and "forward" give [320 380]; "backward" gives [320 360].
+        planningRange_units = startPosition_units + [-maxDisplacement_units maxDisplacement_units];
+        if wrapMode == "forward"
+            planningRange_units(1) = max(planningRange_units(1), interval_units(1));
+        elseif wrapMode == "backward"
+            planningRange_units(2) = min(planningRange_units(2), interval_units(2));
+        end
+        limits.(intervalFieldNames(axisIndex)) = planningRange_units;
+    end
+
+    % Over a pole, y runs the other way, so the sign of a y velocity or
+    % acceleration depends on which side of the pole the target is met, and
+    % that time is not known yet for earliest arrival. A matched value is
+    % read from the continuous target path at the actual arrival, so it is
+    % always right. Require any other y value to be zero, which has no sign,
+    % and do not accept a supplied value beside a matched one: the supplied
+    % value is on the sphere, the matched one on the continuous copy.
+    if wrapModes(2) ~= "false" && ~isempty(goalState.targetMotion)
+        derivativeIsMatched   = [options.MatchTargetVelocity, options.MatchTargetAcceleration];
+        suppliedYValues       = [goalState.velocity_units_s(2), goalState.acceleration_units_s2(2)];
+        derivativeWasSupplied = [isfield(suppliedGoalState, 'velocity_units_s') && ...
+            ~isempty(suppliedGoalState.velocity_units_s), ...
+            isfield(suppliedGoalState, 'acceleration_units_s2') && ...
+            ~isempty(suppliedGoalState.acceleration_units_s2)];
+        if any(~derivativeIsMatched & suppliedYValues ~= 0) || any(derivativeIsMatched & derivativeWasSupplied)
+            error("planner:UnsupportedPoleTargetDerivative", ...
+                "With WrapY on, a moving target's goal y velocity and acceleration must be " + ...
+                "zero, or matched to the target (MatchTargetVelocity, MatchTargetAcceleration) " + ...
+                "and not also supplied.");
+        end
+    end
+end
+
+%% Section 3: Match The Requested Target Velocity Or Acceleration
+
+% Read the target's velocity and acceleration from its continuous path, so
+% a path that crosses a wrapped end gives its true rate, not a jump.
 if options.MatchTargetVelocity || options.MatchTargetAcceleration
     if isempty(goalState.targetMotion)
         error('planner:MissingTarget', ...
@@ -135,47 +223,6 @@ if options.MatchTargetVelocity || options.MatchTargetAcceleration
             end
         end
         goalState.(derivativeFieldName) = targetDerivativeValue;
-    end
-end
-
-%% Section 3: Unwrap Periodic Coordinates
-
-% Convert periodic axes to continuous coordinates so a seam crossing does
-% not look like a large jump. For example, 359 -> 1 becomes 359 -> 361 on
-% a 360-unit axis. The planner can then use ordinary coordinate differences.
-wrapAxes = [options.WrapX options.WrapY];
-if any(wrapAxes)
-    % Each original interval width is one complete loop of that axis.
-    intervalFieldNames       = ["xInterval_units", "yInterval_units"];
-    workspaceIntervals_units = [limits.xInterval_units; limits.yInterval_units];
-    if ~isempty(goalState.targetMotion)
-        % Anchor the target path near the start, then choose each sample's
-        % equivalent copy nearest the preceding unwrapped sample.
-        goalState.targetMotion   = obstacleAvoidance.input.unwrapTargetPath( ...
-            goalState.targetMotion, initialState.position_units, workspaceIntervals_units, wrapAxes);
-        % Read the arrival position from the continuous target path.
-        goalState.position_units = obstacleAvoidance.input.targetPositionAtTime( ...
-            goalState.targetMotion, goalState.time_s);
-    end
-    for axisIndex = find(wrapAxes)
-        % Equivalent coordinate copies are one loop length apart.
-        wrapLength_units    = diff(workspaceIntervals_units(axisIndex, :));
-        startPosition_units = initialState.position_units(axisIndex);
-        goalPosition_units  = goalState.position_units(axisIndex);
-        % Maximum travel distance = maximum speed x available time.
-        % Acceleration limits and obstacles may reduce how far the vehicle can reach.
-        maxDisplacement_units = limits.maxVelocity_units_s(axisIndex) * (goalState.time_s - initialState.time_s);
-        if isempty(goalState.targetMotion)
-            % Shift the goal by whole loops to place it closest to the start.
-            % Example: start = 350, goal = 10, loop length = 360.
-            % Use goal = 10 + 360 = 370, so the distance is 20 instead of 340.
-            % If two copies are equally close, choose the higher coordinate.
-            goalWrapCount = floor((startPosition_units - goalPosition_units) / wrapLength_units + 0.5);
-            goalState.position_units(axisIndex) = goalPosition_units + wrapLength_units * goalWrapCount;
-        end
-        % Search in both directions from the start, including coordinates
-        % beyond the original interval endpoints.
-        limits.(intervalFieldNames(axisIndex)) = startPosition_units + [-maxDisplacement_units maxDisplacement_units];
     end
 end
 
@@ -241,8 +288,8 @@ function [initialState, goalState, limits, options] = createDefaults()
         "ConstraintTolerance",               1e-8, ...
         "CollisionClearanceTolerance_units", 1e-7, ...
         "ArrivalTimeTolerance_s",            1e-8, ...
-        "WrapX",                             false, ...
-        "WrapY",                             false, ...
+        "WrapX",                             "false", ...
+        "WrapY",                             "false", ...
         "MatchTargetVelocity",               false, ...
         "MatchTargetAcceleration",           false, ...
         "TemporalResolution_s",              0.5, ...
@@ -424,8 +471,26 @@ function options = resolveOptions(options, defaults)
         options.(optionName) = double(options.(optionName));
     end
 
+    % Each wrap option is "false", "both", "forward", or "backward". For
+    % compatibility, true means "both" and false means "false".
+    allowedWrapModes = ["false", "both", "forward", "backward"];
+    for optionName = ["WrapX", "WrapY"]
+        wrapMode = options.(optionName);
+        if (islogical(wrapMode) || isnumeric(wrapMode)) && isscalar(wrapMode) && ...
+                any(wrapMode == [0, 1])
+            wrapMode = allowedWrapModes(1 + logical(wrapMode));
+        elseif (ischar(wrapMode) && isrow(wrapMode)) || (isstring(wrapMode) && isscalar(wrapMode))
+            wrapMode = lower(string(wrapMode));
+        end
+        if ~(isstring(wrapMode) && isscalar(wrapMode) && any(wrapMode == allowedWrapModes))
+            error("planner:InvalidWrapOption", ...
+                "%s must be false, both, forward, or backward.", optionName);
+        end
+        options.(optionName) = wrapMode;
+    end
+
     % Check each on/off option and store it as a single true or false value.
-    logicalOptionNames = ["WrapX", "WrapY", "MatchTargetVelocity", "MatchTargetAcceleration"];
+    logicalOptionNames = ["MatchTargetVelocity", "MatchTargetAcceleration"];
 
     for optionName = logicalOptionNames
         options.(optionName) = obstacleAvoidance.input.normalizeLogicalScalar( ...

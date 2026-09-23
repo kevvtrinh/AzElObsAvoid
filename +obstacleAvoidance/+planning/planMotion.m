@@ -71,49 +71,12 @@ end
 
 % Stop if the obstacle geometry cannot be used for collision checking
 % between two recorded times. Check only times from start to arrival.
-unsupportedObstacleIndex = [];
-for obstacleIndex = 1:numel(planningEnvironment.preparedObstacles)
-    obstaclePreparation = planningEnvironment.preparedObstacles(obstacleIndex).InternalPreparation;
-    obstacleTime_s      = planningEnvironment.preparedObstacles(obstacleIndex).time_s;
-
-    intervalIsUnsupported   = obstaclePreparation.IntervalPrepared & obstaclePreparation.IntervalIsUnsupported;
-    intervalOverlapsRequest = obstacleTime_s(1:end - 1) < requestedInterval_s(2) & ...
-        obstacleTime_s(2:end) > requestedInterval_s(1);
-
-    unsupportedIntervalIndex = find(intervalIsUnsupported & intervalOverlapsRequest, 1);
-    if ~isempty(unsupportedIntervalIndex)
-        unsupportedObstacleIndex = obstacleIndex;
-        break
-    end
-end
-
-if ~isempty(unsupportedObstacleIndex)
-    % Preparation found obstacle geometry it cannot use for collision checks.
-    % Get the obstacle name and the two sample times around the problem.
-    intervalTime_s = obstacleTime_s(unsupportedIntervalIndex:unsupportedIntervalIndex + 1);
-    obstacleName   = string(planningEnvironment.preparedObstacles(unsupportedObstacleIndex).targetName);
-
-    % Tell the caller which obstacle and time interval prevented planning.
-    result.Message = sprintf(['Obstacle %d ("%s"), interval [%g, %g] s, has no ' ...
-        'proven exact continuous interpolation.'], ...
-        unsupportedObstacleIndex, obstacleName, ...
-        intervalTime_s(1), intervalTime_s(2));
-
-    % Include a more specific explanation if preparation recorded one.
-    hasProofReason = isfield(obstaclePreparation, 'IntervalProofReason');
-    if hasProofReason
-        proofReason = obstaclePreparation.IntervalProofReason(unsupportedIntervalIndex);
-        if proofReason == "movingCellsExcludeProtectedSample"
-            % The calculated region misses part of a supplied obstacle shape
-            % with its safety margin, so it cannot safely represent that shape.
-            result.Message = result.Message + ...
-                " The given moving-cell margin-square enclosure excludes " + ...
-                "supplied protected sample area.";
-        end
-    end
-
+unsupportedMessage = obstacleAvoidance.planning.describeUnsupportedInterval( ...
+    planningEnvironment.preparedObstacles, requestedInterval_s);
+if strlength(unsupportedMessage) > 0
     % Stop before route search and return the failure with elapsed time.
     % This does not prove there is no route; the geometry could not be checked.
+    result.Message           = unsupportedMessage;
     result.TerminationReason = "unsupportedObstacleInterpolation";
     result.ElapsedTime_s     = toc(totalTimer);
     return

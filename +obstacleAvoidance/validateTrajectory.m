@@ -79,6 +79,30 @@ if recordIsComplete
     recordIsComplete = ~targetIsPresent || (isfield(result, 'Intercept') && ...
         isstruct(result.Intercept) && all(isfield(result.Intercept, {'Time_s', 'TargetPosition_units'})));
 end
+if recordIsComplete && targetIsPresent
+    % A planned target path is evaluated below. Its contract belongs to
+    % targetPositionAtTime (finite, strictly increasing times; N-by-2 finite
+    % positions; linear or pchip), so ask it at the first sample and treat
+    % any refusal as an incomplete record instead of an error.
+    targetMotion = result.Inputs.goalState.targetMotion;
+    try
+        obstacleAvoidance.input.targetPositionAtTime(targetMotion, double(targetMotion.time_s(1)));
+    catch
+        recordIsComplete = false;
+    end
+end
+if recordIsComplete
+    % Each wrap option must be one of the planner's four modes.
+    wrapModes        = readWrapModes(result.Options);
+    recordIsComplete = numel(wrapModes) == 2 && ...
+        all(ismember(wrapModes, ["false", "both", "forward", "backward"]));
+end
+if recordIsComplete && any(wrapModes ~= "false")
+    % Wrapped goals must be checked against the supplied request. Without
+    % either goal record, a copy or matched derivative cannot be verified.
+    recordIsComplete = all(isfield(result, {'RequestedGoalState', 'SuppliedGoalState', ...
+        'RequestedLimits', 'SuppliedLimits'}));
+end
 if ~recordIsComplete
     validation.Message = "The result record is missing option, limit, input, or intercept fields.";
     return
@@ -274,56 +298,162 @@ end
 % For a wrapped axis, check the planning interval against:
 % maximum travel distance = maximum speed x available time.
 % This range contains possible positions; it does not guarantee a usable path.
-wrapAxes = [result.Options.WrapX, result.Options.WrapY];
+% "forward" may not pass the lower interval end and "backward" may not pass
+% the upper end. Example on [0 360], start = 350, reach = 30: "both" and
+% "forward" give [320 380]; "backward" gives [320 360].
+wrapAxes = wrapModes ~= "false";
+if any(wrapAxes)
+    % Rebuild the normalized request from the supplied goal and limits.
+    % For example, changing the supplied goal from x = 10 to x = 12 cannot
+    % leave the requested x = 10 record valid, even if its motion is intact.
+    try
+        rebuiltRequest = obstacleAvoidance.planning.prepareRequest( ...
+            result.Inputs.obstacles, result.Inputs.initialState, result.SuppliedGoalState, ...
+            result.SuppliedLimits, result.Options, []);
+    catch
+        validation.Message = "The supplied wrapped goal cannot be normalized.";
+        return
+    end
+    if ~isequaln(rebuiltRequest.originalInputs.requestedGoalState, result.RequestedGoalState)
+        validation.Message = "The requested wrapped goal does not match the supplied goal.";
+        return
+    end
+    if ~isequaln(rebuiltRequest.originalInputs.requestedLimits, result.RequestedLimits) || ...
+            ~isequaln(rebuiltRequest.limits, result.Limits)
+        validation.Message = "The requested wrapped limits do not match the supplied limits.";
+        return
+    end
+    if ~isequal(rebuiltRequest.goalState.time_s, result.Inputs.goalState.time_s)
+        validation.Message = "The planned wrapped goal time does not match the supplied goal.";
+        return
+    end
+    requestedLimits = rebuiltRequest.originalInputs.requestedLimits;
+else
+    if isfield(result, 'RequestedLimits')
+        requestedLimits = result.RequestedLimits;
+    end
+end
 if isfield(result, 'RequestedLimits')
     for intervalFieldName = ["xInterval_units", "yInterval_units"]
-        axisIndex              = 1 + (intervalFieldName == "yInterval_units");
-        expectedInterval_units = result.RequestedLimits.(intervalFieldName);
+        axisIndex               = 1 + (intervalFieldName == "yInterval_units");
+        requestedInterval_units = requestedLimits.(intervalFieldName);
+        expectedInterval_units  = requestedInterval_units;
         if wrapAxes(axisIndex)
             maximumTravelDistance_units = result.Limits.maxVelocity_units_s(axisIndex) * ...
                 (goalState.time_s - initialState.time_s);
             expectedInterval_units = initialState.position_units(axisIndex) + ...
                 [-maximumTravelDistance_units maximumTravelDistance_units];
+            if wrapModes(axisIndex) == "forward"
+                expectedInterval_units(1) = max(expectedInterval_units(1), requestedInterval_units(1));
+            elseif wrapModes(axisIndex) == "backward"
+                expectedInterval_units(2) = min(expectedInterval_units(2), requestedInterval_units(2));
+            end
         end
         reportedValuesMatch = reportedValuesMatch && ...
             isequal(expectedInterval_units, result.Limits.(intervalFieldName));
     end
 end
 
-% Equivalent wrapped coordinates differ by whole turns: on a 360-unit axis,
-% goal = 10 and goal = 370 describe the same location. A moving target must
-% follow the original continuous path with one whole-turn shift applied to
-% every sample. Both fixed and moving goals must lie inside the planning range.
-if isfield(result, 'RequestedGoalState') && any(wrapAxes)
-    requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+% Equivalent wrapped coordinates are copies of each other. An x copy differs
+% by whole turns: on a 360-unit axis, goal = 10 and goal = 370 are the same
+% location. A y copy over an end is a pole copy: y is mirrored and x turns
+% by half a turn, so on x [0 360], y [-90 90], (190, 89) and (10, 91) are the
+% same location, and the pole copy reverses y velocity and acceleration.
+% When y wraps, x repeats every turn even if WrapX is "false". A moving
+% target must follow the original continuous path with
+% one copy applied to every sample. Both fixed and moving goals must lie
+% inside the planning range.
+if any(wrapAxes)
+    requestedIntervals_units = [requestedLimits.xInterval_units; requestedLimits.yInterval_units];
     planningIntervals_units  = [result.Limits.xInterval_units; result.Limits.yInterval_units];
     requestedGoalState       = result.RequestedGoalState;
     if isfield(requestedGoalState, 'targetMotion') && ~isempty(requestedGoalState.targetMotion)
+        if ~isfield(result.Inputs.goalState, 'targetMotion') || ...
+                isempty(result.Inputs.goalState.targetMotion)
+            validation.Message = "The planned wrapped target path is missing.";
+            return
+        end
         continuousTargetMotion = obstacleAvoidance.input.unwrapTargetPath( ...
-            requestedGoalState.targetMotion, initialState.position_units, requestedIntervals_units, wrapAxes);
+            requestedGoalState.targetMotion, initialState.position_units, requestedIntervals_units, wrapModes);
         plannedTargetMotion         = result.Inputs.goalState.targetMotion;
         plannedTargetPosition_units = double(plannedTargetMotion.position_units);
-        targetWrapOffset_units      = zeros(1, 2);
-        for axisIndex = find(wrapAxes)
-            wrapLength_units = diff(requestedIntervals_units(axisIndex, :));
-            targetWrapOffset_units(axisIndex) = wrapLength_units * round( ...
-                (plannedTargetPosition_units(1, axisIndex) - ...
-                continuousTargetMotion.position_units(1, axisIndex)) / wrapLength_units);
-        end
-        reportedValuesMatch = reportedValuesMatch && ...
-            isequal(size(plannedTargetPosition_units), size(continuousTargetMotion.position_units)) && ...
+        continuousPosition_units    = continuousTargetMotion.position_units;
+        % The path between samples depends on the interpolation method, so
+        % it must match too. "linear" is the default.
+        targetPathMatches = isequal(size(plannedTargetPosition_units), size(continuousPosition_units)) && ...
             isequal(double(plannedTargetMotion.time_s(:)), double(requestedGoalState.targetMotion.time_s(:))) && ...
-            max(abs(plannedTargetPosition_units - ...
-            (continuousTargetMotion.position_units + targetWrapOffset_units)), [], 'all') <= constraintTolerance;
-    else
-        for axisIndex = find(wrapAxes)
-            wrapLength_units = diff(requestedIntervals_units(axisIndex, :));
-            goalWrapCount    = round( ...
-                (goalState.position_units(axisIndex) - requestedGoalState.position_units(axisIndex)) / wrapLength_units);
-            reportedValuesMatch = reportedValuesMatch && ...
-                abs(goalState.position_units(axisIndex) - requestedGoalState.position_units(axisIndex) - ...
-                goalWrapCount * wrapLength_units) <= constraintTolerance;
+            readInterpolationMethod(plannedTargetMotion) == readInterpolationMethod(requestedGoalState.targetMotion);
+        if targetPathMatches
+            % List the copies of the first continuous sample that land on the
+            % first planned sample, then require one of them to fit every
+            % sample. A goal velocity or acceleration that was supplied, not
+            % matched to the target, must also follow that copy: a mirrored
+            % copy reverses its y part. Matched values are checked against
+            % the target itself below.
+            candidateCopies = listCopiesNear(continuousPosition_units(1, :), plannedTargetPosition_units(1, :), ...
+                requestedIntervals_units, wrapModes, constraintTolerance);
+            % With y wrapping, a supplied (unmatched) y derivative must be
+            % zero: its sign over a pole depends on where the target is met.
+            if wrapModes(2) ~= "false"
+                derivativeIsMatched = [result.Options.MatchTargetVelocity, result.Options.MatchTargetAcceleration];
+                requestedYValues    = [double(requestedGoalState.velocity_units_s(2)), ...
+                    double(requestedGoalState.acceleration_units_s2(2))];
+                reportedValuesMatch = reportedValuesMatch && ~any(~derivativeIsMatched & requestedYValues ~= 0);
+                % A matched value may not also be supplied.
+                if isfield(result, 'SuppliedGoalState')
+                    suppliedGoalState     = result.SuppliedGoalState;
+                    derivativeWasSupplied = [isfield(suppliedGoalState, 'velocity_units_s') && ...
+                        ~isempty(suppliedGoalState.velocity_units_s), ...
+                        isfield(suppliedGoalState, 'acceleration_units_s2') && ...
+                        ~isempty(suppliedGoalState.acceleration_units_s2)];
+                    reportedValuesMatch = reportedValuesMatch && ~any(derivativeIsMatched & derivativeWasSupplied);
+                end
+            end
+            targetPathMatches = false;
+            for copyIndex = 1:size(candidateCopies, 1)
+                yScale               = candidateCopies(copyIndex, 2);
+                copiedPosition_units = [continuousPosition_units(:, 1) + candidateCopies(copyIndex, 1), ...
+                    candidateCopies(copyIndex, 2) * continuousPosition_units(:, 2) + candidateCopies(copyIndex, 3)];
+                copyMatches = max(abs(plannedTargetPosition_units - copiedPosition_units), [], 'all') <= ...
+                    constraintTolerance;
+                if ~result.Options.MatchTargetVelocity
+                    copyMatches = copyMatches && max(abs(goalState.velocity_units_s - [1, yScale] .* ...
+                        double(requestedGoalState.velocity_units_s))) <= constraintTolerance;
+                elseif isfield(result.SuppliedGoalState, 'velocity_units_s') && ...
+                        ~isempty(result.SuppliedGoalState.velocity_units_s)
+                    % A supplied value remains a constraint at the actual
+                    % intercept. For example, 0.7 at the deadline does not
+                    % justify 0.5 at an earlier arrival.
+                    copyMatches = copyMatches && max(abs(goalState.velocity_units_s - [1, yScale] .* ...
+                        reshape(double(result.SuppliedGoalState.velocity_units_s), 1, []))) <= constraintTolerance;
+                end
+                if ~result.Options.MatchTargetAcceleration
+                    copyMatches = copyMatches && max(abs(goalState.acceleration_units_s2 - [1, yScale] .* ...
+                        double(requestedGoalState.acceleration_units_s2))) <= constraintTolerance;
+                elseif isfield(result.SuppliedGoalState, 'acceleration_units_s2') && ...
+                        ~isempty(result.SuppliedGoalState.acceleration_units_s2)
+                    copyMatches = copyMatches && max(abs(goalState.acceleration_units_s2 - [1, yScale] .* ...
+                        reshape(double(result.SuppliedGoalState.acceleration_units_s2), 1, []))) <= constraintTolerance;
+                end
+                targetPathMatches = targetPathMatches || copyMatches;
+            end
         end
+        reportedValuesMatch = reportedValuesMatch && targetPathMatches;
+    else
+        % The planned goal must be one copy of the requested goal, with its y
+        % velocity and acceleration reversed when that copy is mirrored.
+        candidateCopies = listCopiesNear(double(requestedGoalState.position_units), ...
+            double(goalState.position_units), requestedIntervals_units, wrapModes, constraintTolerance);
+        goalCopyMatches = false;
+        for copyIndex = 1:size(candidateCopies, 1)
+            yScale          = candidateCopies(copyIndex, 2);
+            goalCopyMatches = goalCopyMatches || ...
+                max(abs(goalState.velocity_units_s - [1, yScale] .* ...
+                double(requestedGoalState.velocity_units_s))) <= constraintTolerance && ...
+                max(abs(goalState.acceleration_units_s2 - [1, yScale] .* ...
+                double(requestedGoalState.acceleration_units_s2))) <= constraintTolerance;
+        end
+        reportedValuesMatch = reportedValuesMatch && goalCopyMatches;
     end
     for axisIndex = find(wrapAxes)
         reportedValuesMatch = reportedValuesMatch && ...
@@ -404,13 +534,15 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
     if isstruct(obstaclesToRebuild) && isfield(obstaclesToRebuild, 'InternalPreparation')
         obstaclesToRebuild = rmfield(obstaclesToRebuild, 'InternalPreparation');
     end
-    if (result.Options.WrapX || result.Options.WrapY) && ~isempty(obstaclesToRebuild)
-        % Wrapped obstacles are rebuilt as the same translated copies the
-        % planner used, covering the full unwrapped planning interval.
+    wrapModes = readWrapModes(result.Options);
+    if any(wrapModes ~= "false") && ~isempty(obstaclesToRebuild)
+        % Wrapped obstacles are rebuilt as the same shifted and mirrored copies
+        % the planner used, covering the full unwrapped planning interval.
         obstaclesToRebuild = obstacleAvoidance.input.copyObstaclesAcrossWraps(obstaclesToRebuild, ...
             [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units], ...
-            [result.Options.WrapX, result.Options.WrapY], ...
-            [result.Limits.xInterval_units; result.Limits.yInterval_units]);
+            wrapModes, ...
+            [result.Limits.xInterval_units; result.Limits.yInterval_units], ...
+            [result.Inputs.initialState.time_s, result.Inputs.goalState.time_s]);
     end
     obstacleCoverageEndTime_s = result.Inputs.goalState.time_s;
     if isfield(result, 'TrajectoryCoverageEndTime_s')
@@ -577,5 +709,51 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
                 return
             end
         end
+    end
+end
+
+function candidateCopies = listCopiesNear(sourcePosition_units, plannedPosition_units, ...
+        intervals_units, wrapModes, tolerance_units)
+    % List the copies [x offset, y scale, y offset] of a requested point that
+    % land within tolerance of a planned point. A copy maps [x y] to
+    % [x + x offset, y scale x y + y offset]; y scale = -1 is a mirror.
+    searchRange_units = [plannedPosition_units(:) - tolerance_units, plannedPosition_units(:) + tolerance_units];
+    images = obstacleAvoidance.input.listWrapImages( ...
+        [sourcePosition_units(:), sourcePosition_units(:)], intervals_units, wrapModes, searchRange_units);
+    candidateCopies = [images.XOffset_units, images.YScale, images.YOffset_units];
+    % An axis that does not wrap keeps its position without a range check,
+    % so compare both axes here.
+    copiedPosition_units = [sourcePosition_units(1) + candidateCopies(:, 1), ...
+        candidateCopies(:, 2) * sourcePosition_units(2) + candidateCopies(:, 3)];
+    candidateCopies = candidateCopies( ...
+        all(abs(copiedPosition_units - plannedPosition_units(:).') <= tolerance_units, 2), :);
+end
+
+function wrapModes = readWrapModes(options)
+    % Read [WrapX WrapY] as wrap modes. Results saved before the modes
+    % existed store true or false, which mean "both" and "false".
+    wrapValues = {options.WrapX, options.WrapY};
+    wrapModes  = strings(1, 0);
+    for axisIndex = 1:2
+        wrapValue = wrapValues{axisIndex};
+        if (islogical(wrapValue) || isnumeric(wrapValue)) && isscalar(wrapValue) && any(wrapValue == [0, 1])
+            wrapModes(axisIndex) = "false";
+            if wrapValue
+                wrapModes(axisIndex) = "both";
+            end
+        elseif (isstring(wrapValue) && isscalar(wrapValue)) || (ischar(wrapValue) && isrow(wrapValue))
+            wrapModes(axisIndex) = lower(string(wrapValue));
+        else
+            % An unreadable value fails the record check that follows.
+            wrapModes(axisIndex) = "";
+        end
+    end
+end
+
+function interpolationMethod = readInterpolationMethod(targetMotion)
+    % Read a target path's interpolation method; "linear" is the default.
+    interpolationMethod = "linear";
+    if isfield(targetMotion, 'InterpolationMethod') && ~isempty(targetMotion.InterpolationMethod)
+        interpolationMethod = lower(string(targetMotion.InterpolationMethod));
     end
 end

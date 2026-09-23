@@ -32,10 +32,18 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       BestSoFarRefinementTrialLimit limits extra arrival-time trials after
 %       the timed search fails but valid motion exists; zero keeps that
 %       motion without extra trials.
-%       WrapX and WrapY allow travel across the corresponding interval ends.
-%       For example, on a 360-unit axis, travel from 350 to 10 can use 350 to
-%       370. The planner copies obstacles throughout the possible travel
-%       range and keeps a moving target's path continuous across the seam.
+%       WrapX and WrapY allow travel across the corresponding interval ends:
+%       "false" (default), "both", "forward" (past the upper end only), or
+%       "backward" (past the lower end only). true and false are accepted as
+%       "both" and "false". On x, a copy across an end is shifted by a whole
+%       turn: on a 360-unit axis, travel from 350 to 10 can use 350 to 370.
+%       On y, as for elevation on a sphere, going over an end (a pole)
+%       mirrors y about it and turns x by half the x interval: on x [0 360],
+%       y [-90 90], (190, 89) is also (10, 91). With WrapY on, azimuth
+%       copies repeat each turn even when WrapX is "false"; WrapX controls
+%       whether the motion may pass an x end. The planner copies obstacles
+%       throughout the possible travel range and keeps a moving target's
+%       path continuous across the ends.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -85,7 +93,7 @@ request = obstacleAvoidance.planning.prepareRequest( ...
 
 % Wrapping gives several coordinates for the same goal, such as 10 and 370
 % on a 360-unit axis. Try the relevant copies before selecting the motion.
-if request.options.WrapX || request.options.WrapY
+if request.options.WrapX ~= "false" || request.options.WrapY ~= "false"
     result = obstacleAvoidance.planning.planWrappedMotion(request);
 else
     result = obstacleAvoidance.planning.planMotion(request);

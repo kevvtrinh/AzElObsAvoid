@@ -286,7 +286,8 @@ for candidateIndex = 1:numel(candidateArrivalTimes_s)
             request.limits, trialOptions, trialRequest);
 
         % Plan this trial while retaining the original request for validation.
-        if preparedTrialRequest.options.WrapX || preparedTrialRequest.options.WrapY
+        if string(preparedTrialRequest.options.WrapX) ~= "false" || ...
+                string(preparedTrialRequest.options.WrapY) ~= "false"
             trialResult = obstacleAvoidance.planning.planWrappedMotion(preparedTrialRequest);
         else
             trialResult = obstacleAvoidance.planning.planMotion(preparedTrialRequest);

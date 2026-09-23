@@ -33,8 +33,9 @@ that is easy to miss in a top-level read.
 flowchart TD
     A["planner(obstacles, initialState, goalState, limits, options)"] --> B["Normalize and validate public inputs"]
     B --> W{"Wrapped axis requested?"}
-    W -- yes --> W1["Create exact reachable obstacle and goal copies<br/>unwrap the moving target's path"]
-    W1 --> W2["Plan plain unwrapped goal copies nearest first<br/>prune fixed-goal copies only by admissible bounds;<br/>validate each candidate against the wrapped request"]
+    W -- yes --> W1["Unwrap the moving target's path and list copies overlapping<br/>the speed-based planning range<br/>(x repeats by whole turns when y wraps; a pole copy mirrors y<br/>and turns x half a turn; direction modes stop the range at one end)"]
+    W1 -- no goal copy --> WT["Check obstacle intervals and endpoints as for an unwrapped request,<br/>then return timeWindowInfeasible"]
+    W1 -- copies listed --> W2["Plan plain unwrapped goal copies nearest first<br/>prune fixed-goal copies only by admissible bounds;<br/>validate each candidate against the wrapped request"]
     W2 --> W3["Select earliest arrival or shortest fixed motion"]
     W3 --> O
     W -- no --> G["Prepare original and protected geometry once<br/>margin applied exactly once"]
@@ -210,7 +211,8 @@ deterministic comparison fields.
 | Terminal reachable set contained by an obstacle | `testPlannerDecisionFlow/testTerminalReachabilityBlocked` | Returns `terminalReachabilityBlocked` | Required sufficient infeasibility proof |
 | Endpoint derivative or workspace violation | `testEndpointDerivativeLimit`, `testEndpointOutsideWorkspace`, `testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning` | Stable endpoint reason before search | Required physical-input boundary |
 | Necessary travel time exceeds fixed horizon | `testPlannerDecisionFlow/testTimeWindowInfeasible` | Returns `timeWindowInfeasible` | Required physical lower bound |
-| Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in the unwrapped coordinates: obstacle copies that meet the reachable range, a target unwrapped by continuity, every goal copy in the reachable range planned nearest first and the best valid candidate accepted against the wrapped request in the one gate | Required coordinate policy |
+| Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedYMakesPoleCopies`, `testSphericalTargetKeepsContinuousAzimuthAndFixedGoalCopies`, `testSphericalOrdinaryObstacleCopiesReachAzimuthSeam`, `testPoleCrossingShortensSlew`, `testPoleObstacleBlocksTheCrossing`, `testWrapDirectionLimitsWhichEndMayBeCrossed`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in unwrapped coordinates: with y wrapping, all azimuth copies repeat by whole turns even when x cannot cross an end; obstacle copies meet the reachable range, the target is unwrapped by continuity, and the best valid goal copy is accepted by the one gate | Required coordinate policy |
+| Wrapped goal has no copy in reach | `testWrappedGoalWithNoReachableCopyReturnsTruthfulFailure` | Returns `timeWindowInfeasible` before search, with an empty candidate list and no invented identity copy | Required physical lower bound |
 | Fixed direct chord | `testPlanningCore/testDirect` | Minimum-jerk quintic at the given horizon, public validation | Retained analytic specialization |
 | Fixed static detour | `testPlanningCore/testDetourAndTampering`, explicit default detour inputs | Exhaustive exact spatial visibility graph and static BMTP | Retained |
 | Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesGivenDeadline`) | The initial exact spatial route proves in the initial BMTP pass or its first refined pass | Retained as first guide |
