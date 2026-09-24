@@ -141,7 +141,7 @@ function validation = validateOpeningUse(result, openingTime_s, gapHalfWidth_uni
     crossedOpenGap            = false;
     selectedArrivalTime_s     = NaN;
     if result.Success
-        hasStationarySpan = any(all(result.Polynomial.positionPower_units(:, :, 2:end) == 0, [2, 3]));
+        hasStationarySpan = any(all(result.Diagnostics.Polynomial.positionPower_units(:, :, 2:end) == 0, [2, 3]));
 
         beforeOpening             = result.time_s <= openingTime_s;
         barrierClearance_units    = -4 + safetyMargin_units;

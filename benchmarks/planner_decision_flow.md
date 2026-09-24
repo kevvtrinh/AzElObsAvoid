@@ -145,7 +145,7 @@ flowchart TD
     VAL -. governs .-> ETA
     VAL -. governs .-> CSA
 
-    L["⚠ One ordered result.Attempts ledger<br/>typed failure, elapsed time, caps, prescreens, child attempts;<br/>selection updates in place"]
+    L["⚠ One ordered result.Diagnostics.Attempts ledger<br/>typed failure, elapsed time, caps, prescreens, child attempts;<br/>selection updates in place"]
     EC -. records .-> L
     FS -. records .-> L
     CH -. records .-> L

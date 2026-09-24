@@ -34,7 +34,9 @@ function diagnosisBundle = createDiagnosisBundle(request, result, independentVal
 if ~isstruct(request) || ~isscalar(request) || ~isfield(request, "requestId") || ~isfield(request, "obstacles")
     error("createDiagnosisBundle:InvalidRequest", "request must be one validated offline-sandbox request record.");
 end
-if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, {'Inputs', 'Options', 'Success', 'TerminationReason'}))
+if ~isstruct(result) || ~isscalar(result) || ...
+        ~all(isfield(result, {'Inputs', 'Options', 'Success', 'TerminationReason', 'Diagnostics'})) || ...
+        ~isstruct(result.Diagnostics) || ~isscalar(result.Diagnostics)
     error("createDiagnosisBundle:InvalidResult", "result must be one stable public planner result.");
 end
 if ~isstruct(independentValidation) || ~isscalar(independentValidation)
@@ -44,8 +46,8 @@ end
 sanitizedResult = result;
 sanitizedResult.Options = removeCallbacks(result.Options);
 solverDiagnostics = struct();
-if isfield(sanitizedResult,"SolverDiagnostics")
-    solverDiagnostics = sanitizedResult.SolverDiagnostics;
+if isfield(sanitizedResult.Diagnostics, "SolverDiagnostics")
+    solverDiagnostics = sanitizedResult.Diagnostics.SolverDiagnostics;
 end
 plannerOptions = removeCallbacks(request.options);
 plannerInputs  = sanitizedResult.Inputs;

@@ -74,7 +74,7 @@ result = planner(obstacles, initialState, goalState, limits, options);
 % help a junior engineer find where and why the search ended.
 
 recognizedReason   = result.TerminationReason == "noVisibilityRoute";
-diagnosticsPresent = isfield(result, "VisibilityGraph") && ~result.VisibilityGraph.IsConnected;
+diagnosticsPresent = isfield(result.Diagnostics, "VisibilityGraph") && ~result.Diagnostics.VisibilityGraph.IsConnected;
 failureIsStable = ~result.Success && isempty(result.time_s) && ...
     recognizedReason && diagnosticsPresent;
 failureMessage  = "Expected failure must retain a recognized reason and " + ...

@@ -21,7 +21,7 @@ function result = finalizeCandidate(preparedObstacles, request, visibilityGraph,
 %       Graph used to create the motion's starting route. Route_units holds
 %       that route, which may differ from the final optimized motion.
 %   - priorResult (scalar struct)
-%       The planner record so far; its Attempts and ElapsedTime_s carry
+%       The planner record so far; its diagnostic Attempts and ElapsedTime_s carry
 %       into the assembled record.
 %   - motionCandidate (scalar struct)
 %       BMTP output, including motion data when the engine succeeds.
@@ -43,8 +43,8 @@ function result = finalizeCandidate(preparedObstacles, request, visibilityGraph,
 
 %% Section 1: Choose The Request Used For Validation
 
-attempts               = priorResult.Attempts;
-elapsedTime_s          = priorResult.ElapsedTime_s;
+attempts               = priorResult.Diagnostics.Attempts;
+elapsedTime_s          = priorResult.Diagnostics.ElapsedTime_s;
 route_units            = visibilityGraph.Route_units;
 validationTimingFields = additionalValidationFields;
 
@@ -82,25 +82,36 @@ end
 result = obstacleAvoidance.planning.createEmptyResult( ...
     preparedObstacles, validationRequest, visibilityGraph, attempts, elapsedTime_s);
 
-% Initialize these fields in a fixed order, then copy the BMTP values.
-% Every planning method returns the same field order, including on failure.
-result.MotionLength_units              = Inf;
-result.IntegratedSquaredJerk_units2_s5 = Inf;
-result.MaximumConstraintViolation      = Inf;
-result.OptimizerFeasible               = false;
-result.OptimizerIterateUnavailable     = false;
-result.AlternativeGuideEligible        = false;
-result.FailureStage                    = "notRun";
-result.FailureKind                     = "notRun";
+% Add the solver fields in a fixed order. The motion candidate has a
+% different record shape, so copy its headline and diagnostic values into
+% their respective places.
+result.Diagnostics.IntegratedSquaredJerk_units2_s5 = motionCandidate.IntegratedSquaredJerk_units2_s5;
+result.Diagnostics.MaximumConstraintViolation      = motionCandidate.MaximumConstraintViolation;
+result.Diagnostics.OptimizerFeasible               = motionCandidate.OptimizerFeasible;
+result.Diagnostics.OptimizerIterateUnavailable     = motionCandidate.OptimizerIterateUnavailable;
+result.Diagnostics.AlternativeGuideEligible        = motionCandidate.AlternativeGuideEligible;
+result.Diagnostics.FailureStage                    = motionCandidate.FailureStage;
+result.Diagnostics.FailureKind                     = motionCandidate.FailureKind;
 
-for fieldName = reshape(string(fieldnames(motionCandidate)), 1, [])
-    result.(fieldName) = motionCandidate.(fieldName);
-end
-result.Route_units       = route_units;
-result.SolverDiagnostics = solverDiagnostics;
+result.Success                = motionCandidate.Success;
+result.Message                = motionCandidate.Message;
+result.TerminationReason      = motionCandidate.TerminationReason;
+result.time_s                 = motionCandidate.time_s;
+result.position_units         = motionCandidate.position_units;
+result.velocity_units_s       = motionCandidate.velocity_units_s;
+result.acceleration_units_s2  = motionCandidate.acceleration_units_s2;
+result.jerk_units_s3          = motionCandidate.jerk_units_s3;
+result.ArrivalTime_s          = motionCandidate.ArrivalTime_s;
+result.MotionLength_units     = motionCandidate.MotionLength_units;
+
+result.Diagnostics.TrajectoryDuration_s = motionCandidate.TrajectoryDuration_s;
+result.Diagnostics.Polynomial           = motionCandidate.Polynomial;
+result.Diagnostics.SeparationProof      = motionCandidate.SeparationProof;
+result.Diagnostics.Route_units          = route_units;
+result.Diagnostics.SolverDiagnostics    = solverDiagnostics;
 
 for fieldName = reshape(string(fieldnames(validationTimingFields)), 1, [])
-    result.(fieldName) = validationTimingFields.(fieldName);
+    result.Diagnostics.(fieldName) = validationTimingFields.(fieldName);
 end
 
 goalState = request.goalState;
@@ -119,19 +130,19 @@ if motionCandidate.Success && ~isempty(goalState.targetMotion)
     else
         targetPosition_units = obstacleAvoidance.input.targetPositionAtTime(targetMotion, arrivalTime_s);
     end
-    result.Intercept = struct( ...
+    result.Diagnostics.Intercept = struct( ...
         'Time_s',                 arrivalTime_s, ...
         'TargetPosition_units',   targetPosition_units, ...
         'TerminalVelocityPolicy', "explicit");
     if all(motionCandidate.velocity_units_s(end, :) == 0)
-        result.Intercept.TerminalVelocityPolicy = "zero";
+        result.Diagnostics.Intercept.TerminalVelocityPolicy = "zero";
     end
     if request.options.MatchTargetVelocity
-        result.Intercept.TerminalVelocityPolicy = "matched";
-        result.Intercept.TargetVelocity_units_s = targetVelocity_units_s;
+        result.Diagnostics.Intercept.TerminalVelocityPolicy = "matched";
+        result.Diagnostics.Intercept.TargetVelocity_units_s = targetVelocity_units_s;
     end
     if request.options.MatchTargetAcceleration
-        result.Intercept.TargetAcceleration_units_s2 = targetAcceleration_units_s2;
+        result.Diagnostics.Intercept.TargetAcceleration_units_s2 = targetAcceleration_units_s2;
     end
 end
 
@@ -139,12 +150,12 @@ end
 
 % Engine success alone is not planner success. The independent check must
 % confirm the returned motion satisfies the request and avoids obstacles.
-result.Validation = obstacleAvoidance.validateTrajectory(result);
-result.Success    = motionCandidate.Success && result.Validation.Passed;
+result.Diagnostics.Validation = obstacleAvoidance.validateTrajectory(result);
+result.Success                = motionCandidate.Success && result.Diagnostics.Validation.Passed;
 
-if motionCandidate.Success && ~result.Validation.Passed
+if motionCandidate.Success && ~result.Diagnostics.Validation.Passed
     result.Message = "BMTP returned motion that failed independent validation: " + ...
-        result.Validation.Message;
+        result.Diagnostics.Validation.Message;
     result.TerminationReason = "invalidMotion";
 end
 end

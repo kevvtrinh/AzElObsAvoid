@@ -66,16 +66,16 @@ timedVisibilityGraph = struct( ...
 result = obstacleAvoidance.planning.createEmptyResult( ...
     preparedObstacles, request, timedVisibilityGraph, attempts, elapsedTime_s);
 result.Message    = "The timed search has not completed.";
-result.Validation = struct( ...
+result.Diagnostics.Validation = struct( ...
     "Passed", false, "Message", "No timed motion is available.");
-result.MotionLength_units              = Inf;
-result.IntegratedSquaredJerk_units2_s5 = Inf;
-result.MaximumConstraintViolation      = Inf;
-result.OptimizerFeasible               = false;
-result.OptimizerIterateUnavailable     = false;
-result.AlternativeGuideEligible        = false;
-result.FailureStage                    = "notRun";
-result.FailureKind                     = "notRun";
+result.MotionLength_units                          = Inf;
+result.Diagnostics.IntegratedSquaredJerk_units2_s5 = Inf;
+result.Diagnostics.MaximumConstraintViolation      = Inf;
+result.Diagnostics.OptimizerFeasible               = false;
+result.Diagnostics.OptimizerIterateUnavailable     = false;
+result.Diagnostics.AlternativeGuideEligible        = false;
+result.Diagnostics.FailureStage                    = "notRun";
+result.Diagnostics.FailureKind                     = "notRun";
 
 % An earlier successful method may already give us an arrival time to beat.
 % Shorten the search to that time only when arrival time is allowed to vary.
@@ -97,8 +97,8 @@ arrivalTimeSearchIsUnsupported = ~arrivalIsFixed && ...
 if arrivalTimeSearchIsUnsupported
     result.Message = "Free-arrival timed visibility requires a fixed-position goal " + ...
         "with zero endpoint velocity and acceleration.";
-    result.TerminationReason = "unsupportedTimedRequest";
-    result.ElapsedTime_s     = elapsedTime_s + toc(totalTimer);
+    result.TerminationReason         = "unsupportedTimedRequest";
+    result.Diagnostics.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
     return
 end
 
@@ -113,15 +113,15 @@ searchTimer = tic;
     preparedObstacles, initialState, goalState, request.originalInputs.requestedLimits, request.options);
 timedRouteDetails.ElapsedTime_s = toc(searchTimer);
 
-result.VisibilityGraph.NodePosition_units = timedRouteDetails.Nodes_units;
-result.VisibilityGraph.TimedSearch        = timedRouteDetails;
-result.VisibilityGraph.ExpandedCount      = timedRouteDetails.TimedSearch.ExpandedCount;
+result.Diagnostics.VisibilityGraph.NodePosition_units = timedRouteDetails.Nodes_units;
+result.Diagnostics.VisibilityGraph.TimedSearch        = timedRouteDetails;
+result.Diagnostics.VisibilityGraph.ExpandedCount      = timedRouteDetails.TimedSearch.ExpandedCount;
 if isempty(routeTime_s)
-    result.Message           = "No route reached the requested goal layer in the discrete timed graph.";
-    result.TerminationReason = "noTimedRoute";
-    result.FailureStage      = "search";
-    result.FailureKind       = "noTimedRoute";
-    result.ElapsedTime_s     = elapsedTime_s + toc(totalTimer);
+    result.Message                   = "No route reached the requested goal layer in the discrete timed graph.";
+    result.TerminationReason         = "noTimedRoute";
+    result.Diagnostics.FailureStage  = "search";
+    result.Diagnostics.FailureKind   = "noTimedRoute";
+    result.Diagnostics.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
     return
 end
 if size(route_units, 1) > 2
@@ -133,11 +133,11 @@ if size(route_units, 1) > 2
     route_units          = route_units(routePointIsRetained, :);
     routeTime_s          = routeTime_s(routePointIsRetained);
 end
-result.VisibilityGraph.RouteTime_s       = routeTime_s;
-result.VisibilityGraph.Route_units       = route_units;
-result.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units), 2, 2));
-result.VisibilityGraph.IsConnected       = true;
-result.Route_units                       = route_units;
+result.Diagnostics.VisibilityGraph.RouteTime_s       = routeTime_s;
+result.Diagnostics.VisibilityGraph.Route_units       = route_units;
+result.Diagnostics.VisibilityGraph.RouteLength_units = sum(vecnorm(diff(route_units), 2, 2));
+result.Diagnostics.VisibilityGraph.IsConnected       = true;
+result.Diagnostics.Route_units                       = route_units;
 
 %% Section 3: Turn The Route And Its Times Into BMTP Motion
 
@@ -198,12 +198,12 @@ motionRequest = struct( ...
     startingPath, planningEnvironment, motionRequest, directMotion);
 if ~motionCandidate.Success
     result = obstacleAvoidance.planning.finalizeCandidate( ...
-        preparedObstacles, request, result.VisibilityGraph, result, ...
+        preparedObstacles, request, result.Diagnostics.VisibilityGraph, result, ...
         motionCandidate, solverDiagnostics, struct());
     result.TerminationReason = "timedMotionInfeasible";
     result.Message           = "The timed route did not produce a feasible BMTP motion: " + ...
         motionCandidate.Message;
-    result.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
+    result.Diagnostics.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
     return
 end
 
@@ -224,9 +224,9 @@ else
     validationTimingFields.FixedArrivalTrialTime_s = motionGoalState.time_s;
 end
 result = obstacleAvoidance.planning.finalizeCandidate( ...
-    preparedObstacles, request, result.VisibilityGraph, result, ...
+    preparedObstacles, request, result.Diagnostics.VisibilityGraph, result, ...
     motionCandidate, solverDiagnostics, validationTimingFields);
-result.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
+result.Diagnostics.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
 accepted             = result.Success;
 if ~accepted
     return
@@ -245,14 +245,14 @@ earliestPossibleArrival_s = initialState.time_s + minimumTravelTime_s;
 
 % Finding motion from selected route points and times does not prove that
 % no earlier motion exists, so GlobalEarliestProven remains false.
-result.TemporalSearch = struct( ...
+result.Diagnostics.TemporalSearch = struct( ...
     'Resolution_s',              request.options.TemporalResolution_s, ...
     'TrialTime_s',               motionCandidate.ArrivalTime_s, ...
     'GlobalEarliestProven',      false, ...
     'EarliestPossibleArrival_s', earliestPossibleArrival_s, ...
     'BestSoFarArrival_s',        NaN, ...
     'BestSoFar',                 false);
-result.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
+result.Diagnostics.ElapsedTime_s = elapsedTime_s + toc(totalTimer);
 end
 
 %% Section 5: Local Functions

@@ -82,10 +82,14 @@ end
 
 % A failure result can still contain useful obstacles and route diagnostics.
 % Require the usual result fields, but do not require successful motion.
-requiredResultFieldNames = {'Inputs', 'Options', 'Limits', 'RequestedLimits', 'Success', ...
-    'TerminationReason', 'PreparedObstacles', 'VisibilityGraph', 'Route_units', ...
-    'time_s', 'position_units', 'velocity_units_s', 'acceleration_units_s2', 'jerk_units_s3'};
-if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredResultFieldNames))
+requiredResultFieldNames = {'Inputs', 'Options', 'Success', 'TerminationReason', ...
+    'time_s', 'position_units', 'velocity_units_s', 'acceleration_units_s2', ...
+    'jerk_units_s3', 'Diagnostics'};
+requiredDiagnosticFieldNames = {'Limits', 'RequestedLimits', ...
+    'PreparedObstacles', 'VisibilityGraph', 'Route_units'};
+if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredResultFieldNames)) || ...
+        ~isstruct(result.Diagnostics) || ~isscalar(result.Diagnostics) || ...
+        ~all(isfield(result.Diagnostics, requiredDiagnosticFieldNames))
     error("plotTrajectory:InvalidResult", "result must be a scalar planner result.");
 end
 
@@ -149,8 +153,8 @@ handles = createEmptyHandles(options);
 wrapModes    = readWrapModes(result.Options);
 wrapsAnyAxis = any(wrapModes ~= "false");
 if options.ShowSphere && ~useSuppliedAxes
-    xInterval_units = result.RequestedLimits.xInterval_units;
-    yInterval_units = result.RequestedLimits.yInterval_units;
+    xInterval_units = result.Diagnostics.RequestedLimits.xInterval_units;
+    yInterval_units = result.Diagnostics.RequestedLimits.yInterval_units;
     azimuthIsFullTurn = abs(diff(xInterval_units) - 360) <= 1e-8;
     elevationIsPhysical = yInterval_units(1) >= -90 - 1e-8 && ...
         yInterval_units(2) <= 90 + 1e-8;
@@ -169,8 +173,8 @@ end
 % a trial at 12 s in a request ending at 20 s should still display through 20 s.
 plotEndTime_s = result.Inputs.goalState.time_s;
 % Use the parent request's goal time when it extends that display range.
-if ~result.Success && isfield(result, 'ParentRequest')
-    parentGoalTime_s = result.ParentRequest.GoalTime_s;
+if ~result.Success && isfield(result.Diagnostics, 'ParentRequest')
+    parentGoalTime_s = result.Diagnostics.ParentRequest.GoalTime_s;
     if isnumeric(parentGoalTime_s) && isscalar(parentGoalTime_s) && ...
             isreal(parentGoalTime_s) && isfinite(parentGoalTime_s)
         plotEndTime_s = max(plotEndTime_s, double(parentGoalTime_s));
@@ -181,9 +185,9 @@ if options.ShowSphere && ~useSuppliedAxes && isfinite(options.SphereTime_s) && .
         (options.SphereTime_s < plotTimeRange_s(1) || options.SphereTime_s > plotTimeRange_s(2))
     error("plotTrajectory:InvalidSphereTime", "SphereTime_s must be within the plotted time range.");
 end
-planningObstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles, plotTimeRange_s);
+planningObstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.Diagnostics.PreparedObstacles, plotTimeRange_s);
 protectedObstacles = planningObstacles;
-requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+requestedIntervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
 if wrapsAnyAxis
     % The 2D views fold motion into the requested interval. Prepare each
     % source obstacle once; draw its copies from the shape at the displayed
@@ -218,8 +222,8 @@ if options.ShowWorkspace
     end
     configureSpatialAxes(workspaceAxesHandle, result);
     if useSuppliedAxes
-        xlim(workspaceAxesHandle, result.RequestedLimits.xInterval_units);
-        ylim(workspaceAxesHandle, result.RequestedLimits.yInterval_units);
+        xlim(workspaceAxesHandle, result.Diagnostics.RequestedLimits.xInterval_units);
+        ylim(workspaceAxesHandle, result.Diagnostics.RequestedLimits.yInterval_units);
     end
     drawObstacles(workspaceAxesHandle, protectedObstacles, originalObstacles, ...
         result.Inputs.initialState.time_s, requestedIntervals_units, wrapModes);
@@ -486,8 +490,8 @@ function configureSpatialAxes(axesHandle, result)
     box(axesHandle, "on");
     axis(axesHandle, "equal");
     if any(readWrapModes(result.Options) ~= "false")
-        xlim(axesHandle, result.RequestedLimits.xInterval_units);
-        ylim(axesHandle, result.RequestedLimits.yInterval_units);
+        xlim(axesHandle, result.Diagnostics.RequestedLimits.xInterval_units);
+        ylim(axesHandle, result.Diagnostics.RequestedLimits.yInterval_units);
     end
 end
 
@@ -496,7 +500,7 @@ function [position_units, sourceSampleIndices] = createDisplayPath(result, posit
     % Source sample indices keep the animation aligned with the original times.
     % A point over a y end (a pole) is folded back by the planner's pole
     % copy rule: y mirrored about that end and x turned by half a turn.
-    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    intervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
     wrapAxes        = readWrapModes(result.Options) ~= "false";
     [position_units, sourceSampleIndices] = obstacleAvoidance.plotting.createWrappedSpatialPath( ...
         position_units, intervals_units, wrapAxes);
@@ -544,7 +548,7 @@ function [figureHandle, axesHandle] = createContinuousWorkspace(result, options)
     box(axesHandle, "on");
     axis(axesHandle, "equal");
     drawLine(axesHandle, result.position_units, "k-", "Timed motion", 2);
-    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    intervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
     wrapAxes        = readWrapModes(result.Options) ~= "false";
     for axisIndex = find(wrapAxes)
         interval_units   = intervals_units(axisIndex, :);
@@ -577,8 +581,8 @@ function [figureHandle, axesHandle] = createExpandedWorkspace(result, wrapModes,
     box(axesHandle, "on");
     axis(axesHandle, "equal");
 
-    requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
-    planningRange_units      = [result.Limits.xInterval_units; result.Limits.yInterval_units];
+    requestedIntervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
+    planningRange_units      = [result.Diagnostics.Limits.xInterval_units; result.Diagnostics.Limits.yInterval_units];
     turnLength_units         = diff(requestedIntervals_units(1, :));
     height_units             = diff(requestedIntervals_units(2, :));
     startTime_s              = result.Inputs.initialState.time_s;
@@ -657,8 +661,8 @@ function [figureHandle, axesHandle] = createExpandedWorkspace(result, wrapModes,
     % Goal copies inside the planning range. The planner tries these
     % nearest first; the filled red marker is the copy it planned to.
     requestedGoalState = result.Inputs.goalState;
-    if isfield(result, 'RequestedGoalState')
-        requestedGoalState = result.RequestedGoalState;
+    if isfield(result.Diagnostics, 'RequestedGoalState')
+        requestedGoalState = result.Diagnostics.RequestedGoalState;
     end
     goalHasTarget = isfield(requestedGoalState, 'targetMotion') && ~isempty(requestedGoalState.targetMotion);
     if ~goalHasTarget
@@ -715,16 +719,16 @@ function [figureHandle, axesHandle] = createExpandedWorkspace(result, wrapModes,
     end
 
     % The returned motion and route are already in these coordinates.
-    if ~isempty(result.Route_units)
-        drawLine(axesHandle, result.Route_units, "--", "Selected geometric route", 1);
+    if ~isempty(result.Diagnostics.Route_units)
+        drawLine(axesHandle, result.Diagnostics.Route_units, "--", "Selected geometric route", 1);
     end
     if ~isempty(result.position_units)
         drawLine(axesHandle, result.position_units, "k-", "Timed motion", 2);
     end
     plot(axesHandle, result.Inputs.initialState.position_units(1), ...
         result.Inputs.initialState.position_units(2), "go", "MarkerFaceColor", "g", "DisplayName", "Start");
-    hasPlannedGoalCopy = ~isfield(result, 'WrappedGoalCopies') || ...
-        any(result.WrappedGoalCopies.CandidatePlanned);
+    hasPlannedGoalCopy = ~isfield(result.Diagnostics, 'WrappedGoalCopies') || ...
+        any(result.Diagnostics.WrappedGoalCopies.CandidatePlanned);
     if hasPlannedGoalCopy
         plot(axesHandle, result.Inputs.goalState.position_units(1), result.Inputs.goalState.position_units(2), ...
             "ro", "MarkerFaceColor", "r", "MarkerSize", 8, "DisplayName", "Planned goal copy");
@@ -750,8 +754,8 @@ end
 function drawPlannerRoute(axesHandle, result)
     % Show a saved route or candidate motion even if planning later failed.
     % The plot title retains the failure reason; these lines do not imply success.
-    if ~isempty(result.Route_units)
-        selectedRoute_units = createDisplayPath(result, result.Route_units);
+    if ~isempty(result.Diagnostics.Route_units)
+        selectedRoute_units = createDisplayPath(result, result.Diagnostics.Route_units);
         drawLine(axesHandle, selectedRoute_units, "--", "Selected geometric route", 1);
     end
     if ~isempty(result.position_units)
@@ -765,8 +769,8 @@ function drawEndpoints(axesHandle, result)
     % successful intercept ends at the target's actual arrival position.
     startPosition_units = result.Inputs.initialState.position_units;
     goalPosition_units  = result.Inputs.goalState.position_units;
-    if result.Success && hasData(result, 'Intercept') && isfinite(result.Intercept.Time_s)
-        goalPosition_units = result.Intercept.TargetPosition_units;
+    if result.Success && hasData(result.Diagnostics, 'Intercept') && isfinite(result.Diagnostics.Intercept.Time_s)
+        goalPosition_units = result.Diagnostics.Intercept.TargetPosition_units;
     end
     if result.Success && ~isempty(result.position_units)
         endpointPath_units = createDisplayPath(result, result.position_units);
@@ -787,7 +791,7 @@ end
 
 function drawSearchDiagnostics(axesHandle, result, showEdges)
     % Draw the saved search connections and nodes; do not rebuild the graph.
-    visibilityGraph     = result.VisibilityGraph;
+    visibilityGraph     = result.Diagnostics.VisibilityGraph;
     nodePositions_units = visibilityGraph.NodePosition_units;
     edgeFieldNames      = ["AcceptedNodeIndex", "RejectedNodeIndex"];
     edgeStyles          = ["-", ":"];
@@ -839,7 +843,7 @@ function drawSpaceTimeSearch(axesHandle, result, options)
     % A spatial visibility graph was checked at one obstacle snapshot.
     % Timed search stores candidate positions and a timed route proposal,
     % but does not retain the tested connections for every time layer.
-    visibilityGraph = result.VisibilityGraph;
+    visibilityGraph = result.Diagnostics.VisibilityGraph;
     searchKind = "";
     if isfield(visibilityGraph, 'SearchKind')
         searchKind = string(visibilityGraph.SearchKind);
@@ -1148,8 +1152,8 @@ function axesHandles = createKinematicPanels(layoutHandle, result, useAnimationL
     % position bounds.
     quantityFieldNames = ["position_units", "velocity_units_s", "acceleration_units_s2", "jerk_units_s3"];
     quantityAxisLabels = ["Position (units)", "Velocity (units/s)", "Acceleration (units/s^2)", "Jerk (units/s^3)"];
-    quantityLimits     = [nan(1, 2); result.Limits.maxVelocity_units_s; ...
-        result.Limits.maxAcceleration_units_s2; result.Limits.maxJerk_units_s3];
+    quantityLimits     = [nan(1, 2); result.Diagnostics.Limits.maxVelocity_units_s; ...
+        result.Diagnostics.Limits.maxAcceleration_units_s2; result.Diagnostics.Limits.maxJerk_units_s3];
     axesHandles = gobjects(4, 1);
     for quantityIndex = 1:4
         % In the animation layout, the spatial plot fills the left column;

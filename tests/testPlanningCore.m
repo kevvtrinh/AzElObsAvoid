@@ -46,8 +46,8 @@ function testDirect(testCase)
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyEqual(testCase,r.ArrivalTime_s,12,'AbsTol',1e-8);
-    verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
-    verifyTrue(testCase,r.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyEqual(testCase,r.Diagnostics.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,r.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
 end
 
 function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
@@ -84,7 +84,7 @@ function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
             'coverage', struct('Passed', true, 'ExactRegionCount', 0)), ...
             struct('initialState', baseResult.Inputs.initialState, ...
             'goalState', baseResult.Inputs.goalState, ...
-            'limits', baseResult.Limits, ...
+            'limits', baseResult.Diagnostics.Limits, ...
             'options', baseResult.Options));
         preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(request, controlPoint_units, ...
             request.MotionHorizon_s + clockOffset_s);
@@ -102,20 +102,20 @@ function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
             'ArrivalTimeTolerance_s', tightTolerance);
         result = planner([], initial, goal, limits, options);
         assertTrue(testCase, result.Success, result.Message);
-        result.Inputs.goalState.time_s = result.Polynomial.FinalTime_s + clockOffset_s;
+        result.Inputs.goalState.time_s = result.Diagnostics.Polynomial.FinalTime_s + clockOffset_s;
         validation = obstacleAvoidance.validateTrajectory(result);
         verifyFalse(testCase, validation.Passed);
         verifyFalse(testCase, validation.EndpointStatesMatched);
 
         if constraintTolerance == looseTolerance
             altered = result;
-            altered.Polynomial.FinalTime_s = altered.Polynomial.FinalTime_s + clockOffset_s;
+            altered.Diagnostics.Polynomial.FinalTime_s = altered.Diagnostics.Polynomial.FinalTime_s + clockOffset_s;
             validation = obstacleAvoidance.validateTrajectory(altered);
             verifyFalse(testCase, validation.SegmentTimingConsistent);
 
             altered = result;
-            altered.Polynomial.SegmentStartTime_s(1) = ...
-                altered.Polynomial.SegmentStartTime_s(1) + clockOffset_s;
+            altered.Diagnostics.Polynomial.SegmentStartTime_s(1) = ...
+                altered.Diagnostics.Polynomial.SegmentStartTime_s(1) + clockOffset_s;
             validation = obstacleAvoidance.validateTrajectory(altered);
             verifyFalse(testCase, validation.SegmentTimingConsistent);
             verifyFalse(testCase, validation.EndpointStatesMatched);
@@ -187,13 +187,13 @@ function testDetourAndTampering(testCase)
     r = planner(obstacle, initial, goal, limits, options);
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-    verifyEqual(testCase,r.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
-    verifyTrue(testCase,r.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyEqual(testCase,r.Diagnostics.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,r.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
     altered = r; altered.position_units(2,1) = altered.position_units(2,1)+0.1;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
-    altered = r; altered.Polynomial.jerkPower_units_s3(1,1,1) = 1e4;
+    altered = r; altered.Diagnostics.Polynomial.jerkPower_units_s3(1,1,1) = 1e4;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
-    altered = r; altered.SeparationProof.Regions_units = {};
+    altered = r; altered.Diagnostics.SeparationProof.Regions_units = {};
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
 
@@ -207,7 +207,7 @@ function testNoPath(testCase)
         testCase.TestData.Limits,struct('GoalTimeMode','earliestArrival'));
     verifyFalse(testCase,earliest.Success);
     verifyEqual(testCase,earliest.TerminationReason,"noVisibilityRoute");
-    verifyEqual(testCase,earliest.Attempts.FailureKind,"noSpatialRoute");
+    verifyEqual(testCase,earliest.Diagnostics.Attempts.FailureKind,"noSpatialRoute");
 end
 
 function testMovingCellFringeBlocksTerminalReachability(testCase)
@@ -365,10 +365,23 @@ end
 
 function output = createProvenOutput(baseResult, request, preparedMotion)
     % Build an adversarial validator fixture without stale planner decisions.
-    roundoffReserve_units = baseResult.SeparationProof.RoundoffReserve_units;
-    target_units  = baseResult.SeparationProof.RequiredGap_units - roundoffReserve_units;
-    output = rmfield(baseResult, {'Validation', 'SolverDiagnostics', 'SeparationProof'});
-    output = bmtpEngine.pipeline.createMotionOutput(output, request, preparedMotion);
-    output.SeparationProof = bmtpEngine.validation.checkFinalMotion( ...
+    roundoffReserve_units = baseResult.Diagnostics.SeparationProof.RoundoffReserve_units;
+    target_units = baseResult.Diagnostics.SeparationProof.RequiredGap_units - roundoffReserve_units;
+    motionOutput = bmtpEngine.pipeline.createMotionOutput(struct(), request, preparedMotion);
+    output = baseResult;
+    output.time_s                = motionOutput.time_s;
+    output.position_units        = motionOutput.position_units;
+    output.velocity_units_s      = motionOutput.velocity_units_s;
+    output.acceleration_units_s2 = motionOutput.acceleration_units_s2;
+    output.jerk_units_s3         = motionOutput.jerk_units_s3;
+    output.ArrivalTime_s         = motionOutput.ArrivalTime_s;
+    output.MotionLength_units    = motionOutput.MotionLength_units;
+    output.Diagnostics.Polynomial                      = motionOutput.Polynomial;
+    output.Diagnostics.TrajectoryDuration_s            = motionOutput.TrajectoryDuration_s;
+    output.Diagnostics.IntegratedSquaredJerk_units2_s5 = motionOutput.IntegratedSquaredJerk_units2_s5;
+    output.Diagnostics.MaximumConstraintViolation      = motionOutput.MaximumConstraintViolation;
+    output.Diagnostics.SeparationProof = bmtpEngine.validation.checkFinalMotion( ...
         request, preparedMotion, roundoffReserve_units, target_units);
+    output.Diagnostics.Validation = struct("Passed", false, ...
+        "Message", "Synthetic motion has not been validated.");
 end

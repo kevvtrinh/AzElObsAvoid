@@ -74,10 +74,10 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         'coverage', struct('Passed',true,'ExactRegionCount',0)), ...
         struct('initialState', base.Inputs.initialState, ...
         'goalState', base.Inputs.goalState, ...
-        'limits', base.Limits, ...
+        'limits', base.Diagnostics.Limits, ...
         'options', base.Options));
     durations_s=[1.3;0.7;2]; breaks=[0;cumsum(durations_s)]/4;
-    [~,roundoffReserve_units]=bmtpEngine.validation.createCoordinateTolerances(base.Route_units, ...
+    [~,roundoffReserve_units]=bmtpEngine.validation.createCoordinateTolerances(base.Diagnostics.Route_units, ...
         limits.xInterval_units,limits.yInterval_units);
     target_units=(1+2^20*eps)*request.Options.CollisionClearanceTolerance_units+roundoffReserve_units;
     for degree=[5,8]
@@ -96,8 +96,7 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         % preserve that repaired curve instead of projecting these controls again.
         if degree==5, controls_units(2,1,1)=controls_units(2,1,1)+1e-6; end
         source=bmtpEngine.pipeline.prepareFinalMotion(request,controls_units,durations_s);
-        original=bmtpEngine.pipeline.createMotionOutput(base,request,source);
-        original.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,source,roundoffReserve_units,target_units);
+        original=resultWithPreparedMotion(base,request,source,roundoffReserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
         verifyTrue(testCase, all(isfinite(source.GivenPower_units), 'all'));
         verifyEqual(testCase, source.SourceSegmentIndex, repelem((1:3).', 2));
@@ -111,12 +110,11 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
             changed.SourceSegmentIndex = changed.SourceSegmentIndex(parentSegmentIndex);
             changed.ControlPoint_units = bmtpEngine.motion.powerToBernstein(changed.GivenPower_units);
         end
-        output=bmtpEngine.pipeline.createMotionOutput(base,request,changed);
-        output.SeparationProof=bmtpEngine.validation.checkFinalMotion(request,changed,roundoffReserve_units,target_units);
+        output=resultWithPreparedMotion(base,request,changed,roundoffReserve_units,target_units);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(output).Passed);
         sampleTime_s=linspace(initial.time_s,goal.time_s,401).';
-        [~,p,v,a,j]=bmtpEngine.motion.evaluatePolynomial(original.Polynomial,sampleTime_s);
-        [~,splitP,splitV,splitA,splitJ]=bmtpEngine.motion.evaluatePolynomial(output.Polynomial,sampleTime_s);
+        [~,p,v,a,j]=bmtpEngine.motion.evaluatePolynomial(original.Diagnostics.Polynomial,sampleTime_s);
+        [~,splitP,splitV,splitA,splitJ]=bmtpEngine.motion.evaluatePolynomial(output.Diagnostics.Polynomial,sampleTime_s);
         verifyEqual(testCase,[splitP,splitV,splitA,splitJ],[p,v,a,j],'AbsTol',1e-9);
         verifyEqual(testCase, output.ArrivalTime_s, original.ArrivalTime_s);
         unchangedPieces = changed.SourceSegmentIndex == 2;
@@ -252,4 +250,26 @@ function testCollisionRemainsRejected(testCase)
     verifyLessThan(testCase, motionCheck.VerifiedPairCount, motionCheck.AllPairCount);
     verifyEqual(testCase, changed.FinalTime_s, source.FinalTime_s);
     verifyEqual(testCase, changed.DilationScale, source.DilationScale);
+end
+
+function result = resultWithPreparedMotion(baseResult, request, preparedMotion, ...
+        roundoffReserve_units, target_units)
+    % Put a constructed BMTP motion in the planner's nested record for validation.
+    motionOutput = bmtpEngine.pipeline.createMotionOutput(struct(), request, preparedMotion);
+    result = baseResult;
+    result.time_s                = motionOutput.time_s;
+    result.position_units        = motionOutput.position_units;
+    result.velocity_units_s      = motionOutput.velocity_units_s;
+    result.acceleration_units_s2 = motionOutput.acceleration_units_s2;
+    result.jerk_units_s3         = motionOutput.jerk_units_s3;
+    result.ArrivalTime_s         = motionOutput.ArrivalTime_s;
+    result.MotionLength_units    = motionOutput.MotionLength_units;
+    result.Diagnostics.Polynomial                      = motionOutput.Polynomial;
+    result.Diagnostics.TrajectoryDuration_s            = motionOutput.TrajectoryDuration_s;
+    result.Diagnostics.IntegratedSquaredJerk_units2_s5 = motionOutput.IntegratedSquaredJerk_units2_s5;
+    result.Diagnostics.MaximumConstraintViolation      = motionOutput.MaximumConstraintViolation;
+    result.Diagnostics.SeparationProof = bmtpEngine.validation.checkFinalMotion( ...
+        request, preparedMotion, roundoffReserve_units, target_units);
+    result.Diagnostics.Validation = struct("Passed", false, ...
+        "Message", "Synthetic motion has not been validated.");
 end

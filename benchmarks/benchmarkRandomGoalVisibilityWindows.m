@@ -136,28 +136,29 @@ for caseIndex = 1:caseCount
         if result.Success
             validation = obstacleAvoidance.validateTrajectory(result);
         else
-            validation = result.Validation;
+            validation = result.Diagnostics.Validation;
         end
     catch exception
         wallTime_s = toc(wallTimer);
         result = struct( ...
-            'Success',                         false, ...
-            'TerminationReason',               "exception", ...
-            'ArrivalTime_s',                   NaN, ...
-            'TrajectoryDuration_s',            NaN, ...
-            'MotionLength_units',              NaN, ...
-            'IntegratedSquaredJerk_units2_s5', NaN, ...
-            'ElapsedTime_s',                   NaN);
+            'Success',            false, ...
+            'TerminationReason',  "exception", ...
+            'ArrivalTime_s',      NaN, ...
+            'MotionLength_units', NaN, ...
+            'Diagnostics',        struct( ...
+                'TrajectoryDuration_s',            NaN, ...
+                'IntegratedSquaredJerk_units2_s5', NaN, ...
+                'ElapsedTime_s',                   NaN));
         validation    = struct('Passed', false);
         exceptionText = string(exception.identifier) + ": " + string(exception.message);
     end
     results{caseIndex} = result;
     arrivalTime_s                   = numericField(result, "ArrivalTime_s");
-    trajectoryDuration_s            = numericField(result, "TrajectoryDuration_s");
+    trajectoryDuration_s            = numericField(result.Diagnostics, "TrajectoryDuration_s");
     pathLength_units                = numericField(result, "MotionLength_units");
     integratedSquaredJerk_units2_s5 = numericField( ...
-        result, "IntegratedSquaredJerk_units2_s5");
-    plannerTime_s     = numericField(result, "ElapsedTime_s");
+        result.Diagnostics, "IntegratedSquaredJerk_units2_s5");
+    plannerTime_s     = numericField(result.Diagnostics, "ElapsedTime_s");
     terminationReason = stringField(result, "TerminationReason", "unavailable");
     waitDuration_s    = routeWaitDuration(result);
     arrivalWindow     = classifyArrival(arrivalTime_s, window);
@@ -376,12 +377,12 @@ end
 function waitDuration_s = routeWaitDuration(result)
     % Sum durations of stationary segments in the returned visibility route.
     waitDuration_s = NaN;
-    if ~result.Success || ~isfield(result, 'VisibilityGraph') || ...
-            ~isfield(result.VisibilityGraph, 'RouteTime_s')
+    if ~result.Success || ~isfield(result.Diagnostics, 'VisibilityGraph') || ...
+            ~isfield(result.Diagnostics.VisibilityGraph, 'RouteTime_s')
         return
     end
-    route_units = result.VisibilityGraph.Route_units;
-    routeTime_s  = result.VisibilityGraph.RouteTime_s(:);
+    route_units = result.Diagnostics.VisibilityGraph.Route_units;
+    routeTime_s  = result.Diagnostics.VisibilityGraph.RouteTime_s(:);
     if size(route_units, 1) ~= numel(routeTime_s) || numel(routeTime_s) < 2
         return
     end

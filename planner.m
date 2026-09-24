@@ -56,10 +56,13 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Includes the request, prepared obstacles, route, motion, solver
-%       details, and Validation. Expected no-path or infeasible outcomes
-%       return Success = false with Message and TerminationReason explaining
-%       why. Invalid inputs throw an error.
+%       Headline fields: Success, Message, TerminationReason, Inputs, Options,
+%       time_s, position_units, velocity_units_s, acceleration_units_s2,
+%       jerk_units_s3, ArrivalTime_s, MotionLength_units, and plotTrajectory.
+%       Diagnostics holds prepared obstacles, limits, route, polynomial,
+%       solver details, attempts, and independent Validation.
+%       Expected no-path or infeasible outcomes return Success = false with
+%       Message and TerminationReason explaining why. Invalid inputs throw.
 %       result.plotTrajectory() plots the result as returned; it accepts the
 %       same optional overrides as obstacleAvoidance.plotting.plotTrajectory.
 %   - options (scalar struct, zero-input call)

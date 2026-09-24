@@ -20,7 +20,7 @@ function testReducedOutlineIsSupportedAndValid(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     % The supplied outline is the 100-vertex reduction of the 14613-vertex
     % source ring at every sample; the planner treats it exactly.
-    outline = result.PreparedObstacles(1);
+    outline = result.Diagnostics.PreparedObstacles(1);
     verifyEqual(testCase,cellfun(@numel,outline.originalX_units),100*ones(numel(outline.time_s),1));
     verifyEqual(testCase,string(outline.vertexCorrespondence),"sourceIndex");
     preparation = outline.InternalPreparation;
@@ -31,5 +31,5 @@ function testReducedOutlineIsSupportedAndValid(testCase)
         4096*eps(max(1,max(cellfun(@area,preparation.SampleShapes)))));
     verifyEqual(testCase,result.ArrivalTime_s,18.5752,'RelTol',0.01);
     verifyLessThanOrEqual(testCase,abs(result.MotionLength_units/40.5138437-1),0.01);
-    verifyGreaterThan(testCase,result.SeparationProof.MinimumSignedGap_units,0);
+    verifyGreaterThan(testCase,result.Diagnostics.SeparationProof.MinimumSignedGap_units,0);
 end

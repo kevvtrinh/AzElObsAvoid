@@ -91,7 +91,7 @@ function testPublicPlannerChoosesAReopenedGoalWindow(testCase)
     result=planner(blocker,initial,goal,limits, ...
         struct('GoalTimeMode',"earliestArrival"));
     verifyTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,result.Validation.Passed,result.Validation.Message);
+    verifyTrue(testCase,result.Diagnostics.Validation.Passed,result.Diagnostics.Validation.Message);
     verifyGreaterThan(testCase,result.ArrivalTime_s,7);
     verifyLessThan(testCase,result.ArrivalTime_s,goal.time_s);
 end

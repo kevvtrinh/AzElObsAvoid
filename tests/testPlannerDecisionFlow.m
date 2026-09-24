@@ -51,13 +51,13 @@ function testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning(testCase)
     result=planner([],initial,state(10,[0,0]),limits, ...
         struct('GoalTimeMode','fixedArrival'));
     verifyFailure(testCase,result,"dynamicEndpointInfeasible");
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"notSearched");
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"notSearched");
 
     goal=state(10,[-1,0]); goal.velocity_units_s=[1,0];
     result=planner([],state(0,[0,0]),goal,limits, ...
         struct('GoalTimeMode','fixedArrival'));
     verifyFailure(testCase,result,"dynamicEndpointInfeasible");
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"notSearched");
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"notSearched");
 
     initial=state(0,[1,0]); initial.acceleration_units_s2=[1,0];
     result=planner([],initial,state(10,[0,0]),limits, ...
@@ -93,9 +93,9 @@ function testPassingAnalyticProbeStillChecksEveryCollisionPair(testCase)
         struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyGreaterThan(testCase,result.SeparationProof.AllPairCount,0);
-    verifyEqual(testCase,result.SeparationProof.VerifiedPairCount, ...
-        result.SeparationProof.AllPairCount);
+    verifyGreaterThan(testCase,result.Diagnostics.SeparationProof.AllPairCount,0);
+    verifyEqual(testCase,result.Diagnostics.SeparationProof.VerifiedPairCount, ...
+        result.Diagnostics.SeparationProof.AllPairCount);
 end
 
 function testTimeWindowInfeasible(testCase)
@@ -111,13 +111,13 @@ function testEarliestStaticDirectUsesAnalyticClock(testCase)
         struct('GoalTimeMode','earliestArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
-    verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyEqual(testCase,numel(result.Attempts),1);
-    verifyEqual(testCase,result.Attempts.Kind,"spatialVisibility");
-    verifyTrue(testCase,result.Attempts.Selected);
-    verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
-    verifyEqual(testCase,result.EarliestArrival.SelectedAttemptIndex,1);
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,result.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),1);
+    verifyEqual(testCase,result.Diagnostics.Attempts.Kind,"spatialVisibility");
+    verifyTrue(testCase,result.Diagnostics.Attempts.Selected);
+    verifyFalse(testCase,result.Diagnostics.EarliestArrival.GlobalEarliestProven);
+    verifyEqual(testCase,result.Diagnostics.EarliestArrival.SelectedAttemptIndex,1);
 end
 
 function testEarliestStaticNonrestUsesPhysicalClockTrials(testCase)
@@ -126,15 +126,15 @@ function testEarliestStaticNonrestUsesPhysicalClockTrials(testCase)
         struct('GoalTimeMode','earliestArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyTrue(testCase,isfield(result,'TemporalSearch'));
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s, ...
+    verifyTrue(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,result.ArrivalTime_s, ...
         'AbsTol',1e-12);
-    verifyFalse(testCase,result.TemporalSearch.GlobalEarliestProven);
-    verifyFalse(testCase,result.EarliestArrival.Capabilities.TimedVariableClockBmtp);
-    verifyGreaterThanOrEqual(testCase,numel(result.Attempts),1);
-    verifyTrue(testCase,all([result.Attempts.Kind] == ...
+    verifyFalse(testCase,result.Diagnostics.TemporalSearch.GlobalEarliestProven);
+    verifyFalse(testCase,result.Diagnostics.EarliestArrival.Capabilities.TimedVariableClockBmtp);
+    verifyGreaterThanOrEqual(testCase,numel(result.Diagnostics.Attempts),1);
+    verifyTrue(testCase,all([result.Diagnostics.Attempts.Kind] == ...
         "arrivalTimeTrial"));
-    verifyEqual(testCase,nnz([result.Attempts.Selected]),1);
+    verifyEqual(testCase,nnz([result.Diagnostics.Attempts.Selected]),1);
 end
 
 function testFixedMovingTargetMatchesPchipDerivatives(testCase)
@@ -147,10 +147,10 @@ function testFixedMovingTargetMatchesPchipDerivatives(testCase)
     result=planner([],state(0,[0,0]),goal,standardLimits(),options);
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.Intercept.Time_s,10,'AbsTol',1e-10);
-    verifyEqual(testCase,result.Intercept.TargetVelocity_units_s,[0.2,0], ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.Time_s,10,'AbsTol',1e-10);
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetVelocity_units_s,[0.2,0], ...
         'AbsTol',1e-10);
-    verifyEqual(testCase,result.Intercept.TargetAcceleration_units_s2,[0,0], ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetAcceleration_units_s2,[0,0], ...
         'AbsTol',1e-10);
     verifyEqual(testCase,result.velocity_units_s(end,:),[0.2,0],'AbsTol',1e-8);
     verifyEqual(testCase,result.acceleration_units_s2(end,:),[0,0],'AbsTol',1e-8);
@@ -166,17 +166,17 @@ function testEarliestMovingTargetUsesArrivalTimeClock(testCase)
         struct('GoalTimeMode','earliestArrival','TemporalResolution_s',0.5));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyTrue(testCase,isfield(result,'TemporalSearch'));
-    verifyFalse(testCase,result.TemporalSearch.GlobalEarliestProven);
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s, ...
+    verifyTrue(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
+    verifyFalse(testCase,result.Diagnostics.TemporalSearch.GlobalEarliestProven);
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,result.ArrivalTime_s, ...
         'AbsTol',1e-10);
-    verifyEqual(testCase,result.Intercept.Time_s,result.ArrivalTime_s, ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.Time_s,result.ArrivalTime_s, ...
         'AbsTol',1e-10);
-    verifyFalse(testCase,result.EarliestArrival.Capabilities.TimedVariableClockBmtp);
-    verifyGreaterThanOrEqual(testCase,numel(result.Attempts),1);
-    verifyTrue(testCase,all([result.Attempts.Kind] == ...
+    verifyFalse(testCase,result.Diagnostics.EarliestArrival.Capabilities.TimedVariableClockBmtp);
+    verifyGreaterThanOrEqual(testCase,numel(result.Diagnostics.Attempts),1);
+    verifyTrue(testCase,all([result.Diagnostics.Attempts.Kind] == ...
         "arrivalTimeTrial"));
-    verifyEqual(testCase,nnz([result.Attempts.Selected]),1);
+    verifyEqual(testCase,nnz([result.Diagnostics.Attempts.Selected]),1);
 end
 
 function testEarliestMovingTargetMatchesSelectedClockDerivatives(testCase)
@@ -194,7 +194,7 @@ function testEarliestMovingTargetMatchesSelectedClockDerivatives(testCase)
     [targetPosition_units,targetVelocity_units_s,targetAcceleration_units_s2]= ...
         obstacleAvoidance.input.targetPositionAtTime( ...
         targetMotion,result.ArrivalTime_s);
-    verifyEqual(testCase,result.Intercept.TargetPosition_units, ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetPosition_units, ...
         targetPosition_units,'AbsTol',1e-10);
     verifyEqual(testCase,result.velocity_units_s(end,:), ...
         targetVelocity_units_s,'AbsTol',1e-8);
@@ -226,7 +226,7 @@ function testMovingTargetTrialRetainsTrialClockDerivatives(testCase)
 
     verifyTrue(testCase,result.Success,result.Message);
     verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.ArrivalTime_s,expectedTrialTime_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.Inputs.goalState.targetMotion,targetMotion);
     verifyEqual(testCase,result.Inputs.goalState.position_units, ...
@@ -235,16 +235,16 @@ function testMovingTargetTrialRetainsTrialClockDerivatives(testCase)
         expectedTrialVelocity_units_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.Inputs.goalState.acceleration_units_s2, ...
         expectedTrialAcceleration_units_s2,'AbsTol',1e-12);
-    verifyEqual(testCase,result.Intercept.Time_s,expectedTrialTime_s,'AbsTol',1e-12);
-    verifyEqual(testCase,result.Intercept.TargetPosition_units, ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.Time_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetPosition_units, ...
         expectedTrialPosition_units,'AbsTol',1e-12);
-    verifyEqual(testCase,result.Intercept.TargetVelocity_units_s, ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetVelocity_units_s, ...
         expectedTrialVelocity_units_s,'AbsTol',1e-12);
-    verifyEqual(testCase,result.Intercept.TargetAcceleration_units_s2, ...
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetAcceleration_units_s2, ...
         expectedTrialAcceleration_units_s2,'AbsTol',1e-12);
     verifyGreaterThan(testCase,norm(expectedHorizonVelocity_units_s- ...
         expectedTrialVelocity_units_s),0.3);
-    verifyGreaterThan(testCase,norm(result.Intercept.TargetVelocity_units_s- ...
+    verifyGreaterThan(testCase,norm(result.Diagnostics.Intercept.TargetVelocity_units_s- ...
         expectedHorizonVelocity_units_s),0.3);
 end
 
@@ -262,10 +262,10 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
         struct('GoalTimeMode','earliestArrival','TemporalResolution_s',1));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyGreaterThan(testCase,numel(result.Attempts),1);
-    verifyEqual(testCase,result.Attempts(1).FailureStage,"search");
-    verifyTrue(testCase,result.Attempts(1).NextMethodAllowed);
-    verifyTrue(testCase,any([result.Attempts.Selected]));
+    verifyGreaterThan(testCase,numel(result.Diagnostics.Attempts),1);
+    verifyEqual(testCase,result.Diagnostics.Attempts(1).FailureStage,"search");
+    verifyTrue(testCase,result.Diagnostics.Attempts(1).NextMethodAllowed);
+    verifyTrue(testCase,any([result.Diagnostics.Attempts.Selected]));
 
     fixedInitial=state(0,[-4,0]);
     fixedInitial.velocity_units_s=[0.1,0];
@@ -275,30 +275,30 @@ function testDisconnectedMovingTargetClockAdvances(testCase)
     fixedResult=planner(obstacle,fixedInitial,fixedGoal,limits,fixedOptions);
     verifyFalse(testCase,fixedResult.Success);
     verifyEqual(testCase,fixedResult.TerminationReason,"noVisibilityRoute");
-    verifyEqual(testCase,numel(fixedResult.Attempts),1);
-    verifyFalse(testCase,fixedResult.Attempts.NextMethodAllowed);
-    verifyTrue(testCase,fixedResult.TemporalSearch.TerminalFailure);
+    verifyEqual(testCase,numel(fixedResult.Diagnostics.Attempts),1);
+    verifyFalse(testCase,fixedResult.Diagnostics.Attempts.NextMethodAllowed);
+    verifyTrue(testCase,fixedResult.Diagnostics.TemporalSearch.TerminalFailure);
     verifyEqual(testCase,fixedResult.Options.GoalTimeMode,"fixedArrival");
     verifyEqual(testCase,fixedResult.Options.WrapX,"false");
     verifyEqual(testCase,fixedResult.Options.WrapY,"false");
-    verifyEqual(testCase,fixedResult.SuppliedLimits,limits);
-    verifyEqual(testCase,fixedResult.SuppliedGoalState.position_units, ...
+    verifyEqual(testCase,fixedResult.Diagnostics.SuppliedLimits,limits);
+    verifyEqual(testCase,fixedResult.Diagnostics.SuppliedGoalState.position_units, ...
         fixedGoal.position_units);
-    verifyEqual(testCase,fixedResult.SuppliedGoalState.time_s,4);
+    verifyEqual(testCase,fixedResult.Diagnostics.SuppliedGoalState.time_s,4);
     % Anchored to the obstacle this test passed in, not to another field of
     % the same result: a record agreeing with itself proves nothing here.
     verifyEqual(testCase,fixedResult.Inputs.obstacles, ...
         obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,4],true));
     verifyEqual(testCase,fixedResult.Inputs.goalState.time_s,4);
-    verifyTrue(testCase,isfield(fixedResult,'ParentRequest'));
-    verifyEqual(testCase,fixedResult.ParentRequest.Obstacles,obstacle);
-    verifyEqual(testCase,fixedResult.ParentRequest.GoalTime_s,fixedGoal.time_s);
+    verifyTrue(testCase,isfield(fixedResult.Diagnostics, 'ParentRequest'));
+    verifyEqual(testCase,fixedResult.Diagnostics.ParentRequest.Obstacles,obstacle);
+    verifyEqual(testCase,fixedResult.Diagnostics.ParentRequest.GoalTime_s,fixedGoal.time_s);
     % The supplied goal provenance is a different field from the outer clock;
     % relocating one does not cover the other.
-    verifyEqual(testCase,fixedResult.ParentRequest.SuppliedGoalState,fixedGoal);
-    verifyEqual(testCase,fixedResult.ParentRequest.GoalTimeMode, ...
+    verifyEqual(testCase,fixedResult.Diagnostics.ParentRequest.SuppliedGoalState,fixedGoal);
+    verifyEqual(testCase,fixedResult.Diagnostics.ParentRequest.GoalTimeMode, ...
         string(fixedOptions.GoalTimeMode));
-    verifyEqual(testCase,fixedResult.ParentRequest.FixedArrivalTrialTime_s,4);
+    verifyEqual(testCase,fixedResult.Diagnostics.ParentRequest.FixedArrivalTrialTime_s,4);
 end
 
 function testWrappedWrapUsesNearestImage(testCase)
@@ -311,7 +311,7 @@ function testWrappedWrapUsesNearestImage(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
-    verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
+    verifyEqual(testCase,result.Diagnostics.RequestedGoalState.position_units,[-179,0]);
     verifyEqual(testCase,result.MotionLength_units,2,'AbsTol',1e-8);
 end
 
@@ -330,15 +330,15 @@ function testWrappedNonrestEarliestTrialIsAcceptedOnce(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyEqual(testCase,result.TerminationReason,"goalReached");
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyTrue(testCase,isfield(result,'TemporalSearch'));
+    verifyTrue(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
     verifyEqual(testCase,result.Options.GoalTimeMode,"earliestArrival");
     verifyEqual(testCase,result.Inputs.goalState.time_s,10);
     verifyLessThan(testCase,result.ArrivalTime_s,10);
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-12);
-    verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Diagnostics.RequestedGoalState.position_units,[-179,0]);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
-    reach=result.Limits.maxVelocity_units_s(1)*(result.Inputs.goalState.time_s-0);
-    verifyEqual(testCase,result.Limits.xInterval_units,179+[-reach,reach]);
+    reach=result.Diagnostics.Limits.maxVelocity_units_s(1)*(result.Inputs.goalState.time_s-0);
+    verifyEqual(testCase,result.Diagnostics.Limits.xInterval_units,179+[-reach,reach]);
 end
 
 function testWrappedObstacleImageBlocksTheSeam(testCase)
@@ -356,9 +356,9 @@ function testWrappedObstacleImageBlocksTheSeam(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.Inputs.obstacles,obstacle);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[181,0]);
-    verifyEqual(testCase,result.WrappedGoalCopies.ObstacleCopyCount,1);
-    verifyEqual(testCase,numel(result.PreparedObstacles),1);
-    verifyGreaterThanOrEqual(testCase,min(result.PreparedObstacles(1).x_units{1}),180);
+    verifyEqual(testCase,result.Diagnostics.WrappedGoalCopies.ObstacleCopyCount,1);
+    verifyEqual(testCase,numel(result.Diagnostics.PreparedObstacles),1);
+    verifyGreaterThanOrEqual(testCase,min(result.Diagnostics.PreparedObstacles(1).x_units{1}),180);
     verifyGreaterThan(testCase,result.MotionLength_units,6);
     verifyGreaterThan(testCase,max(abs(result.position_units(:,2))),3);
 end
@@ -380,31 +380,31 @@ function testWrappedEarliestTrialsRunInsideTheUnwrappedFrame(testCase)
     result=planner(obstacle,initial,goal,limits,options);
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyTrue(testCase,isfield(result,'TemporalSearch'));
-    verifyLessThanOrEqual(testCase,numel(result.TemporalSearch.TrialTime_s),2);
+    verifyTrue(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
+    verifyLessThanOrEqual(testCase,numel(result.Diagnostics.TemporalSearch.TrialTime_s),2);
     verifyEqual(testCase,result.Options.GoalTimeMode,"earliestArrival");
     verifyEqual(testCase,result.Options.WrapX,"both");
     verifyEqual(testCase,result.Inputs.obstacles,obstacle);
     verifyEqual(testCase,result.Inputs.goalState.time_s,10);
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-9);
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,result.ArrivalTime_s,'AbsTol',1e-9);
     verifyLessThan(testCase,result.ArrivalTime_s,10);
     verifyGreaterThan(testCase,result.MotionLength_units,6);
 
     expectedTrialTime_s=initial.time_s+options.TemporalResolution_s;
     reach_units=limits.maxVelocity_units_s(1)*(goal.time_s-initial.time_s);
     expectedBand_units=initial.position_units(1)+[-reach_units,reach_units];
-    verifyEqual(testCase,result.SuppliedLimits,limits);
-    verifyEqual(testCase,result.SuppliedGoalState.position_units,goal.position_units);
-    verifyEqual(testCase,result.SuppliedGoalState.time_s,goal.time_s);
-    verifyEqual(testCase,result.RequestedLimits.xInterval_units,limits.xInterval_units);
-    verifyEqual(testCase,result.Limits.xInterval_units,expectedBand_units);
+    verifyEqual(testCase,result.Diagnostics.SuppliedLimits,limits);
+    verifyEqual(testCase,result.Diagnostics.SuppliedGoalState.position_units,goal.position_units);
+    verifyEqual(testCase,result.Diagnostics.SuppliedGoalState.time_s,goal.time_s);
+    verifyEqual(testCase,result.Diagnostics.RequestedLimits.xInterval_units,limits.xInterval_units);
+    verifyEqual(testCase,result.Diagnostics.Limits.xInterval_units,expectedBand_units);
     verifyEqual(testCase,result.Options.WrapY,"false");
-    verifyFalse(testCase,isfield(result,'ParentRequest'));
+    verifyFalse(testCase,isfield(result.Diagnostics, 'ParentRequest'));
     verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
     verifyEqual(testCase,result.ArrivalTime_s,expectedTrialTime_s,'AbsTol',1e-12);
-    verifyEqual(testCase,numel(result.Attempts),1);
-    verifyEqual(testCase,result.Attempts.TrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),1);
+    verifyEqual(testCase,result.Diagnostics.Attempts.TrialTime_s,expectedTrialTime_s,'AbsTol',1e-12);
 end
 
 function testWrappedAllCandidateFailuresDeclareParentRequest(testCase)
@@ -423,21 +423,21 @@ function testWrappedAllCandidateFailuresDeclareParentRequest(testCase)
     reach_units=limits.maxVelocity_units_s(2)*(goal.time_s-initial.time_s);
     expectedBand_units=initial.position_units(2)+[-reach_units,reach_units];
     verifyFailure(testCase,result,"noVisibilityRoute");
-    verifyGreaterThan(testCase,numel(result.WrappedGoalCopies.CandidatePlanned),1);
-    verifyTrue(testCase,all(result.WrappedGoalCopies.CandidatePlanned));
-    verifyFalse(testCase,any(result.WrappedGoalCopies.CandidateTerminationReason == ...
+    verifyGreaterThan(testCase,numel(result.Diagnostics.WrappedGoalCopies.CandidatePlanned),1);
+    verifyTrue(testCase,all(result.Diagnostics.WrappedGoalCopies.CandidatePlanned));
+    verifyFalse(testCase,any(result.Diagnostics.WrappedGoalCopies.CandidateTerminationReason == ...
         "goalReached"));
     verifyEqual(testCase,result.Options.GoalTimeMode,string(options.GoalTimeMode));
     verifyEqual(testCase,result.Options.WrapX,"false");
     verifyEqual(testCase,result.Options.WrapY,"both");
-    verifyEqual(testCase,result.SuppliedLimits,limits);
-    verifyEqual(testCase,result.SuppliedGoalState.position_units,goal.position_units);
-    verifyEqual(testCase,result.SuppliedGoalState.time_s,goal.time_s);
-    verifyEqual(testCase,result.RequestedLimits.yInterval_units,limits.yInterval_units);
-    verifyEqual(testCase,result.Limits.yInterval_units,expectedBand_units);
+    verifyEqual(testCase,result.Diagnostics.SuppliedLimits,limits);
+    verifyEqual(testCase,result.Diagnostics.SuppliedGoalState.position_units,goal.position_units);
+    verifyEqual(testCase,result.Diagnostics.SuppliedGoalState.time_s,goal.time_s);
+    verifyEqual(testCase,result.Diagnostics.RequestedLimits.yInterval_units,limits.yInterval_units);
+    verifyEqual(testCase,result.Diagnostics.Limits.yInterval_units,expectedBand_units);
     verifyEqual(testCase,result.Inputs.obstacles,obstacle);
     verifyEqual(testCase,result.Inputs.goalState.time_s,goal.time_s);
-    verifyFalse(testCase,isfield(result,'ParentRequest'));
+    verifyFalse(testCase,isfield(result.Diagnostics, 'ParentRequest'));
 end
 
 function testWrappedFarImageBeatsABlockedNearImage(testCase)
@@ -451,18 +451,18 @@ function testWrappedFarImageBeatsABlockedNearImage(testCase)
         struct('GoalTimeMode','fixedArrival','WrapX',true));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.RequestedGoalState.position_units,[-4,0]);
+    verifyEqual(testCase,result.Diagnostics.RequestedGoalState.position_units,[-4,0]);
     verifyEqual(testCase,result.Inputs.goalState.position_units,[-4,0]);
-    verifyEqual(testCase,result.WrappedGoalCopies.GoalOffset_units,[-10,0]);
+    verifyEqual(testCase,result.Diagnostics.WrappedGoalCopies.GoalOffset_units,[-10,0]);
     verifyEqual(testCase,result.MotionLength_units,8,'AbsTol',1e-6);
-    verifyGreaterThan(testCase,nnz(result.WrappedGoalCopies.CandidatePlanned),1);
+    verifyGreaterThan(testCase,nnz(result.Diagnostics.WrappedGoalCopies.CandidatePlanned),1);
 
     earliest=planner(wall,state(0,[4,0]),state(10,[-4,0]),limits, ...
         struct('GoalTimeMode','earliestArrival','WrapX',true));
     verifyTrue(testCase,earliest.Success,earliest.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(earliest).Passed);
-    verifyEqual(testCase,earliest.WrappedGoalCopies.GoalOffset_units,[-10,0]);
-    verifyGreaterThan(testCase,nnz(earliest.WrappedGoalCopies.CandidatePlanned),1);
+    verifyEqual(testCase,earliest.Diagnostics.WrappedGoalCopies.GoalOffset_units,[-10,0]);
+    verifyGreaterThan(testCase,nnz(earliest.Diagnostics.WrappedGoalCopies.CandidatePlanned),1);
     verifyLessThan(testCase,earliest.ArrivalTime_s,10);
 end
 
@@ -539,7 +539,7 @@ function testPoleCrossingShortensSlew(testCase)
     verifyTrue(testCase, overPole.Success, overPole.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(overPole).Passed);
     verifyEqual(testCase, overPole.Inputs.goalState.position_units, [10, 91], 'AbsTol', 1e-12);
-    verifyTrue(testCase, overPole.WrappedGoalCopies.GoalIsPoleCopy);
+    verifyTrue(testCase, overPole.Diagnostics.WrappedGoalCopies.GoalIsPoleCopy);
     verifyEqual(testCase, overPole.MotionLength_units, 2, 'AbsTol', 1e-6);
     options.WrapY = "false";
     aroundAzimuth = planner([], state(0, [10, 89]), state(60, [190, 89]), limits, options);
@@ -569,7 +569,7 @@ function testPoleObstacleBlocksTheCrossing(testCase)
         struct('GoalTimeMode', 'earliestArrival', 'WrapY', "both"));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyTrue(testCase, result.WrappedGoalCopies.GoalIsPoleCopy);
+    verifyTrue(testCase, result.Diagnostics.WrappedGoalCopies.GoalIsPoleCopy);
     verifyGreaterThan(testCase, result.MotionLength_units, 2);
     passesThroughCopy = inpolygon(result.position_units(:, 1), result.position_units(:, 2), ...
         [5, 15, 15, 5], [90.2, 90.2, 90.8, 90.8]);
@@ -594,7 +594,7 @@ function testWrapDirectionLimitsWhichEndMayBeCrossed(testCase)
         verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
         verifyEqual(testCase, result.Inputs.goalState.position_units(1), expectedGoals_units(modeIndex));
         verifyEqual(testCase, result.MotionLength_units, expectedLengths_units(modeIndex), 'AbsTol', 1e-6);
-        verifyEqual(testCase, result.Limits.xInterval_units, expectedRanges_units(modeIndex, :));
+        verifyEqual(testCase, result.Diagnostics.Limits.xInterval_units, expectedRanges_units(modeIndex, :));
     end
 
     % The other way, from 10 to 350, "backward" crosses 0 and "forward" goes round.
@@ -763,8 +763,8 @@ function testWrappedMovingTargetIsUnwrappedAcrossTheSeam(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.Inputs.goalState.targetMotion.position_units,[89,0;91,0]);
-    verifyEqual(testCase,result.RequestedGoalState.targetMotion.position_units,[89,0;-89,0]);
-    verifyEqual(testCase,result.Intercept.TargetPosition_units,[91,0],'AbsTol',1e-9);
+    verifyEqual(testCase,result.Diagnostics.RequestedGoalState.targetMotion.position_units,[89,0;-89,0]);
+    verifyEqual(testCase,result.Diagnostics.Intercept.TargetPosition_units,[91,0],'AbsTol',1e-9);
     verifyEqual(testCase,result.MotionLength_units,6,'AbsTol',1e-6);
 end
 
@@ -828,7 +828,7 @@ function testPoleCrossingTargetMatchesContinuousYDerivative(testCase)
     % The validator applies the same rule to a result that claims one.
     tampered = matched;
     tampered.Options.MatchTargetVelocity = false;
-    tampered.RequestedGoalState.velocity_units_s = [0, 0.1];
+    tampered.Diagnostics.RequestedGoalState.velocity_units_s = [0, 0.1];
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(tampered).Passed);
     % A planned target path must also keep the requested interpolation.
     tampered = matched;
@@ -836,7 +836,7 @@ function testPoleCrossingTargetMatchesContinuousYDerivative(testCase)
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(tampered).Passed);
     % A matched result may not also claim a supplied y velocity.
     tampered = matched;
-    tampered.SuppliedGoalState.velocity_units_s = [0, -0.1];
+    tampered.Diagnostics.SuppliedGoalState.velocity_units_s = [0, -0.1];
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(tampered).Passed);
 end
 
@@ -853,14 +853,16 @@ function testWrappedValidatorRequiresBothRequestedGoalRecords(testCase)
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(plain).Passed);
 
     for fieldName = ["RequestedGoalState", "SuppliedGoalState"]
-        missingWrappedField = rmfield(wrapped, fieldName);
+        missingWrappedField = wrapped;
+        missingWrappedField.Diagnostics = rmfield(wrapped.Diagnostics, fieldName);
         wrappedValidation = obstacleAvoidance.validateTrajectory(missingWrappedField);
         verifyFalse(testCase, wrappedValidation.Passed);
         verifyEqual(testCase, wrappedValidation.Message, ...
             "The result record is missing option, limit, input, or intercept fields.");
 
         % Non-wrapped records retain the validator's existing required set.
-        missingPlainField = rmfield(plain, fieldName);
+        missingPlainField = plain;
+        missingPlainField.Diagnostics = rmfield(plain.Diagnostics, fieldName);
         verifyTrue(testCase, obstacleAvoidance.validateTrajectory(missingPlainField).Passed);
     end
 end
@@ -879,16 +881,16 @@ function testWrappedValidatorRebuildsSuppliedGoal(testCase)
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(wrapped).Passed);
 
     changedPosition = wrapped;
-    changedPosition.SuppliedGoalState.position_units = [12, 0];
+    changedPosition.Diagnostics.SuppliedGoalState.position_units = [12, 0];
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedPosition).Passed);
     changedDerivative = wrapped;
-    changedDerivative.SuppliedGoalState.velocity_units_s = [0.1, 0];
+    changedDerivative.Diagnostics.SuppliedGoalState.velocity_units_s = [0.1, 0];
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedDerivative).Passed);
     changedTime = wrapped;
-    changedTime.SuppliedGoalState.time_s = 21;
+    changedTime.Diagnostics.SuppliedGoalState.time_s = 21;
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedTime).Passed);
     missingPosition = wrapped;
-    missingPosition.RequestedGoalState = rmfield(missingPosition.RequestedGoalState, 'position_units');
+    missingPosition.Diagnostics.RequestedGoalState = rmfield(missingPosition.Diagnostics.RequestedGoalState, 'position_units');
     malformedValidation = obstacleAvoidance.validateTrajectory(missingPosition);
     verifyFalse(testCase, malformedValidation.Passed);
     verifyEqual(testCase, malformedValidation.Message, ...
@@ -902,10 +904,10 @@ function testWrappedValidatorRebuildsSuppliedGoal(testCase)
     verifyTrue(testCase, moving.Success, moving.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(moving).Passed);
     changedSample = moving;
-    changedSample.SuppliedGoalState.targetMotion.position_units(2, 1) = 21.25;
+    changedSample.Diagnostics.SuppliedGoalState.targetMotion.position_units(2, 1) = 21.25;
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedSample).Passed);
     changedInterpolation = moving;
-    changedInterpolation.SuppliedGoalState.targetMotion.InterpolationMethod = 'pchip';
+    changedInterpolation.Diagnostics.SuppliedGoalState.targetMotion.InterpolationMethod = 'pchip';
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedInterpolation).Passed);
 end
 
@@ -919,7 +921,7 @@ function testWrappedValidatorRebuildsSuppliedLimits(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
     changedPeriod = result;
-    changedPeriod.SuppliedLimits.xInterval_units = [0, 720];
+    changedPeriod.Diagnostics.SuppliedLimits.xInterval_units = [0, 720];
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedPeriod).Passed);
 
     % Forward motion near the lower end uses [0 10] rather than [-6 10].
@@ -930,9 +932,9 @@ function testWrappedValidatorRebuildsSuppliedLimits(testCase)
         struct('GoalTimeMode', 'fixedArrival', 'WrapX', "forward"));
     verifyTrue(testCase, forward.Success, forward.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(forward).Passed);
-    verifyEqual(testCase, forward.Limits.xInterval_units, [0, 10]);
+    verifyEqual(testCase, forward.Diagnostics.Limits.xInterval_units, [0, 10]);
     changedEnd = forward;
-    changedEnd.SuppliedLimits.xInterval_units = [1, 360];
+    changedEnd.Diagnostics.SuppliedLimits.xInterval_units = [1, 360];
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedEnd).Passed);
 end
 
@@ -983,7 +985,7 @@ function testTargetCopyMetBeforeTheDeadlineIsTried(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
     verifyLessThan(testCase, result.ArrivalTime_s, 10);
-    verifyEqual(testCase, result.Intercept.TargetPosition_units(1), 10, 'AbsTol', 1e-9);
+    verifyEqual(testCase, result.Diagnostics.Intercept.TargetPosition_units(1), 10, 'AbsTol', 1e-9);
 end
 
 function testWrappedEarliestTrialsMatchTheirOwnTargetVelocity(testCase)
@@ -1008,8 +1010,8 @@ function testWrappedEarliestTrialsMatchTheirOwnTargetVelocity(testCase)
     [~, deadlineVelocity_units_s] = obstacleAvoidance.input.targetPositionAtTime(targetMotion, 10);
     verifyGreaterThan(testCase, max(abs(targetVelocity_units_s - deadlineVelocity_units_s)), 1e-4);
     changedSuppliedVelocity = result;
-    changedSuppliedVelocity.SuppliedGoalState.velocity_units_s = deadlineVelocity_units_s;
-    changedSuppliedVelocity.RequestedGoalState.velocity_units_s = deadlineVelocity_units_s;
+    changedSuppliedVelocity.Diagnostics.SuppliedGoalState.velocity_units_s = deadlineVelocity_units_s;
+    changedSuppliedVelocity.Diagnostics.RequestedGoalState.velocity_units_s = deadlineVelocity_units_s;
     verifyFalse(testCase, obstacleAvoidance.validateTrajectory(changedSuppliedVelocity).Passed);
 
     % A velocity the caller supplies beside matching stays a constraint at
@@ -1044,8 +1046,8 @@ function testConstantTargetKeepsItsPoleCopyWithoutXWrap(testCase)
     continuousTarget = obstacleAvoidance.input.unwrapTargetPath(targetMotion, [10, 89], ...
         [0, 360; -90, 90], ["false", "both"]);
     targetCandidates_units = sortrows(continuousTarget.position_units(end, :) + ...
-        result.WrappedGoalCopies.CandidateOffsets_units);
-    fixedCandidates_units = sortrows([110, 89] + fixedGoal.WrappedGoalCopies.CandidateOffsets_units);
+        result.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
+    fixedCandidates_units = sortrows([110, 89] + fixedGoal.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
     verifyEqual(testCase, targetCandidates_units, fixedCandidates_units, 'AbsTol', 1e-9);
     verifyTrue(testCase, any(all(abs(targetCandidates_units - [110, 89]) < 1e-9, 2)));
     verifyTrue(testCase, any(all(abs(targetCandidates_units - [290, 91]) < 1e-9, 2)));
@@ -1091,8 +1093,8 @@ function testSphericalTargetKeepsContinuousAzimuthAndFixedGoalCopies(testCase)
     verifyTrue(testCase, fixedResult.Success, fixedResult.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(targetResult).Passed);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(fixedResult).Passed);
-    targetCandidates_units = sortrows([360, 91] + targetResult.WrappedGoalCopies.CandidateOffsets_units);
-    fixedCandidates_units = sortrows([180, 89] + fixedResult.WrappedGoalCopies.CandidateOffsets_units);
+    targetCandidates_units = sortrows([360, 91] + targetResult.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
+    fixedCandidates_units = sortrows([180, 89] + fixedResult.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
     verifyEqual(testCase, targetCandidates_units, [0, 91; 180, 89; 360, 91], 'AbsTol', 1e-9);
     verifyEqual(testCase, targetCandidates_units, fixedCandidates_units, 'AbsTol', 1e-9);
 end
@@ -1121,7 +1123,7 @@ function testSphericalOrdinaryObstacleCopiesReachAzimuthSeam(testCase)
         struct('GoalTimeMode', 'fixedArrival', 'WrapY', "both"));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.WrappedGoalCopies.ObstacleCopyCount, 2);
+    verifyEqual(testCase, result.Diagnostics.WrappedGoalCopies.ObstacleCopyCount, 2);
 
     % Both the folded 2D view and the expanded workspace show the same two
     % ordinary copies that planning and independent validation used.
@@ -1152,16 +1154,16 @@ function testWrappedGoalWithNoReachableCopyReturnsTruthfulFailure(testCase)
         limits, struct('GoalTimeMode', 'earliestArrival', 'WrapX', "both"));
     verifyFailure(testCase, result, "timeWindowInfeasible");
     verifyNotEmpty(testCase, result.Message);
-    verifyEmpty(testCase, result.WrappedGoalCopies.CandidateOffsets_units);
-    verifyEmpty(testCase, result.WrappedGoalCopies.CandidatePlanned);
-    verifyEqual(testCase, result.VisibilityGraph.SearchKind, "notSearched");
-    verifyEmpty(testCase, result.Attempts);
-    verifyEqual(testCase, result.Limits.xInterval_units, [6, 14]);
-    verifyEqual(testCase, result.WrappedGoalCopies.ObstacleCopyCount, 1);
-    verifyEqual(testCase, numel(result.PreparedObstacles), 1);
-    verifyEqual(testCase, result.PreparedObstacles.targetName, "near range");
-    verifyTrue(testCase, all(result.PreparedObstacles.InternalPreparation.SamplePrepared));
-    verifyEqual(testCase, result.PreparedObstacles.originalX_units, result.PreparedObstacles.x_units);
+    verifyEmpty(testCase, result.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
+    verifyEmpty(testCase, result.Diagnostics.WrappedGoalCopies.CandidatePlanned);
+    verifyEqual(testCase, result.Diagnostics.VisibilityGraph.SearchKind, "notSearched");
+    verifyEmpty(testCase, result.Diagnostics.Attempts);
+    verifyEqual(testCase, result.Diagnostics.Limits.xInterval_units, [6, 14]);
+    verifyEqual(testCase, result.Diagnostics.WrappedGoalCopies.ObstacleCopyCount, 1);
+    verifyEqual(testCase, numel(result.Diagnostics.PreparedObstacles), 1);
+    verifyEqual(testCase, result.Diagnostics.PreparedObstacles.targetName, "near range");
+    verifyTrue(testCase, all(result.Diagnostics.PreparedObstacles.InternalPreparation.SamplePrepared));
+    verifyEqual(testCase, result.Diagnostics.PreparedObstacles.originalX_units, result.Diagnostics.PreparedObstacles.x_units);
 
     figureCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
     handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', 'off'));
@@ -1175,7 +1177,7 @@ function testWrappedGoalWithNoReachableCopyReturnsTruthfulFailure(testCase)
     tooFast = planner([], state(0, [10, 0]), fastGoal, limits, ...
         struct('GoalTimeMode', 'fixedArrival', 'WrapX', "both"));
     verifyFailure(testCase, tooFast, "dynamicEndpointInfeasible");
-    verifyEmpty(testCase, tooFast.WrappedGoalCopies.CandidateOffsets_units);
+    verifyEmpty(testCase, tooFast.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
 end
 
 function testNoGoalCopyStillReportsUnsupportedObstacleInterval(testCase)
@@ -1194,8 +1196,8 @@ function testNoGoalCopyStillReportsUnsupportedObstacleInterval(testCase)
     result = planner(obstacle, state(0.25, [0, 5]), state(0.5, [5, 5]), limits, ...
         struct('GoalTimeMode', 'fixedArrival', 'WrapX', "both"));
     verifyFailure(testCase, result, "unsupportedObstacleInterpolation");
-    verifyEmpty(testCase, result.WrappedGoalCopies.CandidateOffsets_units);
-    verifyEqual(testCase, numel(result.PreparedObstacles), 1);
+    verifyEmpty(testCase, result.Diagnostics.WrappedGoalCopies.CandidateOffsets_units);
+    verifyEqual(testCase, numel(result.Diagnostics.PreparedObstacles), 1);
 end
 
 function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
@@ -1209,7 +1211,7 @@ function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
     result = planner(triangle, state(0, [340, 0]), state(20, [330, 12]), limits, ...
         struct('GoalTimeMode', 'fixedArrival', 'WrapX', "both"));
     verifyTrue(testCase, result.Success, result.Message);
-    verifyTrue(testCase, any(abs(result.VisibilityGraph.NodePosition_units(:, 1) - 360) < 1e-9));
+    verifyTrue(testCase, any(abs(result.Diagnostics.VisibilityGraph.NodePosition_units(:, 1) - 360) < 1e-9));
     figureCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
     handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', 'off', ...
         'ShowVisibilityGraphs', true, 'ShowSearchEdges', true));
@@ -1217,7 +1219,7 @@ function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
     nodePoints_units = [nodeMarkers.XData(:), nodeMarkers.YData(:)];
     % Each marker must be where its first incident edge, in drawing order
     % (accepted rows first), folded as the edges are drawn, ends at it.
-    graph = result.VisibilityGraph;
+    graph = result.Diagnostics.VisibilityGraph;
     nodes_units = graph.NodePosition_units;
     edges = [graph.AcceptedNodeIndex; graph.RejectedNodeIndex];
     for nodeIndex = 1:size(nodes_units, 1)
@@ -1237,9 +1239,9 @@ function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
     % 1-2 and a rejected edge 2-3. The seam node follows its accepted edge
     % to x = 360; node 3 follows the rejected edge over the seam to x = 10.
     synthetic = result;
-    synthetic.VisibilityGraph.NodePosition_units = [350, 0; 360, 0; 370, 0];
-    synthetic.VisibilityGraph.AcceptedNodeIndex  = [1, 2];
-    synthetic.VisibilityGraph.RejectedNodeIndex  = [2, 3];
+    synthetic.Diagnostics.VisibilityGraph.NodePosition_units = [350, 0; 360, 0; 370, 0];
+    synthetic.Diagnostics.VisibilityGraph.AcceptedNodeIndex  = [1, 2];
+    synthetic.Diagnostics.VisibilityGraph.RejectedNodeIndex  = [2, 3];
     syntheticHandles = obstacleAvoidance.plotting.plotTrajectory(synthetic, struct('FigureVisible', 'off', ...
         'ShowVisibilityGraphs', true, 'ShowSearchEdges', true));
     syntheticMarkers = findobj(syntheticHandles.VisibilityAxes, 'DisplayName', 'Visibility node');
@@ -1352,7 +1354,7 @@ function testStandardObstacleWithoutOriginalsMakesLowerPoleCopy(testCase)
         struct('GoalTimeMode', 'fixedArrival', 'WrapY', "both"));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.WrappedGoalCopies.ObstacleCopyCount, 2);
+    verifyEqual(testCase, result.Diagnostics.WrappedGoalCopies.ObstacleCopyCount, 2);
 end
 
 function testWrappedPlotUsesTiedObstacleSnapshots(testCase)
@@ -1371,7 +1373,7 @@ function testWrappedPlotUsesTiedObstacleSnapshots(testCase)
         struct('GoalTimeMode', 'fixedArrival', 'WrapY', "both"));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.Limits.yInterval_units, [-5, 5]);
+    verifyEqual(testCase, result.Diagnostics.Limits.yInterval_units, [-5, 5]);
     figureCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
     handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', 'off'));
     verifyNotEmpty(testCase, handles.WorkspaceAxes);
@@ -1566,7 +1568,7 @@ function testExpandedPlotStylesCopiesAfterDroppingOutlyingRing(testCase)
         struct('GoalTimeMode', 'fixedArrival', 'WrapY', "both"));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.WrappedGoalCopies.ObstacleCopyCount, 3);
+    verifyEqual(testCase, result.Diagnostics.WrappedGoalCopies.ObstacleCopyCount, 3);
 
     figureCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
     handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', "off"));
@@ -1611,8 +1613,8 @@ function testInitiallyOccupiedFutureGoalUsesArrivalDetour(testCase)
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
-    verifyGreaterThan(testCase,size(result.Route_units,1),2);
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
+    verifyGreaterThan(testCase,size(result.Diagnostics.Route_units,1),2);
 end
 
 function testDisconnectedInitialSnapshotUsesArrivalSnapshot(testCase)
@@ -1624,7 +1626,7 @@ function testDisconnectedInitialSnapshotUsesArrivalSnapshot(testCase)
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"arrivalSpatialSnapshot");
 end
 
 function testWrappedResultCarriesOuterProvenance(testCase)
@@ -1639,15 +1641,15 @@ function testWrappedResultCarriesOuterProvenance(testCase)
     verifyTrue(testCase,result.Success,result.Message);
 
     % Supplied provenance is the request exactly as handed in.
-    verifyEqual(testCase,result.SuppliedLimits,limits);
-    verifyEqual(testCase,result.SuppliedGoalState.position_units,[-179,0]);
-    verifyEqual(testCase,result.SuppliedGoalState.time_s,10);
+    verifyEqual(testCase,result.Diagnostics.SuppliedLimits,limits);
+    verifyEqual(testCase,result.Diagnostics.SuppliedGoalState.position_units,[-179,0]);
+    verifyEqual(testCase,result.Diagnostics.SuppliedGoalState.time_s,10);
 
     % Requested limits are normalized but still the wrapped workspace, while
     % the effective limits are the unwrapped reachable range the copies live in.
-    verifyEqual(testCase,result.RequestedLimits.xInterval_units,[-180,180]);
-    verifyEqual(testCase,result.Limits.xInterval_units,[159,199]);
-    verifyEqual(testCase,result.RequestedGoalState.position_units,[-179,0]);
+    verifyEqual(testCase,result.Diagnostics.RequestedLimits.xInterval_units,[-180,180]);
+    verifyEqual(testCase,result.Diagnostics.Limits.xInterval_units,[159,199]);
+    verifyEqual(testCase,result.Diagnostics.RequestedGoalState.position_units,[-179,0]);
 
     % The effective goal is the selected copy, but its clock is the outer
     % horizon. Position and time on this one struct have different owners.
@@ -1670,7 +1672,7 @@ function testCoverageFieldsMatchTheScenePath(testCase)
     staticResult=planner([],state(0,[-4,0]),state(12,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,staticResult.Success,staticResult.Message);
-    verifyEqual(testCase,fieldnames(staticResult.SeparationProof.Coverage), ...
+    verifyEqual(testCase,fieldnames(staticResult.Diagnostics.SeparationProof.Coverage), ...
         {'ExactRegionCount'});
 
     box=[-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
@@ -1682,14 +1684,14 @@ function testCoverageFieldsMatchTheScenePath(testCase)
     fixedResult=planner(mover,state(0,[0,0]),state(20,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,fixedResult.Success,fixedResult.Message);
-    verifyEqual(testCase,fieldnames(fixedResult.SeparationProof.Coverage), ...
+    verifyEqual(testCase,fieldnames(fixedResult.Diagnostics.SeparationProof.Coverage), ...
         {'ExactRegionCount';'ActiveTimeInterval_s';'EndRegions_units';'BreakTime_s'});
 
     % BreakTime_s is the one that separates two dynamic runs from each other.
     earliestResult=planner(mover,state(0,[0,0]),state(20,[4,0]), ...
         standardLimits(),struct('GoalTimeMode','earliestArrival'));
     verifyTrue(testCase,earliestResult.Success,earliestResult.Message);
-    verifyEqual(testCase,fieldnames(earliestResult.SeparationProof.Coverage), ...
+    verifyEqual(testCase,fieldnames(earliestResult.Diagnostics.SeparationProof.Coverage), ...
         {'ExactRegionCount';'ActiveTimeInterval_s';'EndRegions_units'});
 end
 
@@ -1703,19 +1705,19 @@ function testSparseDynamicZeroWaitDeparture(testCase)
         standardLimits(),struct('GoalTimeMode','earliestArrival'));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"c3DepartureSchedule");
-    verifyFalse(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyFalse(testCase,isfield(result.SolverDiagnostics,'DepartureSchedule'));
-    verifyFalse(testCase,isfield(result,'TemporalSearch'));
-    verifyEqual(testCase,numel(result.Attempts),2);
-    verifyEqual(testCase,[result.Attempts.Kind], ...
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"c3DepartureSchedule");
+    verifyFalse(testCase,result.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyFalse(testCase,isfield(result.Diagnostics.SolverDiagnostics,'DepartureSchedule'));
+    verifyFalse(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),2);
+    verifyEqual(testCase,[result.Diagnostics.Attempts.Kind], ...
         ["analyticDeparture","timedVisibility"]);
-    verifyTrue(testCase,result.Attempts(1).Selected);
-    verifyFalse(testCase,result.EarliestArrival.GlobalEarliestProven);
-    selectedIndex=result.EarliestArrival.SelectedAttemptIndex;
-    verifyEqual(testCase,result.EarliestArrival.BestSoFarArrival_s, ...
+    verifyTrue(testCase,result.Diagnostics.Attempts(1).Selected);
+    verifyFalse(testCase,result.Diagnostics.EarliestArrival.GlobalEarliestProven);
+    selectedIndex=result.Diagnostics.EarliestArrival.SelectedAttemptIndex;
+    verifyEqual(testCase,result.Diagnostics.EarliestArrival.BestSoFarArrival_s, ...
         result.ArrivalTime_s,'AbsTol',1e-12);
-    verifyEqual(testCase,result.Attempts(selectedIndex).CandidateArrival_s, ...
+    verifyEqual(testCase,result.Diagnostics.Attempts(selectedIndex).CandidateArrival_s, ...
         result.ArrivalTime_s,'AbsTol',1e-12);
 end
 
@@ -1740,9 +1742,9 @@ function testEquivalentSparseAndDenseHistoriesUseProvenDeparture(testCase)
             'TemporalResolution_s',0.225));
         verifyTrue(testCase,results{historyIndex}.Success,results{historyIndex}.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(results{historyIndex}).Passed);
-        verifyEqual(testCase,results{historyIndex}.VisibilityGraph.SearchKind, ...
+        verifyEqual(testCase,results{historyIndex}.Diagnostics.VisibilityGraph.SearchKind, ...
             "c3DepartureSchedule");
-        verifyFalse(testCase,isfield(results{historyIndex},'TemporalSearch'));
+        verifyFalse(testCase,isfield(results{historyIndex}.Diagnostics,'TemporalSearch'));
     end
     verifyEqual(testCase,results{1}.ArrivalTime_s,results{2}.ArrivalTime_s, ...
         'AbsTol',1e-8);
@@ -1757,11 +1759,11 @@ function testArrivalSearchExhausted(testCase)
     result=planner([],state(0,[0,0]),goal,standardLimits(), ...
         struct('GoalTimeMode','earliestArrival','TemporalResolution_s',0.5));
     verifyFailure(testCase,result,"arrivalSearchExhausted");
-    verifyTrue(testCase,isfield(result,'TemporalSearch'));
-    verifyEmpty(testCase,result.TemporalSearch.TrialTime_s);
+    verifyTrue(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
+    verifyEmpty(testCase,result.Diagnostics.TemporalSearch.TrialTime_s);
     verifyGreaterThan(testCase, ...
-        result.TemporalSearch.PrescreenedCandidateCount,0);
-    verifyEqual(testCase,result.TemporalSearch.SolverTrialCount,0);
+        result.Diagnostics.TemporalSearch.PrescreenedCandidateCount,0);
+    verifyEqual(testCase,result.Diagnostics.TemporalSearch.SolverTrialCount,0);
 end
 
 function testStateValidationDecisions(testCase)
@@ -1820,7 +1822,7 @@ function testLimitValidationDecisions(testCase)
     limits.maxJerk_units_s3=4;
     result=planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
     verifyTrue(testCase,result.Success,result.Message);
-    verifyEqual(testCase,result.Limits.maxVelocity_units_s,[sqrt(2),sqrt(2)], ...
+    verifyEqual(testCase,result.Diagnostics.Limits.maxVelocity_units_s,[sqrt(2),sqrt(2)], ...
         'AbsTol',1e-12);
 end
 

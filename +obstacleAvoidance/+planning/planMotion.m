@@ -76,9 +76,9 @@ unsupportedMessage = obstacleAvoidance.planning.describeUnsupportedInterval( ...
 if strlength(unsupportedMessage) > 0
     % Stop before route search and return the failure with elapsed time.
     % This does not prove there is no route; the geometry could not be checked.
-    result.Message           = unsupportedMessage;
-    result.TerminationReason = "unsupportedObstacleInterpolation";
-    result.ElapsedTime_s     = toc(totalTimer);
+    result.Message                   = unsupportedMessage;
+    result.TerminationReason         = "unsupportedObstacleInterpolation";
+    result.Diagnostics.ElapsedTime_s = toc(totalTimer);
     return
 end
 
@@ -140,9 +140,9 @@ end
 if ~endpointsAreFeasible
     % A failed endpoint check prevents planning. Passing this check still
     % does not guarantee that a complete route exists between the endpoints.
-    result.Message           = endpointMessage;
-    result.TerminationReason = endpointReason;
-    result.ElapsedTime_s     = toc(totalTimer);
+    result.Message                   = endpointMessage;
+    result.TerminationReason         = endpointReason;
+    result.Diagnostics.ElapsedTime_s = toc(totalTimer);
     return
 end
 
@@ -239,13 +239,13 @@ function result = planFixedArrivalStatic(result, planningEnvironment, request, t
         planningEnvironment.vertexVisibility, ...
         request.initialState.position_units, request.goalState.position_units);
     visibilityGraph.SearchKind = "initialSpatialSnapshot";
-    result.VisibilityGraph     = visibilityGraph;
+    result.Diagnostics.VisibilityGraph     = visibilityGraph;
     if ~visibilityGraph.IsConnected
-        result.Message           = "The initial visibility graph contains no start-to-goal route.";
-        result.TerminationReason = "noVisibilityRoute";
-        result.FailureStage      = "search";
-        result.FailureKind       = "noSpatialRoute";
-        result.ElapsedTime_s     = toc(totalTimer);
+        result.Message                   = "The initial visibility graph contains no start-to-goal route.";
+        result.TerminationReason         = "noVisibilityRoute";
+        result.Diagnostics.FailureStage  = "search";
+        result.Diagnostics.FailureKind   = "noSpatialRoute";
+        result.Diagnostics.ElapsedTime_s = toc(totalTimer);
         return
     end
 
@@ -267,7 +267,7 @@ function result = planFixedArrivalStatic(result, planningEnvironment, request, t
     result = obstacleAvoidance.planning.finalizeCandidate( ...
         planningEnvironment.preparedObstacles, request, visibilityGraph, result, ...
         motionCandidate, solverDiagnostics, struct());
-    result.ElapsedTime_s = toc(totalTimer);
+    result.Diagnostics.ElapsedTime_s = toc(totalTimer);
 end
 
 function result = planEarliestArrival(result, planningEnvironment, request, totalTimer, ...
@@ -334,7 +334,7 @@ function arrivalPlanningProgress = runStaticSpatialStage(arrivalPlanningProgress
         planningEnvironment.vertexVisibility, ...
         request.initialState.position_units, request.goalState.position_units);
     visibilityGraph.SearchKind = "initialSpatialSnapshot";
-    result.VisibilityGraph = visibilityGraph;
+    result.Diagnostics.VisibilityGraph = visibilityGraph;
     attempt = obstacleAvoidance.planning.createAttemptRecord(1, "spatialVisibility");
     attempt.EarliestPossibleArrival_s = earliestPossibleArrival_s;
     attempt.GraphConnected            = visibilityGraph.IsConnected;
@@ -359,10 +359,10 @@ function arrivalPlanningProgress = runStaticSpatialStage(arrivalPlanningProgress
     else
         attempt.FailureStage = "search";
         attempt.FailureKind  = "noSpatialRoute";
-        result.Message           = "The exhaustive static visibility graph has no route.";
-        result.TerminationReason = "noVisibilityRoute";
-        result.FailureStage      = attempt.FailureStage;
-        result.FailureKind       = attempt.FailureKind;
+        result.Message                  = "The exhaustive static visibility graph has no route.";
+        result.TerminationReason        = "noVisibilityRoute";
+        result.Diagnostics.FailureStage = attempt.FailureStage;
+        result.Diagnostics.FailureKind  = attempt.FailureKind;
     end
     attempt.ElapsedTime_s = toc(attemptTimer);
     arrivalPlanningProgress.Result = result;
@@ -390,7 +390,7 @@ function arrivalPlanningProgress = runDepartureStage(arrivalPlanningProgress, pl
     attempt.SolverAttempted           = true;
     [motionCandidate, solverDiagnostics] = bmtpEngine.solve(startingPath, planningEnvironment, ...
         request, struct());
-    visibilityGraph = result.VisibilityGraph;
+    visibilityGraph = result.Diagnostics.VisibilityGraph;
     visibilityGraph.SearchKind             = "c3DepartureSchedule";
     visibilityGraph.Route_units            = route_units;
     visibilityGraph.RouteLength_units      = attempt.RouteLength_units;
@@ -456,16 +456,16 @@ function arrivalPlanningProgress = runTimedSearchStage(arrivalPlanningProgress, 
     % or exhausted search keeps the timed motion (a validator rejection does not).
     timedMotionSelected = arrivalPlanningProgress.Attempts(end).Selected;
     if timedMotionSelected
-        timedSearchDetails = timedResult.VisibilityGraph.TimedSearch.TimedSearch;
+        timedSearchDetails = timedResult.Diagnostics.VisibilityGraph.TimedSearch.TimedSearch;
         if isfinite(timedSearchDetails.GoalWindowPreviousLayerTime_s)
             unsampledInterval_s = [timedSearchDetails.GoalWindowPreviousLayerTime_s, ...
                 timedSearchDetails.SelectedGoalWindowStartTime_s];
             resultBeforeTrials               = arrivalPlanningProgress.Result;
-            resultBeforeTrials.ElapsedTime_s = toc(totalTimer);
+            resultBeforeTrials.Diagnostics.ElapsedTime_s = toc(totalTimer);
             arrivalPlanningProgress.Result   = obstacleAvoidance.planning.searchArrivalTimes( ...
                 request, planningEnvironment, resultBeforeTrials, arrivalPlanningProgress.Attempts, ...
                 request.options.MaxArrivalTrials, unsampledInterval_s);
-            arrivalPlanningProgress.Attempts = arrivalPlanningProgress.Result.Attempts;
+            arrivalPlanningProgress.Attempts = arrivalPlanningProgress.Result.Diagnostics.Attempts;
         end
     end
 end
@@ -512,7 +512,7 @@ function arrivalPlanningProgress = applyEarliestAttempt(arrivalPlanningProgress,
         if hasValidatedMotion
             % A failed timed search must not erase a valid departure result.
             % Keep its failure details beside the motion that remains available.
-            arrivalPlanningProgress.Result.SolverDiagnostics.TimedSearchAttempt = struct( ...
+            arrivalPlanningProgress.Result.Diagnostics.SolverDiagnostics.TimedSearchAttempt = struct( ...
                 'AttemptIndex',                attempt.Index, ...
                 'Success',                     false, ...
                 'TerminationReason',           string(attemptResult.TerminationReason), ...
@@ -521,13 +521,13 @@ function arrivalPlanningProgress = applyEarliestAttempt(arrivalPlanningProgress,
                 'FailureKind',                 attempt.FailureKind, ...
                 'OptimizerIterateUnavailable', attempt.OptimizerIterateUnavailable, ...
                 'NextMethodAllowed',           attempt.NextMethodAllowed, ...
-                'VisibilityGraph',             attemptResult.VisibilityGraph, ...
-                'Route_units',                 attemptResult.Route_units, ...
-                'SolverDiagnostics',           attemptResult.SolverDiagnostics);
+                'VisibilityGraph',             attemptResult.Diagnostics.VisibilityGraph, ...
+                'Route_units',                 attemptResult.Diagnostics.Route_units, ...
+                'SolverDiagnostics',           attemptResult.Diagnostics.SolverDiagnostics);
             if ~attempt.NextMethodAllowed
                 attempt.Message        = string(attemptResult.Message);
                 attempt.SolverExitFlag = readDiagnosticScalar( ...
-                    attemptResult.SolverDiagnostics, "LastTrajectoryExitFlag", NaN);
+                    attemptResult.Diagnostics.SolverDiagnostics, "LastTrajectoryExitFlag", NaN);
                 arrivalPlanningProgress.Attempts(arrivalPlanningProgress.BestSoFarAttemptIndex).Selected = true;
             end
         elseif stopAfterValidMotion || ~attempt.NextMethodAllowed
@@ -556,10 +556,10 @@ function arrivalPlanningProgress = runArrivalTimeTrialStage( ...
         end
     end
     resultBeforeTrials               = arrivalPlanningProgress.Result;
-    resultBeforeTrials.ElapsedTime_s = toc(totalTimer);
+    resultBeforeTrials.Diagnostics.ElapsedTime_s = toc(totalTimer);
     arrivalPlanningProgress.Result     = obstacleAvoidance.planning.searchArrivalTimes( ...
         request, planningEnvironment, resultBeforeTrials, arrivalPlanningProgress.Attempts, maximumArrivalTrials);
-    arrivalPlanningProgress.Attempts   = arrivalPlanningProgress.Result.Attempts;
+    arrivalPlanningProgress.Attempts   = arrivalPlanningProgress.Result.Diagnostics.Attempts;
     arrivalPlanningProgress.IsComplete = true;
 end
 
@@ -590,34 +590,34 @@ function attempt = createTimedAttemptRecord(attemptIndex, timedResult, timedAcce
     % Record this position-and-time search using its own result and elapsed time.
     attempt = obstacleAvoidance.planning.createAttemptRecord(attemptIndex, "timedVisibility");
     attempt.GraphIsFullyEnumerated      = false;
-    attempt.GraphConnected              = timedResult.VisibilityGraph.IsConnected;
-    attempt.RouteNodeCount              = size(timedResult.Route_units, 1);
-    attempt.RouteLength_units           = timedResult.VisibilityGraph.RouteLength_units;
-    attempt.ExpandedCount               = timedResult.VisibilityGraph.ExpandedCount;
+    attempt.GraphConnected              = timedResult.Diagnostics.VisibilityGraph.IsConnected;
+    attempt.RouteNodeCount              = size(timedResult.Diagnostics.Route_units, 1);
+    attempt.RouteLength_units           = timedResult.Diagnostics.VisibilityGraph.RouteLength_units;
+    attempt.ExpandedCount               = timedResult.Diagnostics.VisibilityGraph.ExpandedCount;
     attempt.SolverAttempted             = attempt.GraphConnected;
     attempt.IterationLimit              = readDiagnosticScalar( ...
-        timedResult.SolverDiagnostics, "MaximumAlternatingIterations", NaN);
+        timedResult.Diagnostics.SolverDiagnostics, "MaximumAlternatingIterations", NaN);
     attempt.IterationCount              = readDiagnosticScalar( ...
-        timedResult.SolverDiagnostics, "IterationCount", 0);
+        timedResult.Diagnostics.SolverDiagnostics, "IterationCount", 0);
     attempt.CandidateSuccess            = readLogicalField( ...
-        timedResult.SolverDiagnostics, "Accepted");
-    attempt.OptimizerFeasible           = readLogicalField(timedResult, "OptimizerFeasible");
+        timedResult.Diagnostics.SolverDiagnostics, "Accepted");
+    attempt.OptimizerFeasible           = readLogicalField(timedResult.Diagnostics, "OptimizerFeasible");
     attempt.OptimizerIterateUnavailable = readLogicalField( ...
-        timedResult, "OptimizerIterateUnavailable");
+        timedResult.Diagnostics, "OptimizerIterateUnavailable");
     attempt.AlternativeGuideEligible    = readLogicalField( ...
-        timedResult, "AlternativeGuideEligible");
-    attempt.FailureStage                = readStringField(timedResult, "FailureStage");
-    attempt.FailureKind                 = readStringField(timedResult, "FailureKind");
+        timedResult.Diagnostics, "AlternativeGuideEligible");
+    attempt.FailureStage                = readStringField(timedResult.Diagnostics, "FailureStage");
+    attempt.FailureKind                 = readStringField(timedResult.Diagnostics, "FailureKind");
     attempt.Success                     = timedAccepted;
-    attempt.ElapsedTime_s               = max(0, timedResult.ElapsedTime_s - priorElapsedTime_s);
+    attempt.ElapsedTime_s               = max(0, timedResult.Diagnostics.ElapsedTime_s - priorElapsedTime_s);
 end
 
 function result = finishEarliestArrival(result, attempts, availablePlanningMethods, totalTimer, ...
         earliestPossibleArrival_s)
     % Record which attempt was selected and whether an earlier arrival is
     % still possible. Finding a valid motion does not prove it is the fastest.
-    result.Attempts      = attempts;
-    result.ElapsedTime_s = toc(totalTimer);
+    result.Diagnostics.Attempts      = attempts;
+    result.Diagnostics.ElapsedTime_s = toc(totalTimer);
     selectedAttemptIndex = find([attempts.Selected], 1, 'last');
     if isempty(selectedAttemptIndex)
         selectedAttemptIndex = 0;
@@ -642,7 +642,7 @@ function result = finishEarliestArrival(result, attempts, availablePlanningMetho
     if ~isempty(attempts)
         arrivalTimeSearchUsed = any([attempts.Kind] == "arrivalTimeTrial");
     end
-    result.EarliestArrival = struct( ...
+    result.Diagnostics.EarliestArrival = struct( ...
         'Capabilities',              availablePlanningMethods, ...
         'EarliestPossibleArrival_s', earliestPossibleArrival_s, ...
         'BestSoFarArrival_s',        bestSoFarArrivalTime_s, ...
@@ -651,9 +651,9 @@ function result = finishEarliestArrival(result, attempts, availablePlanningMetho
         'UnsearchedInterval_s',      unsearchedInterval_s, ...
         'ArrivalTimeSearchUsed',     arrivalTimeSearchUsed, ...
         'AttemptCount',              numel(attempts));
-    if isfield(result, 'TemporalSearch')
-        result.TemporalSearch.GlobalEarliestProven = globalEarliestProven;
-        result.TemporalSearch.SelectedAttemptIndex = selectedAttemptIndex;
+    if isfield(result.Diagnostics, 'TemporalSearch')
+        result.Diagnostics.TemporalSearch.GlobalEarliestProven = globalEarliestProven;
+        result.Diagnostics.TemporalSearch.SelectedAttemptIndex = selectedAttemptIndex;
     end
 end
 
@@ -688,7 +688,7 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
         visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
             vertexVisibility, request.initialState.position_units, request.goalState.position_units);
         visibilityGraph.SearchKind = snapshotKinds(snapshotIndex);
-        result.VisibilityGraph         = visibilityGraph;
+        result.Diagnostics.VisibilityGraph         = visibilityGraph;
         attempt.GraphConnected         = visibilityGraph.IsConnected;
         attempt.GraphIsFullyEnumerated = visibilityGraph.GraphIsFullyEnumerated;
         attempt.RouteNodeCount         = size(visibilityGraph.Route_units, 1);
@@ -730,16 +730,16 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
             if attemptResult.Success
                 attempt.Selected      = true;
                 attempt.ElapsedTime_s = toc(attemptTimer);
-                attemptResult.Attempts      = [attempts; attempt];
-                attemptResult.ElapsedTime_s = toc(totalTimer);
+                attemptResult.Diagnostics.Attempts      = [attempts; attempt];
+                attemptResult.Diagnostics.ElapsedTime_s = toc(totalTimer);
                 result = attemptResult;
                 return
             elseif motionCandidate.Success
                 % The engine reported success, but independent validation failed.
                 % Return that failure instead of trying another route.
                 attempt.ElapsedTime_s = toc(attemptTimer);
-                attemptResult.Attempts      = [attempts; attempt];
-                attemptResult.ElapsedTime_s = toc(totalTimer);
+                attemptResult.Diagnostics.Attempts      = [attempts; attempt];
+                attemptResult.Diagnostics.ElapsedTime_s = toc(totalTimer);
                 result = attemptResult;
                 return
             elseif attempt.AlternativeGuideEligible
@@ -747,8 +747,8 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
                 result = attemptResult;
             else
                 attempt.ElapsedTime_s = toc(attemptTimer);
-                attemptResult.Attempts      = [attempts; attempt];
-                attemptResult.ElapsedTime_s = toc(totalTimer);
+                attemptResult.Diagnostics.Attempts      = [attempts; attempt];
+                attemptResult.Diagnostics.ElapsedTime_s = toc(totalTimer);
                 result = attemptResult;
                 return
             end
@@ -766,7 +766,7 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
     timedAttempt = createTimedAttemptRecord(numel(attempts) + 1, ...
         timedResult, timedAccepted, priorElapsedTime_s);
     timedAttempt.Selected = timedAccepted;
-    timedResult.Attempts  = [attempts; timedAttempt];
+    timedResult.Diagnostics.Attempts  = [attempts; timedAttempt];
     result                = timedResult;
 end
 

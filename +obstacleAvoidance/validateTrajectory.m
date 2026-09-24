@@ -45,15 +45,21 @@ validation.SeparationProofValid      = false;
 validation.MaximumDynamicsResidual   = Inf;
 validation.MaximumContinuityResidual = Inf;
 validation.MaximumHistoryResidual    = Inf;
-if ~isstruct(result) || ~isscalar(result) || ~isfield(result, "Success") || ~result.Success
+if ~isstruct(result) || ~isscalar(result) || ~isfield(result, "Success")
     return
 end
-requiredFieldNames = {'Polynomial', 'time_s', 'position_units', 'velocity_units_s', ...
-    'acceleration_units_s2', 'jerk_units_s3', 'SeparationProof', ...
-    'PreparedObstacles',     'Inputs', 'Limits', 'Options', 'Route_units', ...
-    'ArrivalTime_s',         'TrajectoryDuration_s'};
-if ~all(isfield(result, requiredFieldNames))
+requiredResultFieldNames = {'Inputs', 'Options', 'time_s', 'position_units', ...
+    'velocity_units_s', 'acceleration_units_s2', 'jerk_units_s3', ...
+    'ArrivalTime_s', 'Diagnostics'};
+requiredDiagnosticFieldNames = {'Polynomial', 'SeparationProof', ...
+    'PreparedObstacles', 'Limits', 'Route_units', 'TrajectoryDuration_s'};
+if ~all(isfield(result, requiredResultFieldNames)) || ...
+        ~isstruct(result.Diagnostics) || ~isscalar(result.Diagnostics) || ...
+        ~all(isfield(result.Diagnostics, requiredDiagnosticFieldNames))
     validation.Message = "The result does not contain the complete core motion record.";
+    return
+end
+if ~result.Success
     return
 end
 
@@ -67,17 +73,17 @@ limitFieldNames = {'xInterval_units', 'yInterval_units', 'maxVelocity_units_s', 
 stateFieldNames  = {'time_s', 'position_units', 'velocity_units_s', 'acceleration_units_s2'};
 recordIsComplete = isstruct(result.Options) && isscalar(result.Options) && ...
     all(isfield(result.Options, optionFieldNames)) && ...
-    isstruct(result.Limits) && isscalar(result.Limits) && all(isfield(result.Limits, limitFieldNames)) && ...
+    isstruct(result.Diagnostics.Limits) && isscalar(result.Diagnostics.Limits) && all(isfield(result.Diagnostics.Limits, limitFieldNames)) && ...
     isstruct(result.Inputs) && isscalar(result.Inputs) && ...
     all(isfield(result.Inputs, {'obstacles', 'initialState', 'goalState'})) && ...
     isstruct(result.Inputs.initialState) && all(isfield(result.Inputs.initialState, stateFieldNames)) && ...
     isstruct(result.Inputs.goalState) && all(isfield(result.Inputs.goalState, stateFieldNames)) && ...
-    (~isfield(result, 'SuppliedLimits') || isfield(result, 'RequestedLimits'));
+    (~isfield(result.Diagnostics, 'SuppliedLimits') || isfield(result.Diagnostics, 'RequestedLimits'));
 if recordIsComplete
     targetIsPresent = isfield(result.Inputs.goalState, 'targetMotion') && ...
         ~isempty(result.Inputs.goalState.targetMotion);
-    recordIsComplete = ~targetIsPresent || (isfield(result, 'Intercept') && ...
-        isstruct(result.Intercept) && all(isfield(result.Intercept, {'Time_s', 'TargetPosition_units'})));
+    recordIsComplete = ~targetIsPresent || (isfield(result.Diagnostics, 'Intercept') && ...
+        isstruct(result.Diagnostics.Intercept) && all(isfield(result.Diagnostics.Intercept, {'Time_s', 'TargetPosition_units'})));
 end
 if recordIsComplete && targetIsPresent
     % A planned target path is evaluated below. Its contract belongs to
@@ -100,7 +106,7 @@ end
 if recordIsComplete && any(wrapModes ~= "false")
     % Wrapped goals must be checked against the supplied request. Without
     % either goal record, a copy or matched derivative cannot be verified.
-    recordIsComplete = all(isfield(result, {'RequestedGoalState', 'SuppliedGoalState', ...
+    recordIsComplete = all(isfield(result.Diagnostics, {'RequestedGoalState', 'SuppliedGoalState', ...
         'RequestedLimits', 'SuppliedLimits'}));
 end
 if ~recordIsComplete
@@ -110,7 +116,7 @@ end
 
 %% Section 2: Check Polynomial Arrays And Segment Times
 
-polynomial           = result.Polynomial;
+polynomial           = result.Diagnostics.Polynomial;
 polynomialFieldNames = {'Degree', 'SegmentCount', 'SegmentStartTime_s', 'SegmentDuration_s', ...
     'FinalTime_s',                'positionPower_units', 'velocityPower_units_s', ...
     'accelerationPower_units_s2', 'jerkPower_units_s3'};
@@ -194,7 +200,7 @@ validation.InterSegmentContinuous    = validation.MaximumContinuityResidual <= c
 % Check position, velocity, acceleration, and jerk on both axes over each
 % complete segment. Values between returned sample times must also pass.
 
-limits      = result.Limits;
+limits      = result.Diagnostics.Limits;
 lowerBounds = {[limits.xInterval_units(1) limits.yInterval_units(1)], ...
     -limits.maxVelocity_units_s, -limits.maxAcceleration_units_s2, -limits.maxJerk_units_s3};
 upperBounds = {[limits.xInterval_units(2) limits.yInterval_units(2)], ...
@@ -269,30 +275,30 @@ if reportedValuesMatch
 end
 reportedValuesMatch = reportedValuesMatch && ...
     abs(result.ArrivalTime_s - polynomial.FinalTime_s) <= timeTolerance_s && ...
-    abs(result.TrajectoryDuration_s - sum(segmentDuration_s)) <= timeTolerance_s;
+    abs(result.Diagnostics.TrajectoryDuration_s - sum(segmentDuration_s)) <= timeTolerance_s;
 
 % Check that the planner retained the requested motion limits. A scalar
 % limit is shared between axes as x limit = y limit = scalar limit / sqrt(2).
-if isfield(result, 'SuppliedLimits')
+if isfield(result.Diagnostics, 'SuppliedLimits')
     for limitFieldName = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"]
-        expectedAxisLimits = result.RequestedLimits.(limitFieldName);
-        if isfield(result.SuppliedLimits, limitFieldName) && ~isempty(result.SuppliedLimits.(limitFieldName))
-            expectedAxisLimits = result.SuppliedLimits.(limitFieldName);
+        expectedAxisLimits = result.Diagnostics.RequestedLimits.(limitFieldName);
+        if isfield(result.Diagnostics.SuppliedLimits, limitFieldName) && ~isempty(result.Diagnostics.SuppliedLimits.(limitFieldName))
+            expectedAxisLimits = result.Diagnostics.SuppliedLimits.(limitFieldName);
             if isscalar(expectedAxisLimits)
                 expectedAxisLimits = [expectedAxisLimits expectedAxisLimits] / sqrt(2);
             end
         end
         reportedValuesMatch = reportedValuesMatch && ...
-            isequal(reshape(expectedAxisLimits, 1, []), result.Limits.(limitFieldName));
+            isequal(reshape(expectedAxisLimits, 1, []), result.Diagnostics.Limits.(limitFieldName));
     end
 end
 
 % An earliest-arrival search may accept a trial with a fixed arrival time.
 % Its motion must end at that trial time and still meet the original deadline
 % checked above. For example, a 12-second trial can meet a 20-second deadline.
-if isfield(result, 'FixedArrivalTrialTime_s')
+if isfield(result.Diagnostics, 'FixedArrivalTrialTime_s')
     reportedValuesMatch = reportedValuesMatch && ...
-        abs(result.FixedArrivalTrialTime_s - polynomial.FinalTime_s) <= timeTolerance_s;
+        abs(result.Diagnostics.FixedArrivalTrialTime_s - polynomial.FinalTime_s) <= timeTolerance_s;
 end
 
 % For a wrapped axis, check the planning interval against:
@@ -308,18 +314,18 @@ if any(wrapAxes)
     % leave the requested x = 10 record valid, even if its motion is intact.
     try
         rebuiltRequest = obstacleAvoidance.planning.prepareRequest( ...
-            result.Inputs.obstacles, result.Inputs.initialState, result.SuppliedGoalState, ...
-            result.SuppliedLimits, result.Options, []);
+            result.Inputs.obstacles, result.Inputs.initialState, result.Diagnostics.SuppliedGoalState, ...
+            result.Diagnostics.SuppliedLimits, result.Options, []);
     catch
         validation.Message = "The supplied wrapped goal cannot be normalized.";
         return
     end
-    if ~isequaln(rebuiltRequest.originalInputs.requestedGoalState, result.RequestedGoalState)
+    if ~isequaln(rebuiltRequest.originalInputs.requestedGoalState, result.Diagnostics.RequestedGoalState)
         validation.Message = "The requested wrapped goal does not match the supplied goal.";
         return
     end
-    if ~isequaln(rebuiltRequest.originalInputs.requestedLimits, result.RequestedLimits) || ...
-            ~isequaln(rebuiltRequest.limits, result.Limits)
+    if ~isequaln(rebuiltRequest.originalInputs.requestedLimits, result.Diagnostics.RequestedLimits) || ...
+            ~isequaln(rebuiltRequest.limits, result.Diagnostics.Limits)
         validation.Message = "The requested wrapped limits do not match the supplied limits.";
         return
     end
@@ -329,17 +335,17 @@ if any(wrapAxes)
     end
     requestedLimits = rebuiltRequest.originalInputs.requestedLimits;
 else
-    if isfield(result, 'RequestedLimits')
-        requestedLimits = result.RequestedLimits;
+    if isfield(result.Diagnostics, 'RequestedLimits')
+        requestedLimits = result.Diagnostics.RequestedLimits;
     end
 end
-if isfield(result, 'RequestedLimits')
+if isfield(result.Diagnostics, 'RequestedLimits')
     for intervalFieldName = ["xInterval_units", "yInterval_units"]
         axisIndex               = 1 + (intervalFieldName == "yInterval_units");
         requestedInterval_units = requestedLimits.(intervalFieldName);
         expectedInterval_units  = requestedInterval_units;
         if wrapAxes(axisIndex)
-            maximumTravelDistance_units = result.Limits.maxVelocity_units_s(axisIndex) * ...
+            maximumTravelDistance_units = result.Diagnostics.Limits.maxVelocity_units_s(axisIndex) * ...
                 (goalState.time_s - initialState.time_s);
             expectedInterval_units = initialState.position_units(axisIndex) + ...
                 [-maximumTravelDistance_units maximumTravelDistance_units];
@@ -350,7 +356,7 @@ if isfield(result, 'RequestedLimits')
             end
         end
         reportedValuesMatch = reportedValuesMatch && ...
-            isequal(expectedInterval_units, result.Limits.(intervalFieldName));
+            isequal(expectedInterval_units, result.Diagnostics.Limits.(intervalFieldName));
     end
 end
 
@@ -365,8 +371,8 @@ end
 % inside the planning range.
 if any(wrapAxes)
     requestedIntervals_units = [requestedLimits.xInterval_units; requestedLimits.yInterval_units];
-    planningIntervals_units  = [result.Limits.xInterval_units; result.Limits.yInterval_units];
-    requestedGoalState       = result.RequestedGoalState;
+    planningIntervals_units  = [result.Diagnostics.Limits.xInterval_units; result.Diagnostics.Limits.yInterval_units];
+    requestedGoalState       = result.Diagnostics.RequestedGoalState;
     if isfield(requestedGoalState, 'targetMotion') && ~isempty(requestedGoalState.targetMotion)
         if ~isfield(result.Inputs.goalState, 'targetMotion') || ...
                 isempty(result.Inputs.goalState.targetMotion)
@@ -400,8 +406,8 @@ if any(wrapAxes)
                     double(requestedGoalState.acceleration_units_s2(2))];
                 reportedValuesMatch = reportedValuesMatch && ~any(~derivativeIsMatched & requestedYValues ~= 0);
                 % A matched value may not also be supplied.
-                if isfield(result, 'SuppliedGoalState')
-                    suppliedGoalState     = result.SuppliedGoalState;
+                if isfield(result.Diagnostics, 'SuppliedGoalState')
+                    suppliedGoalState     = result.Diagnostics.SuppliedGoalState;
                     derivativeWasSupplied = [isfield(suppliedGoalState, 'velocity_units_s') && ...
                         ~isempty(suppliedGoalState.velocity_units_s), ...
                         isfield(suppliedGoalState, 'acceleration_units_s2') && ...
@@ -419,21 +425,21 @@ if any(wrapAxes)
                 if ~result.Options.MatchTargetVelocity
                     copyMatches = copyMatches && max(abs(goalState.velocity_units_s - [1, yScale] .* ...
                         double(requestedGoalState.velocity_units_s))) <= constraintTolerance;
-                elseif isfield(result.SuppliedGoalState, 'velocity_units_s') && ...
-                        ~isempty(result.SuppliedGoalState.velocity_units_s)
+                elseif isfield(result.Diagnostics.SuppliedGoalState, 'velocity_units_s') && ...
+                        ~isempty(result.Diagnostics.SuppliedGoalState.velocity_units_s)
                     % A supplied value remains a constraint at the actual
                     % intercept. For example, 0.7 at the deadline does not
                     % justify 0.5 at an earlier arrival.
                     copyMatches = copyMatches && max(abs(goalState.velocity_units_s - [1, yScale] .* ...
-                        reshape(double(result.SuppliedGoalState.velocity_units_s), 1, []))) <= constraintTolerance;
+                        reshape(double(result.Diagnostics.SuppliedGoalState.velocity_units_s), 1, []))) <= constraintTolerance;
                 end
                 if ~result.Options.MatchTargetAcceleration
                     copyMatches = copyMatches && max(abs(goalState.acceleration_units_s2 - [1, yScale] .* ...
                         double(requestedGoalState.acceleration_units_s2))) <= constraintTolerance;
-                elseif isfield(result.SuppliedGoalState, 'acceleration_units_s2') && ...
-                        ~isempty(result.SuppliedGoalState.acceleration_units_s2)
+                elseif isfield(result.Diagnostics.SuppliedGoalState, 'acceleration_units_s2') && ...
+                        ~isempty(result.Diagnostics.SuppliedGoalState.acceleration_units_s2)
                     copyMatches = copyMatches && max(abs(goalState.acceleration_units_s2 - [1, yScale] .* ...
-                        reshape(double(result.SuppliedGoalState.acceleration_units_s2), 1, []))) <= constraintTolerance;
+                        reshape(double(result.Diagnostics.SuppliedGoalState.acceleration_units_s2), 1, []))) <= constraintTolerance;
                 end
                 targetPathMatches = targetPathMatches || copyMatches;
             end
@@ -468,8 +474,8 @@ if isfield(goalState, 'targetMotion') && ~isempty(goalState.targetMotion)
         max(abs(result.Inputs.goalState.velocity_units_s - goalState.velocity_units_s)) <= constraintTolerance && ...
         max(abs(result.Inputs.goalState.acceleration_units_s2 - goalState.acceleration_units_s2)) <= constraintTolerance;
     reportedValuesMatch = reportedValuesMatch && ...
-        max(abs(result.Intercept.TargetPosition_units - goalState.position_units)) <= constraintTolerance && ...
-        abs(result.Intercept.Time_s - polynomial.FinalTime_s) <= timeTolerance_s;
+        max(abs(result.Diagnostics.Intercept.TargetPosition_units - goalState.position_units)) <= constraintTolerance && ...
+        abs(result.Diagnostics.Intercept.Time_s - polynomial.FinalTime_s) <= timeTolerance_s;
 end
 validation.OutputMetadataConsistent = reportedValuesMatch;
 validation.EndpointStatesMatched    = endpointTimesMatch && ...
@@ -518,7 +524,7 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
     % A separating line keeps a curve segment and an obstacle on opposite
     % sides. Rebuild the curve controls and obstacle regions, then verify
     % every saved line against those independently reconstructed inputs.
-    separationProof    = result.SeparationProof;
+    separationProof    = result.Diagnostics.SeparationProof;
     requiredFieldNames = {'Passed', 'Regions_units', 'Planes', 'RegionActiveBySegment', ...
         'RequiredGap_units', 'RoundoffReserve_units', 'AllPairCount', ...
         'VerifiedPairCount', 'ExactRegionCount', 'SolverRegionCount'};
@@ -539,21 +545,21 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
         % Wrapped obstacles are rebuilt as the same shifted and mirrored copies
         % the planner used, covering the full unwrapped planning interval.
         obstaclesToRebuild = obstacleAvoidance.input.copyObstaclesAcrossWraps(obstaclesToRebuild, ...
-            [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units], ...
+            [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units], ...
             wrapModes, ...
-            [result.Limits.xInterval_units; result.Limits.yInterval_units], ...
+            [result.Diagnostics.Limits.xInterval_units; result.Diagnostics.Limits.yInterval_units], ...
             [result.Inputs.initialState.time_s, result.Inputs.goalState.time_s]);
     end
     obstacleCoverageEndTime_s = result.Inputs.goalState.time_s;
-    if isfield(result, 'TrajectoryCoverageEndTime_s')
-        obstacleCoverageEndTime_s = result.TrajectoryCoverageEndTime_s;
-    elseif isfield(result, 'FixedArrivalTrialTime_s')
-        obstacleCoverageEndTime_s = result.Polynomial.FinalTime_s;
+    if isfield(result.Diagnostics, 'TrajectoryCoverageEndTime_s')
+        obstacleCoverageEndTime_s = result.Diagnostics.TrajectoryCoverageEndTime_s;
+    elseif isfield(result.Diagnostics, 'FixedArrivalTrialTime_s')
+        obstacleCoverageEndTime_s = result.Diagnostics.Polynomial.FinalTime_s;
     end
     % The obstacle checks must cover the whole returned motion. They may
     % extend beyond arrival, but cannot start too late or end too early.
-    motionStartTime_s      = result.Polynomial.SegmentStartTime_s(1);
-    motionEndTime_s        = result.Polynomial.FinalTime_s;
+    motionStartTime_s      = result.Diagnostics.Polynomial.SegmentStartTime_s(1);
+    motionEndTime_s        = result.Diagnostics.Polynomial.FinalTime_s;
     coverageExcludesMotion = ~(isnumeric(obstacleCoverageEndTime_s) && ...
         isscalar(obstacleCoverageEndTime_s) && isfinite(obstacleCoverageEndTime_s)) || ...
         obstacleCoverageEndTime_s < motionEndTime_s - result.Options.ArrivalTimeTolerance_s || ...
@@ -568,7 +574,7 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
     % Check endpoint occupancy using the rebuilt obstacles, including the
     % target position at the actual arrival time for an intercept.
     endpoints_units = [result.Inputs.initialState.position_units; result.Inputs.goalState.position_units];
-    endpointTimes_s = [result.Polynomial.SegmentStartTime_s(1); result.Polynomial.FinalTime_s];
+    endpointTimes_s = [result.Diagnostics.Polynomial.SegmentStartTime_s(1); result.Diagnostics.Polynomial.FinalTime_s];
     if isfield(result.Inputs.goalState, 'targetMotion') && ~isempty(result.Inputs.goalState.targetMotion)
         endpoints_units(2, :) = obstacleAvoidance.input.targetPositionAtTime( ...
             result.Inputs.goalState.targetMotion, endpointTimes_s(2));
@@ -588,8 +594,8 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
         timedRegions = obstacleAvoidance.obstacles.createTimeCells(rebuiltObstacles, ...
             result.Inputs.initialState.time_s, obstacleCoverageEndTime_s);
         regions_units       = timedRegions.Regions_units;
-        segmentStartTime_s  = result.Polynomial.SegmentStartTime_s;
-        segmentEndTime_s    = segmentStartTime_s + result.Polynomial.SegmentDuration_s;
+        segmentStartTime_s  = result.Diagnostics.Polynomial.SegmentStartTime_s;
+        segmentEndTime_s    = segmentStartTime_s + result.Diagnostics.Polynomial.SegmentDuration_s;
         expectedActivePairs = segmentStartTime_s < timedRegions.ActiveTimeInterval_s(:, 2).' & ...
             segmentEndTime_s > timedRegions.ActiveTimeInterval_s(:, 1).';
         timedGeometryDiffers = ~isequal(separationProof.Coverage.ActiveTimeInterval_s, timedRegions.ActiveTimeInterval_s) || ...
@@ -641,8 +647,8 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
     if usesTimedRegions
         endRegions_units = timedRegions.EndRegions_units;
     end
-    [~, roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances(result.Route_units, ...
-        result.Limits.xInterval_units, result.Limits.yInterval_units, regions_units, endRegions_units);
+    [~, roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances(result.Diagnostics.Route_units, ...
+        result.Diagnostics.Limits.xInterval_units, result.Diagnostics.Limits.yInterval_units, regions_units, endRegions_units);
     requiredSeparation_units = (1 + 2 ^ 20 * eps) * ...
         result.Options.CollisionClearanceTolerance_units + roundoffReserve_units;
     separationTolerancesDiffer = ~isequal(separationProof.RoundoffReserve_units, roundoffReserve_units) || ...

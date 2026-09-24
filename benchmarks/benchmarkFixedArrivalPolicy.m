@@ -106,13 +106,13 @@ for caseIndex = 1:numel(cases)
             arrival_s    = result.ArrivalTime_s;
             length_units = result.MotionLength_units;
         end
-        if isfield(result.VisibilityGraph, 'TimedSearch')
-            searchTime_s = result.VisibilityGraph.TimedSearch.ElapsedTime_s;
+        if isfield(result.Diagnostics.VisibilityGraph, 'TimedSearch')
+            searchTime_s = result.Diagnostics.VisibilityGraph.TimedSearch.ElapsedTime_s;
         end
-        attempts = result.Attempts;
+        attempts = result.Diagnostics.Attempts;
         attemptCount = numel(attempts);
         solverAttemptCount = 1;
-        totalAlternatingIterations = result.SolverDiagnostics.IterationCount;
+        totalAlternatingIterations = result.Diagnostics.SolverDiagnostics.IterationCount;
         attemptSequence = "singleSpatialSolve";
         if ~isempty(attempts)
             solverAttemptCount = sum([attempts.SolverAttempted]);

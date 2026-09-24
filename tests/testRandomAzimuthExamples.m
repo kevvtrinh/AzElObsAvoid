@@ -90,12 +90,12 @@ function testFixedArrivalCascadeRepairsSpatialSeedFailures(testCase)
             withStatic(caseNumber),overrides);
         verifyTrue(testCase,result.Success,result.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-        verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+        verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind, ...
             expectedSources(caseNumber));
-        verifyGreaterThanOrEqual(testCase,numel(result.Attempts),2);
-        verifyTrue(testCase,result.Attempts(1).IsShortcut);
-        verifyTrue(testCase,result.Attempts(1).NextAttemptAllowed);
-        snapshotAttempts=result.Attempts([result.Attempts.IsShortcut]);
+        verifyGreaterThanOrEqual(testCase,numel(result.Diagnostics.Attempts),2);
+        verifyTrue(testCase,result.Diagnostics.Attempts(1).IsShortcut);
+        verifyTrue(testCase,result.Diagnostics.Attempts(1).NextAttemptAllowed);
+        snapshotAttempts=result.Diagnostics.Attempts([result.Diagnostics.Attempts.IsShortcut]);
         verifyEqual(testCase,[snapshotAttempts.IterationLimit], ...
             2*ones(1,numel(snapshotAttempts)));
         verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-10);
