@@ -35,12 +35,16 @@ validate request
   -> return one stable result
 ```
 
-Static visibility graphs exhaustively classify all endpoint and prepared
-boundary-node pairs. Timed visibility uses one deterministic staging-node set
-and one temporal search. A moving edge is checked over its complete time
-interval: affine point motion against every affine convex obstacle cell is
-reduced to quadratic half-space residuals, whose real roots partition all
-possible contact intervals. Collision acceptance does not depend on sampling.
+Static visibility graphs are reduced visibility graphs: they keep every
+outward obstacle corner, classify every pair of those corners and every
+endpoint-to-corner pair, and keep a connection only when it is tangent at
+each corner it touches. That holds the same shortest routes as the
+exhaustive graph with far fewer connections. Timed visibility uses one
+deterministic staging-node set and one temporal search. A moving edge is
+checked over its complete time interval: affine point motion against every
+affine convex obstacle cell is reduced to quadratic half-space residuals,
+whose real roots partition all possible contact intervals. Collision
+acceptance does not depend on sampling.
 
 Fixed-arrival requests use one deterministic policy. The planner evaluates the
 exact initial- and arrival-snapshot visibility guides as bounded runtime
@@ -95,7 +99,7 @@ arrival was actually attained.
 There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
 repairs, connectivity-recovery passes, fixture-specific seeds, hidden
 waypoints, fabricated direct seeds, or silent motion fallbacks. The two
-snapshot shortcuts are deterministic, use exact exhaustive snapshot graphs,
+snapshot shortcuts are deterministic, use exact reduced snapshot graphs,
 and cannot weaken the independent acceptance gate.
 
 BMTP checks that supplied coverage metadata is internally consistent before it

@@ -17,8 +17,10 @@ generation, independent validation, and plots of those returned core results.
 
 ## Algorithm
 
-- Build the visibility graph exhaustively from exact prepared geometry. Do not
-  add route heuristics, preferred detours, hidden waypoints, route-class pruning,
+- Build the reduced visibility graph from exact prepared geometry: every
+  outward corner, every pair of them, and only connections tangent at each
+  corner they touch. That is an exact reduction, not a heuristic. Do not add
+  route heuristics, preferred detours, hidden waypoints, route-class pruning,
   retry schedules, fixture-specific seeds, or silent fallbacks.
 - Treat the planning pipeline like a factory: every stage must emit a truthful,
   usable intermediate for the next stage. When an output is invalid, trace the

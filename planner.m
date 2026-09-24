@@ -21,29 +21,38 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       Example: struct("time_s", 12, "position_units", [4 0])
 %   - limits (scalar struct)
 %       Workspace intervals and scalar or per-axis motion limits.
-%   - options (scalar struct, optional; default struct())
-%       Controls arrival time, sampling, wrapping, endpoint matching, and
-%       search limits. Call planner() to see all defaults.
-%       ArrivalTimeTolerance_s allows small differences in time comparisons.
-%       ConstraintTolerance sets the numerical tolerance for position and
-%       motion constraints and the calculations used to check them.
-%       SpatialProbeIterationLimit limits BMTP iterations for a route built
-%       from obstacle positions at one time.
-%       BestSoFarRefinementTrialLimit limits extra arrival-time trials after
-%       the timed search fails but valid motion exists; zero keeps that
-%       motion without extra trials.
-%       WrapX and WrapY allow travel across the corresponding interval ends:
-%       "false" (default), "both", "forward" (past the upper end only), or
-%       "backward" (past the lower end only). true and false are accepted as
-%       "both" and "false". On x, a copy across an end is shifted by a whole
-%       turn: on a 360-unit axis, travel from 350 to 10 can use 350 to 370.
-%       On y, as for elevation on a sphere, going over an end (a pole)
-%       mirrors y about it and turns x by half the x interval: on x [0 360],
-%       y [-90 90], (190, 89) is also (10, 91). With WrapY on, azimuth
-%       copies repeat each turn even when WrapX is "false"; WrapX controls
-%       whether the motion may pass an x end. The planner copies obstacles
-%       throughout the possible travel range and keeps a moving target's
-%       path continuous across the ends.
+%   - options (scalar struct) [OPTIONAL, Default is struct()]
+%       Planner settings. Omitted fields take the defaults from planner().
+%       - GoalTimeMode (string) [Default is "fixedArrival"]
+%           "fixedArrival" arrives at goalState.time_s; "earliestArrival"
+%           arrives as early as the limits allow.
+%       - SampleTime_s (positive scalar) [Default is 0.05]
+%           Time step of the returned sampled motion.
+%       - ConstraintTolerance (positive scalar) [Default is 1e-8]
+%           Tolerance on position and motion constraints.
+%       - CollisionClearanceTolerance_units (scalar) [Default is 1e-7]
+%           Clearance the motion must keep from protected obstacles.
+%       - ArrivalTimeTolerance_s (positive scalar) [Default is 1e-8]
+%           Tolerance when comparing arrival times.
+%       - WrapX, WrapY (string) [Default is "false"]
+%           "false", "both", "forward", or "backward". Allows travel past
+%           the interval ends. x copies shift by a whole turn: 350 to 10 on
+%           a 360 axis can use 350 to 370. y copies mirror over a pole and
+%           shift x by half a turn: on x [0 360], y [-90 90], (190, 89) is
+%           also (10, 91).
+%       - MatchTargetVelocity, MatchTargetAcceleration [Default is false]
+%           Take the goal velocity or acceleration from the target's path
+%           at the arrival time.
+%       - TemporalResolution_s (positive scalar) [Default is 0.5]
+%           Spacing of the arrival times tried in a search.
+%       - SpatialProbeIterationLimit (integer, max 35) [Default is 2]
+%           BMTP iterations for a route probed at one obstacle time.
+%       - BestSoFarRefinementTrialLimit (integer) [Default is 0]
+%           Extra arrival-time trials after valid motion is found.
+%       - MaxArrivalTrials (integer) [Default is 100]
+%           Arrival-time trials allowed per search.
+%       - MaxArrivalCandidates (integer) [Default is 4096]
+%           Cap on the arrival-time grid built per search.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)

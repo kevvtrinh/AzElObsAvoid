@@ -5,8 +5,11 @@ function vertexVisibility = createVertexVisibility(obstacleSnapshot, limits, opt
 %       obstacleSnapshot, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Check the straight connection between every pair of obstacle-boundary
-%     vertices. A connection is visible when it does not enter an obstacle.
+%   - Keep the obstacle corners a shortest route can turn at, then check the
+%     straight connection between every pair of them. A connection is kept
+%     when it does not enter an obstacle and is tangent at both corners.
+%     This is the reduced visibility graph: it holds the same shortest
+%     routes as the full graph with far fewer corners and connections.
 %   - Save these checks so createVisibilityGraph can add different start and
 %     goal positions without checking the same obstacle-vertex pairs again.
 %**************************************************************************
@@ -20,8 +23,8 @@ function vertexVisibility = createVertexVisibility(obstacleSnapshot, limits, opt
 %**************************************************************************
 % OUTPUTS
 %   - vertexVisibility (scalar struct)
-%       Combined obstacle shape, boundary edges, workspace vertices, and
-%       all accepted and rejected vertex pairs. Corner data identifies
+%       Combined obstacle shape, boundary edges, route corners, and all
+%       accepted and rejected corner pairs. Corner data identifies
 %       directions that point into an obstacle. Invalid input throws an error.
 %**************************************************************************
 % UNITS
@@ -64,12 +67,26 @@ vertexVisibility = struct( ...
 
 % A corner cone records directions leading immediately into an obstacle.
 % The segment check uses it to reject those directions before intersections.
-vertexCount = size(vertexVisibility.Vertices_units, 1);
 vertexVisibility.VertexCones = obstacleAvoidance.search.createNodeCones( ...
     vertexVisibility, vertexVisibility.Vertices_units);
 
-% Check each unordered pair once: N vertices give N x (N - 1) / 2 pairs.
-% Boundary contact is allowed; entering the obstacle interior is rejected.
+% Keep only corners a shortest route can turn at: outward corners, where
+% the obstacle bulges toward the route. An inward corner (a notch) is never
+% a turning point, so it is dropped before any segment check. Corners
+% without one clear pair of edges (Enabled false) are kept and checked in
+% full. Example: a U shape keeps its four outer corners and two arm tips
+% and drops the two corners at the bottom of the cavity.
+vertexIsRouteCorner = ~vertexVisibility.VertexCones.Enabled | vertexVisibility.VertexCones.Convex;
+vertexVisibility.Vertices_units = vertexVisibility.Vertices_units(vertexIsRouteCorner, :);
+for coneFieldName = ["Incoming", "Outgoing", "Side", "Convex", "Enabled"]
+    vertexVisibility.VertexCones.(coneFieldName) = ...
+        vertexVisibility.VertexCones.(coneFieldName)(vertexIsRouteCorner, :);
+end
+vertexCount = size(vertexVisibility.Vertices_units, 1);
+
+% Check each unordered pair once: N corners give N x (N - 1) / 2 pairs.
+% Boundary contact is allowed; entering the obstacle interior or cutting
+% through a corner is rejected.
 maximumPairCount    = vertexCount * (vertexCount - 1) / 2;
 acceptedVertexPairs = zeros(maximumPairCount, 2);
 rejectedVertexPairs = zeros(maximumPairCount, 2);

@@ -8,9 +8,14 @@ function isVisible = classifyVisibilitySegments( ...
 % PURPOSE
 %   - Find connections from one node to several others that avoid obstacle
 %     interiors. The visibility graph may touch or follow a boundary.
-%   - Reject directions that enter an obstacle at either endpoint, then split
-%     each remaining segment at its boundary contacts and test the pieces.
-%     The returned motion still needs independent collision validation.
+%   - Keep only connections that are tangent at each corner they touch. A
+%     shortest route never bends at a corner it cuts through, so this gives
+%     the reduced visibility graph: the same shortest routes with far fewer
+%     connections to check.
+%   - Reject directions that enter an obstacle or cut a corner at either
+%     endpoint, then split each remaining segment at its boundary contacts
+%     and test the pieces. The returned motion still needs independent
+%     collision validation.
 %**************************************************************************
 % INPUTS
 %   - vertexVisibility (scalar struct)
@@ -27,17 +32,23 @@ function isVisible = classifyVisibilitySegments( ...
 %**************************************************************************
 % OUTPUTS
 %   - isVisible (logical column)
-%       True where the segment to that end node avoids the obstacle interior.
+%       True where the segment to that end node avoids the obstacle interior
+%       and is tangent at each corner it touches.
 %**************************************************************************
 % UNITS
 %   - Positions are coordinate units.
 %**************************************************************************
 
-%% Section 1: Reject Segments That Enter An Obstacle At An Endpoint
+%% Section 1: Reject Segments That Enter An Obstacle Or Cut A Corner
 
-endpointEntersObstacle = segmentEntersObstacleAtEndpoint( ...
+% A shortest route turns at a corner only when it continues straight past
+% it, so the line through the segment keeps both boundary edges at that
+% corner on one side. Every other segment is dropped before the full check.
+segmentIsRejected = segmentEntersObstacleAtEndpoint( ...
+    startNodeIndex, endNodeIndices, nodePositions_units, nodeCornerDirections, vertexVisibility.Tolerance_units) | ...
+    ~segmentIsTangentAtCorners( ...
     startNodeIndex, endNodeIndices, nodePositions_units, nodeCornerDirections, vertexVisibility.Tolerance_units);
-segmentsToCheck = find(~endpointEntersObstacle);
+segmentsToCheck = find(~segmentIsRejected);
 isVisible       = false(size(endNodeIndices));
 
 %% Section 2: Check The Pieces Between Boundary Contacts
@@ -95,6 +106,41 @@ function endpointEntersObstacle = segmentEntersObstacleAtEndpoint( ...
 
         % Reverse direction to check the same segment from its other end.
         segmentVector_units  = -segmentVector_units;
+    end
+end
+
+function segmentIsTangent = segmentIsTangentAtCorners( ...
+        startNodeIndex, endNodeIndices, nodePositions_units, nodeCornerDirections, tolerance_units)
+    % At each corner the segment touches, compare the two boundary edges
+    % leaving that corner against the segment line. Edges on opposite sides
+    % mean the line cuts through the corner, so the segment is not tangent.
+    % Nodes without a clear corner (Enabled false) are never rejected here.
+    segmentVector_units = nodePositions_units(endNodeIndices, :) - nodePositions_units(startNodeIndex, :);
+    segmentIsTangent    = true(size(segmentVector_units, 1), 1);
+    endpointIndexLists  = {repmat(startNodeIndex, size(endNodeIndices)), endNodeIndices};
+    for endpointIndex = 1:2
+        endpointNodeIndices = endpointIndexLists{endpointIndex};
+        % Both edges as directions leaving the corner.
+        towardPreviousVertex_units = -nodeCornerDirections.Incoming(endpointNodeIndices, :);
+        towardNextVertex_units     = nodeCornerDirections.Outgoing(endpointNodeIndices, :);
+
+        % Cross product / edge length = distance of the edge end from the
+        % segment line. Within tolerance counts as on the line (side 0).
+        coordinateScale_units      = max(1, max(abs(nodePositions_units(endpointNodeIndices, :)), [], 2));
+        directionRoundingAllowance = 64 * eps(coordinateScale_units) .* max(1, vecnorm(segmentVector_units, 2, 2));
+        sideAllowance_units        = tolerance_units + directionRoundingAllowance;
+        previousSideValue_units2 = segmentVector_units(:, 1) .* towardPreviousVertex_units(:, 2) - ...
+            segmentVector_units(:, 2) .* towardPreviousVertex_units(:, 1);
+        nextSideValue_units2 = segmentVector_units(:, 1) .* towardNextVertex_units(:, 2) - ...
+            segmentVector_units(:, 2) .* towardNextVertex_units(:, 1);
+        previousSide = sign(previousSideValue_units2) .* (abs(previousSideValue_units2) > ...
+            sideAllowance_units .* vecnorm(towardPreviousVertex_units, 2, 2));
+        nextSide = sign(nextSideValue_units2) .* (abs(nextSideValue_units2) > ...
+            sideAllowance_units .* vecnorm(towardNextVertex_units, 2, 2));
+
+        segmentIsTangent = segmentIsTangent & ...
+            ~(nodeCornerDirections.Enabled(endpointNodeIndices) & previousSide .* nextSide < 0);
+        segmentVector_units = -segmentVector_units;
     end
 end
 
