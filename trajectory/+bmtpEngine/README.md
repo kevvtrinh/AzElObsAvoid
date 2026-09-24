@@ -33,10 +33,13 @@ uses the full name, for example `bmtpEngine.motion.evaluatePolynomial`.
      which moving regions overlap each segment as the times change.
    - Assigned segment durations: `solveAlternatingTrajectory` adjusts the curve
      with those durations fixed.
-4. Prepare and check the selected motion. A solver may already return prepared
-   motion with matching checks. Otherwise `prepareFinalMotion` constructs it and
-   `checkFinalMotion` checks it. When a whole segment cannot be separated from an
-   obstacle by one line, smaller pieces of the same curve can be checked.
+4. Prepare and check the selected motion. `prepareFinalMotion` sets endpoint
+   states, corrects joins, and assigns durations once, then retains the complete
+   polynomial. `refineMotionSeparation` checks that motion with `checkFinalMotion`.
+   When one line cannot separate a whole segment from an obstacle, it uses
+   `subdivideMotion` to check smaller pieces without changing the physical motion.
+   Each piece retains its original `SourceSegmentIndex` for optimizer constraints.
+   A solver may return that prepared motion and its matching checks for reuse.
 5. `createMotionOutput` assembles the accepted curve and sampled output arrays.
    The planner then applies its public independent validation.
 

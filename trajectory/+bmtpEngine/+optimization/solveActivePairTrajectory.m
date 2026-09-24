@@ -133,15 +133,24 @@ for iterationIndex = 1:maximumIterationCount
     trialMotionCheck    = struct('Passed', false);
     trialPreparedMotion = struct('Success', false);
     if ~any(collisionPairs, 'all')
-        [trialMotionCheck, trialPreparedMotion] = checkCandidateMotion( ...
-            solverRequest, trialControl_units, trialSegmentTime_s, roundoffReserve_units, separationTarget_units);
+        trialPreparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
+            solverRequest, trialControl_units, trialSegmentTime_s);
+        [trialPreparedMotion, trialMotionCheck] = bmtpEngine.pipeline.refineMotionSeparation( ...
+            solverRequest, trialPreparedMotion, roundoffReserve_units, separationTarget_units);
         nonCollisionChecksPassed = trialPreparedMotion.Success && trialMotionCheck.WorkspacePassed && ...
             trialMotionCheck.DynamicsPassed && trialMotionCheck.ContinuityPassed;
         % Once workspace, motion limits, and joins pass, treat every obstacle
         % pair that could not be proved clear as another pair to separate.
         if nonCollisionChecksPassed
-            collisionPairs = findUnverifiedPairsBySegment(trialMotionCheck, ...
-                trialPreparedMotion.SegmentTime_s, trialSegmentTime_s, regionActiveBySegment);
+            unverifiedPairs = ~reshape([trialMotionCheck.Planes.Verified], size(trialMotionCheck.Planes)) & ...
+                trialMotionCheck.RegionActiveBySegment;
+            % Every piece retains its original optimizer segment even after
+            % several selective splits. Add each unresolved pair to that row.
+            for pieceIndex = reshape(find(any(unverifiedPairs, 2)), 1, [])
+                segmentIndex = trialPreparedMotion.SourceSegmentIndex(pieceIndex);
+                collisionPairs(segmentIndex, :) = collisionPairs(segmentIndex, :) | unverifiedPairs(pieceIndex, :);
+            end
+            collisionPairs = collisionPairs & regionActiveBySegment;
         end
     end
     % Keep every newly encountered pair. A sampled-clear candidate can still
@@ -256,8 +265,10 @@ if ~isempty(bestControl_units)
         if ~any(refinementOverlaps, 'all')
             retainedControlPolygonLength_units = sum(vecnorm(diff(bestControl_units, 1, 2), 2, 3), 'all');
             refinedControlPolygonLength_units  = sum(vecnorm(diff(refinedControl_units, 1, 2), 2, 3), 'all');
-            [refinedMotionCheck, refinedPreparedMotion] = checkCandidateMotion( ...
-                solverRequest, refinedControl_units, refinedSegmentTime_s, roundoffReserve_units, separationTarget_units);
+            refinedPreparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
+                solverRequest, refinedControl_units, refinedSegmentTime_s);
+            [refinedPreparedMotion, refinedMotionCheck] = bmtpEngine.pipeline.refineMotionSeparation( ...
+                solverRequest, refinedPreparedMotion, roundoffReserve_units, separationTarget_units);
             if refinedControlPolygonLength_units <= retainedControlPolygonLength_units && refinedMotionCheck.Passed
                 bestControl_units  = refinedControl_units;
                 bestSegmentTime_s  = refinedSegmentTime_s;
@@ -311,54 +322,4 @@ result = struct( ...
     'TaggedPairs',              selectedPairs, ...
     'PreparedMotion',           bestPreparedMotion, ...
     'Proof',                    bestMotionCheck);
-end
-
-%% Section 5: Local Functions
-
-function collisionPairs = findUnverifiedPairsBySegment( ...
-        motionCheck, checkedPieceTime_s, segmentTime_s, regionActiveBySegment)
-    % The motion check may split a solver segment into smaller pieces. Map
-    % each piece that could not be proved clear back to its original segment.
-    % Fractions of total duration still identify that segment if preparation
-    % stretched every duration by the same factor. A piece's midpoint avoids
-    % ambiguity at a shared boundary.
-    unverifiedPairs = ~reshape([motionCheck.Planes.Verified], size(motionCheck.Planes)) & ...
-        motionCheck.RegionActiveBySegment;
-    collisionPairs            = false(size(regionActiveBySegment));
-    solverSegmentEndFractions = cumsum(segmentTime_s(:)) / sum(segmentTime_s);
-    checkedPieceEndFractions  = cumsum(checkedPieceTime_s(:)) / sum(checkedPieceTime_s);
-    checkedPieceMidFractions  = checkedPieceEndFractions - 0.5 * checkedPieceTime_s(:) / sum(checkedPieceTime_s);
-    for pieceIndex = reshape(find(any(unverifiedPairs, 2)), 1, [])
-        segmentIndex = find(solverSegmentEndFractions >= checkedPieceMidFractions(pieceIndex), 1, 'first');
-        collisionPairs(segmentIndex, :) = collisionPairs(segmentIndex, :) | unverifiedPairs(pieceIndex, :);
-    end
-    collisionPairs = collisionPairs & regionActiveBySegment;
-end
-
-function [motionCheck, preparedMotion] = checkCandidateMotion(solverRequest, controlPoint_units, ...
-        segmentTime_s, roundoffReserve_units, separationTarget_units)
-    % Prepare the candidate and check workspace, motion limits, curve joins,
-    % and obstacle separation. If only separation remains unresolved, split
-    % those pieces and check again, up to ten times.
-    % Smaller pieces can fit on one side of a line even when the original
-    % segment cannot. Splitting represents the same curve.
-    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(solverRequest, controlPoint_units, segmentTime_s);
-    [motionCheck, motionCheckCache] = bmtpEngine.validation.checkFinalMotion( ...
-        solverRequest, preparedMotion, roundoffReserve_units, separationTarget_units);
-    for refinementIndex = 1:10
-        if motionCheck.Passed || ~motionCheck.WorkspacePassed || ...
-                ~motionCheck.DynamicsPassed || ~motionCheck.ContinuityPassed
-            break
-        end
-        unverifiedPairs = ~reshape([motionCheck.Planes.Verified], size(motionCheck.Planes)) & ...
-            motionCheck.RegionActiveBySegment;
-        splitPiece = any(unverifiedPairs, 2);
-        if ~any(splitPiece)
-            break
-        end
-        preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(solverRequest, preparedMotion.ControlPoint_units, ...
-            preparedMotion.SegmentTime_s, preparedMotion.GivenPower_units, splitPiece);
-        [motionCheck, motionCheckCache] = bmtpEngine.validation.checkFinalMotion( ...
-            solverRequest, preparedMotion, roundoffReserve_units, separationTarget_units, motionCheckCache);
-    end
 end

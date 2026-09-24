@@ -28,6 +28,9 @@ function candidate = createMotionOutput(candidate, solverRequest, preparedMotion
 polynomial = bmtpEngine.motion.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
     preparedMotion.SegmentTime_s, solverRequest.InitialState.time_s, preparedMotion.GivenPower_units, ...
     preparedMotion.FinalTime_s);
+% Keep the join correction measured when the motion was prepared; building
+% the polynomial from complete coefficients measures none.
+polynomial.ContinuityProjectionDisplacement_units = preparedMotion.ContinuityProjectionDisplacement_units;
 sampledMotion = samplePolynomial(polynomial, solverRequest.Options.SampleTime_s);
 
 %% Section 2: Measure Arrival, Path Length, And Jerk Cost

@@ -283,31 +283,7 @@ end
 % Check the entire curve against each obstacle region that applies.
 % Clear sampled points alone do not establish safety between those points.
 if ~motionValidation.Passed
-    [motionValidation, motionValidationCache] = bmtpEngine.validation.checkFinalMotion( ...
-        solverRequest, preparedMotion, roundoffReserve_units, requiredSeparation_units, motionValidationCache);
-end
-
-% A separating line keeps a curve segment on one side and an obstacle on
-% the other. If one line cannot verify a whole segment, split the segment and
-% check its pieces. Splitting preserves the curve and the same tolerances.
-for refinementIndex = 1:10
-    if motionValidation.Passed || ~motionValidation.WorkspacePassed || ...
-            ~motionValidation.DynamicsPassed || ~motionValidation.ContinuityPassed
-        break
-    end
-    % A row is one curve segment; a column is one obstacle region. Split
-    % each segment that still has an active pair without a separation proof.
-    unverifiedObstaclePairs = ~reshape([motionValidation.Planes.Verified], size(motionValidation.Planes)) & ...
-        motionValidation.RegionActiveBySegment;
-    splitSegment  = any(unverifiedObstaclePairs, 2);
-    splitProgress = repmat(0.5, numel(splitSegment), 1);
-    if ~any(splitSegment)
-        break
-    end
-    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(solverRequest, ...
-        preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, ...
-        preparedMotion.GivenPower_units, splitSegment, splitProgress);
-    [motionValidation, motionValidationCache] = bmtpEngine.validation.checkFinalMotion( ...
+    [preparedMotion, motionValidation] = bmtpEngine.pipeline.refineMotionSeparation( ...
         solverRequest, preparedMotion, roundoffReserve_units, requiredSeparation_units, motionValidationCache);
 end
 solverDiagnostics.SegmentCount            = numel(preparedMotion.SegmentTime_s);
