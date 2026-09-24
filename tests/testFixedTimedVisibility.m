@@ -232,7 +232,8 @@ function testFailedTimedSearchDoesNotLeakSpatialState(testCase)
     verifyEqual(testCase,numel(result.Attempts),3);
     verifyEqual(testCase,result.Attempts(end).FailureStage,"search");
     verifyEqual(testCase,result.Attempts(end).FailureKind,"noTimedRoute");
-    verifyEqual(testCase,fieldnames(result),timedFailureFieldNames());
+    % The public planner appends its plot shortcut after the core fields.
+    verifyEqual(testCase,fieldnames(result),[timedFailureFieldNames();'plotTrajectory']);
     verifyEqual(testCase,fieldnames(result.VisibilityGraph),timedGraphFieldNames());
     verifyEqual(testCase,result.MotionLength_units,Inf);
     verifyEqual(testCase,result.IntegratedSquaredJerk_units2_s5,Inf);

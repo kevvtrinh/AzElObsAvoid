@@ -60,6 +60,8 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       details, and Validation. Expected no-path or infeasible outcomes
 %       return Success = false with Message and TerminationReason explaining
 %       why. Invalid inputs throw an error.
+%       result.plotTrajectory() plots the result as returned; it accepts the
+%       same optional overrides as obstacleAvoidance.plotting.plotTrajectory.
 %   - options (scalar struct, zero-input call)
 %       Fully resolved planner defaults.
 %**************************************************************************
@@ -107,4 +109,11 @@ if request.options.WrapX ~= "false" || request.options.WrapY ~= "false"
 else
     result = obstacleAvoidance.planning.planMotion(request);
 end
+
+%% Section 3: Attach The Plot Shortcut
+
+% result.plotTrajectory(...) plots this result as returned. The handle keeps
+% its own copy of the result made here, so edits to result after this call
+% are not shown; plot an edited result with plotTrajectory(result) directly.
+result.plotTrajectory = @(varargin) obstacleAvoidance.plotting.plotTrajectory(result, varargin{:});
 end

@@ -14,6 +14,8 @@ function handles = plotTrajectory(result, optionOverrides)
 %   - When wrapping is on, show the expanded workspace: every obstacle and
 %     goal copy inside the planning range, in the unwrapped coordinates the
 %     planner used.
+%   - Optionally show an azimuth/elevation path and a protected obstacle
+%     snapshot on a unit sphere, including paths that cross a pole.
 %**************************************************************************
 % INPUTS
 %   - result (scalar planner result)
@@ -25,15 +27,18 @@ function handles = plotTrajectory(result, optionOverrides)
 %       MaximumDisplayedTimeSlices caps snapshots per obstacle. The graph
 %       display caps sample nodes and edges in the 3D figure.
 %       ShowExpandedWorkspace opens the expanded workspace when wrapping is
-%       on. An axes handle requests only the workspace plot. Hidden figures
-%       never pause.
+%       on. ShowSphere maps degree-valued azimuth/elevation to a unit sphere;
+%       elevation must lie within [-90 90]. With WrapY on, the intervals must
+%       be one 360-degree azimuth turn and elevation [-90 90]. SphereTime_s
+%       chooses the obstacle snapshot; NaN uses the start time. An axes handle
+%       requests only the workspace plot. Hidden figures never pause.
 %**************************************************************************
 % OUTPUTS
 %   - handles (scalar struct)
 %       Figure and axes handles for the requested plots. Unused fields
 %       contain empty handles. SpaceTimeAxes selects the x/y/time view and
-%       ExpandedWorkspaceAxes the expanded workspace. Invalid input throws
-%       an error.
+%       ExpandedWorkspaceAxes the expanded workspace; SphereAxes selects the
+%       azimuth/elevation sphere. Invalid input throws an error.
 %   - options (scalar struct, zero-input call)
 %       Default plotting controls.
 %**************************************************************************
@@ -55,6 +60,8 @@ defaults.ShowVisibilityGraphs       = true;
 defaults.ShowSpaceTime              = true;
 defaults.ShowSweptSurfaces          = true;
 defaults.ShowExpandedWorkspace      = true;
+defaults.ShowSphere                 = false;
+defaults.SphereTime_s               = NaN;
 defaults.MaximumDisplayedTimeSlices = 25;
 defaults.MaximumDisplayedGraphNodes = 300;
 defaults.MaximumDisplayedGraphEdges = 300;
@@ -115,7 +122,7 @@ end
 
 logicalOptionNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSpaceTime", ...
-    "ShowSweptSurfaces", "ShowExpandedWorkspace", "SaveAnimationGif"];
+    "ShowSweptSurfaces", "ShowExpandedWorkspace", "ShowSphere", "SaveAnimationGif"];
 for optionName = logicalOptionNames
     options.(optionName) = obstacleAvoidance.input.normalizeLogicalScalar( ...
         options.(optionName), optionName, "plotTrajectory:InvalidLogicalOption");
@@ -125,6 +132,10 @@ for optionName = nonnegativeOptionNames
     validateattributes(options.(optionName), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end
 validateattributes(options.FrameStride, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+validateattributes(options.SphereTime_s, {'numeric'}, {'real', 'scalar'});
+if ~isnan(options.SphereTime_s) && ~isfinite(options.SphereTime_s)
+    error("plotTrajectory:InvalidSphereTime", "SphereTime_s must be finite or NaN.");
+end
 graphDisplayCountNames = ["MaximumDisplayedTimeSlices", ...
     "MaximumDisplayedGraphNodes", "MaximumDisplayedGraphEdges"];
 for optionName = graphDisplayCountNames
@@ -137,6 +148,20 @@ handles = createEmptyHandles(options);
 % before the modes existed store true or false.
 wrapModes    = readWrapModes(result.Options);
 wrapsAnyAxis = any(wrapModes ~= "false");
+if options.ShowSphere && ~useSuppliedAxes
+    xInterval_units = result.RequestedLimits.xInterval_units;
+    yInterval_units = result.RequestedLimits.yInterval_units;
+    azimuthIsFullTurn = abs(diff(xInterval_units) - 360) <= 1e-8;
+    elevationIsPhysical = yInterval_units(1) >= -90 - 1e-8 && ...
+        yInterval_units(2) <= 90 + 1e-8;
+    poleWrapIsPhysical = azimuthIsFullTurn && all(abs(yInterval_units - [-90 90]) <= 1e-8);
+    if ~elevationIsPhysical || (wrapModes(1) ~= "false" && ~azimuthIsFullTurn) || ...
+            (wrapModes(2) ~= "false" && ~poleWrapIsPhysical)
+        error("plotTrajectory:SphereRequiresAzEl", ...
+            "ShowSphere needs elevation within [-90 90]; wrapped x needs a 360-degree interval, " + ...
+            "and wrapped y needs x spanning 360 degrees and y interval [-90 90].");
+    end
+end
 
 %% Section 2: Prepare Obstacles For The Displayed Time Range
 
@@ -152,6 +177,10 @@ if ~result.Success && isfield(result, 'ParentRequest')
     end
 end
 plotTimeRange_s    = [result.Inputs.initialState.time_s, plotEndTime_s];
+if options.ShowSphere && ~useSuppliedAxes && isfinite(options.SphereTime_s) && ...
+        (options.SphereTime_s < plotTimeRange_s(1) || options.SphereTime_s > plotTimeRange_s(2))
+    error("plotTrajectory:InvalidSphereTime", "SphereTime_s must be within the plotted time range.");
+end
 planningObstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles, plotTimeRange_s);
 protectedObstacles = planningObstacles;
 requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
@@ -313,7 +342,26 @@ if options.ShowExpandedWorkspace && wrapsAnyAxis && ~useSuppliedAxes
         createExpandedWorkspace(result, wrapModes, plotTimeRange_s, options);
 end
 
-%% Section 7: Plot Returned Position And Motion Rates
+%% Section 7: Plot Path And An Obstacle Snapshot On A Sphere
+
+if options.ShowSphere && ~useSuppliedAxes
+    sphereTime_s = options.SphereTime_s;
+    if isnan(sphereTime_s)
+        sphereTime_s = result.Inputs.initialState.time_s;
+    end
+    obstacleShapes = cell(numel(protectedObstacles), 1);
+    for obstacleIndex = 1:numel(protectedObstacles)
+        obstacle = protectedObstacles(obstacleIndex);
+        if shapeIsAvailable(obstacle, sphereTime_s)
+            obstacleShapes{obstacleIndex} = ...
+                obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, sphereTime_s);
+        end
+    end
+    [handles.SphereFigure, handles.SphereAxes] = ...
+        obstacleAvoidance.plotting.createSphereView(result, obstacleShapes, sphereTime_s, options);
+end
+
+%% Section 8: Plot Returned Position And Motion Rates
 
 if options.ShowKinematics && result.Success
     kinematicFigureHandle = figure("Name", options.Title + " kinematics", "Visible", options.FigureVisible);
@@ -325,7 +373,7 @@ if options.ShowKinematics && result.Success
     handles.KinematicAxes   = kinematicAxesHandles;
 end
 
-%% Section 8: Animate Returned Motion
+%% Section 9: Animate Returned Motion
 
 if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     animationVisibility = options.FigureVisible;
@@ -401,9 +449,12 @@ end
 if isempty(handles.Axes)
     handles.Axes = handles.SpaceTimeAxes;
 end
+if isempty(handles.Axes)
+    handles.Axes = handles.SphereAxes;
+end
 end
 
-%% Section 9: Local Functions
+%% Section 10: Local Functions
 
 function wrapModes = readWrapModes(options)
     % Read [WrapX WrapY] as wrap modes, accepting only what the planner
@@ -1158,6 +1209,8 @@ function handles = createEmptyHandles(options)
         "ContinuousWorkspaceAxes",   emptyHandles, ...
         "ExpandedWorkspaceFigure",   emptyHandles, ...
         "ExpandedWorkspaceAxes",     emptyHandles, ...
+        "SphereFigure",              emptyHandles, ...
+        "SphereAxes",                emptyHandles, ...
         "VisibilityFigure",          emptyHandles, ...
         "VisibilityAxes",            emptyHandles, ...
         "SpaceTimeFigure",           emptyHandles, ...
