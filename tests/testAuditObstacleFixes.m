@@ -92,4 +92,10 @@ function testGalleryPlotsPartiallyPreparedFailureResult(testCase)
     verifyEqual(testCase, numel(figureHandles), 1);
     axesHandle = findobj(figureHandles(1), 'Type', 'axes');
     verifyTrue(testCase, contains(string(axesHandle(1).Title.String), "unprepared snapshot"));
+
+    % The full trajectory plot, with its default space-time view, shows the
+    % interval without a continuous model as a gap instead of throwing.
+    handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', "off"));
+    plotCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
+    verifyNotEmpty(testCase, handles.SpaceTimeAxes);
 end

@@ -33,8 +33,9 @@ that is easy to miss in a top-level read.
 flowchart TD
     A["planner(obstacles, initialState, goalState, limits, options)"] --> B["Normalize and validate public inputs"]
     B --> W{"Wrapped axis requested?"}
-    W -- yes --> W1["Create exact reachable obstacle and goal copies<br/>unwrap the moving target's path"]
-    W1 --> W2["Plan plain unwrapped goal copies nearest first<br/>prune fixed-goal copies only by admissible bounds;<br/>validate each candidate against the wrapped request"]
+    W -- yes --> W1["Unwrap the moving target's path and list copies overlapping<br/>the speed-based planning range<br/>(x repeats by whole turns when y wraps; a pole copy mirrors y<br/>and turns x half a turn; direction modes stop the range at one end)"]
+    W1 -- no goal copy --> WT["Check obstacle intervals and endpoints as for an unwrapped request,<br/>then return timeWindowInfeasible"]
+    W1 -- copies listed --> W2["Plan plain unwrapped goal copies nearest first<br/>prune fixed-goal copies only by admissible bounds;<br/>validate each candidate against the wrapped request"]
     W2 --> W3["Select earliest arrival or shortest fixed motion"]
     W3 --> O
     W -- no --> G["Prepare original and protected geometry once<br/>margin applied exactly once"]
@@ -92,6 +93,9 @@ flowchart TD
         ET --> ETA{"Result"}
         ETA -- "validated" --> ECMP["Compare candidate with best plan so far<br/>within tolerance keep departure best plan so far"]
         ECMP --> ESELECT["Select policy-preferred validated motion"]
+        ESELECT --> EGAP{"Timed motion selected and the goal wait from the layer<br/>before its selected goal window to the window start blocked?"}
+        EGAP -- "yes: search the clocks between those layers" --> CH
+        EGAP -- no --> O
         ETA -- "validator rejected" --> EDEFECT
         ETA -- "typed method-local miss" --> ER{"Validated best plan so far exists?"}
         ETA -- "geometry proof, reconstruction,<br/>numerical, or unknown failure" --> ESTOP
@@ -102,13 +106,16 @@ flowchart TD
         RB -- 0 --> KEEP["⚠ Retain best plan so far; publish unsearched interval<br/>do not claim global earliest"]
         RB -- "> 0" --> CH
 
-        CH["⚠ Arrival-time search"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
+        CH["⚠ Arrival-time search<br/>(after a timed success: only that unsampled interval,<br/>below the timed arrival)"] --> CG["◆ Candidate clocks:<br/>TemporalResolution_s grid, max 4096 by default;<br/>exact event and horizon boundaries retained<br/>inside that bounded grid window"]
         CG --> CP["⚠ Prescreen endpoint physics and per-clock<br/>minimum travel time before solver"]
         CP -- "rejected cheaply" --> CN{"More candidates and budget?"}
         CP -- "passes" --> CS["Call fixed-arrival planner on that physical clock<br/>store its attempts as child evidence"]
         CS --> CSA{"Fixed child outcome"}
         CSA -- "validated" --> COK["Select earliest tried valid clock"]
-        CSA -- "validator or ineligible typed failure" --> CTERM["Terminal failure"]
+        CSA -- "validator rejection" --> CTERM["Terminal failure"]
+        CSA -- "ineligible typed failure: stop trials" --> CSTOP{"Validated best plan so far exists?"}
+        CSTOP -- yes --> CSTOPKEEP["Retain best plan so far; record the stopping<br/>trial in TemporalSearch.StoppingTrial"]
+        CSTOP -- no --> CTERM
         CSA -- "typed clock-local miss" --> CN
         CN -- yes --> CP
         CN -- no --> CX{"Validated best plan so far exists?"}
@@ -124,10 +131,10 @@ flowchart TD
     FTSUCCESS --> O
     ESOK --> O
     EPROOF --> O
-    ESELECT --> O
     KEEP --> O
     COK --> O
     CRETAIN --> O
+    CSTOPKEEP --> O
 
     VAL["Public independent validator runs inside finalizeCandidate<br/>before Success, best plan so far retention, or selection"]
     VAL -. governs .-> FBA
@@ -204,7 +211,8 @@ deterministic comparison fields.
 | Terminal reachable set contained by an obstacle | `testPlannerDecisionFlow/testTerminalReachabilityBlocked` | Returns `terminalReachabilityBlocked` | Required sufficient infeasibility proof |
 | Endpoint derivative or workspace violation | `testEndpointDerivativeLimit`, `testEndpointOutsideWorkspace`, `testWorkspaceBoundaryDerivativeIsRejectedBeforePlanning` | Stable endpoint reason before search | Required physical-input boundary |
 | Necessary travel time exceeds fixed horizon | `testPlannerDecisionFlow/testTimeWindowInfeasible` | Returns `timeWindowInfeasible` | Required physical lower bound |
-| Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in the unwrapped coordinates: obstacle copies that meet the reachable range, a target unwrapped by continuity, every goal copy in the reachable range planned nearest first and the best valid candidate accepted against the wrapped request in the one gate | Required coordinate policy |
+| Wrapped copy resolution | `testWrappedWrapUsesNearestImage`, `testWrappedYAndDualAxisWrap`, `testWrappedYMakesPoleCopies`, `testSphericalTargetKeepsContinuousAzimuthAndFixedGoalCopies`, `testSphericalOrdinaryObstacleCopiesReachAzimuthSeam`, `testPoleCrossingShortensSlew`, `testPoleObstacleBlocksTheCrossing`, `testWrapDirectionLimitsWhichEndMayBeCrossed`, `testWrappedObstacleImageBlocksTheSeam`, `testWrappedFarImageBeatsABlockedNearImage`, `testWrappedMovingTargetIsUnwrappedAcrossTheSeam` | Plain requests in unwrapped coordinates: with y wrapping, all azimuth copies repeat by whole turns even when x cannot cross an end; obstacle copies meet the reachable range, the target is unwrapped by continuity, and the best valid goal copy is accepted by the one gate | Required coordinate policy |
+| Wrapped goal has no copy in reach | `testWrappedGoalWithNoReachableCopyReturnsTruthfulFailure` | Returns `timeWindowInfeasible` before search, with an empty candidate list and no invented identity copy | Required physical lower bound |
 | Fixed direct chord | `testPlanningCore/testDirect` | Minimum-jerk quintic at the given horizon, public validation | Retained analytic specialization |
 | Fixed static detour | `testPlanningCore/testDetourAndTampering`, explicit default detour inputs | Exhaustive exact spatial visibility graph and static BMTP | Retained |
 | Fixed dynamic initial-snapshot proof | random case 1 with static obstacle, saved moving detour fixed (`testFixedTimedVisibility/testSavedDetourUsesGivenDeadline`) | The initial exact spatial route proves in the initial BMTP pass or its first refined pass | Retained as first guide |

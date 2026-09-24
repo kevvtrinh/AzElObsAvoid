@@ -1,10 +1,13 @@
 function result = searchArrivalTimes(request, planningEnvironment, baseResult, ...
-        priorAttempts, maximumTrialCount)
+        priorAttempts, maximumTrialCount, trialInterval_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = obstacleAvoidance.planning.searchArrivalTimes( ...
 %       request, planningEnvironment, baseResult, priorAttempts, ...
 %       maximumTrialCount)
+%   result = obstacleAvoidance.planning.searchArrivalTimes( ...
+%       request, planningEnvironment, baseResult, priorAttempts, ...
+%       maximumTrialCount, trialInterval_s)
 %**************************************************************************
 % PURPOSE
 %   - Try a list of possible arrival times, starting with the earliest listed.
@@ -16,21 +19,28 @@ function result = searchArrivalTimes(request, planningEnvironment, baseResult, .
 %   - planningEnvironment (scalar struct)
 %       Prepared obstacles and the initial obstacle-vertex connections.
 %   - baseResult (scalar struct)
-%       Earlier result to keep if no trial improves it and no failure requires
-%       planning to stop. This may already contain a validated motion.
+%       Earlier result to keep if no trial improves it. A validated motion
+%       here is kept even when a trial failure stops the search, unless that
+%       failure is an independent-validation rejection.
 %   - priorAttempts (struct array)
 %       Planner attempts completed before arrival-time search.
 %   - maximumTrialCount (positive integer scalar)
 %       Maximum number of planning trials. Times rejected by the endpoint
 %       checks do not use a trial. The caller may lower this limit when a
 %       validated motion is already available.
+%   - trialInterval_s (1-by-2 numeric vector, optional)
+%       [after, latest]: try only times later than after and no later than
+%       latest. Omit it to try the whole request window.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
 %       A validated motion or a failure result. Running out of trials keeps an
 %       earlier valid motion when available; otherwise the reason is
-%       "arrivalSearchExhausted". A failure that stops planning keeps its own
-%       reason. Trying discrete times does not prove the globally earliest arrival.
+%       "arrivalSearchExhausted". A trial failure that stops the search also
+%       keeps an earlier valid motion, except an independent-validation
+%       rejection, which is returned so the defect stays visible. Without an
+%       earlier valid motion, a stopping failure keeps its own reason. Trying
+%       discrete times does not prove the globally earliest arrival.
 %       Invalid input throws an error.
 %**************************************************************************
 % UNITS
@@ -45,6 +55,11 @@ suppliedGoalState = request.originalInputs.suppliedGoalState;
 trialOptions      = request.options;
 validateattributes(maximumTrialCount, {'numeric'}, ...
     {'scalar', 'finite', 'integer', 'positive'});
+hasTrialInterval = nargin >= 6;
+if hasTrialInterval
+    validateattributes(trialInterval_s, {'numeric'}, ...
+        {'real', 'finite', 'numel', 2, 'nondecreasing'});
+end
 
 searchStartTime_s = initialState.time_s;
 latestTrialTime_s = request.goalState.time_s;
@@ -76,6 +91,14 @@ if baseResult.Success
     bestSoFarArrivalTime_s = baseResult.ArrivalTime_s;
     latestTrialTime_s      = min(latestTrialTime_s, bestSoFarArrivalTime_s - ...
         trialOptions.ArrivalTimeTolerance_s);
+end
+% Keep the physical bound for reporting; the interval only narrows the trials.
+earliestPossibleArrival_s = earliestTrialTime_s;
+if hasTrialInterval
+    earliestTrialTime_s = max(earliestTrialTime_s, trialInterval_s(1));
+    latestTrialTime_s   = min(latestTrialTime_s, trialInterval_s(2));
+else
+    trialInterval_s = [NaN, NaN];
 end
 
 %% Section 3: List Possible Arrival Times
@@ -112,6 +135,10 @@ sampleAndDeadlineTimes_s = sampleAndDeadlineTimes_s( ...
     sampleAndDeadlineTimes_s <= latestTrialTime_s);
 candidateArrivalTimes_s = unique([gridTimes_s; sampleAndDeadlineTimes_s]);
 candidateArrivalTimes_s = candidateArrivalTimes_s(candidateArrivalTimes_s <= latestTrialTime_s);
+if hasTrialInterval
+    % The interval excludes its start: try times after it only.
+    candidateArrivalTimes_s = candidateArrivalTimes_s(candidateArrivalTimes_s > trialInterval_s(1));
+end
 
 trialOptions.GoalTimeMode = "fixedArrival";
 % Each trial must meet one exact arrival time while retaining the original
@@ -259,7 +286,8 @@ for candidateIndex = 1:numel(candidateArrivalTimes_s)
             request.limits, trialOptions, trialRequest);
 
         % Plan this trial while retaining the original request for validation.
-        if preparedTrialRequest.options.WrapX || preparedTrialRequest.options.WrapY
+        if string(preparedTrialRequest.options.WrapX) ~= "false" || ...
+                string(preparedTrialRequest.options.WrapY) ~= "false"
             trialResult = obstacleAvoidance.planning.planWrappedMotion(preparedTrialRequest);
         else
             trialResult = obstacleAvoidance.planning.planMotion(preparedTrialRequest);
@@ -324,6 +352,8 @@ for candidateIndex = 1:numel(candidateArrivalTimes_s)
         attempts(end + 1, 1) = attempt; %#ok<AGROW>
         continue
     end
+    % Keep the trial's own explanation with its attempt record.
+    attempt.Message       = string(trialResult.Message);
     attempts(end + 1, 1)  = attempt; %#ok<AGROW>
     stoppingFailureResult = trialResult;
     % Keep the time that failed. Wrapped planning may replace the request
@@ -344,7 +374,26 @@ trialLimitReached      = ~trialWasSelected && ~failureStopsPlanning && ...
     nextUnprocessedCandidateIndex > 0;
 searchWindowExhausted = ~trialWasSelected && ~failureStopsPlanning && ...
     ~candidateLimitReached && ~trialLimitReached;
-keepBestExistingMotion = baseResult.Success && ~trialWasSelected && ~failureStopsPlanning;
+% A stopping trial failure ends the search but does not erase a validated
+% motion found earlier. An independent-validation rejection is different: the
+% engine returned motion the validator refused, and that defect must be seen.
+stoppingFailureIsValidationDefect = failureStopsPlanning && ...
+    string(stoppingFailureResult.TerminationReason) == "invalidMotion";
+keepBestExistingMotion = baseResult.Success && ~trialWasSelected && ...
+    ~stoppingFailureIsValidationDefect;
+% When a kept motion hides a stopping failure, keep that failure's details
+% beside it so the defect can still be traced.
+stoppingTrial = struct([]);
+if keepBestExistingMotion && failureStopsPlanning
+    stoppingTrial = struct( ...
+        'AttemptIndex',      numel(attempts), ...
+        'TrialTime_s',       stoppingFailureResult.FixedArrivalTrialTime_s, ...
+        'TerminationReason', string(stoppingFailureResult.TerminationReason), ...
+        'Message',           string(stoppingFailureResult.Message), ...
+        'FailureStage',      attempts(end).FailureStage, ...
+        'FailureKind',       attempts(end).FailureKind, ...
+        'SolverDiagnostics', stoppingFailureResult.SolverDiagnostics);
+end
 if keepBestExistingMotion
     acceptedIndices = find([attempts.Success]);
     if ~isempty(acceptedIndices)
@@ -356,10 +405,12 @@ if keepBestExistingMotion
 end
 if trialWasSelected
     result = selectedResult;
-elseif failureStopsPlanning
-    result = stoppingFailureResult;
-else
+elseif keepBestExistingMotion || ~failureStopsPlanning
     result = baseResult;
+else
+    % The returned failure replaces any earlier motion, so select nothing.
+    [attempts.Selected] = deal(false);
+    result = stoppingFailureResult;
 end
 result.Attempts       = attempts;
 result.TemporalSearch = struct( ...
@@ -374,12 +425,16 @@ result.TemporalSearch = struct( ...
     'SearchWindowExhausted',     searchWindowExhausted, ...
     'TerminalFailure',           failureStopsPlanning, ...
     'GlobalEarliestProven',      false, ...
-    'EarliestPossibleArrival_s', earliestTrialTime_s, ...
+    'EarliestPossibleArrival_s', earliestPossibleArrival_s, ...
+    'TrialInterval_s',           trialInterval_s, ...
     'BestSoFarArrival_s',        bestSoFarArrivalTime_s, ...
     'BestSoFar',                 keepBestExistingMotion, ...
+    'StoppingTrial',             stoppingTrial, ...
     'AttemptStartIndex',         attemptStartIndex);
 if trialWasSelected
     result.Message = "An arrival-time trial passed independent validation; earlier gaps remain unsearched.";
+elseif keepBestExistingMotion && failureStopsPlanning
+    result.Message = "An arrival-time trial failure stopped the search; the validated best plan so far was kept.";
 elseif keepBestExistingMotion
     result.Message = "No earlier declared clock was proven; the validated best plan so far was kept.";
 elseif ~result.Success && ~failureStopsPlanning

@@ -42,10 +42,15 @@ reason   = "";
 
 % An earliest-arrival goal may be blocked at the deadline but clear earlier.
 % Check its obstacle occupancy here only when the arrival time is fixed.
+% A wrapped request plans each copy of its goal as a request of its own,
+% and that request checks the copy's position. Here, check only the start
+% position and the goal's derivatives.
 endpointPositions_units = initialState.position_units;
 endpointTimes_s         = initialState.time_s;
 arrivalIsFixed          = options.GoalTimeMode == "fixedArrival";
-if arrivalIsFixed
+requestWraps            = string(options.WrapX) ~= "false" || string(options.WrapY) ~= "false";
+goalPositionIsChecked   = arrivalIsFixed && ~requestWraps;
+if goalPositionIsChecked
     endpointPositions_units(2, :) = goalState.position_units;
     endpointTimes_s(2, 1)         = goalState.time_s;
 end
@@ -59,8 +64,7 @@ end
 
 % A clear goal can still be impossible to approach without a collision.
 % Wrapped requests get this check when planning each unwrapped goal copy.
-goalApproachShouldBeChecked = arrivalIsFixed && ~options.WrapX && ~options.WrapY;
-if goalApproachShouldBeChecked && allGoalApproachesAreBlocked(obstacles, initialState, goalState, limits)
+if goalPositionIsChecked && allGoalApproachesAreBlocked(obstacles, initialState, goalState, limits)
     message = "Every jerk-limited approach to the fixed terminal state intersects a protected obstacle.";
     reason  = "terminalReachabilityBlocked";
     return
@@ -90,6 +94,10 @@ for stateIndex = 1:numel(endpointStates)
         message = "An endpoint derivative exceeds its physical limit.";
         reason  = "dynamicEndpointInfeasible";
         return
+    end
+    if stateIndex == 2 && requestWraps
+        % The goal copies check their own positions.
+        continue
     end
 
     position_units             = endpointStates(stateIndex).position_units;
@@ -130,7 +138,8 @@ end
 
 % Even without obstacles, motion limits require at least this travel time.
 % Allow only the configured arrival-time tolerance when comparing times.
-if goalShouldBeChecked
+% A wrapped goal's travel time depends on the copy; each copy checks its own.
+if goalShouldBeChecked && ~requestWraps
     minimumDuration_s   = obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
     availableDuration_s = goalState.time_s - initialState.time_s + options.ArrivalTimeTolerance_s;
     if minimumDuration_s > availableDuration_s

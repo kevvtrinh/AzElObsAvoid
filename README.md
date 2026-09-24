@@ -35,12 +35,16 @@ validate request
   -> return one stable result
 ```
 
-Static visibility graphs exhaustively classify all endpoint and prepared
-boundary-node pairs. Timed visibility uses one deterministic staging-node set
-and one temporal search. A moving edge is checked over its complete time
-interval: affine point motion against every affine convex obstacle cell is
-reduced to quadratic half-space residuals, whose real roots partition all
-possible contact intervals. Collision acceptance does not depend on sampling.
+Static visibility graphs are reduced visibility graphs: they keep every
+outward obstacle corner, classify every pair of those corners and every
+endpoint-to-corner pair, and keep a connection only when it is tangent at
+each corner it touches. That holds the same shortest routes as the
+exhaustive graph with far fewer connections. Timed visibility uses one
+deterministic staging-node set and one temporal search. A moving edge is
+checked over its complete time interval: affine point motion against every
+affine convex obstacle cell is reduced to quadratic half-space residuals,
+whose real roots partition all possible contact intervals. Collision
+acceptance does not depend on sampling.
 
 Fixed-arrival requests use one deterministic policy. The planner evaluates the
 exact initial- and arrival-snapshot visibility guides as bounded runtime
@@ -69,7 +73,24 @@ instead of launching an unbounded arrival-time search. The result reports the
 unsearched interval and does not claim global optimality. Callers may spend an
 explicit, bounded `BestSoFarRefinementTrialLimit` of arrival-time trials to look
 for earlier clocks, without changing the public validator or discarding the plan
-already found. Every route, motion, and clock attempt is recorded in
+already found.
+
+The timed search samples time in layers spaced by the horizon. When it succeeds
+but waiting at the goal from the layer just before its goal window was not
+clear, no layer sampled the times in between, and the goal may have cleared
+anywhere there. The planner then tries the arrival-time grid in that one
+interval, below the timed arrival, with the `MaxArrivalTrials` budget
+(`BestSoFarRefinementTrialLimit` does not apply). It keeps the timed motion if
+no trial passes or a trial fails; only an independent-validation rejection is
+returned instead. The grid does not move with the horizon. Measured example: a
+square that clears the goal at 16.3 s arrives at 17.000 s with either a 24 s or
+a 30 s horizon (18.750 s at 30 s before this step).
+
+This is not a general proof that arrival is independent of the horizon: the
+timed layers, route, and interval ends still depend on it, and a 27 s horizon
+arrives at 16.888 s.
+
+Every route, motion, and clock attempt is recorded in
 `result.Attempts`; an arrival-time parent attempt keeps its fixed-arrival child
 evidence. `EarliestArrival` records the capabilities, the selected attempt, the
 best plan so far, the bounded-search state, and whether the earliest possible
@@ -78,7 +99,7 @@ arrival was actually attained.
 There are no route-class pruning rules, Delaunay-first graphs, boundary-offset
 repairs, connectivity-recovery passes, fixture-specific seeds, hidden
 waypoints, fabricated direct seeds, or silent motion fallbacks. The two
-snapshot shortcuts are deterministic, use exact exhaustive snapshot graphs,
+snapshot shortcuts are deterministic, use exact reduced snapshot graphs,
 and cannot weaken the independent acceptance gate.
 
 BMTP checks that supplied coverage metadata is internally consistent before it
@@ -122,7 +143,10 @@ Public planner options are:
 - `ConstraintTolerance`
 - `CollisionClearanceTolerance_units`
 - `ArrivalTimeTolerance_s`
-- `WrapX`, `WrapY`
+- `WrapX`, `WrapY`: `"false"` (default), `"both"`, `"forward"` (the path
+  may pass the upper interval end but not the lower), or `"backward"` (the
+  lower end but not the upper). `true` and `false` still mean `"both"` and
+  `"false"`
 - `MatchTargetVelocity`, `MatchTargetAcceleration`
 - `TemporalResolution_s`
 - `SpatialProbeIterationLimit`: BMTP iteration budget for each fixed-arrival
@@ -136,11 +160,35 @@ Public planner options are:
 
 Unknown options issue one warning and do not change planner behavior. A
 wrapped axis (azimuth 359 meets 0) is planned in plain unwrapped coordinates
-inside the range the vehicle can reach in the time given: every obstacle is
-copied one full turn up and down, a moving target's path is unwrapped so it
-never jumps at the seam, and every copy of the goal inside that range is
-planned as an ordinary request and accepted against the wrapped request in the
-one acceptance gate (earliest arrival first, or shortest motion for a fixed
+inside the range the vehicle can reach in the time given. A `"forward"` range
+stops at the lower interval end and a `"backward"` range at the upper end.
+Every obstacle is copied across the ends that range covers: an x copy is
+shifted by whole turns, and a y copy over an end is a pole copy, as for
+elevation on a sphere: y is mirrored about that end and x turns by half the x
+interval. On x [0 360], y [-90 90], the pole copy of (190, 89) is (10, 91), so
+a slew from (10, 89) to (190, 89) can cross the pole in 2 degrees instead of
+turning 180 in azimuth. The x interval width is treated as one full turn.
+With `WrapY` on, x repeats every turn even when `WrapX` is `"false"`, as
+azimuth does on a sphere: ordinary and pole copies are both placed by whole
+turns, and `WrapX` only decides whether the motion may cross the x ends. For
+example, an obstacle spanning x = 358..362 also has a copy at -2..2 on
+[0 360]. A goal or target with no copy inside the speed-based planning range
+returns `Success = false` and `TerminationReason = "timeWindowInfeasible"`,
+after the same obstacle-interval and endpoint checks an unwrapped request
+gets: an obstacle interval without a usable model, or an endpoint derivative
+beyond its limit, is reported first.
+With `WrapY` on, a moving target's goal y velocity and acceleration must be
+zero or matched to the target: over a pole their sign depends on where the
+target is met. To match one, leave that whole field out of the goal; a
+supplied velocity with `MatchTargetVelocity` is rejected even if its y part
+is zero. A moving obstacle whose vertex matching between samples is an
+exact tie cannot be mirrored consistently; declare its matching with
+`vertexCorrespondence = "sourceIndex"`. A moving target's path is
+unwrapped so it never jumps at the seam. For fixed arrival, copies are listed
+at the deadline; for earliest arrival, a moving target's whole path through
+the horizon is considered. Each listed copy is planned as an ordinary
+request and accepted against the wrapped request in the one acceptance gate
+(earliest arrival first, or shortest motion for a fixed
 arrival). The validator rebuilds the obstacle copies, the unwrapped target path,
 and the goal copy from the supplied request. Returned positions stay in
 unwrapped coordinates.

@@ -3185,7 +3185,7 @@
         if ((controls.wrapX || controls.wrapY) &&
             (state.obstacles.length > 0 || goalHasMotion())) {
           throw new Error(
-            "The maintained planner supports wrapping only for " +
+            "This browser sandbox supports wrapping only for " +
             "obstacle-free fixed-position goals."
           );
         }
@@ -3252,8 +3252,8 @@
           },
           options: {
             GoalTimeMode: controls.goalTimeMode,
-            WrapX: controls.wrapX,
-            WrapY: controls.wrapY
+            WrapX: wrapModeForExport(0, controls.wrapX),
+            WrapY: wrapModeForExport(1, controls.wrapY)
           }
         };
         state.lastRequestId = requestId;
@@ -3655,8 +3655,12 @@
             element("goalTimeMode").value = options.GoalTimeMode === "fixedArrival"
               ? "fixedArrival" : "earliestArrival";
           }
-          element("wrapX").checked = Boolean(options.WrapX);
-          element("wrapY").checked = Boolean(options.WrapY);
+          // Wrap options are "false", "both", "forward", or "backward";
+          // older results store true or false. A checkbox shows any mode
+          // other than "false" as checked and keeps the imported direction.
+          state.importedWrapModes = [options.WrapX, options.WrapY];
+          element("wrapX").checked = wrapModeIsOn(options.WrapX);
+          element("wrapY").checked = wrapModeIsOn(options.WrapY);
           writeEndpointInputs();
         } finally {
           state.applyingResult = false;
@@ -4676,10 +4680,13 @@
         const currentGoal = goalPositionAtTime(state.currentTime_s);
         const deadlineGoal = goalPositionAtTime(motionMissionTime());
         if (!pointsClose(currentGoal, deadlineGoal)) {
-          strokePath([currentGoal, deadlineGoal], {
+          const guideSegments = wrappedSegments([currentGoal, deadlineGoal]);
+          guideSegments.forEach((segment) => strokePath(segment, {
             stroke: "#d44359", width: 1.5, dash: [5, 5], alpha: 0.7
-          });
-          drawPoint(deadlineGoal, "#d44359", "Goal at deadline", "diamond");
+          }));
+          const finalSegment = guideSegments[guideSegments.length - 1];
+          drawPoint(finalSegment[finalSegment.length - 1],
+            "#d44359", "Goal at deadline", "diamond");
         }
       }
 
@@ -4788,66 +4795,204 @@
           sample - lower);
       }
 
-      function wrapPoint(point) {
-        const controls = readControls(false);
-        if (!controls) return point.slice();
+      function wrapModeIsOn(value) {
+        return typeof value === "string"
+          ? value.toLowerCase() !== "false"
+          : Boolean(value);
+      }
+
+      function wrapModeForExport(axis, checked) {
+        // Keep an imported "forward" or "backward" while its box stays checked.
+        if (!checked) return false;
+        const imported = state.importedWrapModes && state.importedWrapModes[axis];
+        return typeof imported === "string" &&
+          ["forward", "backward"].includes(imported.toLowerCase())
+          ? imported.toLowerCase() : true;
+      }
+
+      function foldPoint(point, reference, controls) {
+        // Match the planner: y over an end is a pole copy, so it is mirrored
+        // back about that end and x turns half a turn; x then moves back by
+        // whole turns. On x [0 360], y [-90 90], (10, 91) shows at (190, 89).
         const lower = [controls.xMin, controls.yMin];
         const periods = [controls.xMax - controls.xMin, controls.yMax - controls.yMin];
-        const flags = [controls.wrapX, controls.wrapY];
-        return point.map((value, axis) => flags[axis]
-          ? lower[axis] + ((value - lower[axis]) % periods[axis] + periods[axis]) % periods[axis]
-          : value);
+        const folded = point.slice();
+        let xReference = reference[0];
+        let poleCopy = false;
+        if (controls.wrapY) {
+          const count = Math.floor((reference[1] - lower[1]) / periods[1]);
+          poleCopy = ((count % 2) + 2) % 2 === 1;
+          if (poleCopy) {
+            folded[1] = 2 * lower[1] + (count + 1) * periods[1] - folded[1];
+            folded[0] -= periods[0] / 2;
+            xReference -= periods[0] / 2;
+          } else {
+            folded[1] -= count * periods[1];
+          }
+        }
+        // When y wraps, x repeats every turn even if x does not wrap.
+        if (controls.wrapX || controls.wrapY) {
+          folded[0] -= Math.floor((xReference - lower[0]) / periods[0]) * periods[0];
+        }
+        return folded;
       }
 
       function nearestWrappedGoal(start, goal) {
+        // Nearest copy of the goal under the planner's rule: x copies shift
+        // by whole turns, and a pole copy (x + half turn, mirrored y) is
+        // also a candidate when y wraps. A "forward" mode may not pass the
+        // lower end and "backward" the upper end; without x wrapping, x
+        // stays inside the x interval. Ties choose the lower x, then y.
         const controls = readControls(false);
-        if (!controls) return goal.slice();
+        if (!controls || (!controls.wrapX && !controls.wrapY)) return goal.slice();
+        const lower = [controls.xMin, controls.yMin];
+        const upper = [controls.xMax, controls.yMax];
         const periods = [controls.xMax - controls.xMin, controls.yMax - controls.yMin];
-        const flags = [controls.wrapX, controls.wrapY];
-        return goal.map((value, axis) => {
-          if (!flags[axis]) return value;
-          const turns = (start[axis] - value) / periods[axis];
-            return value + periods[axis] * Math.floor(turns + 0.5);
+        const modes = [0, 1].map((axis) => {
+          const mode = wrapModeForExport(axis, [controls.wrapX, controls.wrapY][axis]);
+          return mode === false ? "false" : (mode === true ? "both" : mode);
         });
+        const allowed = (value, axis) =>
+          (modes[axis] !== "false" || (value >= lower[axis] && value <= upper[axis])) &&
+          (modes[axis] !== "forward" || value >= lower[axis]) &&
+          (modes[axis] !== "backward" || value <= upper[axis]);
+        // Copies near the start: an ordinary copy n = 2k shifts y by 2k x H,
+        // a pole copy n = 2k + 1 maps y to 2 x yMin + (2k + 2) x H - y. Solve
+        // each for the k that lands nearest the start, then check around it,
+        // so a goal far outside the interval still finds its copies.
+        const ordinaryK = Math.round((start[1] - goal[1]) / (2 * periods[1]));
+        const poleK = Math.round((start[1] + goal[1] - 2 * controls.yMin - 2 * periods[1]) / (2 * periods[1]));
+        const copyNumbers = controls.wrapY
+          ? [-1, 0, 1].flatMap((offset) => [2 * (ordinaryK + offset), 2 * (poleK + offset) + 1])
+          : [0];
+        let best = goal.slice();
+        let bestDistance = Infinity;
+        copyNumbers.forEach((copyNumber) => {
+          const poleCopy = ((copyNumber % 2) + 2) % 2 === 1;
+          const y = poleCopy
+            ? 2 * controls.yMin + (copyNumber + 1) * periods[1] - goal[1]
+            : goal[1] + copyNumber * periods[1];
+          const xBase = goal[0] + (poleCopy ? periods[0] / 2 : 0);
+          const turnCounts = controls.wrapX || controls.wrapY
+            ? [-2, -1, 0, 1, 2].map((offset) => Math.round((start[0] - xBase) / periods[0]) + offset)
+            : [0];
+          turnCounts.forEach((turnCount) => {
+            const x = xBase + turnCount * periods[0];
+            if (!allowed(x, 0) || !allowed(y, 1)) return;
+            const distance = Math.hypot(x - start[0], y - start[1]);
+            // On a tie take the lower x, then the lower y: the copy the planner tries first.
+            if (distance < bestDistance ||
+                (distance === bestDistance && (x < best[0] || (x === best[0] && y < best[1])))) {
+              best = [x, y];
+              bestDistance = distance;
+            }
+          });
+        });
+        return best;
       }
 
-      function wrappedSegments(points) {
+      function wrappedSegments(points, stopAt) {
+        // stopAt (optional) = { segment, fraction } draws the path only up to
+        // that fraction of that segment (1-based, from points[segment - 1]),
+        // using the same copies as the complete path. The animation uses it
+        // so the elapsed path and its marker never fold differently from the
+        // complete path, even during a wait exactly on the pole.
         if (!points.length) return [];
         const controls = readControls(false);
-        if (!controls || (!controls.wrapX && !controls.wrapY)) return [points];
+        if (!controls || (!controls.wrapX && !controls.wrapY)) {
+          if (!stopAt) return [points];
+          // A plain path is cut at the same point as a folded one would be.
+          const start = points[stopAt.segment - 1];
+          const end = points[stopAt.segment];
+          const elapsed = points.slice(0, stopAt.segment);
+          if (stopAt.fraction > 0) {
+            elapsed.push(start.map((value, axis) => value + stopAt.fraction * (end[axis] - value)));
+          }
+          return [elapsed];
+        }
         const lower = [controls.xMin, controls.yMin];
         const periods = [controls.xMax - controls.xMin, controls.yMax - controls.yMin];
-        const flags = [controls.wrapX, controls.wrapY];
-        const segments = [[wrapPoint(points[0])]];
+        // A pole copy turns x half a turn, so with y wrapping check x
+        // boundaries every half turn.
+        const flags = [controls.wrapX || controls.wrapY, controls.wrapY];
+        const splitPeriods = [controls.wrapY ? periods[0] / 2 : periods[0], periods[1]];
+        if (points.length === 1) return [[foldPoint(points[0], points[0], controls)]];
+        const pieces = [];
         for (let index = 1; index < points.length; index += 1) {
           const start = points[index - 1];
           const step = points[index].map((value, axis) => value - start[axis]);
           const fractions = [0, 1];
           for (let axis = 0; axis < 2; axis += 1) {
             if (!flags[axis] || step[axis] === 0) continue;
-            const a = (start[axis] - lower[axis]) / periods[axis];
-            const b = (points[index][axis] - lower[axis]) / periods[axis];
+            const a = (start[axis] - lower[axis]) / splitPeriods[axis];
+            const b = (points[index][axis] - lower[axis]) / splitPeriods[axis];
             for (let seam = Math.ceil(Math.min(a, b)); seam <= Math.floor(Math.max(a, b)); seam += 1) {
-              const fraction = (lower[axis] + periods[axis] * seam - start[axis]) / step[axis];
+              const fraction = (lower[axis] + splitPeriods[axis] * seam - start[axis]) / step[axis];
               if (fraction > 0 && fraction < 1) fractions.push(fraction);
             }
           }
           const cuts = [...new Set(fractions)].sort((a, b) => a - b);
+          const pointAt = (fraction) => start.map((value, axis) => value + fraction * step[axis]);
           for (let piece = 0; piece + 1 < cuts.length; piece += 1) {
-            const middle = (cuts[piece] + cuts[piece + 1]) / 2;
-            const shift = start.map((value, axis) => flags[axis]
-              ? Math.floor((value + middle * step[axis] - lower[axis]) / periods[axis]) * periods[axis]
-              : 0);
-            const endpoints = [cuts[piece], cuts[piece + 1]].map(fraction =>
-              start.map((value, axis) => value + fraction * step[axis] - shift[axis]));
-            let current = segments[segments.length - 1];
-            if (current[current.length - 1].some((value, axis) => value !== endpoints[0][axis])) {
-              current = [endpoints[0]];
-              segments.push(current);
-            }
-            current.push(endpoints[1]);
+            pieces.push({
+              segment: index,
+              cuts: [cuts[piece], cuts[piece + 1]],
+              pointAt,
+              midpoint: pointAt((cuts[piece] + cuts[piece + 1]) / 2)
+            });
           }
         }
+        // The midpoint decides which copy a piece lies in. A midpoint exactly
+        // on a boundary line cannot decide that coordinate (a wait at the
+        // pole, a run along it, or a wait on the x seam), so that coordinate
+        // is taken from the nearest piece that can decide it: the previous
+        // one, or the next one at the start. Only the undecided coordinate
+        // is borrowed, so a wait on the x seam keeps its own y band.
+        const undecided = pieces.map((piece) => [0, 1].map((axis) => flags[axis] &&
+          Number.isInteger((piece.midpoint[axis] - lower[axis]) / splitPeriods[axis])));
+        pieces.forEach((piece) => { piece.reference = piece.midpoint.slice(); });
+        [0, 1].forEach((axis) => {
+          // Two running passes: the last deciding piece before each piece and
+          // the first one after it, so a long wait costs one sweep.
+          const previous = new Array(pieces.length);
+          const next = new Array(pieces.length);
+          let seen = -1;
+          pieces.forEach((piece, index) => {
+            previous[index] = seen;
+            if (!undecided[index][axis]) seen = index;
+          });
+          seen = -1;
+          for (let index = pieces.length - 1; index >= 0; index -= 1) {
+            next[index] = seen;
+            if (!undecided[index][axis]) seen = index;
+          }
+          pieces.forEach((piece, index) => {
+            if (!undecided[index][axis]) return;
+            const neighbor = previous[index] >= 0 ? previous[index] : next[index];
+            if (neighbor >= 0) piece.reference[axis] = pieces[neighbor].midpoint[axis];
+          });
+        });
+        const segments = [];
+        pieces.forEach((piece) => {
+          let drawnCuts = piece.cuts;
+          if (stopAt && (piece.segment > stopAt.segment ||
+              (piece.segment === stopAt.segment && piece.cuts[0] >= stopAt.fraction))) {
+            drawnCuts = null;
+          } else if (stopAt && piece.segment === stopAt.segment) {
+            drawnCuts = [piece.cuts[0], Math.min(piece.cuts[1], stopAt.fraction)];
+          }
+          const endpoints = (drawnCuts || piece.cuts).map((fraction) =>
+            foldPoint(piece.pointAt(fraction), piece.reference, controls));
+          // The first piece decides which side holds a starting pole or seam.
+          if (!segments.length) segments.push([endpoints[0]]);
+          if (!drawnCuts) return;
+          let current = segments[segments.length - 1];
+          if (current[current.length - 1].some((value, axis) => value !== endpoints[0][axis])) {
+            current = [endpoints[0]];
+            segments.push(current);
+          }
+          current.push(endpoints[1]);
+        });
         return segments;
       }
 
@@ -5117,27 +5262,25 @@
         return data.positions[sampleCount - 1];
       }
 
-      function elapsedTrajectory(time_s) {
+      function trajectoryProgressAt(time_s) {
+        // Where the motion is at time_s: the recorded segment (1-based) and
+        // the fraction along it, as trajectoryPointAt interpolates. null means
+        // the whole path has elapsed.
         const data = trajectoryData();
         const sampleCount = Math.min(data.times.length, data.positions.length);
-        if (sampleCount === 0 || time_s < data.times[0]) {
-          return [];
+        if (sampleCount < 2 || time_s >= data.times[sampleCount - 1]) {
+          return null;
         }
-        const elapsed = [];
-        for (let index = 0; index < sampleCount; index += 1) {
-          if (data.times[index] <= time_s) {
-            elapsed.push(data.positions[index]);
-          } else {
-            break;
+        if (time_s <= data.times[0]) {
+          return { segment: 1, fraction: 0 };
+        }
+        for (let index = 0; index < sampleCount - 1; index += 1) {
+          if (time_s <= data.times[index + 1]) {
+            const duration = data.times[index + 1] - data.times[index];
+            return { segment: index + 1, fraction: duration > 0 ? (time_s - data.times[index]) / duration : 0 };
           }
         }
-        const current = trajectoryPointAt(time_s);
-        if (current && (elapsed.length === 0 ||
-            current[0] !== elapsed[elapsed.length - 1][0] ||
-            current[1] !== elapsed[elapsed.length - 1][1])) {
-          elapsed.push(current);
-        }
-        return elapsed;
+        return null;
       }
 
       function drawTrajectory() {
@@ -5149,15 +5292,22 @@
         if (data.positions.length < 2) {
           return;
         }
-        wrappedSegments(data.positions).forEach((segment) => strokePath(segment, {
+        const completeSegments = wrappedSegments(data.positions);
+        completeSegments.forEach((segment) => strokePath(segment, {
           stroke: "rgba(65,89,119,0.62)", width: 2.2
         }));
-        wrappedSegments(elapsedTrajectory(state.currentTime_s))
-          .forEach((segment) => strokePath(segment, {
-            stroke: "#087f8c", width: 3.2
-          }));
+        // The elapsed path is the complete path's fold cut at the current
+        // time, so its marker stays on the drawn path even during a wait
+        // exactly on the pole.
+        const elapsedSegments = wrappedSegments(data.positions, trajectoryProgressAt(state.currentTime_s));
+        elapsedSegments.forEach((segment) => strokePath(segment, {
+          stroke: "#087f8c", width: 3.2
+        }));
         const current = trajectoryPointAt(state.currentTime_s);
         if (current) {
+          const currentSegment = elapsedSegments.length
+            ? elapsedSegments[elapsedSegments.length - 1] : completeSegments[0];
+          const currentDisplay = currentSegment[currentSegment.length - 1];
           // The moving marker passes over the start and goal labels. Measure
           // the text instead of guessing a distance, and drop the marker
           // label only when its box would actually overlap one of them. The
@@ -5172,12 +5322,14 @@
             a[1] < b[3] && b[1] < a[3];
           context.save();
           context.font = "650 11px ui-sans-serif, system-ui, sans-serif";
-          const markerBox = labelBox(wrapPoint(current), "Pointing");
-          const anchors = [[state.start, "Start"], [state.goal, "Goal"]];
+          const markerBox = labelBox(currentDisplay, "Pointing");
+          const finalSegment = completeSegments[completeSegments.length - 1];
+          const anchors = [[completeSegments[0][0], "Start"],
+            [finalSegment[finalSegment.length - 1], "Goal"]];
           const collides = anchors.some(([anchor, text]) =>
             anchor && overlaps(markerBox, labelBox(anchor, text)));
           context.restore();
-          drawPoint(wrapPoint(current), "#087f8c",
+          drawPoint(currentDisplay, "#087f8c",
             collides ? "" : "Pointing", "diamond");
         }
       }
@@ -5282,11 +5434,12 @@
         const showRequestedLine = !state.walkthroughActive ||
           walkthroughViewIs("request", "protected");
         const currentGoal = goalPositionAtTime(state.currentTime_s);
-        if (!state.obstaclePreview && showRequestedLine &&
-            state.start && currentGoal) {
+        const requestedSegments = state.start && currentGoal
+          ? wrappedSegments([state.start, nearestWrappedGoal(state.start, currentGoal)])
+          : [];
+        if (!state.obstaclePreview && showRequestedLine && requestedSegments.length) {
           drawGoalMotionGuide();
-          wrappedSegments([state.start,
-            nearestWrappedGoal(state.start, currentGoal)]).forEach((segment) =>
+          requestedSegments.forEach((segment) =>
             strokePath(segment, {
               stroke: "#4279cc", width: 1.1, dash: [7, 6], alpha: 0.62
             })
@@ -5297,8 +5450,37 @@
           drawDraft();
           drawTransientDrafts();
           drawFinalPoseGhost();
-          drawPoint(state.start, "#178453", "Start");
-          drawPoint(currentGoal, "#d44359", goalHasMotion() ? "Moving goal" : "Goal");
+          let displayedStart = state.start;
+          let displayedGoal = currentGoal;
+          if (requestedSegments.length) {
+            displayedStart = requestedSegments[0][0];
+            const finalSegment = requestedSegments[requestedSegments.length - 1];
+            displayedGoal = finalSegment[finalSegment.length - 1];
+          }
+          const returnedPositions = trajectoryData().positions;
+          if (state.result && state.result.Success && returnedPositions.length >= 2) {
+            const returnedSegments = wrappedSegments(returnedPositions);
+            displayedStart = returnedSegments[0][0];
+            if (!goalHasMotion()) {
+              const finalSegment = returnedSegments[returnedSegments.length - 1];
+              displayedGoal = finalSegment[finalSegment.length - 1];
+            }
+          }
+          if (goalHasMotion() && currentGoal) {
+            const deadlineGoal = goalPositionAtTime(motionMissionTime());
+            if (pointsClose(state.goal, currentGoal)) {
+              const futureTrack = wrappedSegments([currentGoal, deadlineGoal]);
+              displayedGoal = futureTrack[0][0];
+            } else {
+              // At a pole deadline, use the incoming track. Folding the
+              // current and deadline points alone would turn x half a turn.
+              const pastTrack = wrappedSegments([state.goal, currentGoal]);
+              const finalSegment = pastTrack[pastTrack.length - 1];
+              displayedGoal = finalSegment[finalSegment.length - 1];
+            }
+          }
+          drawPoint(displayedStart, "#178453", "Start");
+          drawPoint(displayedGoal, "#d44359", goalHasMotion() ? "Moving goal" : "Goal");
         }
         drawCrosshair();
         context.restore();

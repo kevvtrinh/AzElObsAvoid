@@ -81,7 +81,7 @@ positionCoefficients_units = permute(pagemtimes(bernsteinToPowerMap, offsetContr
 positionCoefficients_units(:, :, 1) = positionCoefficients_units(:, :, 1) + reshape(coordinateOrigin_units, 1, 2);
 
 % Higher-degree segments have extra coefficients for matching endpoint states.
-if degree > 5
+if degree > 5 && ~allCoefficientsWereSupplied
     positionCoefficients_units = matchPolynomialEndpointStates( ...
         positionCoefficients_units, controlPoint_units, segmentTime_s);
 end

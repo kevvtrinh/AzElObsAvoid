@@ -21,20 +21,38 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       Example: struct("time_s", 12, "position_units", [4 0])
 %   - limits (scalar struct)
 %       Workspace intervals and scalar or per-axis motion limits.
-%   - options (scalar struct, optional; default struct())
-%       Controls arrival time, sampling, wrapping, endpoint matching, and
-%       search limits. Call planner() to see all defaults.
-%       ArrivalTimeTolerance_s allows small differences in time comparisons.
-%       ConstraintTolerance sets the numerical tolerance for position and
-%       motion constraints and the calculations used to check them.
-%       SpatialProbeIterationLimit limits BMTP iterations for a route built
-%       from obstacle positions at one time.
-%       BestSoFarRefinementTrialLimit limits extra arrival-time trials after
-%       finding valid motion; zero keeps that motion without extra trials.
-%       WrapX and WrapY allow travel across the corresponding interval ends.
-%       For example, on a 360-unit axis, travel from 350 to 10 can use 350 to
-%       370. The planner copies obstacles throughout the possible travel
-%       range and keeps a moving target's path continuous across the seam.
+%   - options (scalar struct) [OPTIONAL, Default is struct()]
+%       Planner settings. Omitted fields take the defaults from planner().
+%       - GoalTimeMode (string) [Default is "fixedArrival"]
+%           "fixedArrival" arrives at goalState.time_s; "earliestArrival"
+%           arrives as early as the limits allow.
+%       - SampleTime_s (positive scalar) [Default is 0.05]
+%           Time step of the returned sampled motion.
+%       - ConstraintTolerance (positive scalar) [Default is 1e-8]
+%           Tolerance on position and motion constraints.
+%       - CollisionClearanceTolerance_units (scalar) [Default is 1e-7]
+%           Clearance the motion must keep from protected obstacles.
+%       - ArrivalTimeTolerance_s (positive scalar) [Default is 1e-8]
+%           Tolerance when comparing arrival times.
+%       - WrapX, WrapY (string) [Default is "false"]
+%           "false", "both", "forward", or "backward". Allows travel past
+%           the interval ends. x copies shift by a whole turn: 350 to 10 on
+%           a 360 axis can use 350 to 370. y copies mirror over a pole and
+%           shift x by half a turn: on x [0 360], y [-90 90], (190, 89) is
+%           also (10, 91).
+%       - MatchTargetVelocity, MatchTargetAcceleration [Default is false]
+%           Take the goal velocity or acceleration from the target's path
+%           at the arrival time.
+%       - TemporalResolution_s (positive scalar) [Default is 0.5]
+%           Spacing of the arrival times tried in a search.
+%       - SpatialProbeIterationLimit (integer, max 35) [Default is 2]
+%           BMTP iterations for a route probed at one obstacle time.
+%       - BestSoFarRefinementTrialLimit (integer) [Default is 0]
+%           Extra arrival-time trials after valid motion is found.
+%       - MaxArrivalTrials (integer) [Default is 100]
+%           Arrival-time trials allowed per search.
+%       - MaxArrivalCandidates (integer) [Default is 4096]
+%           Cap on the arrival-time grid built per search.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -42,6 +60,8 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %       details, and Validation. Expected no-path or infeasible outcomes
 %       return Success = false with Message and TerminationReason explaining
 %       why. Invalid inputs throw an error.
+%       result.plotTrajectory() plots the result as returned; it accepts the
+%       same optional overrides as obstacleAvoidance.plotting.plotTrajectory.
 %   - options (scalar struct, zero-input call)
 %       Fully resolved planner defaults.
 %**************************************************************************
@@ -84,9 +104,16 @@ request = obstacleAvoidance.planning.prepareRequest( ...
 
 % Wrapping gives several coordinates for the same goal, such as 10 and 370
 % on a 360-unit axis. Try the relevant copies before selecting the motion.
-if request.options.WrapX || request.options.WrapY
+if request.options.WrapX ~= "false" || request.options.WrapY ~= "false"
     result = obstacleAvoidance.planning.planWrappedMotion(request);
 else
     result = obstacleAvoidance.planning.planMotion(request);
 end
+
+%% Section 3: Attach The Plot Shortcut
+
+% result.plotTrajectory(...) plots this result as returned. The handle keeps
+% its own copy of the result made here, so edits to result after this call
+% are not shown; plot an edited result with plotTrajectory(result) directly.
+result.plotTrajectory = @(varargin) obstacleAvoidance.plotting.plotTrajectory(result, varargin{:});
 end

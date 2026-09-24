@@ -42,6 +42,10 @@ function [route_units, routeTime_s, timedSearchDetails] = timeExpandedVisibility
 %   - timedSearchDetails (scalar struct)
 %       Search counts, the selected period when the goal stays clear, and
 %       an additional route allowing a later arrival within that period.
+%       GoalWindowPreviousLayerTime_s is the layer just before that period:
+%       waiting at the goal from that layer to the period start was not
+%       clear. It is NaN when the period starts at the first layer. It is not
+%       a lower bound on arrival; a motion may finish at the goal earlier.
 %       Finding no route is a normal outcome; invalid input throws an error.
 %**************************************************************************
 % UNITS
@@ -310,6 +314,7 @@ else
 end
 selectedGoalWindowStartTime_s = NaN;
 selectedGoalWindowEndTime_s   = NaN;
+goalWindowPreviousLayerTime_s = NaN;
 if ~isempty(goalLayerIndex)
     goalWindowStartLayerIndices = find( ...
         waitWindowStartsHere(:, 2) & nodeIsFree(:, 2));
@@ -319,6 +324,12 @@ if ~isempty(goalLayerIndex)
         waitWindowEndLayerIndex(selectedGoalWindowStartLayerIndex, 2));
     selectedGoalWindowStartTime_s = layerTimes_s(selectedGoalWindowStartLayerIndex);
     selectedGoalWindowEndTime_s   = layerTimes_s(selectedGoalWindowEndLayerIndex);
+    % A window that starts after the first layer means waiting at the goal
+    % from the previous layer to this one was not clear. No layer sampled
+    % the times in between.
+    if selectedGoalWindowStartLayerIndex > 1
+        goalWindowPreviousLayerTime_s = layerTimes_s(selectedGoalWindowStartLayerIndex - 1);
+    end
 end
 timedSearchDetails = struct( ...
     "NodeCount",                     nodeCount, ...
@@ -327,6 +338,7 @@ timedSearchDetails = struct( ...
     "ExpandedCount",                 expandedCount, ...
     "SelectedGoalWindowStartTime_s", selectedGoalWindowStartTime_s, ...
     "SelectedGoalWindowEndTime_s",   selectedGoalWindowEndTime_s, ...
+    "GoalWindowPreviousLayerTime_s", goalWindowPreviousLayerTime_s, ...
     "MinimumGoalArrivalTime_s",      minimumGoalArrivalTime_s, ...
     "WaitRoute_units",               waitRoute_units, ...
     "WaitRouteTime_s",               waitRouteTime_s);

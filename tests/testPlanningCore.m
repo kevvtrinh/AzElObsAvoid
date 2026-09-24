@@ -278,9 +278,41 @@ function testVisibilityMatchesExhaustiveReference(testCase)
         verifyEqual(testCase,actual.IsConnected,reference.IsConnected);
         verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
         verifyTrue(testCase,actual.GraphIsFullyEnumerated);
-        nodeCount = size(actual.NodePosition_units,1);
-        verifyEqual(testCase,size(actual.AcceptedNodeIndex,1)+size(actual.RejectedNodeIndex,1), ...
-            nodeCount*(nodeCount-1)/2);
+        % The reduced graph keeps a subset of the exhaustive connections.
+        verifyLessThanOrEqual(testCase,size(actual.AcceptedNodeIndex,1),size(reference.AcceptedNodeIndex,1));
+    end
+end
+
+function testReducedGraphMatchesExhaustiveReferenceOnConcaveShapes(testCase)
+    % Random star-shaped (concave) obstacles, spaced so they never overlap,
+    % against the exhaustive single-ring reference graph.
+    rng(91);
+    warningState = warning('off','MATLAB:polyshape:repairedBySimplify');
+    restoreWarning = onCleanup(@() warning(warningState)); %#ok<NASGU>
+    limits = struct('xInterval_units',[-12 12],'yInterval_units',[-10 10]);
+    options = struct('ConstraintTolerance',1e-8);
+    for k = 1:40
+        scene = struct('ProtectedShape',{},'ProtectedVertices_units',{});
+        for j = 1:mod(k,4)+1
+            % The reference reads one closed ring per obstacle, so redraw any
+            % polygon that polyshape repaired into several regions.
+            shape = polyshape();
+            while shape.NumRegions ~= 1 || shape.NumHoles ~= 0
+                angles = sort(rand(8,1)*2*pi);
+                radii  = 0.5+rand(8,1)*0.9;
+                center = [-6+3*j,rand*6-3];
+                shape  = polyshape(center+[radii.*cos(angles),radii.*sin(angles)]);
+            end
+            scene(j) = struct('ProtectedShape',shape,'ProtectedVertices_units',shape.Vertices);
+        end
+        initial_units = [-9,rand*2-1]; goal_units = [9,rand*2-1];
+        reference = createVisibilityGraphBaseline(scene,initial_units,goal_units,limits,options);
+        vertexVisibility = obstacleAvoidance.search.createVertexVisibility(scene,limits,options);
+        actual = obstacleAvoidance.search.createVisibilityGraph(vertexVisibility,initial_units,goal_units);
+        verifyEqual(testCase,actual.IsConnected,reference.IsConnected);
+        verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
+        verifyLessThanOrEqual(testCase,size(actual.NodePosition_units,1),size(reference.NodePosition_units,1));
+        verifyLessThanOrEqual(testCase,size(actual.AcceptedNodeIndex,1),size(reference.AcceptedNodeIndex,1));
     end
 end
 

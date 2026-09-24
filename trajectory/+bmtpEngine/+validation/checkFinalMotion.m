@@ -10,14 +10,17 @@ function [motionCheck, savedPairChecks] = checkFinalMotion(solverRequest, prepar
 %**************************************************************************
 % PURPOSE
 %   - Check separation for every curve segment and obstacle region whose
-%     time intervals overlap. When full motion controls are present, also
-%     check workspace limits, motion rates and continuity between segments.
+%     time intervals overlap. When the motion carries its polynomial
+%     (GivenPower_units), also check workspace limits, motion rates and
+%     continuity between segments.
 %**************************************************************************
 % INPUTS
 %   - solverRequest (scalar struct)
 %       Validated states, motion limits, options and prepared obstacle regions.
 %   - preparedMotion (scalar struct)
-%       Prepared curve controls, segment durations and final time.
+%       Prepared curve controls (ControlPoint_units), segment durations and
+%       final time. With GivenPower_units present, the workspace, motion-rate
+%       and join checks run on the polynomial as well.
 %   - roundoffReserve_units (finite numeric scalar)
 %       Numerical separation reserve.
 %   - separationTarget_units (finite numeric scalar)
@@ -50,7 +53,7 @@ end
 % A static obstacle applies to every prepared segment. For moving regions,
 % check only positive-duration overlap with each region's active interval.
 % Use the prepared segment times, which may differ after curve subdivision.
-regionActiveBySegment = true(size(preparedMotion.ProvenControlPoint_units, 1), ...
+regionActiveBySegment = true(size(preparedMotion.ControlPoint_units, 1), ...
     numel(solverRequest.Regions_units));
 segmentBoundaryTime_s = solverRequest.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s)];
 segmentBoundaryTime_s(end) = preparedMotion.FinalTime_s;
@@ -65,14 +68,17 @@ separatingLineGeometry = cell(numel(solverRequest.Regions_units), 1);
 if isfield(solverRequest, 'SeparatingLineGeometry')
     separatingLineGeometry = solverRequest.SeparatingLineGeometry;
 end
-motionCheck = checkAllCurveObstaclePairs(preparedMotion.ProvenControlPoint_units, ...
+motionCheck = checkAllCurveObstaclePairs(preparedMotion.ControlPoint_units, ...
     solverRequest.Regions_units, solverRequest.Coverage, separatingLineGeometry, ...
     regionActiveBySegment, roundoffReserve_units, separationTarget_units, ...
     segmentBoundaryTime_s, savedPairChecks, stopOnFirstUnverified);
 
 %% Section 2: Check Workspace Limits, Motion Rates And Segment Joins
 
-if isfield(preparedMotion, 'ControlPoint_units')
+% These checks need the motion's polynomial, which a prepared motion carries
+% in GivenPower_units (complete, or empty to convert from its controls). A
+% check of bare controls, as the separation tests make, proves separation only.
+if isfield(preparedMotion, 'GivenPower_units')
     % Use the actual returned curve and durations for these checks. Simply
     % slowing it down would change supplied endpoint velocity/acceleration.
     % An over-limit direct proposal must fail so the optimizer can try.
@@ -131,7 +137,7 @@ end
 % Save the checked controls and absolute times with the result so the next
 % refinement can identify exactly which separation checks remain reusable.
 savedPairChecks = struct( ...
-    'Controls',     preparedMotion.ProvenControlPoint_units, ...
+    'Controls',     preparedMotion.ControlPoint_units, ...
     'Breaks',       segmentBoundaryTime_s, ...
     'Target_units', separationTarget_units, ...
     'Proof',        motionCheck);

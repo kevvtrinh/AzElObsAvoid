@@ -106,7 +106,7 @@ end
 
 function options = interactivePlannerDefaults()
     % Only display-owned choices differ from the public planner defaults.
-    options = struct("GoalTimeMode", "earliestArrival", "WrapX", false, "WrapY", false);
+    options = struct("GoalTimeMode", "earliestArrival", "WrapX", "false", "WrapY", "false");
 end
 
 function options = resolveSandboxOptions(overrides)
@@ -188,8 +188,10 @@ function options = resolveSandboxOptions(overrides)
     if ~isscalar(options.PlannerOptions.GoalTimeMode) || ~any(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"])
         error("obstacleAvoidanceSandbox:InvalidGoalTimeMode", "GoalTimeMode must be earliestArrival or fixedArrival.");
     end
+    % Wrap options are "false", "both", "forward", or "backward"; true and
+    % false mean "both" and "false". The check boxes show whether a mode is on.
     for name = ["WrapX", "WrapY"]
-        options.PlannerOptions.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.PlannerOptions.(name), name, "obstacleAvoidanceSandbox:InvalidLogicalOption");
+        options.PlannerOptions.(name) = normalizeWrapMode(options.PlannerOptions.(name), name);
     end
     validateattributes(options.AnimationPause_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'}, "obstacleAvoidanceSandbox", "AnimationPause_s");
 end
@@ -259,8 +261,8 @@ function handles = createGoalControls(tabHandle, options)
     logHandle                 = uicontrol(statusPanelHandle, "Style", "listbox", "String", {"Planner output will appear here."}, "Units", "normalized", "Position", [0.36 0.08 0.625 0.86], "HorizontalAlignment", "left", "Min", 0, "Max", 2);
     plannerOptionsPanelHandle = uipanel(tabHandle, "Title", "Planner options", "Units", "normalized", "Position", [0.71 0.025 0.275 0.23]);
     controls.GoalTimeModeHandle             = addPopupControl(plannerOptionsPanelHandle, "Goal timing", 0.49, ["Earliest arrival", "Arrive at mission time"], find(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"], 1), "Choose earliest arrival or arrival at the mission horizon.");
-    controls.WrapXHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap x", "Units", "normalized", "Position", [0.05 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapX, "HorizontalAlignment", "left", "TooltipString", "Use wrapped x for obstacle-free fixed goals only.");
-    controls.WrapYHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap y", "Units", "normalized", "Position", [0.52 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapY, "HorizontalAlignment", "left", "TooltipString", "Use wrapped y for obstacle-free fixed goals only.");
+    controls.WrapXHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap x", "Units", "normalized", "Position", [0.05 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapX ~= "false", "HorizontalAlignment", "left", "TooltipString", "Allow motion across the x interval ends. A checked box keeps an imported direction mode.");
+    controls.WrapYHandle = uicontrol(plannerOptionsPanelHandle, "Style", "checkbox", "String", "Wrap y", "Units", "normalized", "Position", [0.52 0.08 0.43 0.18], "Value", options.PlannerOptions.WrapY ~= "false", "HorizontalAlignment", "left", "TooltipString", "Allow motion over a spherical pole. A checked box keeps an imported direction mode.");
     handles = struct("Tab", tabHandle, ...
         "Axes", axesHandle, ...
         "ControlPanel", controlPanelHandle, ...
@@ -1064,7 +1066,7 @@ function controls = readControls(applicationState)
         "PathObstacleRadius_units", pathObstacleRadius_units, ...
         "PathSafetyMargin_units", pathSafetyMargin_units, ...
         "ObstacleSafetyMargin_units", obstacleSafetyMargin_units, ...
-        "GoalTimeMode", goalTimeModes(get(handles.GoalTimeModeHandle, "Value")), "WrapX", logical(get(handles.WrapXHandle, "Value")), "WrapY", logical(get(handles.WrapYHandle, "Value")), "Verbose", logical(get(handles.VerboseHandle, "Value")));
+        "GoalTimeMode", goalTimeModes(get(handles.GoalTimeModeHandle, "Value")), "WrapX", checkedWrapMode(get(handles.WrapXHandle, "Value"), applicationState.Options.PlannerOptions.WrapX), "WrapY", checkedWrapMode(get(handles.WrapYHandle, "Value"), applicationState.Options.PlannerOptions.WrapY), "Verbose", logical(get(handles.VerboseHandle, "Value")));
 end
 
 function restorePlanningControls(figureHandle)
@@ -1116,8 +1118,8 @@ function applyDefaultControls(handles, options)
     set(handles.VerboseHandle, "Value", options.Verbose);
     set(handles.MotionProfileHandle, "Value", 1);
     set(handles.GoalTimeModeHandle, "Value", find(options.PlannerOptions.GoalTimeMode == ["earliestArrival", "fixedArrival"], 1));
-    set(handles.WrapXHandle, "Value", options.PlannerOptions.WrapX);
-    set(handles.WrapYHandle, "Value", options.PlannerOptions.WrapY);
+    set(handles.WrapXHandle, "Value", options.PlannerOptions.WrapX ~= "false");
+    set(handles.WrapYHandle, "Value", options.PlannerOptions.WrapY ~= "false");
 end
 
 function writeAxisPair(handles, values)
@@ -1324,10 +1326,6 @@ function redrawScene(applicationState)
         end
     end
     renderCanonicalObstacles(axesHandle, modeState.CanonicalObstacles);
-
-    if ~isempty(modeState.StartPosition_units)
-        plot(axesHandle, modeState.StartPosition_units(1), modeState.StartPosition_units(2), "go", "MarkerFaceColor", "g", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Start");
-    end
     redrawGoalRequest(axesHandle, modeState, controls);
     if ~isempty(findobj(axesHandle, "-property", "DisplayName"))
         legend(axesHandle, "Location", "best");
@@ -1352,29 +1350,39 @@ function label = motionProfileLabel(profile)
 end
 
 function redrawGoalRequest(axesHandle, modeState, controls)
-    % Show Goal Mode request geometry. Show the result or retained partial route
-    % when available.
-    if ~isempty(modeState.GoalPosition_units)
-        plot(axesHandle, modeState.GoalPosition_units(1), modeState.GoalPosition_units(2), "ro", "MarkerFaceColor", "r", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Goal");
-    end
-    if ~isempty(modeState.StartPosition_units) && ~isempty(modeState.GoalPosition_units)
-        request_units = [modeState.StartPosition_units; modeState.GoalPosition_units];
+    % Show Goal Mode request geometry, then the result or retained partial
+    % route when available. The start and goal markers sit on the folded
+    % line they belong to: a goal (190, 90) shown as its copy (10, 90) gets
+    % its marker at (10, 90), and a solved motion's ends win over the request.
+    intervals_units   = [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units];
+    startMarker_units = modeState.StartPosition_units;
+    goalMarker_units  = modeState.GoalPosition_units;
+    if ~isempty(startMarker_units) && ~isempty(goalMarker_units)
+        request_units = [startMarker_units; goalMarker_units];
         displayLimits = struct("xInterval_units", controls.WorkspaceXInterval_units, "yInterval_units", controls.WorkspaceYInterval_units);
         request_units(2, :) = resolveDisplayGoal(request_units(1, :), request_units(2, :), displayLimits, controls);
-        request_units = obstacleAvoidance.plotting.createWrappedSpatialPath(request_units, [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units], [controls.WrapX controls.WrapY]);
+        request_units = obstacleAvoidance.plotting.createWrappedSpatialPath(request_units, intervals_units, [controls.WrapX controls.WrapY]);
         plot(axesHandle, request_units(:, 1), request_units(:, 2), "--", "Color", [0.35 0.55 0.85], "LineWidth", 1.2, "DisplayName", "Requested direct geometry");
+        startMarker_units = request_units(1, :);
+        goalMarker_units  = request_units(end, :);
     end
     result = modeState.LastPlannerResult;
-    if isempty(fieldnames(result))
-        return;
+    if ~isempty(fieldnames(result))
+        if result.Success
+            displayPosition_units = obstacleAvoidance.plotting.createWrappedSpatialPath(result.position_units, intervals_units, [result.Options.WrapX result.Options.WrapY]);
+            plot(axesHandle, displayPosition_units(:, 1), displayPosition_units(:, 2), "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
+            startMarker_units = displayPosition_units(1, :);
+            goalMarker_units  = displayPosition_units(end, :);
+        elseif ~isempty(result.Route_units)
+            partialRoute_units = obstacleAvoidance.plotting.createWrappedSpatialPath(result.Route_units, intervals_units, [result.Options.WrapX result.Options.WrapY]);
+            plot(axesHandle, partialRoute_units(:, 1), partialRoute_units(:, 2), "-.", "Color", [0.90 0.55 0.10], "LineWidth", 1.8, "DisplayName", "Unvalidated geometric guide");
+        end
     end
-    if result.Success
-        displayPosition_units = obstacleAvoidance.plotting.createWrappedSpatialPath(result.position_units, [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units], [result.Options.WrapX result.Options.WrapY]);
-        plot(axesHandle, displayPosition_units(:, 1), displayPosition_units(:, 2), "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
-    elseif ~isempty(result.Route_units)
-        partialRoute_units = result.Route_units;
-        partialRoute_units = obstacleAvoidance.plotting.createWrappedSpatialPath(partialRoute_units, [controls.WorkspaceXInterval_units; controls.WorkspaceYInterval_units], [result.Options.WrapX result.Options.WrapY]);
-        plot(axesHandle, partialRoute_units(:, 1), partialRoute_units(:, 2), "-.", "Color", [0.90 0.55 0.10], "LineWidth", 1.8, "DisplayName", "Unvalidated geometric guide");
+    if ~isempty(startMarker_units)
+        plot(axesHandle, startMarker_units(1), startMarker_units(2), "go", "MarkerFaceColor", "g", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Start");
+    end
+    if ~isempty(goalMarker_units)
+        plot(axesHandle, goalMarker_units(1), goalMarker_units(2), "ro", "MarkerFaceColor", "r", "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Goal");
     end
 end
 
@@ -1589,14 +1597,70 @@ end
 
 function goal_units = resolveDisplayGoal(start_units, goal_units, limits, options)
     % Display the nearest wrapped copy; planner owns feasibility checks.
-    names = ["xInterval_units", "yInterval_units"];
-    for axisIndex = find([options.WrapX options.WrapY])
-        period_units = diff(limits.(names(axisIndex)));
-        delta_units = goal_units(axisIndex) - start_units(axisIndex);
-        wrapped_units = mod(delta_units + period_units/2, period_units) - period_units/2;
-        if abs(abs(wrapped_units) - period_units/2) <= eps(period_units)*4
-            wrapped_units = period_units/2;
+    % Use the planner's copy rule: x copies shift by whole turns, and a pole
+    % copy mirrors y and turns x by half a turn. Search two interval widths
+    % around the start, stopping at the lower end for "forward" and at the
+    % upper end for "backward". When WrapY is on, x repeats by whole turns
+    % even if WrapX is off; the search still stays inside the x interval.
+    wrapModes = [normalizeWrapMode(options.WrapX, "WrapX"), normalizeWrapMode(options.WrapY, "WrapY")];
+    if all(wrapModes == "false")
+        return
+    end
+    intervals_units = [limits.xInterval_units; limits.yInterval_units];
+    % Two widths reach every nearest copy, including one over a pole.
+    window_units    = start_units(:) + [-2, 2] .* diff(intervals_units, 1, 2);
+    for axisIndex = 1:2
+        if wrapModes(axisIndex) == "false"
+            window_units(axisIndex, :) = intervals_units(axisIndex, :);
+        elseif wrapModes(axisIndex) == "forward"
+            window_units(axisIndex, 1) = max(window_units(axisIndex, 1), intervals_units(axisIndex, 1));
+        elseif wrapModes(axisIndex) == "backward"
+            window_units(axisIndex, 2) = min(window_units(axisIndex, 2), intervals_units(axisIndex, 2));
         end
-        goal_units(axisIndex) = start_units(axisIndex) + wrapped_units;
+    end
+    images = obstacleAvoidance.input.listWrapImages([goal_units(:), goal_units(:)], ...
+        intervals_units, wrapModes, window_units);
+    if isempty(images.XOffset_units)
+        return
+    end
+    copyPositions_units = [goal_units(1) + images.XOffset_units, ...
+        images.YScale * goal_units(2) + images.YOffset_units];
+    % An axis that does not wrap is not range-checked by the copy list.
+    copyIsInWindow = all(copyPositions_units >= window_units(:, 1).' & ...
+        copyPositions_units <= window_units(:, 2).', 2);
+    if ~any(copyIsInWindow)
+        return
+    end
+    copyPositions_units = copyPositions_units(copyIsInWindow, :);
+    % If two copies are equally close, choose the lower x, then the lower y,
+    % which is the copy the planner tries first.
+    [~, copyOrder] = sortrows([vecnorm(copyPositions_units - start_units(:).', 2, 2), copyPositions_units]);
+    goal_units     = copyPositions_units(copyOrder(1), :);
+end
+
+function wrapMode = normalizeWrapMode(wrapMode, optionName)
+    % Accept "false", "both", "forward", or "backward"; true and false mean
+    % "both" and "false".
+    allowedWrapModes = ["false", "both", "forward", "backward"];
+    if (islogical(wrapMode) || isnumeric(wrapMode)) && isscalar(wrapMode) && any(wrapMode == [0, 1])
+        wrapMode = allowedWrapModes(1 + logical(wrapMode));
+    elseif (ischar(wrapMode) && isrow(wrapMode)) || (isstring(wrapMode) && isscalar(wrapMode))
+        wrapMode = lower(string(wrapMode));
+    end
+    if ~(isstring(wrapMode) && isscalar(wrapMode) && any(wrapMode == allowedWrapModes))
+        error("obstacleAvoidanceSandbox:InvalidWrapOption", ...
+            "%s must be false, both, forward, or backward.", optionName);
+    end
+end
+
+function wrapMode = checkedWrapMode(isChecked, configuredWrapMode)
+    % A checked box keeps a configured "forward" or "backward" and otherwise
+    % means "both"; an unchecked box means "false".
+    wrapMode = "false";
+    if isChecked
+        wrapMode = "both";
+        if any(configuredWrapMode == ["forward", "backward"])
+            wrapMode = configuredWrapMode;
+        end
     end
 end

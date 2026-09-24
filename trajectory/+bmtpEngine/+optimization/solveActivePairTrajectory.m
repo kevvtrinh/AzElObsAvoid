@@ -133,15 +133,24 @@ for iterationIndex = 1:maximumIterationCount
     trialMotionCheck    = struct('Passed', false);
     trialPreparedMotion = struct('Success', false);
     if ~any(collisionPairs, 'all')
-        [trialMotionCheck, trialPreparedMotion] = checkCandidateMotion( ...
-            solverRequest, trialControl_units, trialSegmentTime_s, roundoffReserve_units, separationTarget_units);
+        trialPreparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
+            solverRequest, trialControl_units, trialSegmentTime_s);
+        [trialPreparedMotion, trialMotionCheck] = bmtpEngine.pipeline.refineMotionSeparation( ...
+            solverRequest, trialPreparedMotion, roundoffReserve_units, separationTarget_units);
         nonCollisionChecksPassed = trialPreparedMotion.Success && trialMotionCheck.WorkspacePassed && ...
             trialMotionCheck.DynamicsPassed && trialMotionCheck.ContinuityPassed;
         % Once workspace, motion limits, and joins pass, treat every obstacle
         % pair that could not be proved clear as another pair to separate.
         if nonCollisionChecksPassed
-            collisionPairs = findUnverifiedPairsBySegment(trialMotionCheck, ...
-                trialPreparedMotion.SegmentTime_s, trialSegmentTime_s, regionActiveBySegment);
+            unverifiedPairs = ~reshape([trialMotionCheck.Planes.Verified], size(trialMotionCheck.Planes)) & ...
+                trialMotionCheck.RegionActiveBySegment;
+            % Every piece retains its original optimizer segment even after
+            % several selective splits. Add each unresolved pair to that row.
+            for pieceIndex = reshape(find(any(unverifiedPairs, 2)), 1, [])
+                segmentIndex = trialPreparedMotion.SourceSegmentIndex(pieceIndex);
+                collisionPairs(segmentIndex, :) = collisionPairs(segmentIndex, :) | unverifiedPairs(pieceIndex, :);
+            end
+            collisionPairs = collisionPairs & regionActiveBySegment;
         end
     end
     % Keep every newly encountered pair. A sampled-clear candidate can still
@@ -229,15 +238,33 @@ end
 
 % Fix the best duration and seek a shorter control polygon. Its length is
 % the sum of distances between adjacent control points, not the curve's exact
-% length. Accept the refinement only if that length does not increase and
-% the full motion checks pass.
+% length. The arrival-time solve above only minimizes time, so an axis that
+% does not limit the arrival can wander wherever the conic solver leaves it;
+% that curve may pass an obstacle it was never constrained by. Shortening
+% then steers back toward that obstacle, so each pair the shorter polygon
+% meets gets a separating line built around the retained curve and the
+% solve repeats with that line. The attempt bound matches the timed
+% refinement. Accept only if preparation succeeds, the full motion checks
+% pass, the polygon length does not increase, and the prepared arrival is
+% not later than the retained one beyond a small allowance. The solver clock
+% stays the retained one, but preparation may stretch it slightly to meet
+% its control-point bounds: 2.7 parts in ten million was measured on an
+% 8.5 s motion (2.3 microseconds). Allow one part per million so that
+% stretch passes and anything larger is refused.
 
 diagnostics.TravelRefinementAttempted = ~isempty(bestControl_units);
 diagnostics.TravelRefinementAccepted  = false;
-if ~isempty(bestControl_units)
+refinementAttemptLimit = 8;
+refinementPlanes       = bestSeparatingPlanes;
+retainedFinalTime_s    = solverRequest.InitialState.time_s + bestDuration_s;
+if bestMotionCheck.Passed
+    retainedFinalTime_s = bestPreparedMotion.FinalTime_s;
+end
+arrivalAllowance_s = 1e-6 * (retainedFinalTime_s - solverRequest.InitialState.time_s);
+for refinementIndex = 1:refinementAttemptLimit * ~isempty(bestControl_units)
     travelRefinementStep = struct( ...
         'SegmentCount',              segmentCount, ...
-        'Planes',                    bestSeparatingPlanes, ...
+        'Planes',                    refinementPlanes, ...
         'RoundoffReserve_units',     roundoffReserve_units, ...
         'MaximumMotionDuration_s',   bestDuration_s, ...
         'SegmentRatio',              ones(segmentCount, 1), ...
@@ -249,23 +276,81 @@ if ~isempty(bestControl_units)
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + refinementOutput.SolveCount;
     diagnostics.ConicSolver         = bmtpEngine.optimization.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver, refinementOutput);
-    if bmtpEngine.optimization.hasUsableConicIterate(refinedControl_units, refinementExitFlag)
-        refinementOverlaps = bmtpEngine.separation.findSampledObstacleOverlaps(refinedControl_units, ...
-            solverRequest.Regions_units, solverRequest.RegionMinimum_units, solverRequest.RegionMaximum_units, ...
-            regionActiveBySegment);
-        if ~any(refinementOverlaps, 'all')
+    if ~bmtpEngine.optimization.hasUsableConicIterate(refinedControl_units, refinementExitFlag)
+        break
+    end
+
+    % Sample checks find obvious overlaps quickly. If none are found, run
+    % the complete checks and treat every unproved pair as an overlap, the
+    % same way the arrival-time loop above does.
+    refinementOverlaps = bmtpEngine.separation.findSampledObstacleOverlaps(refinedControl_units, ...
+        solverRequest.Regions_units, solverRequest.RegionMinimum_units, solverRequest.RegionMaximum_units, ...
+        regionActiveBySegment);
+    if ~any(refinementOverlaps, 'all')
+        refinedPreparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
+            solverRequest, refinedControl_units, refinedSegmentTime_s);
+        [refinedPreparedMotion, refinedMotionCheck] = bmtpEngine.pipeline.refineMotionSeparation( ...
+            solverRequest, refinedPreparedMotion, roundoffReserve_units, separationTarget_units);
+        if refinedMotionCheck.Passed
             retainedControlPolygonLength_units = sum(vecnorm(diff(bestControl_units, 1, 2), 2, 3), 'all');
             refinedControlPolygonLength_units  = sum(vecnorm(diff(refinedControl_units, 1, 2), 2, 3), 'all');
-            [refinedMotionCheck, refinedPreparedMotion] = checkCandidateMotion( ...
-                solverRequest, refinedControl_units, refinedSegmentTime_s, roundoffReserve_units, separationTarget_units);
-            if refinedControlPolygonLength_units <= retainedControlPolygonLength_units && refinedMotionCheck.Passed
-                bestControl_units  = refinedControl_units;
-                bestSegmentTime_s  = refinedSegmentTime_s;
-                bestPreparedMotion = refinedPreparedMotion;
-                bestMotionCheck    = refinedMotionCheck;
+            arrivalIsNotLater = refinedPreparedMotion.Success && ...
+                refinedPreparedMotion.FinalTime_s <= retainedFinalTime_s + arrivalAllowance_s;
+            if arrivalIsNotLater && refinedControlPolygonLength_units <= retainedControlPolygonLength_units
+                bestControl_units    = refinedControl_units;
+                bestSegmentTime_s    = refinedSegmentTime_s;
+                bestPreparedMotion   = refinedPreparedMotion;
+                bestMotionCheck      = refinedMotionCheck;
+                bestSeparatingPlanes = refinementPlanes;
+                bestPlanePairs       = reshape([bestSeparatingPlanes.Active], size(bestSeparatingPlanes));
                 diagnostics.TravelRefinementAccepted = true;
             end
+            break
         end
+        % Only unresolved obstacle pairs can be fixed by adding a line. A
+        % workspace, motion-limit, or join failure ends the refinement.
+        nonCollisionChecksPassed = refinedPreparedMotion.Success && refinedMotionCheck.WorkspacePassed && ...
+            refinedMotionCheck.DynamicsPassed && refinedMotionCheck.ContinuityPassed;
+        if ~nonCollisionChecksPassed
+            break
+        end
+        unverifiedPairs = ~reshape([refinedMotionCheck.Planes.Verified], size(refinedMotionCheck.Planes)) & ...
+            refinedMotionCheck.RegionActiveBySegment;
+        for pieceIndex = reshape(find(any(unverifiedPairs, 2)), 1, [])
+            segmentIndex = refinedPreparedMotion.SourceSegmentIndex(pieceIndex);
+            refinementOverlaps(segmentIndex, :) = refinementOverlaps(segmentIndex, :) | unverifiedPairs(pieceIndex, :);
+        end
+        refinementOverlaps = refinementOverlaps & regionActiveBySegment;
+    end
+
+    % Stop when none of the overlapping pairs is new, because a pair that
+    % already has a line and still overlaps cannot be fixed by another line
+    % (an old overlap beside a new pair does not stop the loop). Also stop
+    % when no solve would follow the new lines. Otherwise build a line for
+    % each new pair around the retained curve, which passed the sampled
+    % checks against that obstacle, and require the line to be verified.
+    newRefinementPairs = refinementOverlaps & ~reshape([refinementPlanes.Active], size(refinementPlanes));
+    if ~any(newRefinementPairs, 'all') || refinementIndex == refinementAttemptLimit
+        break
+    end
+    lineUpdateFailed = false;
+    for pairIndex = reshape(find(newRefinementPairs), 1, [])
+        [segmentIndex, regionIndex] = ind2sub(size(newRefinementPairs), pairIndex);
+        [plane, planeExitFlag, planeOutput] = bmtpEngine.separation.solveMaximumMarginLine( ...
+            squeeze(bestControl_units(segmentIndex, :, :)), solverRequest.Regions_units{regionIndex}, ...
+            separationTarget_units, roundoffReserve_units, solverRequest.TrajectoryOptions);
+        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
+            ~(isfield(planeOutput, 'IsAnalytic') && planeOutput.IsAnalytic);
+        diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
+            diagnostics.ConicSolver, planeOutput);
+        if (planeExitFlag <= 0 && planeExitFlag ~= -7) || ~plane.Active || ~plane.Verified
+            lineUpdateFailed = true;
+            break
+        end
+        refinementPlanes(segmentIndex, regionIndex) = plane;
+    end
+    if lineUpdateFailed
+        break
     end
 end
 
@@ -311,54 +396,4 @@ result = struct( ...
     'TaggedPairs',              selectedPairs, ...
     'PreparedMotion',           bestPreparedMotion, ...
     'Proof',                    bestMotionCheck);
-end
-
-%% Section 5: Local Functions
-
-function collisionPairs = findUnverifiedPairsBySegment( ...
-        motionCheck, checkedPieceTime_s, segmentTime_s, regionActiveBySegment)
-    % The motion check may split a solver segment into smaller pieces. Map
-    % each piece that could not be proved clear back to its original segment.
-    % Fractions of total duration still identify that segment if preparation
-    % stretched every duration by the same factor. A piece's midpoint avoids
-    % ambiguity at a shared boundary.
-    unverifiedPairs = ~reshape([motionCheck.Planes.Verified], size(motionCheck.Planes)) & ...
-        motionCheck.RegionActiveBySegment;
-    collisionPairs            = false(size(regionActiveBySegment));
-    solverSegmentEndFractions = cumsum(segmentTime_s(:)) / sum(segmentTime_s);
-    checkedPieceEndFractions  = cumsum(checkedPieceTime_s(:)) / sum(checkedPieceTime_s);
-    checkedPieceMidFractions  = checkedPieceEndFractions - 0.5 * checkedPieceTime_s(:) / sum(checkedPieceTime_s);
-    for pieceIndex = reshape(find(any(unverifiedPairs, 2)), 1, [])
-        segmentIndex = find(solverSegmentEndFractions >= checkedPieceMidFractions(pieceIndex), 1, 'first');
-        collisionPairs(segmentIndex, :) = collisionPairs(segmentIndex, :) | unverifiedPairs(pieceIndex, :);
-    end
-    collisionPairs = collisionPairs & regionActiveBySegment;
-end
-
-function [motionCheck, preparedMotion] = checkCandidateMotion(solverRequest, controlPoint_units, ...
-        segmentTime_s, roundoffReserve_units, separationTarget_units)
-    % Prepare the candidate and check workspace, motion limits, curve joins,
-    % and obstacle separation. If only separation remains unresolved, split
-    % those pieces and check again, up to ten times.
-    % Smaller pieces can fit on one side of a line even when the original
-    % segment cannot. Splitting represents the same curve.
-    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(solverRequest, controlPoint_units, segmentTime_s);
-    [motionCheck, motionCheckCache] = bmtpEngine.validation.checkFinalMotion( ...
-        solverRequest, preparedMotion, roundoffReserve_units, separationTarget_units);
-    for refinementIndex = 1:10
-        if motionCheck.Passed || ~motionCheck.WorkspacePassed || ...
-                ~motionCheck.DynamicsPassed || ~motionCheck.ContinuityPassed
-            break
-        end
-        unverifiedPairs = ~reshape([motionCheck.Planes.Verified], size(motionCheck.Planes)) & ...
-            motionCheck.RegionActiveBySegment;
-        splitPiece = any(unverifiedPairs, 2);
-        if ~any(splitPiece)
-            break
-        end
-        preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(solverRequest, preparedMotion.ControlPoint_units, ...
-            preparedMotion.SegmentTime_s, preparedMotion.GivenPower_units, splitPiece);
-        [motionCheck, motionCheckCache] = bmtpEngine.validation.checkFinalMotion( ...
-            solverRequest, preparedMotion, roundoffReserve_units, separationTarget_units, motionCheckCache);
-    end
 end

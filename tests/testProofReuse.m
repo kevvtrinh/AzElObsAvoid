@@ -11,7 +11,7 @@ function setupOnce(testCase)
     root=fileparts(fileparts(mfilename('fullpath'))); addpath(root,fullfile(root,'trajectory'));
     testCase.TestData.Request=struct('Regions_units',{{[2,-1;3,-1;3,1;2,1]}}, ...
         'Coverage',struct('Passed',true),'InitialState',struct('time_s',0));
-    testCase.TestData.Motion=struct('ProvenControlPoint_units',zeros(2,6,2),'SegmentTime_s',[1;1], ...
+    testCase.TestData.Motion=struct('ControlPoint_units',zeros(2,6,2),'SegmentTime_s',[1;1], ...
         'FinalTime_s',2);
 end
 function testUnchangedCurveReusesCompleteProof(testCase)
@@ -28,7 +28,7 @@ function testSourceAndCurveChangesInvalidateReuse(testCase)
     changed=request; changed.Regions_units={[-1,-1;1,-1;1,1;-1,1]};
     proof=bmtpEngine.validation.checkFinalMotion(changed,motion,1e-8,1e-7,cache);
     verifyFalse(testCase,proof.Passed); verifyEqual(testCase,proof.CachedPairCount,0);
-    motion.ProvenControlPoint_units(:,:,1)=2.5;
+    motion.ControlPoint_units(:,:,1)=2.5;
     proof=bmtpEngine.validation.checkFinalMotion(request,motion,1e-8,1e-7,cache);
     verifyFalse(testCase,proof.Passed); verifyEqual(testCase,proof.CachedPairCount,0);
 end

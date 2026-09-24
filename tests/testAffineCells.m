@@ -280,7 +280,7 @@ function testFinalProofRechecksNeighborDirections(testCase)
     request = struct('Regions_units',{{box}},'Coverage',struct('Passed',true), ...
         'InitialState',struct('time_s',0),'IsRest',true);
     points = [-2,0;-2,0;2,0;0,0];
-    prepared = struct('ProvenControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
+    prepared = struct('ControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
         'SegmentTime_s',ones(4,1),'FinalTime_s',4);
     proof = bmtpEngine.validation.checkFinalMotion(request,prepared,1e-8,1e-6);
     verifyFalse(testCase,proof.Passed);
@@ -290,7 +290,7 @@ function testFinalProofRechecksNeighborDirections(testCase)
     verifyFalse(testCase,proof.Planes(4).Verified);
     for k = 1:3
         checked = bmtpEngine.separation.verifySeparatingLine(proof.Planes(k), ...
-            squeeze(prepared.ProvenControlPoint_units(k,:,:)),box,1e-8,1e-6);
+            squeeze(prepared.ControlPoint_units(k,:,:)),box,1e-8,1e-6);
         verifyTrue(testCase,checked.Verified);
     end
 end
