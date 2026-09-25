@@ -53,17 +53,10 @@ end
 % A static obstacle applies to every prepared segment. For moving regions,
 % check only positive-duration overlap with each region's active interval.
 % Use the prepared segment times, which may differ after curve subdivision.
-regionActiveBySegment = true(size(preparedMotion.ControlPoint_units, 1), ...
-    numel(solverRequest.Regions_units));
 segmentBoundaryTime_s = solverRequest.InitialState.time_s + [0; cumsum(preparedMotion.SegmentTime_s)];
 segmentBoundaryTime_s(end) = preparedMotion.FinalTime_s;
-if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
-    regionActiveIntervals_s = solverRequest.Coverage.ActiveTimeInterval_s;
-    segmentStartTime_s      = segmentBoundaryTime_s(1:end - 1);
-    segmentEndTime_s        = segmentBoundaryTime_s(2:end);
-    regionActiveBySegment = segmentStartTime_s < regionActiveIntervals_s(:, 2).' & ...
-        segmentEndTime_s > regionActiveIntervals_s(:, 1).';
-end
+regionActiveBySegment = bmtpEngine.separation.activePairsOnClock( ...
+    segmentBoundaryTime_s, solverRequest.Coverage, numel(solverRequest.Regions_units));
 separatingLineGeometry = cell(numel(solverRequest.Regions_units), 1);
 if isfield(solverRequest, 'SeparatingLineGeometry')
     separatingLineGeometry = solverRequest.SeparatingLineGeometry;

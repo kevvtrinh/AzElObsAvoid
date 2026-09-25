@@ -81,19 +81,16 @@ if solverRequest.Options.GoalTimeMode == "fixedArrival"
         outputRoute_units       = route_units;
     end
 
+    % Remove accumulated rounding error so the durations sum to the fixed trip time up to rounding.
+    segmentTime_s = segmentTime_s * solverRequest.MotionHorizon_s / sum(segmentTime_s);
+
+    % The active-pair mask must use the durations returned to later stages.
     % Row = curve segment, column = obstacle region. Mark a pair when their
     % time intervals overlap, even if the curve is far from that obstacle.
-    if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
-        segmentBoundaryTimes_s  = solverRequest.InitialState.time_s + [0; cumsum(segmentTime_s)];
-        regionActiveIntervals_s = solverRequest.Coverage.ActiveTimeInterval_s;
-        regionActiveBySegment   = segmentBoundaryTimes_s(1:end - 1) < regionActiveIntervals_s(:, 2).' & ...
-            segmentBoundaryTimes_s(2:end) > regionActiveIntervals_s(:, 1).';
-    else
-        regionActiveBySegment = true(segmentCount, numel(solverRequest.Regions_units));
-    end
+    segmentBoundaryTime_s = solverRequest.InitialState.time_s + [0; cumsum(segmentTime_s)];
+    regionActiveBySegment = bmtpEngine.separation.activePairsOnClock( ...
+        segmentBoundaryTime_s, solverRequest.Coverage, numel(solverRequest.Regions_units));
 
-    % Remove accumulated rounding error so the durations sum to the fixed trip time.
-    segmentTime_s         = segmentTime_s * solverRequest.MotionHorizon_s / sum(segmentTime_s);
     duration_s            = solverRequest.MotionHorizon_s;
     endpointControlTime_s = segmentTime_s;
     routeWasResampled     = true;
@@ -134,14 +131,9 @@ elseif solverRequest.UsesVariableClock
 
     % Row = curve segment, column = obstacle region. Mark a pair when their
     % time intervals overlap, even if the curve is far from that obstacle.
-    if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
-        segmentBoundaryTimes_s  = solverRequest.InitialState.time_s + [0; cumsum(segmentTime_s)];
-        regionActiveIntervals_s = solverRequest.Coverage.ActiveTimeInterval_s;
-        regionActiveBySegment   = segmentBoundaryTimes_s(1:end - 1) < regionActiveIntervals_s(:, 2).' & ...
-            segmentBoundaryTimes_s(2:end) > regionActiveIntervals_s(:, 1).';
-    else
-        regionActiveBySegment = true(segmentCount, numel(solverRequest.Regions_units));
-    end
+    segmentBoundaryTime_s = solverRequest.InitialState.time_s + [0; cumsum(segmentTime_s)];
+    regionActiveBySegment = bmtpEngine.separation.activePairsOnClock( ...
+        segmentBoundaryTime_s, solverRequest.Coverage, numel(solverRequest.Regions_units));
     outputRoute_units = route_units;
 else
     % With an untimed route, estimate durations from the motion limits.

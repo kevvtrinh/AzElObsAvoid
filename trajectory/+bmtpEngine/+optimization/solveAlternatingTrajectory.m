@@ -58,7 +58,7 @@ diagnostics.FullPlaneUpdateSkippedCount        = 0;
 
 emptyPlane       = bmtpEngine.separation.createEmptyPlane();
 separatingPlanes = repmat(emptyPlane, segmentCount, regionCount);
-[separatingPlanes, allRequiredLinesAvailable, ~, diagnostics] = ...
+[separatingPlanes, solverRequest.RegionActiveBySegment, allRequiredLinesAvailable, ~, diagnostics] = ...
     updateSeparatingLines(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s, separatingPlanes, solverRequest, diagnostics, ...
     separationTarget_units, roundoffReserve_units, false);
@@ -87,10 +87,12 @@ if allRequiredLinesAvailable
         diagnostics.IterationCount = sum(stageIterationCount);
         % Keep segment-duration ratios and the arrival time fixed for this solve.
         trajectoryStep = struct( ...
+            'Formulation',               "physicalClock", ...
             'SegmentCount',              segmentCount, ...
             'Planes',                    separatingPlanes, ...
             'RoundoffReserve_units',     roundoffReserve_units, ...
             'MaximumMotionDuration_s',   solverRequest.MotionHorizon_s, ...
+            'MinimumMotionDuration_s',   0, ...
             'SegmentRatio',              warmStart.SegmentRatio, ...
             'FixedClock',                true, ...
             'IntrinsicVariationEnabled', includeJerkVariation, ...
@@ -112,21 +114,11 @@ if allRequiredLinesAvailable
             diagnostics.MaximumClearanceSlack_units = solverOutput.MaximumClearanceSlack_units;
         end
         if ~bmtpEngine.optimization.hasUsableConicIterate(trialControl_units, exitFlag)
-            solverMessage = "Trajectory SOCP failed: " + string(solverOutput.message);
+            solverMessage                      = "Trajectory SOCP failed: " + string(solverOutput.message);
             diagnostics.LastTrajectoryExitFlag = exitFlag;
-            if exitFlag == 0
-                failureStage             = "optimization";
-                failureKind              = "trajectorySolverIterationLimit";
-                alternativeGuideEligible = true;
-            elseif exitFlag == -2
-                failureStage             = "proposal";
-                failureKind              = "trajectorySubproblemInfeasible";
-                alternativeGuideEligible = true;
-            else
-                failureStage             = "numericalSolver";
-                failureKind              = "optimizerIterateUnavailable";
-                alternativeGuideEligible = false;
-            end
+            failureStage                       = solverOutput.FailureStage;
+            failureKind                        = solverOutput.FailureKind;
+            alternativeGuideEligible           = solverOutput.AlternativeGuideEligible;
             break;
         end
 
@@ -152,7 +144,8 @@ if allRequiredLinesAvailable
                 diagnostics.ConstraintRowPairVerificationCount + verifiedPairCount;
         else
             % Try the existing line directions before solving for new lines.
-            [updatedSeparatingPlanes, ~, verifiedPairs, diagnostics, verifiedPairCount] = ...
+            [updatedSeparatingPlanes, solverRequest.RegionActiveBySegment, ~, verifiedPairs, ...
+                diagnostics, verifiedPairCount] = ...
                 updateSeparatingLines(trialControl_units, trialSegmentTime_s, separatingPlanes, solverRequest, ...
                 diagnostics, separationTarget_units, roundoffReserve_units, true);
             diagnostics.ExistingPlanePairVerificationCount = ...
@@ -161,7 +154,8 @@ if allRequiredLinesAvailable
         allRequiredLinesAvailable = all(verifiedPairs, 'all');
         if ~allRequiredLinesAvailable
             % At least one existing line failed; rebuild the complete set.
-            [updatedSeparatingPlanes, allRequiredLinesAvailable, verifiedPairs, diagnostics] = ...
+            [updatedSeparatingPlanes, solverRequest.RegionActiveBySegment, ...
+                allRequiredLinesAvailable, verifiedPairs, diagnostics] = ...
                 updateSeparatingLines(trialControl_units, trialSegmentTime_s, separatingPlanes, solverRequest, ...
                 diagnostics, separationTarget_units, roundoffReserve_units, false);
         else
@@ -183,29 +177,21 @@ if allRequiredLinesAvailable
         if unverifiedPairCount > 0
             if segmentSplitCount < 3
                 splitSegment = any(~verifiedPairs, 2);
-                [refinedControl_units, refinedSegmentTime_s] = splitSelectedSegments( ...
-                    trialControl_units, trialSegmentTime_s, splitSegment);
+                [refinedControl_units, refinedSegmentTime_s] = bmtpEngine.motion.subdivideMotion( ...
+                    trialControl_units, trialSegmentTime_s, [], splitSegment);
                 segmentSplitCount = segmentSplitCount + 1;
                 segmentCount      = numel(refinedSegmentTime_s);
                 diagnostics.OptimizerSpanCount = segmentCount;
                 warmStart.SegmentRatio = refinedSegmentTime_s / mean(refinedSegmentTime_s);
-                % Recalculate which obstacle lifetimes overlap the new segments.
-                solverRequest.RegionActiveBySegment = true(segmentCount, regionCount);
-                if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
-                    segmentBoundaryTime_s = ...
-                        solverRequest.InitialState.time_s + [0; cumsum(refinedSegmentTime_s)];
-                    obstacleActiveIntervals_s = solverRequest.Coverage.ActiveTimeInterval_s;
-                    solverRequest.RegionActiveBySegment = segmentBoundaryTime_s(1:end - 1) < obstacleActiveIntervals_s(:, 2).' & ...
-                        segmentBoundaryTime_s(2:end) > obstacleActiveIntervals_s(:, 1).';
-                end
-                diagnostics.ApplicablePairCount = nnz(solverRequest.RegionActiveBySegment);
                 includeJerkVariation            = false;
                 savedTrajectoryConstraints      = struct();
                 separatingPlanes                = repmat(emptyPlane, segmentCount, regionCount);
-                [separatingPlanes, allRequiredLinesAvailable, ~, diagnostics] = ...
+                [separatingPlanes, solverRequest.RegionActiveBySegment, ...
+                    allRequiredLinesAvailable, ~, diagnostics] = ...
                     updateSeparatingLines(refinedControl_units, ...
                     refinedSegmentTime_s, separatingPlanes, solverRequest, diagnostics, ...
                     separationTarget_units, roundoffReserve_units, false);
+                diagnostics.ApplicablePairCount = nnz(solverRequest.RegionActiveBySegment);
                 if ~allRequiredLinesAvailable
                     solverMessage = "A refined separating-line initialization failed.";
                     failureStage  = "proposal";
@@ -244,118 +230,38 @@ end
 %% Section 3: Return The Selected Candidate And Its Separating Lines
 
 diagnostics.SolverMessage = solverMessage;
-result = struct();
-result.Success                  = ~isempty(selectedControl_units);
-result.SolverMessage            = solverMessage;
-result.FailureStage             = failureStage;
-result.FailureKind              = failureKind;
-result.AlternativeGuideEligible = alternativeGuideEligible;
-result.ControlPoint_units       = selectedControl_units;
-result.SegmentTime_s            = selectedSegmentTime_s;
-result.Planes                   = separatingPlanes;
-result.TaggedPairs              = reshape([separatingPlanes.Active], size(separatingPlanes));
+result = bmtpEngine.optimization.createOptimizationResult(solverMessage, failureStage, failureKind, ...
+    alternativeGuideEligible, selectedControl_units, selectedSegmentTime_s, separatingPlanes, ...
+    reshape([separatingPlanes.Active], size(separatingPlanes)));
 end
 
 %% Section 4: Local Functions
 
-function [refinedControl_units, refinedSegmentTime_s] = splitSelectedSegments( ...
-        controlPoint_units, segmentTime_s, splitSegment)
-    % Split each selected segment into two equal-time halves of the same
-    % Bezier curve. Other segments retain their controls and durations.
-    refinedSegmentCount  = numel(segmentTime_s) + nnz(splitSegment);
-    refinedControl_units = zeros(refinedSegmentCount, size(controlPoint_units, 2), 2);
-    refinedSegmentTime_s = zeros(refinedSegmentCount, 1);
-    outputSegmentIndex   = 0;
-    for segmentIndex = 1:numel(segmentTime_s)
-        if splitSegment(segmentIndex)
-            for halfIndex = 1:2
-    outputSegmentIndex   = outputSegmentIndex + 1;
-                refinedControl_units(outputSegmentIndex, :, :) = bmtpEngine.motion.restrictBezier( ...
-                    squeeze(controlPoint_units(segmentIndex, :, :)), [(halfIndex - 1) / 2, halfIndex / 2]);
-                refinedSegmentTime_s(outputSegmentIndex) = segmentTime_s(segmentIndex) / 2;
-            end
-        else
-            outputSegmentIndex = outputSegmentIndex + 1;
-            refinedControl_units(outputSegmentIndex, :, :) = controlPoint_units(segmentIndex, :, :);
-            refinedSegmentTime_s(outputSegmentIndex) = segmentTime_s(segmentIndex);
-        end
-    end
-end
-
-function [separatingPlanes, allRequiredLinesAvailable, verifiedPairs, diagnostics, ...
-        verifiedPairCount] = updateSeparatingLines( ...
+function [separatingPlanes, regionActiveBySegment, allRequiredLinesAvailable, verifiedPairs, diagnostics, ...
+        checkedPairCount] = updateSeparatingLines( ...
         controlPoint_units, segmentTime_s, separatingPlanes, solverRequest, diagnostics, ...
         separationTarget_units, roundoffReserve_units, verifyExistingLines)
-    % Check or rebuild the line for every applicable curve/obstacle pair.
-    % Pairs whose time intervals do not overlap count as passed. Stop at the
-    % first failed existing-line check or unavailable replacement line.
-    verifiedPairs             = ~solverRequest.RegionActiveBySegment;
-    allRequiredLinesAvailable = true;
-    verifiedPairCount         = 0;
-    segmentBoundaryTime_s     = solverRequest.InitialState.time_s + [0; cumsum(segmentTime_s)];
-    for segmentIndex = 1:size(separatingPlanes, 1)
-        for regionIndex = 1:size(separatingPlanes, 2)
-            if ~solverRequest.RegionActiveBySegment(segmentIndex, regionIndex)
-                continue
-            end
-            segmentControlPoint_units = squeeze(controlPoint_units(segmentIndex, :, :));
-            overlapFractions          = [0, 1];
-            overlapInterval_s         = segmentBoundaryTime_s(segmentIndex:segmentIndex + 1).';
-            if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
-                obstacleActiveInterval_s = solverRequest.Coverage.ActiveTimeInterval_s(regionIndex, :);
-                overlapInterval_s = [max(overlapInterval_s(1), obstacleActiveInterval_s(1)), ...
-                    min(overlapInterval_s(2), obstacleActiveInterval_s(2))];
-                if overlapInterval_s(2) <= overlapInterval_s(1)
-                    % These intervals meet at most at one instant. This
-                    % pair adds no time interval to constrain here; disable
-                    % its line instead of constructing a zero-duration piece.
-                    plane              = separatingPlanes(segmentIndex, regionIndex);
-                    plane.Active       = false;
-                    plane.Verified     = false;
-                    plane.TimeFraction = [0, 1];
-                    separatingPlanes(segmentIndex, regionIndex) = plane;
-                    verifiedPairs(segmentIndex, regionIndex) = true;
-                    continue
-                end
-                % Check only the curve portion during this obstacle interval.
-                overlapFractions = max(0, min(1, ...
-                    (overlapInterval_s - segmentBoundaryTime_s(segmentIndex)) / segmentTime_s(segmentIndex)));
-                segmentControlPoint_units = ...
-                    bmtpEngine.motion.restrictBezier(segmentControlPoint_units, overlapFractions);
-            end
-            obstacleVertices_units = bmtpEngine.separation.regionOnInterval(solverRequest.Regions_units{regionIndex}, ...
-                solverRequest.Coverage, regionIndex, overlapInterval_s);
-            if verifyExistingLines
-                % Keep the existing direction, place the line against the
-                % obstacle at both interval ends, then check the curve side.
-                plane              = separatingPlanes(segmentIndex, regionIndex);
-                lineNormal         = plane.Normal(1, :);
-                plane.Offset_units = separationTarget_units - [min(obstacleVertices_units(:, :, 1) * lineNormal.'), ...
-                    min(obstacleVertices_units(:, :, end) * lineNormal.')];
-                plane.TimeFraction = overlapFractions;
-                plane              = bmtpEngine.separation.verifySeparatingLine( ...
-                    plane, segmentControlPoint_units, obstacleVertices_units, roundoffReserve_units, separationTarget_units);
-                verifiedPairCount = verifiedPairCount + 1;
-            else
-                [plane, exitFlag, solverOutput] = bmtpEngine.separation.solveSeparatingLine( ...
-                    segmentControlPoint_units, obstacleVertices_units, separationTarget_units, roundoffReserve_units);
-                plane.TimeFraction         = overlapFractions;
-                diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
-                    ~(isfield(solverOutput, 'IsAnalytic') && solverOutput.IsAnalytic);
-                diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
-                    diagnostics.ConicSolver, solverOutput);
-            end
-            separatingPlanes(segmentIndex, regionIndex) = plane;
-            verifiedPairs(segmentIndex, regionIndex) = plane.Verified;
-            if verifyExistingLines
-                if ~plane.Verified
-                    allRequiredLinesAvailable = false;
-                    return
-                end
-            elseif exitFlag <= 0 || ~plane.Active
-                allRequiredLinesAvailable = false;
-                return;
-            end
-        end
+    % Check or rebuild the line for every applicable curve/obstacle pair,
+    % stopping at the first failed existing-line check or unavailable
+    % replacement line. Pairs whose time intervals do not overlap count as
+    % passed. Count any numerical line solves toward this solve's totals.
+    lineUpdate = struct( ...
+        'Planes',             separatingPlanes, ...
+        'VerifyExisting',     verifyExistingLines, ...
+        'StopAtFirstFailure', true);
+    [separatingPlanes, regionActiveBySegment, ~, lineReport] = ...
+        bmtpEngine.separation.createTimeScopedPlanes( ...
+        controlPoint_units, segmentTime_s, solverRequest, separationTarget_units, ...
+        roundoffReserve_units, lineUpdate);
+    verifiedPairs    = lineReport.VerifiedPairs;
+    checkedPairCount = lineReport.CheckedPairCount;
+    if verifyExistingLines
+        allRequiredLinesAvailable = all(verifiedPairs, 'all');
+    else
+        allRequiredLinesAvailable = lineReport.UnavailablePairCount == 0;
     end
+    diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + lineReport.SocpCount;
+    diagnostics.ConicSolver    = bmtpEngine.optimization.accumulateConicDiagnostics( ...
+        diagnostics.ConicSolver, struct('SolveCount', lineReport.SocpCount, ...
+        'TotalTime_s', lineReport.SolverTime_s));
 end

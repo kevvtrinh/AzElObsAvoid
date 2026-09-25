@@ -244,6 +244,14 @@ function validateEngineInputs(startingPath, regions_units, coverage, initialStat
             error("bmtpEngine:InvalidCoverage", ...
                 "EndRegions_units must contain one finite polygon per region.");
         end
+        if ~isfield(coverage, 'ActiveTimeInterval_s')
+            for regionIndex = 1:numel(regions_units)
+                if ~isequal(coverage.EndRegions_units{regionIndex}, regions_units{regionIndex})
+                    error("bmtpEngine:InvalidCoverage", ...
+                        "EndRegions_units that differ from Regions_units require ActiveTimeInterval_s.");
+                end
+            end
+        end
     end
 
     % Motion limits have one row each for speed, acceleration, and jerk,

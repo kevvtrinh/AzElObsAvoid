@@ -6,37 +6,38 @@ function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajec
 %       bmtpEngine.optimization.solveTrajectoryStep(solverRequest, trajectoryStep)
 %**************************************************************************
 % PURPOSE
-%   - Solve for a new curve using fixed separating lines and duration ratios.
-%     Seek an earlier arrival, or shorten and optionally smooth the path at a
-%     fixed arrival time. The caller still checks the complete returned motion.
+%   - Solve one BMTP trajectory step with the requested clock formulation.
+%     The caller checks the complete returned motion before accepting it.
 %**************************************************************************
 % INPUTS
 %   - solverRequest (scalar struct)
-%       The engine solve request from createSolveRequest. This step reads
-%       Degree, InitialState, GoalState, Limits, and TrajectoryOptions.
+%       Checked states, limits, degree, and both coneprog option sets.
 %   - trajectoryStep (scalar struct)
-%       What this one step is asked to do, every field required:
-%       SegmentCount (positive integer), Planes (S-by-R struct array of
-%       fixed separating lines whose TimeFraction selects the part of the
-%       segment where each line applies), RoundoffReserve_units (nonnegative
-%       scalar), MaximumMotionDuration_s (positive scalar upper bound on the
-%       internal minimum-time solve), SegmentRatio (S-by-1 positive relative
-%       segment durations), FixedClock (logical: prescribe the segment
-%       durations), IntrinsicVariationEnabled (logical: allow a jerk-variation
-%       objective for fixed-time quintic curves with more than eight segments),
-%       and ConstraintBase (saved workspace, endpoint, join, and motion-limit
-%       constraints from a matching earlier step, or struct() to build them).
+%       Formulation (string scalar) selects one of these solves:
+%         Name             Clock / endpoints      Slack / failed later round
+%         "physicalClock"  Seconds / given rates   Yes / return failed round
+%         "scaledClock"    Fractions / at rest     No / retain usable round
+%       SegmentCount is a positive integer. Planes is S-by-R, with each
+%       TimeFraction selecting part of a segment. Other required fields are
+%       RoundoffReserve_units (nonnegative), MaximumMotionDuration_s
+%       (positive), MinimumMotionDuration_s (zero for physicalClock),
+%       SegmentRatio (S positive values, or [] only for scaledClock's common
+%       segment time), FixedClock (logical), IntrinsicVariationEnabled
+%       (logical, false for scaledClock), and ConstraintBase (matching saved
+%       constraints or struct()).
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Solved control points, or an empty array on expected solve failure.
 %       Invalid input throws an error.
-%   - segmentTime_s (S-by-1 numeric vector)
-%       Per-segment durations, or NaN on expected solve failure.
+%   - segmentTime_s (numeric scalar or S-element numeric array)
+%       Segment durations; scaledClock with [] SegmentRatio returns one
+%       common segment time. Expected solve failure returns NaN.
 %   - exitFlag (numeric scalar)
 %       Original coneprog status.
 %   - solverOutput (scalar struct)
 %       Solver status, diagnostics, and measured solver time.
+%       FailureStage, FailureKind, and AlternativeGuideEligible are empty or false when the iterate is usable.
 %   - savedTrajectoryConstraints (scalar struct)
 %       Constraints and their inputs, for reuse when the next step matches.
 %**************************************************************************
@@ -44,27 +45,61 @@ function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajec
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Read Inputs And Resolve Timing And Line Coverage
+%% Section 1: Validate Inputs And Resolve The Formulation
 
 validateattributes(trajectoryStep, {'struct'}, {'scalar'});
-requiredStepFields = ["SegmentCount", "Planes", "RoundoffReserve_units", "MaximumMotionDuration_s", ...
-    "SegmentRatio", "FixedClock", "IntrinsicVariationEnabled", "ConstraintBase"];
+requiredStepFields = ["Formulation", "SegmentCount", "Planes", "RoundoffReserve_units", ...
+    "MaximumMotionDuration_s", "MinimumMotionDuration_s", "SegmentRatio", "FixedClock", ...
+    "IntrinsicVariationEnabled", "ConstraintBase"];
 assert(all(isfield(trajectoryStep, requiredStepFields)), 'bmtpEngine:InvalidStep', ...
     'A trajectory step declares every one of: %s.', strjoin(requiredStepFields, ', '));
+formulationName             = string(trajectoryStep.Formulation);
 segmentCount                = trajectoryStep.SegmentCount;
 separatingPlanes            = trajectoryStep.Planes;
 roundoffReserve_units       = trajectoryStep.RoundoffReserve_units;
 maximumMotionDuration_s     = trajectoryStep.MaximumMotionDuration_s;
+minimumMotionDuration_s     = trajectoryStep.MinimumMotionDuration_s;
 segmentTimeRatios           = trajectoryStep.SegmentRatio;
 hasFixedSegmentTimes        = trajectoryStep.FixedClock;
 allowJerkVariationObjective = trajectoryStep.IntrinsicVariationEnabled;
 savedTrajectoryConstraints  = trajectoryStep.ConstraintBase;
 
+assert(isscalar(formulationName) && any(formulationName == ["physicalClock", "scaledClock"]), ...
+    'bmtpEngine:InvalidStep', 'Formulation must be physicalClock or scaledClock.');
+validateattributes(segmentCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+validateattributes(separatingPlanes, {'struct'}, {'2d'});
+assert(size(separatingPlanes, 1) == segmentCount && isfield(separatingPlanes, 'Active'), ...
+    'bmtpEngine:InvalidStep', 'Planes must have SegmentCount rows and an Active field.');
+validateattributes(roundoffReserve_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+validateattributes(minimumMotionDuration_s, {'numeric'}, ...
+    {'real', 'finite', 'scalar', 'nonnegative', '<=', maximumMotionDuration_s});
+validateattributes(hasFixedSegmentTimes, {'logical'}, {'scalar'});
+validateattributes(allowJerkVariationObjective, {'logical'}, {'scalar'});
+validateattributes(savedTrajectoryConstraints, {'struct'}, {'scalar'});
+formulation = resolveFormulation(formulationName, solverRequest, hasFixedSegmentTimes);
+assert(formulation.AllowJerkVariation || ~allowJerkVariationObjective, ...
+    'bmtpEngine:InvalidStep', 'scaledClock cannot enable intrinsic jerk variation.');
+assert(formulation.AllowMinimumDuration || minimumMotionDuration_s == 0, ...
+    'bmtpEngine:InvalidStep', 'physicalClock requires MinimumMotionDuration_s = 0.');
+
+returnsCommonSegmentTime = isempty(segmentTimeRatios);
+assert(~returnsCommonSegmentTime || formulation.AllowCommonSegmentTime, ...
+    'bmtpEngine:InvalidStep', 'Only scaledClock accepts an empty SegmentRatio.');
+if returnsCommonSegmentTime
+    segmentTimeRatios = ones(segmentCount, 1);
+end
+validateattributes(segmentTimeRatios, {'numeric'}, {'real', 'finite', 'positive', 'numel', segmentCount});
+if formulation.ScaleTimePowers
+    % The scaled formulation always used a column of doubles.
+    segmentTimeRatios = double(segmentTimeRatios(:));
+end
+
 degree        = solverRequest.Degree;
 initialState  = solverRequest.InitialState;
 goalState     = solverRequest.GoalState;
 limits        = solverRequest.Limits;
-solverOptions = solverRequest.TrajectoryOptions;
+solverOptions = formulation.SolverOptions;
 
 controlVariableCount   = segmentCount * (degree + 1) * 2;
 originalPlaneCount     = nnz([separatingPlanes.Active]);
@@ -77,13 +112,15 @@ if ~isempty(separatingPlanes)
         'bmtpEngine:InvalidPlaneTimeScope', ...
         'Every plane time scope must have positive duration.');
     hasPartialSegmentLines = any(lineTimeFractions ~= [0, 1], 'all');
-    assert(hasFixedSegmentTimes || ~hasPartialSegmentLines, ...
+    assert(hasFixedSegmentTimes || ~hasPartialSegmentLines || ...
+        formulation.AllowPartialScopesWithVariableClock, ...
         'bmtpEngine:InvalidPlaneTimeScope', ...
         'Partial plane time scopes require a fixed trajectory clock.');
 end
 % A line that applies from 2 to 3 s cannot replace one that applies from
 % 5 to 6 s. Remove redundant lines only when they cover whole segments.
-if hasFixedSegmentTimes && ~hasPartialSegmentLines && originalPlaneCount > segmentCount * degree
+if formulation.RemoveRedundantLines && hasFixedSegmentTimes && ...
+        ~hasPartialSegmentLines && originalPlaneCount > segmentCount * degree
     separatingPlanes = bmtpEngine.separation.removeRedundantPlanes( ...
         separatingPlanes, limits, 2 * roundoffReserve_units);
 end
@@ -94,45 +131,56 @@ useJerkVariationObjective = allowJerkVariationObjective && hasFixedSegmentTimes 
     degree == 5 && segmentCount > 8;
 start_units         = initialState.position_units;
 goal_units          = goalState.position_units;
-endpointMotionRates = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
-    goalState.velocity_units_s, goalState.acceleration_units_s2];
-endpointsAreAtRest = all(endpointMotionRates == 0);
-% Nonzero endpoint velocity or acceleration depends on the actual segment
-% duration, so this formulation requires fixed times for those endpoints.
-assert(hasFixedSegmentTimes || endpointsAreAtRest, 'bmtpEngine:NonrestRelaxedClock', ...
-    'Nonzero boundary states require physical fixed durations.');
+if formulation.PinEndpointControls
+    endpointMotionRates = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
+        goalState.velocity_units_s, goalState.acceleration_units_s2];
+    % Nonzero endpoint rates require an actual fixed duration.
+    assert(hasFixedSegmentTimes || all(endpointMotionRates == 0), ...
+        'bmtpEngine:NonrestRelaxedClock', ...
+        'Nonzero boundary states require physical fixed durations.');
+end
 
 %% Section 2: Build Endpoint, Join, And Motion-Limit Constraints
 
-% Solver variables contain x/y controls, four time powers, edge-length bounds,
-% optional clearance slack, and an optional smoothness-cost bound.
-endpointControlPoint_units = bmtpEngine.motion.imposeEndpointControls( ...
-    zeros(segmentCount, degree + 1, 2), ...
-    maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios), initialState, goalState);
+% Keep each formulation's original variable layout. The physical variable
+% clock reserves unused edge bounds; the scaled variable clock does not.
 timePowerIndices     = controlVariableCount + (1:4);
-edgeLengthBoundCount = segmentCount * degree;
+edgeLengthBoundCount = (hasFixedSegmentTimes || formulation.ReserveEdgeBoundsAtVariableClock) * ...
+    segmentCount * degree;
 planeActiveBySegment = reshape([separatingPlanes.Active], size(separatingPlanes));
 activePlaneCount     = nnz(planeActiveBySegment);
 planeCountBySegment  = sum(planeActiveBySegment, 2);
+maximumTimeScale_s   = maximumMotionDuration_s / sum(segmentTimeRatios);
+fixedSegmentTime_s   = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
+if formulation.PinEndpointControls
+    endpointControlPoint_units = bmtpEngine.motion.imposeEndpointControls( ...
+        zeros(segmentCount, degree + 1, 2), fixedSegmentTime_s, initialState, goalState);
+else
+    % Repeated positions make the first and last velocity and acceleration zero.
+    endpointControlPoint_units = zeros(segmentCount, degree + 1, 2);
+    endpointControlPoint_units(1, 1:3, :)           = repmat(reshape(start_units, 1, 1, 2), 1, 3, 1);
+    endpointControlPoint_units(end, end - 2:end, :) = repmat(reshape(goal_units, 1, 1, 2), 1, 3, 1);
+end
 % Slack allows a temporary violation of a separating-line bound while the
 % solver seeks a clear curve. With many lines, use one slack value per segment
 % instead of per pair. Its cost is weighted by that segment's line count.
 % The caller still checks obstacle clearance before accepting the motion.
-shareSlackBySegment = hasFixedSegmentTimes && originalPlaneCount > edgeLengthBoundCount;
-slackVariableCount  = hasFixedSegmentTimes * activePlaneCount;
+shareSlackBySegment = formulation.UseClearanceSlack && hasFixedSegmentTimes && ...
+    originalPlaneCount > edgeLengthBoundCount;
+slackVariableCount  = formulation.UseClearanceSlack * hasFixedSegmentTimes * activePlaneCount;
 if shareSlackBySegment
     slackVariableCount = nnz(planeCountBySegment);
 end
 decisionVariableCount = controlVariableCount + 4 + edgeLengthBoundCount + slackVariableCount + ...
     useJerkVariationObjective;
 slackColumnByPair = zeros(size(planeActiveBySegment));
-if hasFixedSegmentTimes && shareSlackBySegment
+if shareSlackBySegment
     segmentSlackColumn = controlVariableCount + 4 + edgeLengthBoundCount + cumsum(planeCountBySegment > 0);
     for segmentIndex = reshape(find(planeCountBySegment > 0), 1, [])
         slackColumnByPair(segmentIndex, planeActiveBySegment(segmentIndex, :)) = ...
             segmentSlackColumn(segmentIndex);
     end
-elseif hasFixedSegmentTimes
+elseif slackVariableCount > 0
     nextSlackColumn = controlVariableCount + 4 + edgeLengthBoundCount;
     for segmentIndex = 1:segmentCount
         for regionIndex = reshape(find(planeActiveBySegment(segmentIndex, :)), 1, [])
@@ -141,7 +189,6 @@ elseif hasFixedSegmentTimes
         end
     end
 end
-fixedSegmentTime_s  = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
 jerkObjectiveTime_s = [];
 if useJerkVariationObjective
     jerkObjectiveTime_s = fixedSegmentTime_s;
@@ -150,13 +197,9 @@ constraintLimits = limits;
 % A stalled solver may leave a small constraint error. Reserve a small
 % fraction of the jerk limit here so later exact endpoint reconstruction
 % does not immediately push jerk beyond its physical limit.
-if ~useJerkVariationObjective
+if formulation.ReserveJerkLimit && ~useJerkVariationObjective
     constraintLimits.maxJerk_units_s3 = ...
         limits.maxJerk_units_s3 .* (1 - sqrt(eps));
-end
-initiallyLoadedPairs = planeActiveBySegment;
-if hasFixedSegmentTimes
-    initiallyLoadedPairs(:) = false;
 end
 % Reuse matrices only when all their construction inputs match. Changing
 % line constraints does not require rebuilding these shared motion rows.
@@ -166,8 +209,10 @@ sharedConstraintInputs = struct( ...
     "BoundaryControls", endpointControlPoint_units, ...
     "Limits",           constraintLimits, ...
     "VariableCount",    decisionVariableCount, ...
-    "SegmentRatio",     segmentTimeRatios, ...
-    "JerkTimes_s",      jerkObjectiveTime_s);
+    "SegmentRatio",     segmentTimeRatios);
+if formulation.KeepJerkTimesInKey
+    sharedConstraintInputs.JerkTimes_s = jerkObjectiveTime_s;
+end
 canReuseSharedConstraints = isstruct(savedTrajectoryConstraints) && isscalar(savedTrajectoryConstraints) && ...
     isfield(savedTrajectoryConstraints, 'Key') && isequaln(savedTrajectoryConstraints.Key, sharedConstraintInputs);
 if ~canReuseSharedConstraints
@@ -176,26 +221,39 @@ if ~canReuseSharedConstraints
         segmentCount, degree, endpointControlPoint_units, constraintLimits, decisionVariableCount, ...
         segmentTimeRatios, jerkObjectiveTime_s);
     savedTrajectoryConstraints = struct( ...
-        "A",       inequalityMatrix, ...
-        "Aeq",     equalityMatrix, ...
-        "beq",     equalityValues, ...
-        "lb",      lowerBounds, ...
-        "ub",      upperBounds, ...
-        "jerkMap", jerkControlMap, ...
-        "Key",     sharedConstraintInputs);
+        "A",   inequalityMatrix, ...
+        "Aeq", equalityMatrix, ...
+        "beq", equalityValues, ...
+        "lb",  lowerBounds, ...
+        "ub",  upperBounds);
+    if formulation.KeepJerkTimesInKey
+        savedTrajectoryConstraints.jerkMap = jerkControlMap;
+    end
+    savedTrajectoryConstraints.Key = sharedConstraintInputs;
 else
     inequalityMatrix = savedTrajectoryConstraints.A;
     equalityMatrix   = savedTrajectoryConstraints.Aeq;
     equalityValues   = savedTrajectoryConstraints.beq;
     lowerBounds      = savedTrajectoryConstraints.lb;
     upperBounds      = savedTrajectoryConstraints.ub;
-    jerkControlMap   = savedTrajectoryConstraints.jerkMap;
+    jerkControlMap   = [];
+    if useJerkVariationObjective
+        jerkControlMap = savedTrajectoryConstraints.jerkMap;
+    end
+end
+if formulation.ScaleTimePowers
+    % The scaled clock stays near one while these columns preserve physical rate limits.
+    for derivativeOrder = 1:3
+        inequalityMatrix(:, timePowerIndices(derivativeOrder + 1)) = ...
+            inequalityMatrix(:, timePowerIndices(derivativeOrder + 1)) * ...
+            maximumTimeScale_s ^ derivativeOrder;
+    end
 end
 % Set equal lower/upper bounds on the endpoint controls so position,
 % velocity, and acceleration are exact in the returned variable values.
 % Relying only on approximate equality rows could require a later endpoint
 % correction that changes the end jerk.
-if ~useJerkVariationObjective
+if formulation.PinEndpointControls && ~useJerkVariationObjective
     fixedEndpointControl_units = NaN(segmentCount, degree + 1, 2);
     fixedEndpointControl_units(1, 1:3, :)           = endpointControlPoint_units(1, 1:3, :);
     fixedEndpointControl_units(end, end - 2:end, :) = endpointControlPoint_units(end, end - 2:end, :);
@@ -207,13 +265,19 @@ end
 
 %% Section 3: Add The Initial Separating-Line Rows
 
-% Fixed-time solves start without line rows and add violated pairs below.
-% Variable-time solves include every active line immediately.
-motionLimitRowCount = 4 * segmentCount * (3 * degree - 3);
-inequalityBounds    = zeros(motionLimitRowCount, 1);
+% Fixed clocks start without line rows. The scaled variable clock also does
+% so when more than 2048 pairs are active.
+motionLimitRowCount        = 4 * segmentCount * (3 * degree - 3);
+addLineConstraintsAsNeeded = hasFixedSegmentTimes || ...
+    activePlaneCount > formulation.MaximumFullyLoadedPairCount;
+initiallyLoadedPairs = planeActiveBySegment;
+if addLineConstraintsAsNeeded
+    initiallyLoadedPairs(:) = false;
+end
+inequalityBounds = zeros(motionLimitRowCount, 1);
 [lineConstraintRows, lineConstraintBounds] = bmtpEngine.separation.createSelectedPlaneRows(separatingPlanes, ...
     initiallyLoadedPairs, degree, decisionVariableCount, slackColumnByPair, ...
-    (1 + hasFixedSegmentTimes) * roundoffReserve_units);
+    formulation.LineRowReserveFactor * roundoffReserve_units);
 inequalityMatrix = [inequalityMatrix; lineConstraintRows];
 inequalityBounds = [inequalityBounds; lineConstraintBounds];
 
@@ -223,14 +287,31 @@ inequalityBounds = [inequalityBounds; lineConstraintBounds];
 % durations, minimize control-polygon length instead.
 objectiveWeights = zeros(decisionVariableCount, 1);
 objectiveWeights(timePowerIndices(4)) = 1;
-maximumTimeScale_s = maximumMotionDuration_s / sum(segmentTimeRatios);
-maximumTimePowers  = [1; maximumTimeScale_s; ...
-    maximumTimeScale_s ^ 2; maximumTimeScale_s ^ 3];
-upperBounds(timePowerIndices) = maximumTimePowers;
 edgeLengthBoundIndices = controlVariableCount + 4 + (1:edgeLengthBoundCount);
 lowerBounds(edgeLengthBoundIndices) = 0;
+if formulation.ScaleTimePowers
+    upperBounds(timePowerIndices) = 1;
+    if hasFixedSegmentTimes
+        lowerBounds(timePowerIndices) = 1;
+    else
+        minimumTimeFraction = minimumMotionDuration_s / maximumMotionDuration_s;
+        lowerBounds(timePowerIndices) = [1; minimumTimeFraction; ...
+            minimumTimeFraction ^ 2; minimumTimeFraction ^ 3];
+    end
+else
+    maximumTimePowers = [1; maximumTimeScale_s; ...
+        maximumTimeScale_s ^ 2; maximumTimeScale_s ^ 3];
+    upperBounds(timePowerIndices) = maximumTimePowers;
+    if hasFixedSegmentTimes
+        lowerBounds(timePowerIndices) = maximumTimePowers;
+    end
+end
+solverCones = repmat(secondordercone( ...
+    sparse(2, decisionVariableCount), zeros(2, 1), sparse(decisionVariableCount, 1), 0), 0, 1);
+if ~hasFixedSegmentTimes || formulation.IncludeTimePowerConesAtFixedClock
+    solverCones = bmtpEngine.optimization.createTimePowerCones(decisionVariableCount, timePowerIndices);
+end
 if hasFixedSegmentTimes
-    lowerBounds(timePowerIndices) = maximumTimePowers;
     objectiveWeights(:) = 0;
     objectiveWeights(edgeLengthBoundIndices) = 1;
     slackIndices = controlVariableCount + 4 + edgeLengthBoundCount + (1:slackVariableCount);
@@ -238,9 +319,11 @@ if hasFixedSegmentTimes
     % Slack and control-polygon length have the same distance units. A cost
     % of 1000 per unit makes line violations expensive compared with length.
     % A shared slack value pays that cost once for every line it relaxes.
-    objectiveWeights(slackIndices) = 1e3;
-    if shareSlackBySegment
-        objectiveWeights(slackIndices) = 1e3 * planeCountBySegment(planeCountBySegment > 0);
+    if formulation.UseClearanceSlack
+        objectiveWeights(slackIndices) = 1e3;
+        if shareSlackBySegment
+            objectiveWeights(slackIndices) = 1e3 * planeCountBySegment(planeCountBySegment > 0);
+        end
     end
     % Each edge bound z satisfies norm(nextControl - currentControl) <= z.
     % Their sum measures the control polygon, not the exact curve length.
@@ -261,7 +344,7 @@ if hasFixedSegmentTimes
                 leftSideMap, zeros(2, 1), rightSideWeights, 0);
         end
     end
-    solverCones = edgeLengthCones;
+    solverCones = [solverCones; edgeLengthCones];
     if useJerkVariationObjective
         % The jerk-variation cost is dimensionless. Scale its weight by
         % start-to-goal distance to compare it with the length objective.
@@ -271,8 +354,6 @@ if hasFixedSegmentTimes
         lowerBounds(smoothnessVariableIndex) = 0;
         objectiveWeights(smoothnessVariableIndex) = 0.005 * norm(goal_units - start_units);
     end
-else
-    solverCones = bmtpEngine.optimization.createTimePowerCones(decisionVariableCount, timePowerIndices);
 end
 
 %% Section 5: Solve And Add The Selected Violated Line Constraints
@@ -294,75 +375,204 @@ solverProblem = struct( ...
     'beq',   equalityValues, ...
     'lb',    lowerBounds, ...
     'ub',    upperBounds);
-loadedPlanePairs            = initiallyLoadedPairs;
-solveCount                  = 0;
-allLineConstraintsSatisfied = ~hasFixedSegmentTimes;
-maximumLineViolation        = NaN;
+loadedPlanePairs             = initiallyLoadedPairs;
+solveCount                   = 0;
+allLineConstraintsSatisfied  = ~addLineConstraintsAsNeeded;
+maximumLineViolation         = NaN;
+savedSolverValues            = [];
+savedExitFlag                = NaN;
+savedSolverOutput            = struct();
+savedPlanePairs              = false(size(planeActiveBySegment));
+savedMaximumLineViolation    = NaN;
+savedLineConstraintsSatisfied = false;
+savedSolveIndex              = 0;
 while true
-    [solverValues, exitFlag, solverOutput] = solveWithFixedValues( ...
-        solverProblem, solverOptions, ~useJerkVariationObjective, ...
+    attemptedPlanePairs = loadedPlanePairs;
+    [attemptedSolverValues, attemptedExitFlag, attemptedSolverOutput] = solveWithFixedValues( ...
+        solverProblem, solverOptions, formulation.PinEndpointControls && ~useJerkVariationObjective, ...
         localStateSegmentTime_s, limits);
     solveCount = solveCount + 1;
-    if ~hasFixedSegmentTimes || ~bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag)
+    lastAttemptExitFlag = attemptedExitFlag;
+    if ~bmtpEngine.optimization.hasUsableConicIterate(attemptedSolverValues, attemptedExitFlag)
         break
     end
-    [violatedPairs, maximumUnloadedLineViolation] = bmtpEngine.separation.findViolatedPlanePairs( ...
-        solverValues, separatingPlanes, planeActiveBySegment, ...
-        loadedPlanePairs, degree, slackColumnByPair, 2 * roundoffReserve_units, ...
-        solverOptions.ConstraintTolerance);
-    if ~any(violatedPairs, 'all')
-        % Also check the loaded rows: no missing violations alone does not
-        % establish that the full line-constraint set passes.
-        maximumLoadedLineViolation = -Inf;
-        if size(solverProblem.A, 1) > motionLimitRowCount
-            maximumLoadedLineViolation = max(solverProblem.A(motionLimitRowCount + 1:end, :) * solverValues - ...
-                solverProblem.b(motionLimitRowCount + 1:end));
+
+    violatedPairs = false(size(planeActiveBySegment));
+    maximumAttemptLineViolation = NaN;
+    attemptLineConstraintsSatisfied = ~addLineConstraintsAsNeeded;
+    if addLineConstraintsAsNeeded
+        [violatedPairs, maximumUnloadedLineViolation] = bmtpEngine.separation.findViolatedPlanePairs( ...
+            attemptedSolverValues, separatingPlanes, planeActiveBySegment, ...
+            attemptedPlanePairs, degree, slackColumnByPair, ...
+            formulation.ViolationReserveFactor * roundoffReserve_units, ...
+            solverOptions.ConstraintTolerance);
+        if ~any(violatedPairs, 'all') || formulation.KeepLastUsableIterate
+            % Loaded rows must pass as well as pairs that were not loaded.
+            maximumLoadedLineViolation = -Inf;
+            if size(solverProblem.A, 1) > motionLimitRowCount
+                maximumLoadedLineViolation = max(solverProblem.A(motionLimitRowCount + 1:end, :) * ...
+                    attemptedSolverValues - solverProblem.b(motionLimitRowCount + 1:end));
+            end
+            maximumAttemptLineViolation = max(maximumLoadedLineViolation, maximumUnloadedLineViolation);
+            attemptLineConstraintsSatisfied = ~any(violatedPairs, 'all') && ...
+                maximumAttemptLineViolation <= solverOptions.ConstraintTolerance;
         end
-        maximumLineViolation        = max(maximumLoadedLineViolation, maximumUnloadedLineViolation);
-        allLineConstraintsSatisfied = ...
-            maximumLineViolation <= solverOptions.ConstraintTolerance;
+    end
+    if formulation.KeepLastUsableIterate
+        % A later failed round returns these values with their matching counts.
+        savedSolverValues             = attemptedSolverValues;
+        savedExitFlag                 = attemptedExitFlag;
+        savedSolverOutput             = attemptedSolverOutput;
+        savedPlanePairs               = attemptedPlanePairs;
+        savedMaximumLineViolation     = maximumAttemptLineViolation;
+        savedLineConstraintsSatisfied = attemptLineConstraintsSatisfied;
+        savedSolveIndex               = solveCount;
+    else
+        maximumLineViolation        = maximumAttemptLineViolation;
+        allLineConstraintsSatisfied = attemptLineConstraintsSatisfied;
+    end
+    if ~addLineConstraintsAsNeeded || ~any(violatedPairs, 'all')
         break
     end
-    loadedPlanePairs = loadedPlanePairs | violatedPairs;
+    loadedPlanePairs = attemptedPlanePairs | violatedPairs;
     [newLineRows, newLineBounds] = bmtpEngine.separation.createSelectedPlaneRows(separatingPlanes, ...
-        violatedPairs, degree, decisionVariableCount, slackColumnByPair, 2 * roundoffReserve_units);
+        violatedPairs, degree, decisionVariableCount, slackColumnByPair, ...
+        formulation.LineRowReserveFactor * roundoffReserve_units);
     solverProblem.A = [solverProblem.A; newLineRows];
     solverProblem.b = [solverProblem.b; newLineBounds];
 end
 
 %% Section 6: Return The Candidate And Solver Measurements
 
+solverValues = attemptedSolverValues;
+exitFlag     = attemptedExitFlag;
+solverOutput = attemptedSolverOutput;
+reportedPlanePairs = loadedPlanePairs;
+returnedSolveIndex = 0;
+if bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag)
+    returnedSolveIndex = solveCount;
+end
+if formulation.KeepLastUsableIterate
+    if ~isempty(savedSolverValues)
+        solverValues = savedSolverValues;
+        exitFlag     = savedExitFlag;
+        solverOutput = savedSolverOutput;
+        reportedPlanePairs = savedPlanePairs;
+    else
+        reportedPlanePairs = attemptedPlanePairs;
+    end
+    maximumLineViolation        = savedMaximumLineViolation;
+    allLineConstraintsSatisfied = savedLineConstraintsSatisfied;
+    returnedSolveIndex          = savedSolveIndex;
+end
 solverOutput.TotalTime_s = toc(solverTimer);
 solverOutput.SolveCount = solveCount;
 solverOutput.OptimizationConverged = exitFlag > 0;
 solverOutput.OriginalPlaneCount = originalPlaneCount;
 solverOutput.RetainedPlaneCount = activePlaneCount;
-solverOutput.LoadedPlanePairCount = nnz(loadedPlanePairs);
-solverOutput.ConstraintGenerationApplied = hasFixedSegmentTimes;
+solverOutput.LoadedPlanePairCount = nnz(reportedPlanePairs);
+solverOutput.ConstraintGenerationApplied = addLineConstraintsAsNeeded;
 solverOutput.ConstraintGenerationRoundCount = max(0, solveCount - 1);
 solverOutput.ConstraintGenerationComplete = allLineConstraintsSatisfied;
 solverOutput.MaximumPlaneConstraintResidual = maximumLineViolation;
 solverOutput.IntrinsicJerkVariation = useJerkVariationObjective;
-if hasFixedSegmentTimes && ~isempty(solverValues)
+solverOutput.MaximumClearanceSlack_units = [];
+if formulation.UseClearanceSlack && hasFixedSegmentTimes && ~isempty(solverValues)
     solverOutput.MaximumClearanceSlack_units = max(solverValues(slackIndices));
 end
+solverOutput.ReturnedSolveIndex             = returnedSolveIndex;
+solverOutput.LastAttemptExitFlag            = lastAttemptExitFlag;
+solverOutput.TerminatedAfterRetainedIterate = returnedSolveIndex > 0 && ...
+    returnedSolveIndex < solveCount;
+solverOutput.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);
 % Finite values from a stalled solve remain a candidate for full motion
 % checks. A solver status alone cannot establish physical feasibility.
-if ~bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag)
+iterateIsUsable = bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag);
+solverOutput    = labelSolveFailure(solverOutput, exitFlag, iterateIsUsable);
+if ~iterateIsUsable
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s      = NaN;
     return
 end
 % Recover the shared time scale from its cubic variable, then multiply by
 % each segment's ratio. Fixed-time solves keep the exact supplied durations.
-segmentTime_s = max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3) * segmentTimeRatios;
-if hasFixedSegmentTimes
-    segmentTime_s = fixedSegmentTime_s;
+if formulation.ScaleTimePowers
+    segmentTime_s = maximumTimeScale_s * max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3);
+    if ~returnsCommonSegmentTime
+        segmentTime_s = segmentTime_s * segmentTimeRatios;
+    end
+else
+    segmentTime_s = max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3) * segmentTimeRatios;
+    if hasFixedSegmentTimes
+        segmentTime_s = fixedSegmentTime_s;
+    end
 end
 controlPoint_units = permute(reshape(solverValues(1:controlVariableCount), 2, degree + 1, segmentCount), [3 2 1]);
 end
 
 %% Section 7: Local Functions
+
+function formulation = resolveFormulation(formulationName, solverRequest, hasFixedSegmentTimes)
+    % Set the numerical choices together so the solve never selects by name.
+    physicalClock = struct();
+    scaledClock   = struct();
+    % The physical clock uses tight solver tolerances; the scaled clock uses its tested defaults.
+    physicalClock.SolverOptions = solverRequest.TrajectoryOptions;
+    scaledClock.SolverOptions   = solverRequest.TimedTrajectoryOptions;
+    % The scaled clock keeps time powers near one; the physical clock uses seconds.
+    physicalClock.ScaleTimePowers = false;
+    scaledClock.ScaleTimePowers   = true;
+    % The physical clock leaves jerk roundoff room unless its smoothing cost is active.
+    physicalClock.ReserveJerkLimit = true;
+    scaledClock.ReserveJerkLimit   = false;
+    % The physical clock fixes endpoint controls; the scaled clock uses equality rows.
+    physicalClock.PinEndpointControls = true;
+    scaledClock.PinEndpointControls   = false;
+    % Only the physical fixed clock has clearance slack variables.
+    physicalClock.UseClearanceSlack = true;
+    scaledClock.UseClearanceSlack   = false;
+    % Only physical whole-segment fixed-clock lines may be reduced.
+    physicalClock.RemoveRedundantLines = true;
+    scaledClock.RemoveRedundantLines   = false;
+    % Physical fixed-clock line rows use twice the reserve; scaled rows use it once.
+    physicalClock.LineRowReserveFactor = 1 + hasFixedSegmentTimes;
+    scaledClock.LineRowReserveFactor   = 1;
+    % Physical violation checks use twice the reserve; scaled checks use it once.
+    physicalClock.ViolationReserveFactor = 2;
+    scaledClock.ViolationReserveFactor   = 1;
+    % Physical variable clocks load all lines; scaled clocks defer sets above 2048.
+    physicalClock.MaximumFullyLoadedPairCount = Inf;
+    scaledClock.MaximumFullyLoadedPairCount   = 2048;
+    % The scaled clock retains a usable iterate if the next line round fails.
+    physicalClock.KeepLastUsableIterate = false;
+    scaledClock.KeepLastUsableIterate   = true;
+    % The scaled variable clock accepts lines that cover only part of a segment.
+    physicalClock.AllowPartialScopesWithVariableClock = false;
+    scaledClock.AllowPartialScopesWithVariableClock   = true;
+    % The physical variable clock reserves unused edge bounds; the scaled clock does not.
+    physicalClock.ReserveEdgeBoundsAtVariableClock = true;
+    scaledClock.ReserveEdgeBoundsAtVariableClock   = false;
+    % The scaled fixed clock includes time-power cones even with pinned powers.
+    physicalClock.IncludeTimePowerConesAtFixedClock = false;
+    scaledClock.IncludeTimePowerConesAtFixedClock   = true;
+    % Physical constraint keys include jerk times; scaled keys omit them.
+    physicalClock.KeepJerkTimesInKey = true;
+    scaledClock.KeepJerkTimesInKey   = false;
+    % Only the scaled clock has a lower arrival bound and a scalar-time request.
+    physicalClock.AllowMinimumDuration = false;
+    scaledClock.AllowMinimumDuration   = true;
+    physicalClock.AllowCommonSegmentTime = false;
+    scaledClock.AllowCommonSegmentTime   = true;
+    % Intrinsic jerk variation belongs to physical-clock quintic refinement.
+    physicalClock.AllowJerkVariation = true;
+    scaledClock.AllowJerkVariation   = false;
+
+    if formulationName == "physicalClock"
+        formulation = physicalClock;
+    else
+        formulation = scaledClock;
+    end
+end
 
 function [solverValues, exitFlag, solverOutput] = solveWithFixedValues( ...
         solverProblem, solverOptions, eliminateFixedValues, localStateSegmentTime_s, limits)
@@ -500,5 +710,30 @@ function [solverValues, exitFlag, solverOutput] = solveWithFixedValues( ...
         if ~isempty(solverToControlMap)
             solverValues = coordinateOffset + solverToControlMap * solverValues;
         end
+    end
+end
+
+function solverOutput = labelSolveFailure(solverOutput, exitFlag, iterateIsUsable)
+    % Tell the calling optimizer what a failed solve means to the planner.
+    % An iteration limit or an infeasible subproblem may be answered with a
+    % different route. Any other solver status is a numerical failure and
+    % must not be hidden behind another attempt.
+    solverOutput.FailureStage             = "";
+    solverOutput.FailureKind              = "";
+    solverOutput.AlternativeGuideEligible = false;
+    if iterateIsUsable
+        return
+    end
+    if exitFlag == 0
+        solverOutput.FailureStage             = "optimization";
+        solverOutput.FailureKind              = "trajectorySolverIterationLimit";
+        solverOutput.AlternativeGuideEligible = true;
+    elseif exitFlag == -2
+        solverOutput.FailureStage             = "proposal";
+        solverOutput.FailureKind              = "trajectorySubproblemInfeasible";
+        solverOutput.AlternativeGuideEligible = true;
+    else
+        solverOutput.FailureStage = "numericalSolver";
+        solverOutput.FailureKind  = "optimizerIterateUnavailable";
     end
 end
