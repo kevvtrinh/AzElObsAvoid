@@ -75,8 +75,8 @@ end
 % derivative is zero. Those values settle cases the coefficient bounds could
 % not decide; an inconclusive bound alone is not a failure.
 
-isWithinRange = checkEndpointAndStationaryValues( ...
-    powerCoefficients, allowedLowerBound, allowedUpperBound);
+[minimumValue, maximumValue] = bmtpEngine.validation.boundPolynomialRange(powerCoefficients);
+isWithinRange = minimumValue >= allowedLowerBound && maximumValue <= allowedUpperBound;
 end
 
 %% Section 3: Local Functions
@@ -143,23 +143,4 @@ function rangeDecision = classifyBernsteinRange( ...
     else
         rangeDecision = 0;
     end
-end
-
-function isWithinRange = checkEndpointAndStationaryValues(powerCoefficients, lowerBound, upperBound)
-    % A zero derivative identifies a possible interior maximum or minimum.
-    % Include both endpoints, and keep the real parts of derivative roots
-    % within [0 1]. Clamp roots just beyond an endpoint by the small fraction
-    % tolerance; the polynomial-value limits are unchanged.
-    derivativeCoefficients = (1:numel(powerCoefficients) - 1).' .* powerCoefficients(2:end);
-    lastDerivativeIndex    = find(derivativeCoefficients ~= 0, 1, "last");
-    candidateFractions     = [0; 1];
-    if ~isempty(lastDerivativeIndex)
-        stationaryFractions = real(roots(flip(derivativeCoefficients(1:lastDerivativeIndex))));
-        fractionTolerance   = 1e-9;
-        stationaryFractions = stationaryFractions( ...
-            stationaryFractions >= -fractionTolerance & stationaryFractions <= 1 + fractionTolerance);
-        candidateFractions = [candidateFractions; min(max(stationaryFractions, 0), 1)];
-    end
-    candidateValues = polyval(flip(powerCoefficients), candidateFractions);
-    isWithinRange   = all(candidateValues >= lowerBound & candidateValues <= upperBound);
 end

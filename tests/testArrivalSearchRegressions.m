@@ -506,29 +506,33 @@ function testFailedWrappedTimedTimedSearchRetainsValidatedBestSoFar(testCase)
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.ArrivalTime_s, 11.613388881629, 'AbsTol', 1e-10);
+    % Exact polynomial sizing removed a control-bound stretch from the
+    % departure motion (11.613388881629 s before). At the earlier clock the
+    % timed subproblem reports a clean infeasibility (coneprog -2) instead
+    % of the numerical breakdown (-10) it used to hit. Either way the
+    % validated departure motion must stay selected.
+    verifyEqual(testCase, result.ArrivalTime_s, 11.613388695819829, 'AbsTol', 1e-10);
     verifyEqual(testCase, [result.Diagnostics.Attempts.Kind], ...
         ["analyticDeparture", "timedVisibility"]);
     verifyTrue(testCase, result.Diagnostics.Attempts(1).Selected);
     verifyEqual(testCase, result.Diagnostics.Attempts(1).Message, "");
     verifyTrue(testCase, isnan(result.Diagnostics.Attempts(1).SolverExitFlag));
     verifyFalse(testCase, result.Diagnostics.Attempts(2).Success);
-    verifyEqual(testCase, result.Diagnostics.Attempts(2).FailureStage, "numericalSolver");
+    verifyFalse(testCase, result.Diagnostics.Attempts(2).Selected);
+    verifyEqual(testCase, result.Diagnostics.Attempts(2).FailureStage, "proposal");
     verifyEqual(testCase, result.Diagnostics.Attempts(2).FailureKind, ...
-        "optimizerIterateUnavailable");
+        "trajectorySubproblemInfeasible");
     verifyTrue(testCase, result.Diagnostics.Attempts(2).OptimizerIterateUnavailable);
-    verifyFalse(testCase, result.Diagnostics.Attempts(2).NextMethodAllowed);
-    verifyEqual(testCase, result.Diagnostics.Attempts(2).SolverExitFlag, -10);
-    verifySubstring(testCase, result.Diagnostics.Attempts(2).Message, "numerically unstable");
+    verifyTrue(testCase, result.Diagnostics.Attempts(2).NextMethodAllowed);
 
     timedSearch = result.Diagnostics.SolverDiagnostics.TimedSearchAttempt;
     verifyFalse(testCase, timedSearch.Success);
     verifyEqual(testCase, timedSearch.TerminationReason, "timedMotionInfeasible");
-    verifyEqual(testCase, timedSearch.FailureStage, "numericalSolver");
-    verifyEqual(testCase, timedSearch.FailureKind, "optimizerIterateUnavailable");
+    verifyEqual(testCase, timedSearch.FailureStage, "proposal");
+    verifyEqual(testCase, timedSearch.FailureKind, "trajectorySubproblemInfeasible");
     verifyTrue(testCase, timedSearch.OptimizerIterateUnavailable);
-    verifyEqual(testCase, timedSearch.SolverDiagnostics.LastTrajectoryExitFlag, -10);
-    verifySubstring(testCase, timedSearch.Message, "numerically unstable");
+    verifyEqual(testCase, timedSearch.SolverDiagnostics.LastTrajectoryExitFlag, -2);
+    verifySubstring(testCase, timedSearch.Message, "Problem is infeasible");
     verifyEqual(testCase, timedSearch.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
     verifyTrue(testCase, isfield(timedSearch.VisibilityGraph, 'TimedSearch'));
@@ -654,7 +658,9 @@ function testWrappedBestSoFarRefinementRetainsValidatedDeparture(testCase)
 
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,10.1400889258125,'AbsTol',1e-8);
+    % Exact polynomial sizing removed a 2.3e-8 s control-bound stretch
+    % (10.1400889258125 s before).
+    verifyEqual(testCase,result.ArrivalTime_s,10.140088902645401,'AbsTol',1e-8);
     verifyFalse(testCase,isfield(result.Diagnostics, 'FixedArrivalTrialTime_s'));
     verifyTrue(testCase,result.Diagnostics.TemporalSearch.BestSoFar);
     verifyEqual(testCase,result.Diagnostics.TemporalSearch.TrialTime_s,7.5,'AbsTol',1e-12);

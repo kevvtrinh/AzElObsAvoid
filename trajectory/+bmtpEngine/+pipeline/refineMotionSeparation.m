@@ -68,10 +68,10 @@ for refinementIndex = 1:10
     % it to controls does not impose endpoint states or correct joins.
     preparedMotion.ControlPoint_units = bmtpEngine.motion.powerToBernstein(preparedMotion.GivenPower_units);
 
-    % Smaller control polygons can tighten duration bounds. Record those
-    % bounds without changing any assigned duration or the saved final time.
-    requiredTime_s = bmtpEngine.motion.findRequiredSegmentTime( ...
-        preparedMotion.ControlPoint_units, solverRequest.Limits);
+    % Check each split polynomial's exact rate peaks. Splitting keeps the
+    % physical motion, its assigned durations, and its final time unchanged.
+    requiredTime_s = bmtpEngine.motion.findRequiredPolynomialTime( ...
+        preparedMotion.GivenPower_units, preparedMotion.SegmentTime_s, solverRequest.Limits);
     preparedMotion.RequiredSegmentTime_s = requiredTime_s;
     preparedMotion.MotionProof = struct( ...
         'Passed',           all(preparedMotion.SegmentTime_s >= requiredTime_s), ...

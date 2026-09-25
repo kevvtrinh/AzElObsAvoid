@@ -193,9 +193,9 @@ function testRefinementKeepsCurveTimingAndSourceSegments(testCase)
         verifyEqual(testCase, changed.SourceSegmentIndex(end - 1:end), [2; 3]);
         verifyEqual(testCase, changed.GivenPower_units(end - 1:end, :, :), source.GivenPower_units(2:3, :, :));
         verifyGreaterThanOrEqual(testCase, finalCheck.CachedPairCount, 2);
-        % The duration bounds are recomputed from the smaller control polygons;
-        % the assigned durations and the final time are not.
-        requiredTime_s = bmtpEngine.motion.findRequiredSegmentTime(changed.ControlPoint_units, request.Limits);
+        % The split polynomial sets required times; assigned times and final time stay fixed.
+        requiredTime_s = bmtpEngine.motion.findRequiredPolynomialTime( ...
+            changed.GivenPower_units, changed.SegmentTime_s, request.Limits);
         verifyEqual(testCase, changed.RequiredSegmentTime_s, requiredTime_s);
         verifyEqual(testCase, changed.MotionProof.SegmentTime_s, changed.SegmentTime_s);
         verifyEqual(testCase, changed.MotionProof.Passed, all(changed.SegmentTime_s >= requiredTime_s));

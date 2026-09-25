@@ -62,19 +62,18 @@ controlPoint_units = bmtpEngine.motion.imposeEndpointControls(controlPoint_units
 %% Section 2: Check Required Durations And Keep The Requested Timing
 
 % Conversion may make small corrections so position, velocity, acceleration,
-% and jerk match at curve joins. Check durations for both the input controls
-% and controls reconstructed from that polynomial.
+% and jerk match at curve joins. Size the corrected polynomial that will be
+% retained for validation and output.
 motionPolynomial = bmtpEngine.motion.createPowerPolynomial( ...
     controlPoint_units, segmentTime_s, 0, suppliedPowerCoefficients_units);
 polynomialControlPoint_units = bmtpEngine.motion.powerToBernstein(motionPolynomial.positionPower_units);
-requiredTime_s = max( ...
-    bmtpEngine.motion.findRequiredSegmentTime(controlPoint_units, solverRequest.Limits), ...
-    bmtpEngine.motion.findRequiredSegmentTime(polynomialControlPoint_units, solverRequest.Limits));
+requiredTime_s = bmtpEngine.motion.findRequiredPolynomialTime( ...
+    motionPolynomial.positionPower_units, segmentTime_s, solverRequest.Limits);
 
-% These control-point bounds may ask for more time than the curve needs.
-% The caller also checks the polynomial throughout each segment before
-% accepting the motion. Keep fixed-arrival times; otherwise allow a longer
-% duration to meet these bounds, with a small floating-point allowance.
+% The exact polynomial peaks give the time needed for the motion-rate limits.
+% The caller still checks the whole polynomial before accepting the motion.
+% Keep fixed-arrival times; otherwise allow a longer duration to meet these
+% limits, with a small floating-point allowance.
 isFixedArrival = solverRequest.Options.GoalTimeMode == "fixedArrival";
 durationScale  = 1;
 if ~isFixedArrival
@@ -137,7 +136,7 @@ end
 % Keep every coefficient, including axes originally converted from controls,
 % so checking, subdivision, and output never reconstruct its joins again.
 % The common duration scale above changes time without changing this curve.
-% Check whether the assigned durations meet the control-point bounds.
+% Check whether the assigned durations meet the exact polynomial rate peaks.
 % Passing this check does not replace the final polynomial validation.
 durationCheck = struct( ...
     "Passed",           all(segmentTime_s >= requiredTime_s), ...
