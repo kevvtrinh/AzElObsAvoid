@@ -13,26 +13,29 @@ function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajec
 %   - solverRequest (scalar struct)
 %       Checked states, limits, degree, and both coneprog option sets.
 %   - trajectoryStep (scalar struct)
-%       Formulation (string scalar) selects one of these solves:
-%         Name             Clock / endpoints      Slack / failed later round
-%         "physicalClock"  Seconds / given rates   Yes / return failed round
-%         "scaledClock"    Fractions / at rest     No / retain usable round
+%       Formulation is "physicalClock" for physical time powers, endpoint
+%       rates, clearance slack, and optional jerk smoothing. "scaledClock"
+%       scales time powers by their maximum and keeps endpoints at rest.
+%       Each retains its own line-loading and solve-failure rules.
 %       SegmentCount is a positive integer. Planes is S-by-R, with each
 %       TimeFraction selecting part of a segment. Other required fields are
 %       RoundoffReserve_units (nonnegative), MaximumMotionDuration_s
-%       (positive), MinimumMotionDuration_s (zero for physicalClock),
-%       SegmentRatio (S positive values, or [] only for scaledClock's common
-%       segment time), FixedClock (logical), IntrinsicVariationEnabled
-%       (logical, false for scaledClock), and ConstraintBase (matching saved
-%       constraints or struct()).
+%       (positive for variable clocks), MinimumMotionDuration_s (zero when
+%       unused), SegmentRatio (S positive values for variable clocks, or []
+%       for scaledClock's common time), FixedClock (logical),
+%       IntrinsicVariationEnabled (logical, false for scaledClock), and
+%       ConstraintBase (matching saved constraints or struct()). A fixed
+%       clock also requires SegmentTime_s (S-by-1 positive physical times)
+%       and empty MaximumMotionDuration_s and SegmentRatio.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Solved control points, or an empty array on expected solve failure.
 %       Invalid input throws an error.
 %   - segmentTime_s (numeric scalar or S-element numeric array)
-%       Segment durations; scaledClock with [] SegmentRatio returns one
-%       common segment time. Expected solve failure returns NaN.
+%       Segment durations. A fixed clock returns the supplied SegmentTime_s;
+%       a variable scaledClock step with [] SegmentRatio returns one common
+%       segment time. Expected solve failure returns NaN.
 %   - exitFlag (numeric scalar)
 %       Original coneprog status.
 %   - solverOutput (scalar struct)
@@ -71,25 +74,41 @@ validateattributes(separatingPlanes, {'struct'}, {'2d'});
 assert(size(separatingPlanes, 1) == segmentCount && isfield(separatingPlanes, 'Active'), ...
     'bmtpEngine:InvalidStep', 'Planes must have SegmentCount rows and an Active field.');
 validateattributes(roundoffReserve_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
-validateattributes(minimumMotionDuration_s, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'nonnegative', '<=', maximumMotionDuration_s});
 validateattributes(hasFixedSegmentTimes, {'logical'}, {'scalar'});
 validateattributes(allowJerkVariationObjective, {'logical'}, {'scalar'});
 validateattributes(savedTrajectoryConstraints, {'struct'}, {'scalar'});
 formulation = resolveFormulation(formulationName, solverRequest, hasFixedSegmentTimes);
 assert(formulation.AllowJerkVariation || ~allowJerkVariationObjective, ...
     'bmtpEngine:InvalidStep', 'scaledClock cannot enable intrinsic jerk variation.');
-assert(formulation.AllowMinimumDuration || minimumMotionDuration_s == 0, ...
-    'bmtpEngine:InvalidStep', 'physicalClock requires MinimumMotionDuration_s = 0.');
-
-returnsCommonSegmentTime = isempty(segmentTimeRatios);
-assert(~returnsCommonSegmentTime || formulation.AllowCommonSegmentTime, ...
-    'bmtpEngine:InvalidStep', 'Only scaledClock accepts an empty SegmentRatio.');
-if returnsCommonSegmentTime
-    segmentTimeRatios = ones(segmentCount, 1);
+if hasFixedSegmentTimes
+    assert(isfield(trajectoryStep, 'SegmentTime_s'), 'bmtpEngine:InvalidStep', ...
+        'A fixed clock requires SegmentTime_s.');
+    assert(isempty(maximumMotionDuration_s) && isempty(segmentTimeRatios), ...
+        'bmtpEngine:InvalidStep', ...
+        'A fixed clock requires empty MaximumMotionDuration_s and SegmentRatio.');
+    validateattributes(minimumMotionDuration_s, {'numeric'}, ...
+        {'real', 'finite', 'scalar', 'nonnegative'});
+    assert(minimumMotionDuration_s == 0, 'bmtpEngine:InvalidStep', ...
+        'A fixed clock requires MinimumMotionDuration_s = 0.');
+    segmentTimeRatios = trajectoryStep.SegmentTime_s;
+    validateattributes(segmentTimeRatios, {'numeric'}, ...
+        {'real', 'finite', 'positive', 'size', [segmentCount, 1]});
+    returnsCommonSegmentTime = false;
+else
+    validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+    validateattributes(minimumMotionDuration_s, {'numeric'}, ...
+        {'real', 'finite', 'scalar', 'nonnegative', '<=', maximumMotionDuration_s});
+    assert(formulation.AllowMinimumDuration || minimumMotionDuration_s == 0, ...
+        'bmtpEngine:InvalidStep', 'physicalClock requires MinimumMotionDuration_s = 0.');
+    returnsCommonSegmentTime = isempty(segmentTimeRatios);
+    assert(~returnsCommonSegmentTime || formulation.AllowCommonSegmentTime, ...
+        'bmtpEngine:InvalidStep', 'Only scaledClock accepts an empty SegmentRatio.');
+    if returnsCommonSegmentTime
+        segmentTimeRatios = ones(segmentCount, 1);
+    end
+    validateattributes(segmentTimeRatios, {'numeric'}, ...
+        {'real', 'finite', 'positive', 'numel', segmentCount});
 end
-validateattributes(segmentTimeRatios, {'numeric'}, {'real', 'finite', 'positive', 'numel', segmentCount});
 if formulation.ScaleTimePowers
     % The scaled formulation always used a column of doubles.
     segmentTimeRatios = double(segmentTimeRatios(:));
@@ -150,8 +169,28 @@ edgeLengthBoundCount = (hasFixedSegmentTimes || formulation.ReserveEdgeBoundsAtV
 planeActiveBySegment = reshape([separatingPlanes.Active], size(separatingPlanes));
 activePlaneCount     = nnz(planeActiveBySegment);
 planeCountBySegment  = sum(planeActiveBySegment, 2);
-maximumTimeScale_s   = maximumMotionDuration_s / sum(segmentTimeRatios);
-fixedSegmentTime_s   = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
+if hasFixedSegmentTimes
+    % A fixed step solves on exactly the durations its lines were built on.
+    % Use them as the segment ratios with a time scale of one. Every
+    % rate-limit row then forms limit x duration^k directly, with the single
+    % rounding any direct evaluation has, and the returned durations are the
+    % supplied ones. The time powers are pinned before the solve (eliminated
+    % in the physical formulation, fixed bounds in the scaled one), so the
+    % scale has no numerical effect: a power-of-two scale near the mean
+    % duration gave results identical to 17 digits on every example.
+    fixedSegmentTime_s = segmentTimeRatios;
+    maximumTimeScale_s = 1;
+    % The rows form limit x duration^k and join weights of up to 3 x
+    % duration^3 divided by the larger neighbour's cube. Segments from one
+    % nanosecond to 1e9 s keep every one of those a normal double with more
+    % than 250 orders of magnitude to spare; shorter or longer segments are
+    % outside this solver's supported clock and are refused here.
+    assert(all(fixedSegmentTime_s >= 1e-9 & fixedSegmentTime_s <= 1e9), 'bmtpEngine:InvalidStep', ...
+        'Fixed segment times must lie between 1e-9 s and 1e9 s.');
+else
+    maximumTimeScale_s = maximumMotionDuration_s / sum(segmentTimeRatios);
+    fixedSegmentTime_s = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
+end
 if formulation.PinEndpointControls
     endpointControlPoint_units = bmtpEngine.motion.imposeEndpointControls( ...
         zeros(segmentCount, degree + 1, 2), fixedSegmentTime_s, initialState, goalState);
@@ -476,7 +515,6 @@ solverOutput.ConstraintGenerationRoundCount = max(0, solveCount - 1);
 solverOutput.ConstraintGenerationComplete = allLineConstraintsSatisfied;
 solverOutput.MaximumPlaneConstraintResidual = maximumLineViolation;
 solverOutput.IntrinsicJerkVariation = useJerkVariationObjective;
-solverOutput.MaximumClearanceSlack_units = [];
 if formulation.UseClearanceSlack && hasFixedSegmentTimes && ~isempty(solverValues)
     solverOutput.MaximumClearanceSlack_units = max(solverValues(slackIndices));
 end
@@ -496,16 +534,15 @@ if ~iterateIsUsable
 end
 % Recover the shared time scale from its cubic variable, then multiply by
 % each segment's ratio. Fixed-time solves keep the exact supplied durations.
-if formulation.ScaleTimePowers
+if hasFixedSegmentTimes
+    segmentTime_s = fixedSegmentTime_s;
+elseif formulation.ScaleTimePowers
     segmentTime_s = maximumTimeScale_s * max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3);
     if ~returnsCommonSegmentTime
         segmentTime_s = segmentTime_s * segmentTimeRatios;
     end
 else
     segmentTime_s = max(solverValues(timePowerIndices(4)), 0) ^ (1 / 3) * segmentTimeRatios;
-    if hasFixedSegmentTimes
-        segmentTime_s = fixedSegmentTime_s;
-    end
 end
 controlPoint_units = permute(reshape(solverValues(1:controlVariableCount), 2, degree + 1, segmentCount), [3 2 1]);
 end
