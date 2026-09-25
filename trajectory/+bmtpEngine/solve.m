@@ -92,6 +92,7 @@ requiredSeparation_units = maximumNormalLength * options.CollisionClearanceToler
 preparedMotion        = struct('Success', false);
 motionValidation      = struct('Passed', false);
 motionValidationCache = [];
+separationAlreadyRefined = false;
 if size(route_units, 1) == 2 && options.GoalTimeMode == "earliestArrival" && solverRequest.IsRest
     [controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units] = bmtpEngine.motion.createC3Chord( ...
         initialState.position_units, goalState.position_units, limits);
@@ -219,10 +220,9 @@ else
             if optimizationResult.Success
                 % Try to shorten the control-point polygon while keeping
                 % the selected arrival time.
-                [refinedTimedResult, solverDiagnostics] = bmtpEngine.pipeline.refineTimedTravel( ...
-                    solverRequest, optimizationResult, solverDiagnostics, ...
+                [optimizationResult, solverDiagnostics] = bmtpEngine.pipeline.refineTravel( ...
+                    solverRequest, optimizationResult, [], [], solverDiagnostics, ...
                     requiredSeparation_units, roundoffReserve_units);
-                optimizationResult = refinedTimedResult;
             end
         else
             [optimizationResult, solverDiagnostics] = bmtpEngine.optimization.solveAlternatingTrajectory( ...
@@ -250,11 +250,17 @@ else
             'AlternativeGuideEligible', canTryAnotherPlanningAttempt));
         return;
     end
-    if isfield(optimizationResult, 'PreparedMotion') && optimizationResult.PreparedMotion.Success && ...
-            isfield(optimizationResult, 'Proof') && optimizationResult.Proof.Passed
-        % Reuse these checks with the exact prepared motion they checked.
-        preparedMotion   = optimizationResult.PreparedMotion;
-        motionValidation = optimizationResult.Proof;
+    optimizerPreparedTheMotion = isfield(optimizationResult, 'PreparedMotion') && ...
+        ~isempty(optimizationResult.PreparedMotion) && ...
+        isfield(optimizationResult, 'Proof') && ~isempty(optimizationResult.Proof);
+    if optimizerPreparedTheMotion
+        % The optimizer prepared this exact motion and ran the full check,
+        % including the separation refinement. Use those results, passed or
+        % not; they are never repeated here.
+        preparedMotion           = optimizationResult.PreparedMotion;
+        motionValidation         = optimizationResult.Proof;
+        motionValidationCache    = [];
+        separationAlreadyRefined = true;
     else
         % Recheck after preparing the final curve: setting endpoint values
         % and converting coefficients can change velocity, acceleration, or jerk.
@@ -282,7 +288,7 @@ end
 
 % Check the entire curve against each obstacle region that applies.
 % Clear sampled points alone do not establish safety between those points.
-if ~motionValidation.Passed
+if ~motionValidation.Passed && ~separationAlreadyRefined
     [preparedMotion, motionValidation] = bmtpEngine.pipeline.refineMotionSeparation( ...
         solverRequest, preparedMotion, roundoffReserve_units, requiredSeparation_units, motionValidationCache);
 end

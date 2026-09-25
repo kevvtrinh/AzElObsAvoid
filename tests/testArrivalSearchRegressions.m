@@ -832,7 +832,13 @@ function testTimedHomotopyPrecedesDelayedDeparture(testCase)
     % at 10.7597406907 s. A valid curved timed homotopy is physically earlier
     % and must win even though its spatial path is slightly longer.
     verifyLessThan(testCase,result.ArrivalTime_s,10.7597406907);
-    verifyLessThan(testCase,result.MotionLength_units,12.6);
+    % The shortening pass finds a 12.4631-unit polygon for this homotopy, but
+    % preparing it stretches the clock to 8.5534113220 s, later than the
+    % retained 13.0600-unit motion at 8.5463 s. Arrival wins: the shorter
+    % polygon is refused and the retained homotopy stays under 13.5 units.
+    verifyLessThan(testCase,result.ArrivalTime_s,8.5534113220);
+    verifyFalse(testCase,result.Diagnostics.SolverDiagnostics.TravelRefinementAccepted);
+    verifyLessThan(testCase,result.MotionLength_units,13.5);
     verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");
     verifyTrue(testCase,isfield(result.Diagnostics, 'TemporalSearch'));
     verifyFalse(testCase,isfield(result.Diagnostics.SolverDiagnostics, ...
