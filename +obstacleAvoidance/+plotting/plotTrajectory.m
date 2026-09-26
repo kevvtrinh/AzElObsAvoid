@@ -23,8 +23,9 @@ function handles = plotTrajectory(result, optionOverrides)
 %       route, and motion data.
 %   - optionOverrides (scalar struct or Cartesian axes handle, optional)
 %       Display, animation, and GIF controls. ShowSpaceTime opens the x/y/time
-%       view; ShowSweptSurfaces connects matching obstacle boundaries, and
-%       MaximumDisplayedTimeSlices caps snapshots per obstacle. The graph
+%       view; ShowSweptSurfaces draws translucent motion walls where input
+%       vertices correspond and protected interval envelopes otherwise.
+%       MaximumDisplayedTimeSlices caps outline snapshots per obstacle. The graph
 %       display caps sample nodes and edges in the 3D figure.
 %       ShowExpandedWorkspace opens the expanded workspace when wrapping is
 %       on. ShowSphere maps degree-valued azimuth/elevation to a unit sphere;
@@ -62,7 +63,7 @@ defaults.ShowSweptSurfaces          = true;
 defaults.ShowExpandedWorkspace      = true;
 defaults.ShowSphere                 = false;
 defaults.SphereTime_s               = NaN;
-defaults.MaximumDisplayedTimeSlices = 25;
+defaults.MaximumDisplayedTimeSlices = 5;
 defaults.MaximumDisplayedGraphNodes = 300;
 defaults.MaximumDisplayedGraphEdges = 300;
 
@@ -955,10 +956,15 @@ function drawObstacles(axesHandle, protectedObstacles, originalObstacles, ...
 end
 
 function drawSpaceTimeObstacles(axesHandle, protectedObstacles, plotTimeRange_s, options)
-    % Sample the prepared protected geometry. A slice is an observation at
-    % its labeled time; side faces connect only matching moving vertices.
+    % Draw a few outlines so rotating obstacles remain readable. An interval
+    % enclosure covers the whole motion and is not an instantaneous shape,
+    % so show recorded protected shapes for those obstacles. Draw solid
+    % source motion when input vertices correspond; otherwise show the
+    % protected interval envelope as a solid.
     obstacleColors = lines(max(1, numel(protectedObstacles)));
     firstSlice = true;
+    firstOriginalSweep = true;
+    firstProtectedSweep = true;
     for obstacleIndex = 1:numel(protectedObstacles)
         obstacle = protectedObstacles(obstacleIndex);
         preparation = obstacle.InternalPreparation;
@@ -975,19 +981,32 @@ function drawSpaceTimeObstacles(axesHandle, protectedObstacles, plotTimeRange_s,
         if activeRange_s(1) > activeRange_s(2)
             continue
         end
-        sliceTimes_s = unique(linspace(activeRange_s(1), activeRange_s(2), sliceCount));
-        previousBoundary = struct('x_units', [], 'y_units', []);
-        previousTime_s = NaN;
+        usesIntervalEnclosures = any(preparation.IntervalUsesMovingCells | ...
+            preparation.IntervalUsesEndpointHull);
+        if usesIntervalEnclosures
+            % A broad interval enclosure can make a spinning bar look like
+            % a different polygon at each arbitrary display time. Recorded
+            % samples show the actual protected boundaries supplied there.
+            recordedTimes_s = obstacle.time_s(:);
+            recordedTimes_s = recordedTimes_s( ...
+                recordedTimes_s >= activeRange_s(1) & recordedTimes_s <= activeRange_s(2));
+            sliceTimes_s = zeros(1, 0);
+            if ~isempty(recordedTimes_s)
+                selectedIndices = unique(round(linspace( ...
+                    1, numel(recordedTimes_s), min(sliceCount, numel(recordedTimes_s)))));
+                sliceTimes_s = recordedTimes_s(selectedIndices).';
+            end
+        else
+            sliceTimes_s = unique(linspace(activeRange_s(1), activeRange_s(2), sliceCount));
+        end
         for time_s = sliceTimes_s
             % An interval without a verified continuous model has no shape
             % between its samples; leave a gap there.
             if ~shapeIsAvailable(obstacle, time_s)
-                previousTime_s = NaN;
                 continue
             end
-            [shape, boundaryDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s);
+            shape = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s);
             if isempty(shape.Vertices)
-                previousTime_s = NaN;
                 continue
             end
             [x_units, y_units] = boundary(shape);
@@ -998,40 +1017,120 @@ function drawSpaceTimeObstacles(axesHandle, protectedObstacles, plotTimeRange_s,
             end
             plot3(axesHandle, x_units, y_units, repmat(time_s, size(x_units)), ...
                 "-", "Color", obstacleColors(obstacleIndex, :), ...
-                "LineWidth", 0.8, "DisplayName", "Protected obstacle slices", ...
+                "LineWidth", 0.8, "DisplayName", "Protected obstacle snapshots", ...
                 "HandleVisibility", legendVisibility);
+        end
 
-            % A change in vertex count, loop layout, or motion interval can
-            % make a connecting surface depict space the obstacle never used.
-            if options.ShowSweptSurfaces && isfinite(previousTime_s) && ...
-                    boundaryCorresponds(obstacle, previousBoundary, boundaryDetails, ...
-                    previousTime_s, time_s)
-                if preparation.IsTimeInvariant
-                    % The shape does not change: extrude one boundary.
-                    [faceStart, faceEnd] = deal(previousBoundary);
-                else
-                    % A recorded sample keeps its supplied vertex order, but
-                    % inside an interval preparation uses matched vertices.
-                    % Read both face ends just inside the interval so their
-                    % vertices correspond. Example: slices at 0 and 1 s read
-                    % at 1e-9 s and (1 - 1e-9) s. At a large absolute time the
-                    % inset grows to stay above the spacing of doubles there;
-                    % skip a face too short to hold it.
-                    inset_s = max(1e-9 * (time_s - previousTime_s), 64 * eps(max(abs([previousTime_s, time_s]))));
-                    faceStart = struct('x_units', [], 'y_units', []);
-                    faceEnd   = struct('x_units', 0, 'y_units', 0);
-                    if 4 * inset_s < time_s - previousTime_s
-                        [~, faceStart] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, previousTime_s + inset_s);
-                        [~, faceEnd]   = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s - inset_s);
-                    end
-                end
-                if isequal(size(faceStart.x_units), size(faceEnd.x_units))
-                    drawSweptBoundary(axesHandle, faceStart, faceEnd, ...
-                        previousTime_s, time_s, obstacleColors(obstacleIndex, :));
-                end
+        if ~options.ShowSweptSurfaces || activeRange_s(1) == activeRange_s(2)
+            continue
+        end
+        if preparation.IsTimeInvariant
+            % A fixed shape has one straight extrusion through the time range.
+            [~, fixedBoundary] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacle, activeRange_s(1));
+            legendLabel = "";
+            if firstProtectedSweep
+                legendLabel = "Protected obstacle sweep";
+                firstProtectedSweep = false;
             end
-            previousBoundary = boundaryDetails;
-            previousTime_s = time_s;
+            drawSweptBoundary(axesHandle, fixedBoundary, fixedBoundary, ...
+                activeRange_s(1), activeRange_s(2), obstacleColors(obstacleIndex, :), ...
+                legendLabel);
+            continue
+        end
+
+        % Split at each source sample. Across a sample boundary, the matched
+        % vertex order can change even when the visible polygons look alike.
+        recordedTimes_s = obstacle.time_s(:);
+        timesInsideRange_s = recordedTimes_s( ...
+            recordedTimes_s > activeRange_s(1) & recordedTimes_s < activeRange_s(2));
+        sweepTimes_s = unique([activeRange_s(1); timesInsideRange_s; activeRange_s(2)]);
+        for intervalIndex = 1:numel(sweepTimes_s) - 1
+            startTime_s = sweepTimes_s(intervalIndex);
+            endTime_s   = sweepTimes_s(intervalIndex + 1);
+            middleTime_s = startTime_s + 0.5 * (endTime_s - startTime_s);
+            if ~shapeIsAvailable(obstacle, middleTime_s)
+                continue
+            end
+
+            sourceIntervalIndex = find(obstacle.time_s <= middleTime_s, 1, "last");
+            usesFixedEnvelope = preparation.IntervalIsStationary(sourceIntervalIndex) || ...
+                preparation.IntervalUsesMovingCells(sourceIntervalIndex) || ...
+                preparation.IntervalUsesEndpointHull(sourceIntervalIndex);
+            if usesFixedEnvelope
+                sourceStartX_units = obstacle.originalX_units{sourceIntervalIndex};
+                sourceStartY_units = obstacle.originalY_units{sourceIntervalIndex};
+                sourceEndX_units   = obstacle.originalX_units{sourceIntervalIndex + 1};
+                sourceEndY_units   = obstacle.originalY_units{sourceIntervalIndex + 1};
+                sourceVerticesCorrespond = obstacle.UsesSourceIndex && ...
+                    isequal(size(sourceStartX_units), size(sourceEndX_units)) && ...
+                    isequal(size(sourceStartY_units), size(sourceEndY_units)) && ...
+                    isequal(isfinite(sourceStartX_units), isfinite(sourceEndX_units)) && ...
+                    isequal(isfinite(sourceStartY_units), isfinite(sourceEndY_units));
+                if preparation.IntervalUsesMovingCells(sourceIntervalIndex) && ...
+                        sourceVerticesCorrespond
+                    % Draw straight motion between the supplied source
+                    % vertices. This is a visualization of original motion;
+                    % planning still uses its protected interval envelope.
+                    sourceStartTime_s = obstacle.time_s(sourceIntervalIndex);
+                    sourceDuration_s = obstacle.time_s(sourceIntervalIndex + 1) - sourceStartTime_s;
+                    startFraction = (startTime_s - sourceStartTime_s) / sourceDuration_s;
+                    endFraction   = (endTime_s - sourceStartTime_s) / sourceDuration_s;
+                    startBoundary = struct( ...
+                        'x_units', sourceStartX_units + startFraction * (sourceEndX_units - sourceStartX_units), ...
+                        'y_units', sourceStartY_units + startFraction * (sourceEndY_units - sourceStartY_units));
+                    endBoundary = struct( ...
+                        'x_units', sourceStartX_units + endFraction * (sourceEndX_units - sourceStartX_units), ...
+                        'y_units', sourceStartY_units + endFraction * (sourceEndY_units - sourceStartY_units));
+                    legendLabel = "";
+                    if firstOriginalSweep
+                        legendLabel = "Original sampled-motion sweep";
+                        firstOriginalSweep = false;
+                    end
+                    drawSweptBoundary(axesHandle, startBoundary, endBoundary, ...
+                        startTime_s, endTime_s, obstacleColors(obstacleIndex, :), legendLabel);
+                    continue
+                end
+
+                % This solid is the planner's protected occupancy envelope
+                % for the whole interval. It can include space the original
+                % obstacle did not visit at a particular instant.
+                envelopeShape = preparation.IntervalUnionShapes{sourceIntervalIndex};
+                if ~isempty(envelopeShape.Vertices)
+                    [x_units, y_units] = boundary(envelopeShape);
+                    envelopeBoundary = struct('x_units', x_units, 'y_units', y_units);
+                    legendLabel = "";
+                    if firstProtectedSweep
+                        legendLabel = "Protected occupancy envelope";
+                        firstProtectedSweep = false;
+                    end
+                    drawSweptBoundary(axesHandle, envelopeBoundary, envelopeBoundary, ...
+                        startTime_s, endTime_s, obstacleColors(obstacleIndex, :), legendLabel);
+                end
+                continue
+            end
+
+            % Query just inside one verified interval. Its prepared vertices
+            % correspond there even if recorded sample boundaries use a
+            % different starting corner or loop order.
+            inset_s = max(1e-9 * (endTime_s - startTime_s), ...
+                64 * eps(max(abs([startTime_s, endTime_s]))));
+            if 4 * inset_s >= endTime_s - startTime_s
+                continue
+            end
+            [~, faceStart] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacle, startTime_s + inset_s);
+            [~, faceEnd] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacle, endTime_s - inset_s);
+            if boundaryCorresponds(obstacle, faceStart, faceEnd, startTime_s, endTime_s)
+                legendLabel = "";
+                if firstProtectedSweep
+                    legendLabel = "Protected obstacle sweep";
+                    firstProtectedSweep = false;
+                end
+                drawSweptBoundary(axesHandle, faceStart, faceEnd, ...
+                    startTime_s, endTime_s, obstacleColors(obstacleIndex, :), legendLabel);
+            end
         end
     end
 end
@@ -1058,25 +1157,48 @@ function matches = boundaryCorresponds(obstacle, previousBoundary, currentBounda
 end
 
 function drawSweptBoundary(axesHandle, previousBoundary, currentBoundary, ...
-        previousTime_s, currentTime_s, obstacleColor)
+        previousTime_s, currentTime_s, obstacleColor, legendLabel)
     % NaN separates polygon loops. Close each loop separately so a surface
-    % cannot bridge a hole or a disconnected piece.
+    % cannot bridge a hole or a disconnected piece. Light filled side walls
+    % show the sweep while leaving the motion and snapshots visible.
     finiteVertex = isfinite(previousBoundary.x_units) & isfinite(previousBoundary.y_units);
     runStarts = find(diff([false; finiteVertex; false]) == 1);
     runEnds   = find(diff([false; finiteVertex; false]) == -1) - 1;
+    if nargin < 7
+        legendLabel = "";
+    end
     for runIndex = 1:numel(runStarts)
         vertexIndices = runStarts(runIndex):runEnds(runIndex);
         if numel(vertexIndices) < 2
             continue
         end
         closedVertexIndices = [vertexIndices, vertexIndices(1)];
+        legendVisibility = "off";
+        if strlength(legendLabel) > 0
+            legendVisibility = "on";
+        end
         surface(axesHandle, ...
             [previousBoundary.x_units(closedVertexIndices).'; currentBoundary.x_units(closedVertexIndices).'], ...
             [previousBoundary.y_units(closedVertexIndices).'; currentBoundary.y_units(closedVertexIndices).'], ...
             [repmat(previousTime_s, 1, numel(closedVertexIndices)); ...
              repmat(currentTime_s, 1, numel(closedVertexIndices))], ...
             "FaceColor", obstacleColor, "FaceAlpha", 0.12, ...
-            "EdgeColor", "none", "HandleVisibility", "off");
+            "EdgeColor", "none", "DisplayName", legendLabel, ...
+            "HandleVisibility", legendVisibility);
+        legendLabel = "";
+
+        % Follow two opposite corners per loop through time. These rails
+        % reveal the twist without redrawing every polygon at every sample.
+        railPositions = unique([1, 1 + floor(numel(vertexIndices) / 2)]);
+        railColor = 0.45 * obstacleColor + 0.55 * [1 1 1];
+        for railPosition = railPositions
+            vertexIndex = vertexIndices(railPosition);
+            plot3(axesHandle, ...
+                [previousBoundary.x_units(vertexIndex), currentBoundary.x_units(vertexIndex)], ...
+                [previousBoundary.y_units(vertexIndex), currentBoundary.y_units(vertexIndex)], ...
+                [previousTime_s, currentTime_s], "-", ...
+                "Color", railColor, "LineWidth", 0.45, "HandleVisibility", "off");
+        end
     end
 end
 
