@@ -231,12 +231,9 @@ else
         % Record the failure type so the planner can decide whether another
         % route or arrival time is allowed.
         motionCandidate.OptimizerIterateUnavailable = true;
-        failureStage = string(readFailureField( ...
-            optimizationResult, "FailureStage", "optimization"));
-        failureKind = string(readFailureField( ...
-            optimizationResult, "FailureKind", "optimizerIterateUnavailable"));
-        canTryAnotherPlanningAttempt = logical(readFailureField( ...
-            optimizationResult, "AlternativeGuideEligible", false));
+        failureStage = string(optimizationResult.FailureStage);
+        failureKind = string(optimizationResult.FailureKind);
+        canTryAnotherPlanningAttempt = logical(optimizationResult.AlternativeGuideEligible);
         [motionCandidate, solverDiagnostics] = finishFailure(motionCandidate, solverDiagnostics, totalTimer, struct( ...
             'Message',                  "No optimized collision-free iterate was found. " + ...
                 optimizationResult.SolverMessage, ...
@@ -389,15 +386,6 @@ function motionCandidate = createEmptyCandidate(initialState)
     motionCandidate.jerk_units_s3                   = zeros(0, dimensionCount);
     motionCandidate.Polynomial                      = struct();
     motionCandidate.SeparationProof                 = struct();
-end
-
-function fieldValue = readFailureField(failureDetails, fieldName, defaultValue)
-    % Some solvers omit optional failure details. Use the supplied default
-    % when the requested field is absent or empty.
-    fieldValue = defaultValue;
-    if isfield(failureDetails, fieldName) && ~isempty(failureDetails.(fieldName))
-        fieldValue = failureDetails.(fieldName);
-    end
 end
 
 function solverDiagnostics = createEmptyDiagnostics(curveDegree, segmentCount, regionCount)

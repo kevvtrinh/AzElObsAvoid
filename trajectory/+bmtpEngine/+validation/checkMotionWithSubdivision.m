@@ -1,4 +1,4 @@
-function [preparedMotion, motionCheck, savedPairChecks] = checkMotionWithSubdivision( ...
+function [preparedMotion, motionCheck, savedPairChecks, unverifiedPairsBySegment] = checkMotionWithSubdivision( ...
     solverRequest, preparedMotion, roundoffReserve_units, separationTarget_units, savedPairChecks)
 %% Section 0: Header & Readme
 % SYNTAX
@@ -6,6 +6,9 @@ function [preparedMotion, motionCheck, savedPairChecks] = checkMotionWithSubdivi
 %       bmtpEngine.validation.checkMotionWithSubdivision(solverRequest, preparedMotion, ...
 %       roundoffReserve_units, separationTarget_units)
 %   [preparedMotion, motionCheck, savedPairChecks] = ...
+%       bmtpEngine.validation.checkMotionWithSubdivision(solverRequest, preparedMotion, ...
+%       roundoffReserve_units, separationTarget_units, savedPairChecks)
+%   [preparedMotion, motionCheck, savedPairChecks, unverifiedPairsBySegment] = ...
 %       bmtpEngine.validation.checkMotionWithSubdivision(solverRequest, preparedMotion, ...
 %       roundoffReserve_units, separationTarget_units, savedPairChecks)
 %**************************************************************************
@@ -30,6 +33,9 @@ function [preparedMotion, motionCheck, savedPairChecks] = checkMotionWithSubdivi
 %   - motionCheck, savedPairChecks (scalar structs)
 %       Final checks and reusable pair results for exactly those pieces.
 %       Passed remains false if any required check cannot be established.
+%   - unverifiedPairsBySegment (S-by-R logical array)
+%       Unproved obstacle pairs mapped from checked pieces back to the S
+%       original input segments and R regions.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -79,5 +85,20 @@ for refinementIndex = 1:10
         'MaximumViolation', max([0; requiredTime_s - preparedMotion.SegmentTime_s]));
     [motionCheck, savedPairChecks] = bmtpEngine.validation.checkFinalMotion( ...
         solverRequest, preparedMotion, roundoffReserve_units, separationTarget_units, savedPairChecks);
+end
+
+%% Section 3: Map Unproved Pieces Back To Their Original Segments
+
+% Splitting keeps each piece's source segment. If several pieces from the
+% same segment lack a proof, keep every unresolved obstacle pair.
+sourceSegmentCount = max(preparedMotion.SourceSegmentIndex);
+regionCount = numel(solverRequest.Regions_units);
+unverifiedPairsBySegment = false(sourceSegmentCount, regionCount);
+unverifiedPieces = ~reshape([motionCheck.Planes.Verified], size(motionCheck.Planes)) & ...
+    motionCheck.RegionActiveBySegment;
+for pieceIndex = reshape(find(any(unverifiedPieces, 2)), 1, [])
+    sourceSegmentIndex = preparedMotion.SourceSegmentIndex(pieceIndex);
+    unverifiedPairsBySegment(sourceSegmentIndex, :) = ...
+        unverifiedPairsBySegment(sourceSegmentIndex, :) | unverifiedPieces(pieceIndex, :);
 end
 end

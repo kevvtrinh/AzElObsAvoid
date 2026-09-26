@@ -128,7 +128,7 @@ for iterationIndex = 1:maximumIterationCount
     trialMotionCheck    = [];
     trialPreparedMotion = [];
     if ~any(collisionPairs, 'all')
-        [trialPreparedMotion, trialMotionCheck] = bmtpEngine.evaluateCandidate( ...
+        [trialPreparedMotion, trialMotionCheck, ~, unverifiedPairsBySegment] = bmtpEngine.evaluateCandidate( ...
             solverRequest, trialControl_units, trialSegmentTime_s, ...
             roundoffReserve_units, separationTarget_units);
         nonCollisionChecksPassed = trialPreparedMotion.Success && trialMotionCheck.WorkspacePassed && ...
@@ -136,15 +136,7 @@ for iterationIndex = 1:maximumIterationCount
         % Once workspace, motion limits, and joins pass, treat every obstacle
         % pair that could not be proved clear as another pair to separate.
         if nonCollisionChecksPassed
-            unverifiedPairs = ~reshape([trialMotionCheck.Planes.Verified], size(trialMotionCheck.Planes)) & ...
-                trialMotionCheck.RegionActiveBySegment;
-            % Every piece retains its original optimizer segment even after
-            % several selective splits. Add each unresolved pair to that row.
-            for pieceIndex = reshape(find(any(unverifiedPairs, 2)), 1, [])
-                segmentIndex = trialPreparedMotion.SourceSegmentIndex(pieceIndex);
-                collisionPairs(segmentIndex, :) = collisionPairs(segmentIndex, :) | unverifiedPairs(pieceIndex, :);
-            end
-            collisionPairs = collisionPairs & regionActiveBySegment;
+            collisionPairs = (collisionPairs | unverifiedPairsBySegment) & regionActiveBySegment;
         end
     end
     % Keep every newly encountered pair. A sampled-clear candidate can still

@@ -57,7 +57,8 @@ if numel(powerCoefficients) <= 2
     return
 end
 
-bernsteinCoefficients = convertPowerToBernstein(powerCoefficients);
+% This conversion changes the coefficients, not the curve.
+bernsteinCoefficients = bmtpEngine.motion.powerToBernstein(powerCoefficients);
 % A Bezier polynomial stays between its smallest and largest coefficients.
 % Splitting into smaller intervals can tighten those bounds without changing
 % the polynomial. Try up to two subdivision levels before checking extrema.
@@ -80,29 +81,6 @@ isWithinRange = minimumValue >= allowedLowerBound && maximumValue <= allowedUppe
 end
 
 %% Section 3: Local Functions
-
-function bernsteinCoefficients = convertPowerToBernstein(powerCoefficients)
-    % Represent the same polynomial using Bezier coefficients on [0 1].
-    % This changes the coefficients, not the curve. Reuse the conversion
-    % matrix for later polynomials with the same coefficient count.
-    persistent conversionMapsByCoefficientCount
-    degree           = numel(powerCoefficients) - 1;
-    coefficientCount = degree + 1;
-    conversionMapIsMissing = isempty(conversionMapsByCoefficientCount) || ...
-        numel(conversionMapsByCoefficientCount) < coefficientCount || ...
-        isempty(conversionMapsByCoefficientCount{coefficientCount});
-    if conversionMapIsMissing
-        powerToBernsteinMap = zeros(coefficientCount);
-        for bernsteinIndex = 0:degree
-            for powerIndex = 0:bernsteinIndex
-                powerToBernsteinMap(bernsteinIndex + 1, powerIndex + 1) = ...
-                    nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
-            end
-        end
-        conversionMapsByCoefficientCount{coefficientCount} = powerToBernsteinMap;
-    end
-    bernsteinCoefficients = conversionMapsByCoefficientCount{coefficientCount} * powerCoefficients;
-end
 
 function rangeDecision = classifyBernsteinRange( ...
         bernsteinCoefficients, lowerBound, upperBound, remainingSubdivisions)

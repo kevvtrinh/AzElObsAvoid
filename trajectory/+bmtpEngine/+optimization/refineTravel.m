@@ -134,7 +134,7 @@ for refinementIndex = 1:refinementAttemptLimit
             regionActiveBySegment);
     end
     if ~any(unresolvedPairs, 'all')
-        [refinedPreparedMotion, refinedProof] = bmtpEngine.evaluateCandidate( ...
+        [refinedPreparedMotion, refinedProof, ~, unverifiedPairsBySegment] = bmtpEngine.evaluateCandidate( ...
             solverRequest, refinedControl_units, refinedSegmentTime_s, ...
             roundoffReserve_units, separationTarget_units);
 
@@ -164,13 +164,7 @@ for refinementIndex = 1:refinementAttemptLimit
         if ~nonCollisionChecksPassed || refinedProof.Passed
             break
         end
-        unverifiedPieces = ~reshape([refinedProof.Planes.Verified], size(refinedProof.Planes)) & ...
-            refinedProof.RegionActiveBySegment;
-        for pieceIndex = reshape(find(any(unverifiedPieces, 2)), 1, [])
-            segmentIndex = refinedPreparedMotion.SourceSegmentIndex(pieceIndex);
-            unresolvedPairs(segmentIndex, :) = unresolvedPairs(segmentIndex, :) | ...
-                unverifiedPieces(pieceIndex, :);
-        end
+        unresolvedPairs = unresolvedPairs | unverifiedPairsBySegment;
         if ~hasTimeScopedCoverage
             unresolvedPairs = unresolvedPairs & regionActiveBySegment;
         end
