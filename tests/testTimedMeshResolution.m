@@ -28,10 +28,10 @@ end
 
 function testWaitKnotsScaleWithArrivalClock(testCase)
     request = createWaitRequest(1);
-    firstWarm = bmtpEngine.pipeline.createWarmStart(request);
+    firstWarm = bmtpEngine.createStartingCurve(request);
     for duration_s = [6, 9]
         request.SeedMotionDuration_s = duration_s;
-        warm = bmtpEngine.pipeline.createWarmStart(request);
+        warm = bmtpEngine.createStartingCurve(request);
         meshTau = [0; cumsum(warm.SegmentTime_s)] / duration_s;
         tolerance = 64 * eps;
         for knotIndex = 1:numel(request.Seed.tau)
@@ -60,8 +60,8 @@ end
 function testMotionSpanCountIgnoresCellCount(testCase)
     sparseRequest = createWaitRequest(1);
     denseRequest  = createWaitRequest(920);
-    sparseWarm = bmtpEngine.pipeline.createWarmStart(sparseRequest);
-    denseWarm  = bmtpEngine.pipeline.createWarmStart(denseRequest);
+    sparseWarm = bmtpEngine.createStartingCurve(sparseRequest);
+    denseWarm  = bmtpEngine.createStartingCurve(denseRequest);
     guideSegmentCount = size(denseRequest.Seed.position_units, 1) - 1;
     expectedSegmentCount = max(20, guideSegmentCount * denseRequest.SplitCount);
     verifyEqual(testCase, denseWarm.SegmentCount, expectedSegmentCount);
@@ -95,7 +95,7 @@ function request = createWaitRequest(cellCount)
         'ActiveTimeInterval_s',    [breaks_s(1:end - 1), breaks_s(2:end)], ...
         'EndRegions_units',        {regions_units}, ...
         'BreakTime_s',             breaks_s);
-    request = bmtpEngine.pipeline.createSolveRequest(seed, ...
+    request = bmtpEngine.prepareRequest(seed, ...
         struct('regions_units', {regions_units}, 'coverage', coverage), ...
         struct('initialState', normalized.Inputs.initialState, ...
         'goalState', normalized.Inputs.goalState, ...

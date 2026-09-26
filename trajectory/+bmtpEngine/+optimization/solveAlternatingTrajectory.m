@@ -235,6 +235,13 @@ diagnostics.SolverMessage = solverMessage;
 result = bmtpEngine.optimization.createOptimizationResult(solverMessage, failureStage, failureKind, ...
     alternativeGuideEligible, selectedControl_units, selectedSegmentTime_s, separatingPlanes, ...
     reshape([separatingPlanes.Active], size(separatingPlanes)));
+if result.Success
+    % Check the selected controls and fixed clock once before returning.
+    % The caller must use this exact prepared motion and its matching proof.
+    [result.PreparedMotion, result.Proof] = bmtpEngine.evaluateCandidate( ...
+        solverRequest, result.ControlPoint_units, result.SegmentTime_s, ...
+        roundoffReserve_units, separationTarget_units);
+end
 end
 
 %% Section 4: Local Functions

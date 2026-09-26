@@ -5,43 +5,54 @@ one proposed path into motion with position, velocity, acceleration and jerk.
 The engine returns a candidate and its checks. The planner's independent
 validator must accept that candidate before the planner reports success.
 
-## Where each stage lives
+## Read the engine in this order
+
+1. `solve.m` chooses direct motion or one of the three BMTP optimizers and
+   returns a stable success or failure result.
+2. `prepareRequest.m` checks the supplied route, states, limits, options, and
+   prepared obstacle regions. `createStartingCurve.m` gives BMTP controls and
+   initial segment times for that route.
+3. `evaluateCandidate.m` builds one motion from selected controls and times,
+   then keeps its matching check. Direct candidates may stop at the first
+   unproved obstacle pair. Optimizer candidates get a complete check.
+4. `createMotionOutput.m` samples and formats the selected motion. The planner
+   then runs its separate public independent validator before reporting success.
+
+## Where the supporting math lives
 
 | Package | Responsibility |
 | --- | --- |
-| `+pipeline` | Collect solver inputs, build a starting curve, prepare the returned motion, and assemble output arrays. Also try to shorten timed motion while preserving its selected arrival time. |
+| Engine root | Own the request, starting curve, candidate handoff, output, and top-level decision flow. |
 | `+motion` | Construct and evaluate curves, apply endpoint states, split curves into smaller pieces, and calculate motion timing. |
-| `+optimization` | Build the solver constraints and adjust the curve and segment durations. Record the solver result and diagnostics together. |
+| `+optimization` | Build solver constraints, adjust the curve and segment durations, and optionally shorten travel at a retained clock. |
 | `+separation` | Find and check lines that keep the curve and each obstacle on opposite sides. |
-| `+validation` | Calculate rounding reserves and check the full prepared curve against obstacle, workspace, motion-rate and continuity requirements. |
+| `+validation` | Calculate rounding reserves and check the full prepared curve against obstacle, workspace, motion-rate and continuity requirements. This is an engine check, separate from the planner's public validator. |
 
 Folder names begin with `+` because they are MATLAB packages. An internal call
 uses the full name, for example `bmtpEngine.motion.evaluatePolynomial`.
 
 ## How `solve` chooses its work
 
-1. `createSolveRequest` collects the checked states, limits, options and obstacle
-   regions. `createWarmStart` turns the proposed route into an initial curve.
-2. Try direct motion when the request permits it. For a direct earliest-arrival
+1. Try direct motion when the request permits it. For a direct earliest-arrival
    path with both ends at rest, moving obstacles may also allow waiting before
    departure. A failed departure stage can return a failure for the planner to
    handle; it does not always continue to optimization.
-3. If direct motion has not passed and planning continues, select the optimizer:
+2. If direct motion has not passed and planning continues, select the optimizer:
    - Static obstacles and earliest arrival: `solveActivePairTrajectory` adds
      separation constraints for curve/obstacle pairs as they are needed.
    - Variable segment durations: `solveTimedAlternatingTrajectory` recalculates
      which moving regions overlap each segment as the times change.
    - Assigned segment durations: `solveAlternatingTrajectory` adjusts the curve
      with those durations fixed.
-4. Prepare and check the selected motion. `prepareFinalMotion` sets endpoint
-   states, corrects joins, and assigns durations once, then retains the complete
-   polynomial. `refineMotionSeparation` checks that motion with `checkFinalMotion`.
+3. Each optimizer path gives `solve` its selected controls and clock with the
+   prepared motion and its matching check. `createMotion` sets endpoint states, corrects
+   small join differences, assigns durations, and retains the complete
+   polynomial. Larger corrections or an impossible deadline fail preparation.
+   `checkMotionWithSubdivision` checks that polynomial with `checkFinalMotion`.
    When one line cannot separate a whole segment from an obstacle, it uses
    `subdivideMotion` to check smaller pieces without changing the physical motion.
    Each piece retains its original `SourceSegmentIndex` for optimizer constraints.
-   A solver may return that prepared motion and its matching checks for reuse.
-5. `createMotionOutput` assembles the accepted curve and sampled output arrays.
-   The planner then applies its public independent validation.
+4. `solve` consumes the selected motion and check without reconstructing them.
 
 Expected failure returns a candidate with `Success = false` and a reason. A
 usable solver vector alone does not establish that the motion is valid.

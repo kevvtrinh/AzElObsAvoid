@@ -56,7 +56,7 @@ function setupOnce(testCase)
             wholeControls_units, boundaries(segmentIndex:segmentIndex + 1).');
     end
     testCase.TestData.Request = request;
-    testCase.TestData.Motion = bmtpEngine.pipeline.prepareFinalMotion( ...
+    testCase.TestData.Motion = bmtpEngine.motion.createMotion( ...
         request, controls_units, durations_s, [], false(3, 1));
 end
 
@@ -69,7 +69,7 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
     base=planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
     seed=struct('position_units',[initial.position_units;goal.position_units], ...
         'tau',[0;1]);
-    request=bmtpEngine.pipeline.createSolveRequest(seed, ...
+    request=bmtpEngine.prepareRequest(seed, ...
         struct('regions_units', {cell(0,1)}, ...
         'coverage', struct('Passed',true,'ExactRegionCount',0)), ...
         struct('initialState', base.Inputs.initialState, ...
@@ -95,7 +95,7 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         % The quintic export repairs this residual. Later proof must
         % preserve that repaired curve instead of projecting these controls again.
         if degree==5, controls_units(2,1,1)=controls_units(2,1,1)+1e-6; end
-        source=bmtpEngine.pipeline.prepareFinalMotion(request,controls_units,durations_s);
+        source=bmtpEngine.motion.createMotion(request,controls_units,durations_s);
         original=resultWithPreparedMotion(base,request,source,roundoffReserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
         verifyTrue(testCase, all(isfinite(source.GivenPower_units), 'all'));
@@ -186,7 +186,7 @@ function testRefinementKeepsCurveTimingAndSourceSegments(testCase)
         [firstCheck, savedPairChecks] = bmtpEngine.validation.checkFinalMotion(request, source, 1e-8, 1e-6);
         assertFalse(testCase, firstCheck.Passed);
         assertTrue(testCase, firstCheck.WorkspacePassed && firstCheck.DynamicsPassed && firstCheck.ContinuityPassed);
-        [changed, finalCheck] = bmtpEngine.pipeline.refineMotionSeparation( ...
+        [changed, finalCheck] = bmtpEngine.validation.checkMotionWithSubdivision( ...
             request, source, 1e-8, 1e-6, savedPairChecks);
         verifyTrue(testCase, finalCheck.Passed);
         verifyGreaterThanOrEqual(testCase, nnz(changed.SourceSegmentIndex == 1), 3);
@@ -232,7 +232,7 @@ function testOtherFailuresDoNotTriggerSubdivision(testCase)
             source.GivenPower_units(2, 1, 1) = source.GivenPower_units(2, 1, 1) + 0.01;
             source.ControlPoint_units = bmtpEngine.motion.powerToBernstein(source.GivenPower_units);
         end
-        [changed, motionCheck] = bmtpEngine.pipeline.refineMotionSeparation(request, source, 1e-8, 1e-6);
+        [changed, motionCheck] = bmtpEngine.validation.checkMotionWithSubdivision(request, source, 1e-8, 1e-6);
         verifyFalse(testCase, motionCheck.Passed);
         verifyFalse(testCase, motionCheck.(failedCheck));
         verifyEqual(testCase, changed, source);
@@ -245,7 +245,7 @@ function testCollisionRemainsRejected(testCase)
     % representation must not repair or move the curve to obtain a proof.
     request.Regions_units = {[0.12, 0.42; 0.14, 0.42; 0.14, 0.5; 0.12, 0.5]};
     source = testCase.TestData.Motion;
-    [changed, motionCheck] = bmtpEngine.pipeline.refineMotionSeparation(request, source, 1e-8, 1e-6);
+    [changed, motionCheck] = bmtpEngine.validation.checkMotionWithSubdivision(request, source, 1e-8, 1e-6);
     verifyFalse(testCase, motionCheck.Passed);
     verifyLessThan(testCase, motionCheck.VerifiedPairCount, motionCheck.AllPairCount);
     verifyEqual(testCase, changed.FinalTime_s, source.FinalTime_s);
@@ -255,7 +255,7 @@ end
 function result = resultWithPreparedMotion(baseResult, request, preparedMotion, ...
         roundoffReserve_units, target_units)
     % Put a constructed BMTP motion in the planner's nested record for validation.
-    motionOutput = bmtpEngine.pipeline.createMotionOutput(struct(), request, preparedMotion);
+    motionOutput = bmtpEngine.createMotionOutput(struct(), request, preparedMotion);
     result = baseResult;
     result.time_s                = motionOutput.time_s;
     result.position_units        = motionOutput.position_units;

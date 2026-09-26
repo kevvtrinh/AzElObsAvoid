@@ -9,7 +9,8 @@ function result = createOptimizationResult(solverMessage, failureStage, failureK
 % PURPOSE
 %   - Build the result record every trajectory optimizer returns to
 %     bmtpEngine.solve, so the three optimizers agree on its fields and order.
-%     Success means a candidate curve exists; the caller still checks it.
+%     Success means a candidate curve exists. PreparedMotion and Proof start
+%     empty; the selected candidate is checked before solve consumes it.
 %**************************************************************************
 % INPUTS
 %   - solverMessage (string scalar)
@@ -33,7 +34,7 @@ function result = createOptimizationResult(solverMessage, failureStage, failureK
 %   - result (scalar struct)
 %       Success, SolverMessage, FailureStage, FailureKind,
 %       AlternativeGuideEligible, ControlPoint_units, SegmentTime_s, Planes,
-%       and TaggedPairs, in that order.
+%       TaggedPairs, PreparedMotion, and Proof, in that order.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -50,5 +51,7 @@ result = struct( ...
     'ControlPoint_units',       controlPoint_units, ...
     'SegmentTime_s',            segmentTime_s, ...
     'Planes',                   separatingPlanes, ...
-    'TaggedPairs',              taggedPairs);
+    'TaggedPairs',              taggedPairs, ...
+    'PreparedMotion',           [], ...
+    'Proof',                    []);
 end

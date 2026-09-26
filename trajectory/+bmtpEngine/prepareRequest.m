@@ -1,7 +1,7 @@
-function solverRequest = createSolveRequest(startingPath, planningEnvironment, motionRequest)
+function solverRequest = prepareRequest(startingPath, planningEnvironment, motionRequest)
 %% Section 0: Header & Readme
 % SYNTAX
-%   solverRequest = bmtpEngine.pipeline.createSolveRequest(startingPath, planningEnvironment, motionRequest)
+%   solverRequest = bmtpEngine.prepareRequest(startingPath, planningEnvironment, motionRequest)
 %**************************************************************************
 % PURPOSE
 %   - Check the starting route, obstacle regions, and requested motion.

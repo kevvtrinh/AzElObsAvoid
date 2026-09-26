@@ -1,7 +1,7 @@
-function startingCurve = createWarmStart(solverRequest)
+function startingCurve = createStartingCurve(solverRequest)
 %% Section 0: Header & Readme
 % SYNTAX
-%   startingCurve = bmtpEngine.pipeline.createWarmStart(solverRequest)
+%   startingCurve = bmtpEngine.createStartingCurve(solverRequest)
 %**************************************************************************
 % PURPOSE
 %   - Turn the visibility route into a starting curve for BMTP.
