@@ -8,49 +8,52 @@ function [separatingPlanes, regionActiveBySegment, allRequiredLinesVerified, lin
 %   [...] = bmtpEngine.separation.createTimeScopedPlanes(..., lineUpdate)
 %**************************************************************************
 % PURPOSE
-%   - Find a separating line for every curve-segment/obstacle pair whose
-%     time intervals overlap. Use only that shared part of the curve and
-%     the obstacle's linearly moving vertices during the same interval.
-%   - Optionally keep the direction of each pair's existing line and only
-%     re-place and re-check it, which is cheaper than solving for a new one.
+%   - Find or recheck a line between each motion segment and obstacle that
+%     are active at the same time. Compare only their shared time window:
+%     the matching piece of the curve and the obstacle at those times.
+%   - An optional update reuses an existing line direction, avoiding a new
+%     line solve when only its placement and proof need checking.
 %**************************************************************************
 % INPUTS
 %   - referenceControlPoint_units (S-by-(D+1)-by-2 numeric array)
-%       Controls of the curve used to find the separating lines.
+%       Bezier controls of S motion segments in x and y.
 %   - segmentTime_s (positive numeric scalar or S-by-1 vector)
-%       Duration of each segment; a scalar gives every segment the same duration.
+%       Duration of each segment; one scalar applies to all S segments.
 %   - solverRequest (scalar struct)
-%       Checked inputs and obstacle geometry with its active time intervals.
+%       Checked start time, prepared obstacle regions, optional active-time
+%       intervals, and prepared static line geometry.
 %   - separationTarget_units (finite numeric scalar)
-%       Required distance from each obstacle to its separating line.
+%       Required obstacle-side margin at the line.
 %   - roundoffReserve_units (finite numeric scalar)
-%       Required trajectory-side separation reserve.
+%       Extra curve-side margin for numerical rounding.
 %   - lineUpdate (scalar struct, optional; default: solve every pair, check all)
 %       Planes (S-by-R struct array): starting line records. Pairs this call
 %       does not visit keep their record. Default: empty records.
-%       VerifyExisting (logical): true keeps each pair's line direction from
-%       Planes, places it against the obstacle, and checks it instead of
-%       solving. Default false.
+%       VerifyExisting (logical): true reuses Planes, places each line
+%       against its obstacle, and checks it instead of solving again.
+%       Default false.
 %       StopAtFirstFailure (logical): true returns after the first pair that
 %       fails. When solving, failure means the solver returned no usable
 %       line; when verifying, it means the line did not pass. Default false.
 %**************************************************************************
 % OUTPUTS
 %   - separatingPlanes (S-by-R struct array)
-%       Line records and their verification results, indexed by segment and region.
+%       Line records and proof results, indexed by segment and region.
 %   - regionActiveBySegment (S-by-R logical matrix)
-%       For time-scoped regions, true where the shared time interval has
-%       positive length after rounding; without time scoping, all true.
+%       True where a segment and timed region share positive time after
+%       rounding. Without active-time intervals, every pair is true.
 %   - allRequiredLinesVerified (logical scalar)
-%       False if any applicable pair lacks a verified line.
+%       True only if every active pair has a verified line.
 %   - lineReport (scalar struct)
-%       ActivePairCount, CheckedPairCount (active pairs checked or solved), VerifiedPairCount,
-%       UnavailablePairCount (solver returned no usable line), VerifiedPairs
-%       (S-by-R logical, true for verified and for inactive pairs), SocpCount
-%       (numerical line solves), and SolverTime_s for those solves.
+%       ActivePairCount counts pairs needing a line. CheckedPairCount counts
+%       pairs visited, VerifiedPairCount counts those proved separated, and
+%       UnavailablePairCount counts solves with no usable line. VerifiedPairs
+%       marks both verified and inactive pairs true. SocpCount counts
+%       numerical line solves; SolverTime_s totals their reported time.
 %**************************************************************************
 % UNITS
-%   - Position is coordinate units and time is seconds.
+%   - Positions and margins use coordinate units; durations and absolute
+%     times use seconds; curve fractions are dimensionless.
 %**************************************************************************
 
 %% Section 1: Read The Request And Find Overlapping Segment And Obstacle Times
@@ -86,10 +89,10 @@ end
 
 %% Section 2: Build Or Check A Line Over Each Shared Interval
 
-% For a segment from 2 to 6 s and obstacle interval from 4 to 8 s,
-% use only 4 to 6 s: curve fractions [0.5 1]. For time-scoped regions,
-% active means a positive shared window after rounding; static regions are
-% active on every segment. Inactive pairs need no separating line.
+% A segment from 2 to 6 s and region active from 4 to 8 s share 4 to 6 s,
+% or curve fractions [0.5, 1]. A timed pair is active only for a positive
+% shared window after rounding. Inactive pairs need no separating line.
+% Regions without active-time intervals are checked on every segment.
 verifiedPairs        = ~regionActiveBySegment;
 checkedPairCount     = 0;
 verifiedPairCount    = 0;
@@ -104,6 +107,8 @@ for segmentIndex = 1:segmentCount
         overlapFractions          = [0, 1];
         separatingLineGeometry    = [];
         if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
+            % Convert the shared absolute times to local curve fractions,
+            % then keep exactly that Bezier subcurve for this pair.
             overlapInterval_s = [max(segmentBoundaryTime_s(segmentIndex), obstacleActiveIntervals_s(regionIndex, 1)), ...
                 min(segmentBoundaryTime_s(segmentIndex + 1), obstacleActiveIntervals_s(regionIndex, 2))];
             overlapFractions = ...
@@ -119,8 +124,9 @@ for segmentIndex = 1:segmentCount
 
         lineIsAvailable = true;
         if verifyExistingLines
-            % Keep the existing direction, place the line against the
-            % obstacle at both interval ends, then check the curve side.
+            % Keep the saved line normals. Use the starting normal to set
+            % offsets against the obstacle at both ends, then check the
+            % resulting line against the curve and obstacle.
             plane              = separatingPlanes(segmentIndex, regionIndex);
             lineNormal         = plane.Normal(1, :);
             plane.Offset_units = separationTarget_units - [min(obstacleVertices_units(:, :, 1) * lineNormal.'), ...
@@ -129,6 +135,8 @@ for segmentIndex = 1:segmentCount
             plane              = bmtpEngine.separation.verifySeparatingLine( ...
                 plane, segmentControlPoint_units, obstacleVertices_units, roundoffReserve_units, separationTarget_units);
         else
+            % Solve a fresh line. Count only numerical solves in SocpCount;
+            % an analytic line does not use the numerical solver.
             [plane, exitFlag, lineOutput] = bmtpEngine.separation.solveSeparatingLine( ...
                 segmentControlPoint_units, obstacleVertices_units, separationTarget_units, ...
                 roundoffReserve_units, separatingLineGeometry);
@@ -145,6 +153,8 @@ for segmentIndex = 1:segmentCount
         checkedPairCount     = checkedPairCount + 1;
         verifiedPairCount    = verifiedPairCount + plane.Verified;
         unavailablePairCount = unavailablePairCount + ~lineIsAvailable;
+        % Stop once a required line is unavailable. When rechecking saved
+        % lines, also stop if the current line fails its proof.
         if stopAtFirstFailure && (~lineIsAvailable || (verifyExistingLines && ~plane.Verified))
             stopRequested = true;
             break
@@ -155,6 +165,7 @@ for segmentIndex = 1:segmentCount
     end
 end
 allRequiredLinesVerified = all(verifiedPairs, 'all');
+% Inactive pairs began as true, so this checks every line that was needed.
 lineReport = struct( ...
     'ActivePairCount',      nnz(regionActiveBySegment), ...
     'CheckedPairCount',     checkedPairCount, ...

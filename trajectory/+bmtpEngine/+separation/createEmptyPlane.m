@@ -4,24 +4,29 @@ function plane = createEmptyPlane()
 %   plane = bmtpEngine.separation.createEmptyPlane()
 %**************************************************************************
 % PURPOSE
-%   - Create an unused separating-line record with the fields every BMTP
-%     separation stage expects. The stored name "plane" refers to a line
-%     separating the curve from an obstacle in this two-axis planner.
+%   - Give every separation stage the same starting record before it finds
+%     a line between a motion curve and an obstacle. This two-axis planner
+%     calls the record a "plane," but its boundary is a line in x/y.
 %**************************************************************************
 % INPUTS
 %   - None.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
-%       Active says a line is available as a constraint; Verified says it
-%       passed the curve/obstacle separation checks. Both start false.
-%       Normal and Offset_units store the line at the interval start and end:
-%       normal x [x; y] + offset = 0. TimeFraction selects the curve portion,
-%       where [0 1] means the full segment. SignedGap_units stores the bound
-%       on obstacle-side value minus curve-side value; NaN means unmeasured.
+%       Active is true once a line is available for a constraint; Verified
+%       is true only after its separation check passes. Both start false.
+%       Normal has one [x, y] row at each interval end; Offset_units has
+%       one value at each end. Together they define the line
+%       dot(normal, [x, y]) + offset = 0. Initial zeros are placeholders.
+%       TimeFraction selects the curve portion; [0, 1] means all of it.
+%       SignedGap_units is a lower bound on obstacle-side minus curve-side
+%       values along the normal. A positive bound shows space between them;
+%       NaN means no bound has been computed. ExitFlag is an unset solver
+%       status.
 %**************************************************************************
 % UNITS
-%   - Offsets and gaps are coordinate units; TimeFraction is dimensionless.
+%   - Offsets and gaps are coordinate units. Normal and TimeFraction have
+%     no physical units.
 %**************************************************************************
 
 %% Section 1: Return The Unused Line Record

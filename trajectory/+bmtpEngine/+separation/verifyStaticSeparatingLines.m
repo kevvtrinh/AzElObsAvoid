@@ -7,25 +7,26 @@ function separatingPlanes = verifyStaticSeparatingLines( ...
 %       roundoffReserve_units, separationTarget_units)
 %**************************************************************************
 % PURPOSE
-%   - Check one curve against several static convex regions together by
-%     using the moving-region check with equal start and end vertices.
+%   - Check one motion curve against several static convex obstacles.
+%     Give the moving-region verifier identical start and end polygons so
+%     both paths use the same full-interval separation rules.
 %**************************************************************************
 % INPUTS
 %   - separatingPlanes (R-element struct array)
-%       One separating line per static convex obstacle region.
+%       One proposed separating line for each of R static regions.
 %   - controlPoint_units (N-by-2 numeric array)
-%       Common Bezier control points for one trajectory segment.
+%       Bezier controls for the same motion segment against all R regions.
 %   - regions_units (R-by-1 cell array)
-%       Vertices of each static convex obstacle region.
+%       Prepared convex polygons, one N-by-2 [x, y] array per cell.
 %   - roundoffReserve_units (nonnegative numeric scalar)
-%       Numerical reserve applied on the trajectory side.
+%       Extra curve-side margin for numerical rounding.
 %   - separationTarget_units (nonnegative numeric scalar)
-%       Required obstacle-side separation target.
+%       Minimum required obstacle-side value at each line.
 %**************************************************************************
 % OUTPUTS
 %   - separatingPlanes (R-element struct array)
-%       Updated offsets and gap bounds. Verified is true only where every
-%       separation condition passes for the entire interval.
+%       Updated offsets and conservative SignedGap_units bounds. Verified
+%       is true only where the complete interval passes the line checks.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, reserve, and gap are coordinate units;
@@ -42,8 +43,9 @@ if regionCount == 0
     return
 end
 
-% Static vertices have the same position at both ends of the interval.
-% The moving-region proof then uses the same complete-interval bounds.
+% A static vertex is in the same place at both interval ends. Passing each
+% region as both inputs makes its interpolated motion constant, while the
+% line itself may still change. The shared verifier checks the full time.
 separatingPlanes = bmtpEngine.separation.verifyMovingSeparatingLines( ...
     separatingPlanes, controlPoint_units, regions_units, regions_units, ...
     roundoffReserve_units, separationTarget_units);

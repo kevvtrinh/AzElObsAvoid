@@ -8,39 +8,45 @@ function [lineConstraintRows, lineConstraintBounds] = createSelectedPlaneRows( .
 %       degree, decisionVariableCount, slackColumnByPair, trajectoryRoundoffReserve_units)
 %**************************************************************************
 % PURPOSE
-%   - Build solver inequalities for selected curve-segment/obstacle pairs.
-%     Each line constrains the complete curve portion assigned to that pair.
+%   - Collect the separating-line inequalities chosen for the solver.
+%     Each segment/region pair constrains its assigned portion of the
+%     motion curve, and the rows are stacked into one sparse matrix.
 %**************************************************************************
 % INPUTS
-%   - separatingPlanes (struct array)
-%       Plane records indexed by segment and region.
-%   - selectedPairs (logical matrix)
-%       Segment-region pairs that contribute constraint rows.
+%   - separatingPlanes (S-by-R struct array)
+%       One line record for each motion segment and obstacle region.
+%   - selectedPairs (S-by-R logical matrix)
+%       True for each segment/region pair to include in the solver.
 %   - degree (integer scalar)
-%       Polynomial degree.
+%       Degree D of each segment's position curve.
 %   - decisionVariableCount (integer scalar)
-%       Number of unknown values in the solver vector.
-%   - slackColumnByPair (numeric matrix)
-%       Column of the variable allowed to relax each pair's line bound.
-%       Zero means that pair has no relaxation variable.
+%       Total solver unknowns, including curve controls and any slack.
+%   - slackColumnByPair (S-by-R numeric matrix)
+%       Solver column of the slack value for each pair. A positive slack
+%       relaxes that pair's bound; zero means no slack column is added.
 %   - trajectoryRoundoffReserve_units (numeric scalar)
-%       Trajectory-side reserve subtracted from every bound.
+%       Reserve subtracted from each line-side bound to cover numerical
+%       rounding.
 %**************************************************************************
 % OUTPUTS
-%   - lineConstraintRows (sparse matrix)
-%       Rows ordered by segment, then obstacle region. Empty when none selected.
-%   - lineConstraintBounds (numeric column)
-%       Upper bounds: lineConstraintRows x solverValues <= lineConstraintBounds.
+%   - lineConstraintRows (K-by-decisionVariableCount sparse matrix)
+%       K = number of selected pairs x (D+2). Rows are ordered by segment,
+%       then region; K is zero when no pair is selected.
+%   - lineConstraintBounds (K-by-1 numeric column)
+%       Upper bounds in lineConstraintRows * solverValues <= bounds.
+%       Each row bounds one Bezier coefficient of dot(normal, position)
+%       + offset - slack at or below -roundoff reserve.
 %**************************************************************************
 % UNITS
-%   - Bounds and trajectory roundoff reserve are coordinate units.
+%   - Bounds, slack, and roundoff reserve are coordinate units.
 %**************************************************************************
 
 %% Section 1: Allocate Storage For The Selected Constraints
 
-% Each pair contributes degree + 2 rows. Store each nonzero entry by its
-% row, column, and value, then build one sparse matrix at the end. A row
-% can use every x/y control coordinate in its segment plus one slack value.
+% A degree-D curve times a changing line normal gives D+2 Bezier
+% coefficients, so each selected pair needs D+2 rows. For D = 1, two
+% pairs contribute 2 x 3 = 6 rows. Reserve room for all x/y controls in
+% a segment plus one slack value per row; store only entries actually used.
 rowCount             = nnz(selectedPairs) * (degree + 2);
 maximumEntryCount    = rowCount * (2 * (degree + 1) + 1);
 lineConstraintBounds = zeros(rowCount, 1);
@@ -58,6 +64,8 @@ for segmentIndex = 1:size(selectedPairs, 1)
             separatingPlanes(segmentIndex, regionIndex), degree, decisionVariableCount, segmentIndex);
         pairRowIndices = filledRowCount + (1:degree + 2);
 
+        % Move this pair's nonzero entries into the next block of global
+        % rows. Column numbers already refer to the full solver vector.
         [localRowIndices, pairColumnIndices, pairEntryValues] = find(pairConstraintRows);
         newEntryIndices = filledEntryCount + (1:numel(pairEntryValues));
         rowIndices(newEntryIndices)    = filledRowCount + localRowIndices;
@@ -65,8 +73,8 @@ for segmentIndex = 1:size(selectedPairs, 1)
         entryValues(newEntryIndices)   = pairEntryValues;
         filledEntryCount = filledEntryCount + numel(pairEntryValues);
 
-        % line-side value - slack <= -reserve. A positive slack value
-        % relaxes the line bound; a zero column index adds no slack term.
+        % With slack, the line-side coefficient - slack must be <= -reserve.
+        % A zero mapping means this pair has no slack variable.
         slackColumnIndex = slackColumnByPair(segmentIndex, regionIndex);
         if slackColumnIndex > 0
             newEntryIndices = filledEntryCount + (1:degree + 2);
@@ -75,6 +83,7 @@ for segmentIndex = 1:size(selectedPairs, 1)
             entryValues(newEntryIndices)   = -1;
             filledEntryCount = filledEntryCount + degree + 2;
         end
+        % Move the line offset to the right side of the inequality.
         lineConstraintBounds(pairRowIndices) = -trajectoryRoundoffReserve_units - lineOffsetCoefficients_units;
         filledRowCount = pairRowIndices(end);
     end
@@ -82,7 +91,7 @@ end
 
 %% Section 3: Build The Sparse Constraint Matrix
 
-% Ignore unused buffer entries; they were only reserved capacity.
+% Build the sparse matrix once, using only filled entries from the buffers.
 lineConstraintRows = sparse(rowIndices(1:filledEntryCount), columnIndices(1:filledEntryCount), ...
     entryValues(1:filledEntryCount), rowCount, decisionVariableCount);
 end

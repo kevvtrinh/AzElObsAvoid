@@ -8,24 +8,26 @@ function separatingPlanes = removeRedundantPlanes( ...
 %       separatingPlanes, limits, roundoffReserve_units, useSingleConstraintProof)
 %**************************************************************************
 % PURPOSE
-%   - Disable separating-line constraints that other retained constraints
-%     already enforce when solver slack is zero.
+%   - Remove a line from the solver only when retained lines and workspace
+%     limits already enforce it with zero slack. This reduces solver rows;
+%     final motion validation still checks every obstacle.
 %**************************************************************************
 % INPUTS
 %   - separatingPlanes (S-by-R struct array)
-%       Separating-line constraints for each trajectory segment and region.
+%       Candidate line constraints for each motion segment and region.
 %   - limits (scalar struct)
-%       Validated workspace limits.
+%       Validated xInterval_units and yInterval_units workspace bounds.
 %   - roundoffReserve_units (nonnegative numeric scalar)
-%       Trajectory-side numerical reserve.
+%       Curve-side numerical margin included in each line inequality.
 %   - useSingleConstraintProof (logical scalar, optional; default false)
-%       True: prove one retained constraint makes another unnecessary, even
-%       when its normal changes. False: combine two constant-normal constraints.
+%       True: try one retained constraint, including a changing-normal
+%       line. False: try pairs of constant-normal lines. Both modes may
+%       also use workspace bounds.
 %**************************************************************************
 % OUTPUTS
 %   - separatingPlanes (S-by-R struct array)
-%       Unnecessary constraints have Active = false. Final motion must still
-%       be checked against every original obstacle region.
+%       Same records, with Active = false only for lines proved redundant.
+%       The final motion still needs checks against every obstacle region.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, and reserve are coordinate units; normals and
@@ -38,9 +40,10 @@ if nargin < 4
     useSingleConstraintProof = false;
 end
 
-% Each line requires normal x position + offset + reserve <= 0.
-% The workspace limits also constrain position, so they can help prove that
-% a line adds no restriction. Include x/y upper and lower bounds below.
+% Each line requires dot(normal, position) + offset + reserve <= 0.
+% Workspace bounds can make a line unnecessary: if x <= 10 is already
+% enforced, another x <= 12 adds no restriction. Include both ends of
+% the allowed x and y ranges in the proof.
 workspaceIntervals_units         = [limits.xInterval_units; limits.yInterval_units];
 maximumCoordinateMagnitude_units = max(abs(workspaceIntervals_units), [], 2).';
 workspaceNormals                 = [1, 0; -1, 0; 0, 1; 0, -1];
@@ -52,14 +55,16 @@ workspaceOffsets_units           = repmat([-workspaceIntervals_units(1, 2); work
 for segmentIndex = 1:size(separatingPlanes, 1)
     activePlaneIndices = find([separatingPlanes(segmentIndex, :).Active]);
 
-    % Skip this optional reduction for large groups to limit its cost.
-    % Every line remains active when the group is skipped.
+    % This optional proof is only attempted for 2 through 64 active lines.
+    % Outside that range, leave every line active rather than spend more
+    % work trying to remove solver rows.
     if numel(activePlaneIndices) < 2 || numel(activePlaneIndices) > 64
         continue
     end
 
-    % First mode: one nonnegative weight must match both endpoint normals.
-    % Store [start normal, end normal] together to require that same weight.
+    % In single-source mode, compare one retained inequality with the
+    % target at both interval ends. Put both endpoint normals in one row
+    % so the same nonnegative weight applies at both times.
     if useSingleConstraintProof
         activePlaneCount        = numel(activePlaneIndices);
         constraintNormals       = zeros(activePlaneCount + 8, 4);
@@ -71,8 +76,9 @@ for segmentIndex = 1:size(separatingPlanes, 1)
                 separatingPlanes(segmentIndex, activePlaneIndices(planeIndex)).Offset_units + roundoffReserve_units;
         end
 
-        % A moving-line constraint combines two curve control points. Apply
-        % workspace bounds to each point separately: four bounds per endpoint.
+        % A changing normal mixes two curve controls in a line-side
+        % coefficient. Add four workspace limits for each control so an
+        % x/y bound can apply to each position separately.
         for boundIndex = 1:4
             constraintNormals(activePlaneCount + boundIndex, 1:2) = workspaceNormals(boundIndex, :);
             constraintOffsets_units(activePlaneCount + boundIndex, 1) = workspaceOffsets_units(boundIndex, 1);
@@ -82,22 +88,24 @@ for segmentIndex = 1:size(separatingPlanes, 1)
 
         constraintIsRetained = true(activePlaneCount + 8, 1);
         geometryScale_units  = max([1; abs(constraintOffsets_units(:)); maximumCoordinateMagnitude_units(:)]);
-        % Use only constraints still retained. Never justify a removal using
-        % a line already disabled earlier in this pass.
+        % Work backward through the candidate lines. A removed line cannot
+        % justify another removal; use only constraints still retained.
         for planeIndex = activePlaneCount:-1:1
             sourceConstraintIndices = find(constraintIsRetained);
             sourceConstraintIndices(sourceConstraintIndices == planeIndex) = [];
             sourceNormalSquaredLength = sum(constraintNormals(sourceConstraintIndices, :) .^ 2, 2);
             combinationWeights = (constraintNormals(sourceConstraintIndices, :) * ...
                 constraintNormals(planeIndex, :).') ./ sourceNormalSquaredLength;
+            % A negative weight would reverse an inequality, so it cannot
+            % prove that one valid constraint implies another.
             combinationIsValid = isfinite(combinationWeights) & combinationWeights >= 0 & ...
                 sourceNormalSquaredLength > realmin;
             sourceConstraintIndices = sourceConstraintIndices(combinationIsValid);
             combinationWeights      = combinationWeights(combinationIsValid);
 
-            % A small normal mismatch can change the line value anywhere
-            % in the workspace. Bound that change and include rounding error
-            % before deciding whether the source constraint is strong enough.
+            % The source normal need not match exactly. Bound the largest
+            % effect of that mismatch over the permitted x/y workspace,
+            % then include floating-point error in the comparison.
             normalDifference = constraintNormals(planeIndex, :) - ...
                 combinationWeights .* constraintNormals(sourceConstraintIndices, :);
             normalDifferenceAllowance_units = [abs(normalDifference(:, 1:2)) * maximumCoordinateMagnitude_units.', ...
@@ -106,7 +114,8 @@ for segmentIndex = 1:size(separatingPlanes, 1)
                 128 * eps(geometryScale_units) * (1 + combinationWeights);
             combinedOffset_units = combinationWeights .* constraintOffsets_units(sourceConstraintIndices, :);
 
-            % Both endpoint offsets must pass for at least one source.
+            % One retained source must be strong enough at both endpoints.
+            % Then the target cannot exclude any point its source allows.
             if any(all(constraintOffsets_units(planeIndex, :) + ...
                 normalDifferenceAllowance_units <= combinedOffset_units, 2))
                 constraintIsRetained(planeIndex) = false;
@@ -116,8 +125,9 @@ for segmentIndex = 1:size(separatingPlanes, 1)
         continue
     end
 
-    % Second mode: combine two constraints with nonnegative weights.
-    % Only lines whose normal stays constant use this calculation.
+    % Two-source mode is attempted only with at least three active lines.
+    % It combines two retained inequalities with nonnegative weights and
+    % only considers candidate lines whose normal stays constant.
     if numel(activePlaneIndices) < 3
         continue
     end
@@ -147,8 +157,9 @@ for segmentIndex = 1:size(separatingPlanes, 1)
         secondNormal        = constraintNormals(secondSourceIndices, :);
         targetNormal        = constraintNormals(planeIndex, :);
 
-        % Solve target normal = weight 1 x normal 1 + weight 2 x normal 2.
-        % Nearly parallel source normals cannot provide a reliable solution.
+        % Seek nonnegative weights with target normal = weight 1 x source 1
+        % + weight 2 x source 2. Nearly parallel source normals make that
+        % two-by-two solve unreliable, so reject them.
         determinant = firstNormal(:, 1) .* secondNormal(:, 2) - ...
             firstNormal(:, 2) .* secondNormal(:, 1);
         combinationWeights = [(targetNormal(1) * secondNormal(:, 2) - ...
@@ -161,8 +172,8 @@ for segmentIndex = 1:size(separatingPlanes, 1)
         firstSourceIndices  = firstSourceIndices(combinationIsValid);
         secondSourceIndices = secondSourceIndices(combinationIsValid);
 
-        % Account for normal mismatch and rounding error at both endpoints,
-        % just as in the single-constraint calculation above.
+        % Bound any normal mismatch across the full workspace and add
+        % floating-point allowance before comparing offsets at both ends.
         normalDifference = targetNormal - ...
             combinationWeights(:, 1) .* constraintNormals(firstSourceIndices, :) - ...
             combinationWeights(:, 2) .* constraintNormals(secondSourceIndices, :);
@@ -170,6 +181,8 @@ for segmentIndex = 1:size(separatingPlanes, 1)
             128 * eps(geometryScale_units) * (1 + sum(combinationWeights, 2));
         combinedOffset_units = combinationWeights(:, 1) .* constraintOffsets_units(firstSourceIndices, :) + ...
             combinationWeights(:, 2) .* constraintOffsets_units(secondSourceIndices, :);
+        % Remove the target only if one source pair proves the target bound
+        % at both ends after the mismatch allowance is included.
         if any(all(constraintOffsets_units(planeIndex, :) + ...
                 normalDifferenceAllowance_units <= combinedOffset_units, 2))
             constraintIsRetained(planeIndex) = false;

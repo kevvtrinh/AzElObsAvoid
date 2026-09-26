@@ -6,25 +6,27 @@ function sampledOverlapPairs = findSampledObstacleOverlaps(controlPoint_units, r
 %       regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment)
 %**************************************************************************
 % PURPOSE
-%   - Find curve samples that touch or enter an obstacle, so the optimizer
-%     knows which separating lines to update. Samples can miss a collision
-%     between them, so the complete curve still needs its motion checks.
+%   - Flag motion-segment/static-obstacle pairs with a sampled position on
+%     or inside the protected polygon. The optimizer uses these flags to
+%     revisit separating lines. A clear sample set does not prove the full
+%     curve clear; independent full-curve checks are still required.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
-%       Composite Bezier control points.
+%       Bezier controls for S motion segments, with x/y in the last axis.
 %   - regions_units (R-by-1 cell array)
-%       Protected convex obstacle polygons.
+%       Prepared, static convex polygons, one N-by-2 vertex array per cell.
 %   - regionMinimum_units (R-by-2 numeric array)
-%       Cached minimum region bounds.
+%       Smallest x and y coordinate of each polygon.
 %   - regionMaximum_units (R-by-2 numeric array)
-%       Cached maximum region bounds.
+%       Largest x and y coordinate of each polygon.
 %   - regionActiveBySegment (S-by-R logical array)
-%       Applicable curve-region pairs.
+%       True for pairs to check; false pairs are skipped.
 %**************************************************************************
 % OUTPUTS
 %   - sampledOverlapPairs (S-by-R logical array)
-%       True where at least one sample touches or lies inside that obstacle.
+%       True if at least one sampled point touches or lies inside the
+%       polygon. False does not certify clearance between samples.
 %**************************************************************************
 % UNITS
 %   - Position and region bounds are coordinate units.
@@ -32,8 +34,9 @@ function sampledOverlapPairs = findSampledObstacleOverlaps(controlPoint_units, r
 
 %% Section 1: Check Curve Samples Against Applicable Obstacles
 
-% Sample 1201 equally spaced fractions of each segment, including both ends.
-% This sampling density belongs to the optimizer, not the output plot spacing.
+% Sample 1201 equally spaced curve fractions, including 0 and 1. Equal
+% fraction steps need not cover equal travel distances.
+% These samples guide optimization; they do not set output plot spacing.
 sampleCount         = 1201;
 segmentCount        = size(controlPoint_units, 1);
 sampledOverlapPairs = false(segmentCount, numel(regions_units));
@@ -42,8 +45,9 @@ for segmentIndex = 1:segmentCount
     sampledPosition_units = evaluateBezier(squeeze(controlPoint_units(segmentIndex, :, :)), segmentFractions);
     sampleMinimum_units   = min(sampledPosition_units, [], 1);
     sampleMaximum_units   = max(sampledPosition_units, [], 1);
-    % Skip obstacle boxes that cannot contain any of these sampled points.
-    % The surviving obstacles still need the polygon containment check below.
+    % If the sample x/y range misses a polygon's x/y box, no sampled point
+    % can lie in that polygon. A box overlap alone does not mean collision;
+    % check the actual polygon for every surviving active pair.
     regionIsActive   = regionActiveBySegment(segmentIndex, :).';
     minimumXOverlaps = regionMinimum_units(:, 1) <= sampleMaximum_units(1);
     maximumXOverlaps = regionMaximum_units(:, 1) >= sampleMinimum_units(1);

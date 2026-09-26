@@ -5,27 +5,27 @@ function regionActiveBySegment = activePairsOnClock(segmentBoundaryTime_s, cover
 %       segmentBoundaryTime_s, coverage, regionCount)
 %**************************************************************************
 % PURPOSE
-%   - For time-scoped regions, mark segment/region pairs whose shared
-%     interval has positive length on the supplied absolute clock. For a
-%     segment with positive rounded length, this equals the strict
-%     start/end overlap test. Without time scoping every pair is active.
-%   - A segment from 2^53 to 2^53 + 1 s rounds to [2^53, 2^53] in double
-%     precision. It shares no time with any time-scoped region, even one
-%     spanning it.
+%   - Mark which motion segments overlap each obstacle's active time.
+%     Overlap must last longer than an instant: touching at one boundary
+%     does not count. Without active-time intervals, every pair is active.
+%   - Use the supplied absolute times after floating-point rounding. For
+%     example, 2^53 + 1 rounds to 2^53 in double precision, so a segment
+%     from 2^53 to 2^53 + 1 has zero length on this clock.
 %**************************************************************************
 % INPUTS
 %   - segmentBoundaryTime_s ((S+1)-by-1 numeric vector)
-%       Absolute segment boundary times after rounding.
+%       Ordered absolute boundaries of S motion segments, in seconds.
 %   - coverage (scalar struct)
-%       Region activity intervals in ActiveTimeInterval_s when time scoped.
+%       Optional ActiveTimeInterval_s holds one [start, end] time row per
+%       region. If absent, every region is treated as always active.
 %   - regionCount (nonnegative integer scalar)
 %       Number of prepared obstacle regions.
 %**************************************************************************
 % OUTPUTS
 %   - regionActiveBySegment (S-by-R logical matrix)
-%       For time-scoped regions, true only when the segment and region share
-%       positive time after rounding. With no ActiveTimeInterval_s field,
-%       every pair is active.
+%       With active-time intervals, true only when a segment and region
+%       share positive time. Without them, every pair is true, including a
+%       segment whose rounded duration is zero. R equals regionCount.
 %**************************************************************************
 % UNITS
 %   - Boundary and activity times are absolute seconds.
@@ -48,6 +48,8 @@ end
 regionActiveIntervals_s = coverage.ActiveTimeInterval_s;
 validateattributes(regionActiveIntervals_s, {'numeric'}, ...
     {'real', 'finite', 'size', [regionCount, 2]});
+% For each pair, the later start and earlier end delimit shared time.
+% The strict comparison excludes intervals that only touch at an endpoint.
 sharedStartTime_s = max(segmentBoundaryTime_s(1:end - 1), regionActiveIntervals_s(:, 1).');
 sharedEndTime_s   = min(segmentBoundaryTime_s(2:end), regionActiveIntervals_s(:, 2).');
 regionActiveBySegment = sharedStartTime_s < sharedEndTime_s;

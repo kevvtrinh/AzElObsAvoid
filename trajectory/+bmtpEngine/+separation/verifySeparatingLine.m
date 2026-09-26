@@ -6,25 +6,28 @@ function plane = verifySeparatingLine( ...
 %       vertices_units, roundoffReserve_units, separationTarget_units)
 %**************************************************************************
 % PURPOSE
-%   - Bound the obstacle and curve sides of a line that changes linearly.
-%     Check the entire interval, then apply the shared clearance requirements.
+%   - Check a proposed separating line over one full motion interval. The
+%     line normal and offset may change linearly. Bound both the curve and
+%     obstacle between endpoints, then apply the required margins.
 %**************************************************************************
 % INPUTS
 %   - plane (scalar struct)
-%       Candidate normal vectors and offsets at the interval start/end.
+%       Candidate Normal and Offset_units at the interval start and end.
 %   - controlPoint_units (N-by-2 numeric array)
-%       Bezier control points for one trajectory segment.
+%       Bezier controls of one motion curve in [x, y] rows.
 %   - vertices_units (M-by-2 or M-by-2-by-2 numeric array)
-%       Static vertices, or matching vertices at the start/end of linear motion.
+%       Static polygon vertices, or matching vertices at the start and end
+%       of linearly moving obstacle geometry in the third dimension.
 %   - roundoffReserve_units (nonnegative numeric scalar)
-%       Numerical reserve applied on the trajectory side.
+%       Extra curve-side margin for numerical rounding.
 %   - separationTarget_units (nonnegative numeric scalar)
-%       Required obstacle-side separation target.
+%       Minimum required obstacle-side value at the line.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
-%       Updated offsets and a bound on the signed gap. Verified is true only
-%       if every separation condition passes for the entire interval.
+%       Updated offsets and conservative SignedGap_units bound. Verified
+%       is true only if all line-separation checks pass for the interval;
+%       the complete motion still needs public independent validation.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, reserve, and gap are coordinate units;
@@ -33,21 +36,21 @@ function plane = verifySeparatingLine( ...
 
 %% Section 1: Bound Both Sides Of The Line Throughout The Interval
 
-% Line-side value = normal x position + offset. The obstacle must stay
-% above its target and the curve below its negative roundoff reserve.
+% Line-side value = dot(normal, position) + offset. Keep the obstacle at
+% or above its target and the curve at or below the negative reserve.
 
 if ismatrix(vertices_units)
-    % With static vertices, each line-side value changes linearly.
-    % Its minimum occurs at the start or end.
+    % For a fixed vertex, the changing line gives a value linear in time.
+    % Its minimum is at one end, so both endpoint lines suffice.
     minimumObstacleSide_units = min( ...
         vertices_units * plane.Normal.' + plane.Offset_units, [], "all");
 else
     startVertices_units = vertices_units(:, :, 1);
     endVertices_units   = vertices_units(:, :, end);
 
-    % A linearly moving vertex x a linearly changing normal gives a quadratic.
-    % Its three Bernstein coefficients bound its value between the endpoints;
-    % endpoint values alone could miss a smaller value during the interval.
+    % A moving vertex dotted with a changing normal gives a quadratic.
+    % Its three Bezier coefficients bound the whole interval; checking only
+    % the endpoints could miss a lower obstacle-side value in the middle.
     obstacleSideCoefficients_units = [startVertices_units * plane.Normal(1, :).' + plane.Offset_units(1), ...
         (startVertices_units * plane.Normal(2, :).' + endVertices_units * plane.Normal(1, :).' + ...
         sum(plane.Offset_units)) / 2, ...
@@ -57,9 +60,9 @@ end
 
 degree = size(controlPoint_units, 1) - 1;
 
-% The degree-D curve x a degree-1 line normal gives degree D + 1.
-% Its largest Bernstein coefficient bounds the curve-side value everywhere.
-% Cache the product weights because they depend only on curve degree.
+% A degree-D curve dotted with a linear normal gives degree D+1. Its
+% largest Bezier coefficient bounds the curve-side value everywhere.
+% Reuse weights for another curve with the same degree.
 persistent cachedDegree cachedEndNormalWeights cachedStartNormalWeights
 if isempty(cachedDegree) || cachedDegree ~= degree
     cachedDegree             = degree;
@@ -77,9 +80,9 @@ curveSideCoefficients_units = startNormalWeights .* [sum(controlPoint_units .* p
 
 %% Section 2: Shift The Line When Possible And Apply All Gap Checks
 
-% A common offset shift needs room for both required gaps:
-% target - obstacleSide <= shift <= -reserve - curveSide. Calculate the
-% rounding allowance only when that allowed shift interval is nonempty.
+% Shifting both endpoint offsets equally can place the line between the
+% bounds only if target - obstacleSide <= shift <= -reserve - curveSide.
+% Seek extra rounding room only when that allowed range exists.
 offsetRoundoffAllowance_units = 0;
 if separationTarget_units - minimumObstacleSide_units <= ...
     -roundoffReserve_units - maximumTrajectorySide_units

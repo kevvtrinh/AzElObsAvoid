@@ -9,34 +9,38 @@ function [selectedPairs, maximumUnloadedLineViolation_units] = findViolatedPlane
 %       trajectoryRoundoffReserve_units, constraintTolerance_units)
 %**************************************************************************
 % PURPOSE
-%   - Check every applicable line constraint not yet included in the solve.
-%     Select the largest violation per curve segment for the next round.
-%     Polynomial bounds cover the whole curve portion without sampling.
+%   - After a solve using some separating lines, check the lines left out.
+%     Add the worst violated line for each motion segment in the next solve.
+%     Bezier coefficient bounds check the whole assigned curve portion,
+%     including positions between samples.
 %**************************************************************************
 % INPUTS
 %   - solverValues (numeric column)
-%       Current solver variables, beginning with interleaved x/y curve controls.
+%       Current solver vector: interleaved x/y controls for every segment,
+%       followed by any other unknowns such as slack.
 %   - separatingPlanes (S-by-R struct array)
-%       Complete separating-plane set with normals, offsets, and time scope.
+%       Line records with normals, offsets, and selected curve fractions.
 %   - regionActiveBySegment (S-by-R logical array)
-%       Applicable curve-region pairs.
+%       True for segment/region pairs that need a separating line.
 %   - loadedPlanePairs (S-by-R logical array)
-%       Applicable pairs already included in the solve.
+%       True for pairs whose line rows were already in the solver matrix.
 %   - degree (positive integer scalar)
 %       Bezier degree of every curve segment.
 %   - slackColumnByPair (S-by-R numeric array)
-%       Optional slack column per pair; zero where the pair has no slack.
+%       Solver column of the optional slack for each pair; zero means none.
 %   - trajectoryRoundoffReserve_units (nonnegative numeric scalar)
 %       Numerical gap required on the curve side of each line.
 %   - constraintTolerance_units (nonnegative numeric scalar)
-%       How far a line bound must be exceeded before adding the pair.
+%       A pair is added only when its violation is greater than this value.
 %**************************************************************************
 % OUTPUTS
 %   - selectedPairs (S-by-R logical array)
-%       At most one violated pair per segment, with the largest violation.
+%       At most one unloaded pair per segment: the greatest violation above
+%       tolerance. Equal violations keep the first region encountered.
 %   - maximumUnloadedLineViolation_units (numeric scalar)
-%       Largest line-bound violation across every checked pair. A nonpositive
-%       value satisfies the bound; -Inf means no unloaded pair was checked.
+%       Greatest raw violation across all unloaded active pairs, even if
+%       below tolerance. A nonpositive value meets every checked bound;
+%       -Inf means there was no unloaded active pair to check.
 %**************************************************************************
 % UNITS
 %   - Line violations, offsets, slack, and reserves are coordinate units.
@@ -44,8 +48,9 @@ function [selectedPairs, maximumUnloadedLineViolation_units] = findViolatedPlane
 
 %% Section 1: Check All Applicable Pairs Not Yet Loaded
 
-% Check every unloaded pair, while remembering only the largest violation
-% per segment to limit how many rows the next solve adds at once.
+% For each segment, keep only its worst unloaded line. If two lines exceed
+% the bound by 0.02 and 0.05 units, add the 0.05-unit line next, provided
+% that violation exceeds the tolerance. This limits rows added per solve.
 
 segmentCount      = size(regionActiveBySegment, 1);
 planeSegmentCount = size(separatingPlanes, 1);
@@ -78,9 +83,9 @@ for pairIndex = reshape(find(regionActiveBySegment & ~loadedPlanePairs), 1, [])
         end
     end
 
-    % Multiplying a degree-D curve by a linear normal produces degree + 2
-    % Bernstein coefficients. Each coefficient is the same line-side value
-    % used by createPlaneRows, before accounting for offsets and slack.
+    % A degree-D curve times a linear normal gives D+2 Bezier coefficients.
+    % Match createPlaneRows so an unloaded line is tested by the same
+    % coefficient bounds that would be inserted into the solver.
     normalPositionCoefficients_units = startNormalWeights .* [pairControlPoint_units * plane.Normal(1, :).'; 0] + ...
         endNormalWeights .* [0; pairControlPoint_units * plane.Normal(2, :).'];
     lineOffsetCoefficients_units = startNormalWeights * plane.Offset_units(1) + ...
@@ -90,8 +95,9 @@ for pairIndex = reshape(find(regionActiveBySegment & ~loadedPlanePairs), 1, [])
     if slackColumnIndex > 0
         clearanceSlack_units = solverValues(slackColumnIndex);
     end
-    % line-side value - slack + reserve <= 0. A positive result exceeds
-    % the line bound. Equal worst violations keep the first encountered region.
+    % Each coefficient must satisfy line-side value - slack + reserve <= 0.
+    % The largest positive result is this pair's violation. Using > below
+    % keeps the earlier region selected when two violations tie.
     pairLineViolation_units = max(normalPositionCoefficients_units + lineOffsetCoefficients_units - ...
         clearanceSlack_units + trajectoryRoundoffReserve_units);
     maximumUnloadedLineViolation_units = max(maximumUnloadedLineViolation_units, pairLineViolation_units);
