@@ -373,10 +373,12 @@ if hasFixedSegmentTimes
         for controlPointIndex = 1:degree
             edgeIndex   = (segmentIndex - 1) * degree + controlPointIndex;
             leftSideMap = sparse(2, decisionVariableCount);
-            leftSideMap(:, bmtpEngine.optimization.controlIndexOf( ...
-                segmentIndex, controlPointIndex, 1:2, degree)) = eye(2);
-            leftSideMap(:, bmtpEngine.optimization.controlIndexOf( ...
-                segmentIndex, controlPointIndex - 1, 1:2, degree)) = -eye(2);
+            % Each segment stores controls as [P0x P0y P1x P1y ...]. The
+            % previous control is two entries before the current one.
+            currentControlIndices  = ((segmentIndex - 1) * (degree + 1) + controlPointIndex) * 2 + (1:2);
+            previousControlIndices = currentControlIndices - 2;
+            leftSideMap(:, currentControlIndices)  = eye(2);
+            leftSideMap(:, previousControlIndices) = -eye(2);
             rightSideWeights = sparse(decisionVariableCount, 1);
             rightSideWeights(edgeLengthBoundIndices(edgeIndex)) = 1;
             edgeLengthCones(edgeIndex) = secondordercone( ...
