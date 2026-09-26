@@ -2,41 +2,54 @@ function [controlPoint_units, segmentTime_s, powerCoefficients_units, parentSegm
     subdivideMotion(controlPoint_units, segmentTime_s, powerCoefficients_units, splitSegment, splitProgress)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [controls, durations, coefficients, parentSegmentIndex] = ...
-%       bmtpEngine.motion.subdivideMotion(controls, durations, coefficients, splitSegment)
-%   [controls, durations, coefficients, parentSegmentIndex] = ...
-%       bmtpEngine.motion.subdivideMotion(controls, durations, coefficients, splitSegment, splitProgress)
+%   [subdividedControls_units, subdividedSegmentTime_s, ...
+%       subdividedPower_units, parentSegmentIndex] = ...
+%       bmtpEngine.motion.subdivideMotion(controlPoint_units, segmentTime_s, ...
+%       powerCoefficients_units, splitSegment)
+%   [subdividedControls_units, subdividedSegmentTime_s, ...
+%       subdividedPower_units, parentSegmentIndex] = ...
+%       bmtpEngine.motion.subdivideMotion(controlPoint_units, segmentTime_s, ...
+%       powerCoefficients_units, splitSegment, splitProgress)
 %**************************************************************************
 % PURPOSE
-%   - Split selected segments without changing their curve or physical timing.
-%     This operation does not impose endpoint states or correct curve joins.
+%   - Cut selected Bezier motion segments into two pieces. Together, the
+%     pieces follow the same curve over the same total time. Other segments
+%     are copied unchanged.
+%   - This function does not correct endpoint states or joins between segments.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
-%       Composite Bezier controls.
+%       S is the number of segments. Each segment has D+1 control points
+%       for a degree-D Bezier curve. The last dimension holds the two
+%       position axes in their supplied order.
 %   - segmentTime_s (S-by-1 positive numeric vector)
 %       Duration of each segment.
 %   - powerCoefficients_units (S-by-2-by-(D+1) numeric array or empty)
-%       Optional coefficients in ascending powers of segment fraction.
-%       NaN axes remain unspecified; finite axes are split directly.
+%       Optional polynomial coefficients for each axis, ordered as constant,
+%       u, u^2, and so on, where u runs from 0 to 1 within a segment.
+%       Empty means none were supplied; NaN values remain unspecified.
 %   - splitSegment (S-by-1 logical vector)
-%       True for each segment to divide into two pieces.
+%       True for each segment to cut; false keeps one unchanged piece.
 %   - splitProgress (S-by-1 numeric vector, optional)
-%       Fraction strictly between 0 and 1 for each split; defaults to 0.5.
-%       Inputs whose sizes do not match the segment count, or a selected
-%       fraction outside (0, 1), throw an error.
+%       Where to cut each selected segment, as a fraction from 0 to 1.
+%       Defaults to 0.5. Only selected fractions are checked; each must
+%       lie strictly between 0 and 1 and leave both pieces positive time.
+%       All per-segment input lengths must match S, or the call throws an error.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units, segmentTime_s, powerCoefficients_units
-%       Subdivided controls, durations, and any supplied coefficients.
+%       Data for the output pieces, in input order. A split produces its
+%       earlier piece followed by its later piece.
 %   - parentSegmentIndex (numeric column)
-%       Input segment that produced each output piece.
+%       Input row that produced each output row. If only segment 2 of 3 is
+%       split, this is [1; 2; 2; 3].
 %**************************************************************************
 % UNITS
-%   - Position is coordinate units, time is seconds, and fractions are unitless.
+%   - Positions use the supplied coordinate units; time is seconds.
+%     Segment fractions are unitless.
 %**************************************************************************
 
-%% Section 1: Allocate The Selected Pieces
+%% Section 1: Validate Inputs And Allocate Output Rows
 
 splitSegment = logical(splitSegment(:));
 segmentCount = size(controlPoint_units, 1);
@@ -44,8 +57,8 @@ if nargin < 5
     splitProgress = repmat(0.5, segmentCount, 1);
 end
 splitProgress = splitProgress(:);
-% Every per-segment input must name the same segments as the controls, or a
-% short mask would silently drop the segments it does not mention.
+% Every per-segment input must cover the same original rows. A short split
+% mask could otherwise leave an original segment out of the output.
 coefficientsMatch = isempty(powerCoefficients_units) || ...
     isequal(size(powerCoefficients_units), [segmentCount, 2, size(controlPoint_units, 2)]);
 if numel(splitSegment) ~= segmentCount || numel(segmentTime_s) ~= segmentCount || ...
@@ -59,6 +72,8 @@ if any(~isfinite(selectedProgress) | selectedProgress <= 0 | selectedProgress >=
     error('subdivideMotion:InvalidSplitProgress', ...
         'Each selected split fraction must be finite and lie strictly between 0 and 1.');
 end
+% Copy each input segment once, then reserve a second row for each split.
+% Keep the source row so later checks can relate pieces to their originals.
 outputCountBySegment     = 1 + double(splitSegment);
 firstOutputSegmentIndex = 1 + [0; cumsum(outputCountBySegment(1:end - 1))];
 parentSegmentIndex      = reshape(repelem((1:numel(splitSegment)).', outputCountBySegment), [], 1);
@@ -72,6 +87,8 @@ end
 
 %% Section 2: Restrict Each Curve And Divide Its Duration
 
+% Each new Bezier piece gets its own fraction from 0 to 1. Restricting the
+% original curve to [0, f] and [f, 1] gives the two matching control sets.
 for segmentIndex = find(splitSegment).'
     outputSegmentIndex = firstOutputSegmentIndex(segmentIndex);
     splitLocation      = splitProgress(segmentIndex);
@@ -81,12 +98,13 @@ for segmentIndex = find(splitSegment).'
     subdividedControls_units(outputSegmentIndex + 1, :, :) = ...
         bmtpEngine.motion.restrictBezier(segmentControls_units, [splitLocation, 1]);
 
-    % Use subtraction for the remaining time so both pieces retain the
-    % parent's duration. A split at 0.3 divides 10 seconds into 3 and 7.
+    % First time = f x original time. Subtract it for the second piece so
+    % the two stored times still add to the original. At f = 0.3, a
+    % 10-second segment becomes 3 seconds followed by 7 seconds.
     leftDuration_s   = segmentTime_s(segmentIndex) * splitLocation;
     pieceDurations_s = [leftDuration_s; segmentTime_s(segmentIndex) - leftDuration_s];
-    % A fraction so small that a piece rounds to zero duration is refused:
-    % that piece would have no time at all.
+    % Reject a fraction so close to an end that rounding leaves a piece
+    % with zero time; a zero-duration motion piece cannot be used.
     if any(~(pieceDurations_s > 0) | ~isfinite(pieceDurations_s))
         error('subdivideMotion:InvalidSplitProgress', ...
             'A split must leave both pieces a positive finite duration.');
@@ -96,9 +114,10 @@ for segmentIndex = find(splitSegment).'
     if isempty(powerCoefficients_units)
         continue
     end
-    % For new fraction v, the original fraction is u = f x v on the left
-    % and u = f + (1 - f) x v on the right. Expand the powers directly so
-    % known zero coefficients survive without a conversion through controls.
+    % Let v run from 0 to 1 on a new piece. Its original fraction is
+    % u = f x v on the first piece and u = f + (1 - f) x v on the second.
+    % For f = 0.3, the second piece uses u = 0.3 + 0.7 x v. Expand the
+    % supplied polynomial directly instead of rebuilding it from controls.
     for powerIndex = 0:curveDegree
         subdividedPower_units(outputSegmentIndex, :, powerIndex + 1) = ...
             powerCoefficients_units(segmentIndex, :, powerIndex + 1) * splitLocation ^ powerIndex;

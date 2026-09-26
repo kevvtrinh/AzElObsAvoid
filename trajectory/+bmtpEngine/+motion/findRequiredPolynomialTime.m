@@ -5,27 +5,30 @@ function requiredTime_s = findRequiredPolynomialTime(positionPower_units, segmen
 %       positionPower_units, segmentTime_s, limits)
 %**************************************************************************
 % PURPOSE
-%   - Size each segment from the exact speed, acceleration, and jerk peaks
-%     of its position polynomial, rather than its Bezier control bounds.
+%   - Find how long each fixed curve segment needs to stay within per-axis
+%     velocity, acceleration, and jerk limits. Use the highest rates on the
+%     polynomial itself, not estimates from its Bezier control points.
+%   - Return required times without changing the curves or supplied times.
 %**************************************************************************
 % INPUTS
 %   - positionPower_units (S-by-2-by-(D+1) finite real numeric array)
-%       Position coefficients in powers of segment fraction u from 0 to 1,
-%       with the constant coefficient first.
+%       S is the number of segments; D is the curve degree. Each axis uses
+%       coefficients for constant, u, u^2, and so on, where segment fraction
+%       u runs from 0 at the start to 1 at the end.
 %   - segmentTime_s (S-by-1 positive finite numeric vector)
-%       Current physical duration of each polynomial segment.
+%       Current duration of each segment.
 %   - limits (scalar struct)
-%       Positive per-axis maximum velocity, acceleration, and jerk.
+%       maxVelocity_units_s, maxAcceleration_units_s2, and
+%       maxJerk_units_s3, each a positive 1-by-2 row in the same axis order.
 %**************************************************************************
 % OUTPUTS
 %   - requiredTime_s (S-by-1 positive numeric vector)
-%       Duration needed for the polynomial's exact motion-rate peaks.
-%       A stationary segment receives an eps-second floor.
+%       Shortest duration allowed by all three rate limits on both axes for
+%       the same curve. A stationary segment receives an eps-second floor.
 %**************************************************************************
 % UNITS
-%   - Position is coordinate units and durations are seconds. Duration T
-%     scales velocity by 1/T, acceleration by 1/T^2, and jerk by 1/T^3.
-%     A jerk peak 1 percent over its limit needs T x 1.01^(1/3).
+%   - Position uses coordinate units; time is seconds. Velocity, acceleration,
+%     and jerk limits use units/s, units/s^2, and units/s^3.
 %**************************************************************************
 
 %% Section 1: Check Polynomial, Durations, And Limits
@@ -48,6 +51,9 @@ validateattributes(motionRateLimits, {'numeric'}, ...
 
 %% Section 2: Size Each Segment From Its Exact Polynomial Peaks
 
+% Differentiate the position curve once for velocity, twice for acceleration,
+% and three times for jerk. Since u = elapsed time / segment duration T,
+% the physical rate of order k divides the u-derivative by T^k.
 requiredTime_s = zeros(segmentCount, 1);
 for segmentIndex = 1:segmentCount
     segmentDuration_s = double(segmentTime_s(segmentIndex));
@@ -62,14 +68,19 @@ for segmentIndex = 1:segmentCount
             end
             physicalRateCoefficients = derivativeCoefficients / segmentDuration_s ^ derivativeOrder;
             [minimumRate, maximumRate] = bmtpEngine.validation.boundPolynomialRange(physicalRateCoefficients);
+            % A large negative rate can violate a limit just as a large
+            % positive one can, so use the greater absolute peak.
             peakRate = max(abs(minimumRate), abs(maximumRate));
+            % Stretching time by q divides an order-k rate by q^k. If jerk
+            % is 8 times its limit, q = 2 because 2^3 = 8. The largest
+            % required time across both axes and all rates wins.
             durationScale = (peakRate / motionRateLimits(derivativeOrder, axisIndex)) ^ (1 / derivativeOrder);
             requiredTime_s(segmentIndex) = max(requiredTime_s(segmentIndex), segmentDuration_s * durationScale);
         end
     end
 end
 
-% A stationary curve needs no travel time, but later calculations divide
-% by duration. Keep the same positive floor as control-based sizing.
+% A stationary curve needs zero time under these rate limits, but later
+% calculations divide by duration. Use eps seconds as a positive floor.
 requiredTime_s = max(requiredTime_s, eps);
 end

@@ -9,34 +9,39 @@ function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_
 %       polynomial, time_s, sampleSegmentIndices)
 %**************************************************************************
 % PURPOSE
-%   - Sample position, velocity, acceleration, and jerk from the stored
-%     motion polynomials at absolute times. Times outside the selected
-%     segment use its nearest endpoint state.
+%   - Evaluate the stored motion at requested absolute times. Return
+%     position and, when requested, its first three time derivatives.
+%     A time outside its selected segment uses that segment's nearest end.
 %**************************************************************************
 % INPUTS
 %   - polynomial (scalar struct)
-%       Coefficients and timing returned by createPowerPolynomial.
+%       Segment start times, durations, and power coefficients returned by
+%       createPowerPolynomial. Coefficients are ordered constant, linear,
+%       quadratic, and so on in each segment's 0-to-1 fraction.
 %   - time_s (numeric vector)
-%       Absolute evaluation times.
+%       Absolute evaluation times in seconds; output follows this order.
 %   - sampleSegmentIndices (numeric scalar or vector, optional; default [])
-%       Segment to use for each time. A scalar uses that segment for all times.
-%       Empty selects from the stored segment start times.
+%       One-based segment number for each time. A scalar selects the same
+%       segment for all times; a vector must match time_s in length. Empty
+%       selects by the stored start times. At a join, this uses the later
+%       segment; pass an index to examine the earlier segment instead.
 %**************************************************************************
 % OUTPUTS
 %   - time_s (numeric column)
 %       Supplied times as a double column, in their original order.
 %   - position_units (N-by-C numeric array)
-%       Evaluated positions for every coordinate.
+%       Position at N times on C coordinate axes.
 %   - velocity_units_s (N-by-C numeric array)
-%       Evaluated velocities for every coordinate.
+%       Velocity at those times, when requested.
 %   - acceleration_units_s2 (N-by-C numeric array)
-%       Evaluated accelerations for every coordinate.
+%       Acceleration at those times, when requested.
 %   - jerk_units_s3 (N-by-C numeric array)
-%       Evaluated jerks for every coordinate. Any nonfinite time makes all
-%       returned motion values NaN. Empty times return empty histories.
+%       Jerk at those times, when requested. If any time is nonfinite, all
+%       motion outputs remain NaN. Empty times return empty histories.
 %**************************************************************************
 % UNITS
-%   - Position is coordinate units and time is seconds.
+%   - Position: coordinate units; velocity: units/s; acceleration: units/s^2;
+%     jerk: units/s^3; time: seconds.
 %**************************************************************************
 
 %% Section 1: Prepare Sample Arrays And Select A Segment For Each Time
@@ -48,6 +53,9 @@ position_units        = NaN(sampleCount, coordinateCount);
 velocity_units_s      = position_units;
 acceleration_units_s2 = position_units;
 jerk_units_s3         = position_units;
+% One bad time stops the entire batch; partially filled histories could be
+% mistaken for a complete motion. With only the time output, no evaluation
+% is needed.
 if nargout < 2 || isempty(time_s) || any(~isfinite(time_s))
     return
 end
@@ -75,7 +83,8 @@ end
 % u = (requested time - segment start) / segment duration.
 % For start = 2 s and duration = 4 s, time = 3 s gives u = 0.25.
 segmentFractions = (time_s - polynomial.SegmentStartTime_s(sampleSegmentIndices)) ./ selectedSegmentTime_s;
-% Clamp the evaluated fraction to [0 1]; retain the supplied output times.
+% Clamp only the fraction, not the returned time. For a segment from 2 to
+% 6 s, a 7 s request returns time 7 s with the segment's state at 6 s.
 segmentFractions = min(1, max(0, segmentFractions));
 
 position_units = evaluateSegmentCoefficients(polynomial.positionPower_units, sampleSegmentIndices, segmentFractions);
@@ -94,9 +103,9 @@ end
 %% Section 3: Local Functions
 
 function sampledValues = evaluateSegmentCoefficients(polynomialCoefficients, sampleSegmentIndices, segmentFractions)
-    % Evaluate c0 + c1 x u + c2 x u^2 + ... for every requested coordinate.
-    % The coefficient fields already include physical time scaling for
-    % velocity, acceleration, and jerk, so no further duration division is needed.
+    % Evaluate c0 + c1 x u + c2 x u^2 + ... on every coordinate axis.
+    % Each derivative coefficient already includes its segment duration,
+    % so velocity, acceleration, and jerk need no further time scaling.
     coefficientCount = size(polynomialCoefficients, 3);
     powerTerms       = reshape(segmentFractions .^ (0:coefficientCount - 1), [], 1, coefficientCount);
     sampledValues    = sum(polynomialCoefficients(sampleSegmentIndices, :, :) .* powerTerms, 3);

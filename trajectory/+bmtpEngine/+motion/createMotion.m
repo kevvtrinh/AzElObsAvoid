@@ -7,23 +7,25 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %       suppliedPowerCoefficients_units, splitSegment, splitProgress)
 %**************************************************************************
 % PURPOSE
-%   - Set endpoint states, correct curve joins, and assign final durations
-%     once. Retain the resulting polynomial for all later checks and output.
+%   - Turn proposed Bezier controls and segment times into one motion for
+%     later checks. Match the requested start and goal states, split selected
+%     segments, and keep one polynomial for validation and output.
+%   - When arrival time can change, lengthen the segment times together if
+%     the curve needs more time to meet the motion-rate limits.
 %**************************************************************************
 % INPUTS
 %   - solverRequest (scalar struct)
-%       Checked BMTP inputs, motion limits, available time, and arrival mode.
-%       ArrivalTimeTolerance_s allows small timing errors. Curve-join changes
-%       use the larger of CollisionClearanceTolerance_units and one part per
-%       million of the coordinate scale; ConstraintTolerance is not used here.
+%       Checked start and goal states, motion limits, time available, and
+%       options for arrival timing and tolerances.
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
-%       Selected composite Bezier control points.
-%   - segmentTime_s (positive finite numeric vector)
-%       Selected per-segment durations.
+%       S is the number of segments; each degree-D Bezier curve has D+1
+%       controls. The last dimension holds two position axes.
+%   - segmentTime_s (S-by-1 positive finite numeric vector)
+%       Proposed duration of each segment.
 %   - suppliedPowerCoefficients_units (S-by-2-by-(D+1) numeric array, optional)
-%       Coefficients of p(u) = c0 + c1*u + c2*u^2 + ... for segment progress
-%       u from 0 to 1. A finite coefficient set for an axis takes priority over
-%       converted controls; an axis filled with NaN uses the converted controls.
+%       Position polynomial for each axis, ordered as constant, u, u^2,
+%       and so on, with segment fraction u from 0 to 1. A fully finite axis
+%       takes priority over converted controls; an axis with NaN uses them.
 %   - splitSegment (S-by-1 logical array, optional)
 %       True for each segment to split into two; defaults to all segments.
 %   - splitProgress (S-by-1 numeric array, optional)
@@ -31,11 +33,13 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %**************************************************************************
 % OUTPUTS
 %   - preparedMotion (scalar struct)
-%       Prepared controls, complete power coefficients, times, duration checks,
-%       and SourceSegmentIndex mapping each piece to its input segment.
-%       Success = false if the motion exceeds the available time or a join repair
-%       would move a control point beyond the allowed tolerance. These
-%       expected failures return a message instead of throwing an error.
+%       Prepared controls, final polynomial, segment times, duration check,
+%       and SourceSegmentIndex linking each output piece to an input segment.
+%       Success = false if total duration exceeds the available time or a
+%       curve-join correction is too large. Message and TerminationReason
+%       explain either outcome.
+%       MotionProof.Passed reports the rate check separately and can be false
+%       even when Success is true. The caller validates the complete motion.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -53,27 +57,30 @@ if nargin < 6
     splitProgress = repmat(0.5, numel(splitSegment), 1);
 end
 
+% First make the controls match the requested start and goal states. After
+% splitting, keep each piece's source segment for later checks and reports.
 controlPoint_units = bmtpEngine.motion.imposeEndpointControls(controlPoint_units, segmentTime_s, ...
     solverRequest.InitialState, solverRequest.GoalState);
 [controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units, sourceSegmentIndex] = ...
     bmtpEngine.motion.subdivideMotion(controlPoint_units, segmentTime_s, ...
     suppliedPowerCoefficients_units, splitSegment, splitProgress);
 
-%% Section 2: Check Required Durations And Keep The Requested Timing
+%% Section 2: Size Durations And Respect The Arrival Mode
 
-% Conversion may make small corrections so position, velocity, acceleration,
-% and jerk match at curve joins. Size the corrected polynomial that will be
-% retained for validation and output.
+% The polynomial builder may move controls slightly to make neighboring
+% degree-five curves meet in position, velocity, acceleration, and jerk.
+% Check the rate limits on this corrected curve, which is the one retained.
 motionPolynomial = bmtpEngine.motion.createPowerPolynomial( ...
     controlPoint_units, segmentTime_s, 0, suppliedPowerCoefficients_units);
 polynomialControlPoint_units = bmtpEngine.motion.powerToBernstein(motionPolynomial.positionPower_units);
 requiredTime_s = bmtpEngine.motion.findRequiredPolynomialTime( ...
     motionPolynomial.positionPower_units, segmentTime_s, solverRequest.Limits);
 
-% The exact polynomial peaks give the time needed for the motion-rate limits.
-% The caller still checks the whole polynomial before accepting the motion.
-% Keep fixed-arrival times; otherwise allow a longer duration to meet these
-% limits, with a small floating-point allowance.
+% Required time comes from the curve's highest speed, acceleration, and
+% jerk. For example, a piece assigned 1 second but needing 2 seconds calls
+% for at least a 2x time scale. Fixed arrival keeps its assigned times;
+% otherwise stretch every piece by the same factor so the curve stays the
+% same while its motion slows. The tiny extra factor covers rounding.
 isFixedArrival = solverRequest.Options.GoalTimeMode == "fixedArrival";
 durationScale  = 1;
 if ~isFixedArrival
@@ -84,8 +91,8 @@ motionDuration_s            = sum(segmentTime_s);
 durationMatchesFixedArrival = isFixedArrival && ...
     abs(sum(segmentTime_s) - solverRequest.MotionHorizon_s) <= 64 * eps(solverRequest.MotionHorizon_s);
 if durationMatchesFixedArrival
-    % Correct the tiny rounding error from summing segment durations so
-    % their total equals the fixed time allowed for the motion.
+    % Correct only a rounding-sized mismatch. A materially late motion
+    % must not be made to appear on time by changing its last segment.
     for passIndex = 1:2
         segmentTime_s(end) = segmentTime_s(end) + (solverRequest.MotionHorizon_s - sum(segmentTime_s));
     end
@@ -101,11 +108,11 @@ end
 
 %% Section 3: Reject Excessive Join Changes Or Insufficient Time
 
-% Joining curves may correct small numerical differences left by the solver.
-% Reject a larger change: it would alter the motion whose clearance was solved.
-% The limit is one part per million of the coordinate scale, or the collision
-% clearance tolerance if larger. This covers measured solver errors of about
-% two parts in ten million on fixed-arrival motions.
+% Joining curves may move controls slightly. Reject a larger change because
+% it would alter the path optimized for obstacle clearance. Allow the larger
+% of the collision-clearance tolerance or one part per million of the
+% coordinate scale. One part per million of 1000 units is 0.001 units.
+% The optimizer's ConstraintTolerance does not set this distance allowance.
 coordinateScale_units         = max(1, max(abs(controlPoint_units), [], 'all'));
 joinCorrectionTolerance_units = max( ...
     solverRequest.Options.CollisionClearanceTolerance_units, 1e-6 * coordinateScale_units);
@@ -132,12 +139,10 @@ end
 
 %% Section 4: Retain One Polynomial For Checks And Output
 
-% The corrected polynomial defines the physical curve from this point on.
-% Keep every coefficient, including axes originally converted from controls,
-% so checking, subdivision, and output never reconstruct its joins again.
-% The common duration scale above changes time without changing this curve.
-% Check whether the assigned durations meet the exact polynomial rate peaks.
-% Passing this check does not replace the final polynomial validation.
+% Keep the corrected polynomial, including axes converted from controls, so
+% later checks and output use the same curve. MotionProof records whether
+% every assigned duration meets its required time. This preparation result
+% still needs the caller's complete motion validation.
 durationCheck = struct( ...
     "Passed",           all(segmentTime_s >= requiredTime_s), ...
     "SegmentTime_s",    segmentTime_s, ...
