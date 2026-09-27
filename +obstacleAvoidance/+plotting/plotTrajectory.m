@@ -26,7 +26,7 @@ function handles = plotTrajectory(result, optionOverrides)
 %       view; ShowSweptSurfaces draws translucent motion walls where input
 %       vertices correspond and protected interval envelopes otherwise.
 %       MaximumDisplayedTimeSlices caps outline snapshots per obstacle. The graph
-%       display caps sample nodes in 3D and edges in both 2D and 3D views.
+%       display caps sample nodes and edges in both 2D and 3D views.
 %       FastRotationPreview hides filled sweeps only while the 3D view rotates;
 %       the complete surfaces return when the drag ends.
 %       ShowExpandedWorkspace opens the expanded workspace when wrapping is
@@ -66,7 +66,7 @@ defaults.ShowExpandedWorkspace      = true;
 defaults.ShowSphere                 = false;
 defaults.SphereTime_s               = NaN;
 defaults.MaximumDisplayedTimeSlices = 5;
-defaults.MaximumDisplayedGraphNodes = 300;
+defaults.MaximumDisplayedGraphNodes = 80;
 defaults.MaximumDisplayedGraphEdges = 40;
 defaults.FastRotationPreview         = true;
 
@@ -830,11 +830,13 @@ function drawSearchDiagnostics(axesHandle, result, options)
                 visibilityGraph.(edgeFieldNames(categoryIndex))]; %#ok<AGROW>
         end
     end
+    displayedEdgeNodeIndices = zeros(0, 1);
     if options.ShowSearchEdges && hasData(visibilityGraph, 'AcceptedNodeIndex')
         edgeNodeIndices = visibilityGraph.AcceptedNodeIndex;
         selectedIndices = selectDisplayedVisibilityEdges( ...
             edgeNodeIndices, options.MaximumDisplayedGraphEdges);
         edgeNodeIndices = edgeNodeIndices(selectedIndices, :);
+        displayedEdgeNodeIndices = edgeNodeIndices(:);
         edgeCount = size(edgeNodeIndices, 1);
 
         % Add a NaN after each two-node edge so MATLAB draws separate
@@ -856,14 +858,32 @@ function drawSearchDiagnostics(axesHandle, result, options)
             x_units         = edgePaths_units(:, 1);
             y_units         = edgePaths_units(:, 2);
         end
-        plot(axesHandle, x_units, y_units, "-", ...
-            "Color", [0.02 0.30 0.85], "LineWidth", 2.2, ...
+        plot(axesHandle, x_units, y_units, "--", ...
+            "Color", [0.32 0.49 0.70], "LineWidth", 1.2, ...
             "DisplayName", "Accepted visibility edges (sampled)");
     end
     nodePositions_units = foldNodes(result, nodePositions_units, allEdgeNodeIndices);
-    if ~isempty(nodePositions_units)
-        scatter(axesHandle, nodePositions_units(:, 1), nodePositions_units(:, 2), ...
-            10, [0.45 0.16 0.60], "filled", "DisplayName", "Visibility node");
+    nodeCount = size(nodePositions_units, 1);
+    if nodeCount > 0
+        % Keep the start, goal, and displayed edge endpoints whenever the
+        % node cap allows it. Fill any remaining slots around the boundary.
+        endpointNodeIndices = (1:min(2, nodeCount)).';
+        priorityNodeIndices = unique([endpointNodeIndices; displayedEdgeNodeIndices], 'stable');
+        maximumNodes = options.MaximumDisplayedGraphNodes;
+        if numel(priorityNodeIndices) > maximumNodes
+            remainingPriorityNodes = setdiff(priorityNodeIndices, endpointNodeIndices, 'stable');
+            endpointDisplayCount = min(maximumNodes, numel(endpointNodeIndices));
+            remainingNodeSlots = maximumNodes - endpointDisplayCount;
+            displayedNodeIndices = [endpointNodeIndices(1:endpointDisplayCount); ...
+                evenlySpacedRows(remainingPriorityNodes, remainingNodeSlots)];
+        else
+            otherNodeIndices = setdiff((1:nodeCount).', priorityNodeIndices, 'stable');
+            displayedNodeIndices = [priorityNodeIndices; ...
+                evenlySpacedRows(otherNodeIndices, maximumNodes - numel(priorityNodeIndices))];
+        end
+        displayedNodes_units = nodePositions_units(displayedNodeIndices, :);
+        scatter(axesHandle, displayedNodes_units(:, 1), displayedNodes_units(:, 2), ...
+            14, [0.45 0.16 0.60], "filled", "DisplayName", "Visibility nodes (sampled)");
     end
 end
 
@@ -883,11 +903,11 @@ function drawSpaceTimeSearch(axesHandle, result, options)
         nodePositions_units = visibilityGraph.NodePosition_units;
         if ~isempty(nodePositions_units)
             snapshotTime_s = result.Inputs.initialState.time_s;
-            nodeLabel = "Visibility nodes at obstacle snapshot";
+            nodeLabel = "Visibility nodes at obstacle snapshot (sampled)";
             if searchKind == "arrivalSpatialSnapshot"
                 snapshotTime_s = result.Inputs.goalState.time_s;
             elseif isTimedSearch
-                nodeLabel = "Timed search positions (start-plane projection)";
+                nodeLabel = "Timed search positions (sampled start-plane projection)";
             end
 
             nodeCount = size(nodePositions_units, 1);
@@ -915,7 +935,7 @@ function drawSpaceTimeSearch(axesHandle, result, options)
                     nodePositions_units(acceptedNodeIndices(:, 2), :), NaN(edgeCount, 2)), [3 1 2]), [], 2);
                 plot3(axesHandle, edgePositions_units(:, 1), edgePositions_units(:, 2), ...
                     repmat(snapshotTime_s, size(edgePositions_units, 1), 1), ...
-                    "-", "Color", [0.02 0.30 0.85], "LineWidth", 1.0, ...
+                    "--", "Color", [0.32 0.49 0.70], "LineWidth", 0.7, ...
                     "DisplayName", "Accepted snapshot edges (sampled)");
             end
         end
@@ -956,7 +976,7 @@ end
 
 function selectedRows = evenlySpacedRows(candidateRows, maximumCount)
     % Choose from the whole saved group, including its ends when possible.
-    selectedCount = min(numel(candidateRows), maximumCount);
+    selectedCount = max(0, min(numel(candidateRows), maximumCount));
     if selectedCount == 0
         selectedRows = zeros(0, 1);
     elseif selectedCount == 1
