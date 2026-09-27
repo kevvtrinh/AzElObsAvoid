@@ -79,6 +79,91 @@ function testArrivalImprovementToleranceEndsRefinement(testCase)
     verifyLessThanOrEqual(testCase,stopped.ArrivalTime_s-exact.ArrivalTime_s,0.05);
 end
 
+function testAlternationMayOutlastRequestBeforeShortening(testCase)
+    % Five separate walls require turns around alternating ends. First find
+    % and validate a motion with a generous request. A horizon at 1.04 x
+    % that arrival is feasible because the witness exists; this is a test
+    % scenario, not a bound on the alternation. At this horizon HEAD's third
+    % SOCP is infeasible, while one relaxed step now finds a motion inside it.
+    barrierCount      = 5;
+    generousHorizon_s = 200;
+    wallCenterX_units = 4 * ((1:barrierCount) - (barrierCount + 1) / 2);
+    obstacleList      = cell(barrierCount, 1);
+    for obstacleIndex = 1:barrierCount
+        centerX_units = wallCenterX_units(obstacleIndex);
+        if mod(obstacleIndex, 2) == 1
+            lowerY_units = -6;
+            upperY_units = 1.2;
+        else
+            lowerY_units = -1.2;
+            upperY_units = 6;
+        end
+        vertices_units = [centerX_units - 0.5, lowerY_units; ...
+            centerX_units + 0.5, lowerY_units; ...
+            centerX_units + 0.5, upperY_units; ...
+            centerX_units - 0.5, upperY_units];
+        obstacleList{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle( ...
+            "wall " + obstacleIndex, [0; generousHorizon_s], ...
+            vertices_units(:, 1), vertices_units(:, 2), 0.1);
+    end
+    obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleList{:});
+    startX_units = wallCenterX_units(1) - 3;
+    goalX_units  = wallCenterX_units(end) + 3;
+    limits = struct( ...
+        'xInterval_units',          [startX_units - 2, goalX_units + 2], ...
+        'yInterval_units',          [-5, 5], ...
+        'maxVelocity_units_s',      [1, 1], ...
+        'maxAcceleration_units_s2', [0.75, 0.75], ...
+        'maxJerk_units_s3',         [2.5, 2.5]);
+    initialState = state([startX_units, 0], 0);
+    generousGoal = state([goalX_units, 0], generousHorizon_s);
+    generousResult = planner(obstacles, initialState, generousGoal, limits, options());
+    verifyValidatedStaticBmtp(testCase, generousResult);
+
+    requestHorizon_s = 1.04 * generousResult.ArrivalTime_s;
+    for obstacleIndex = 1:numel(obstacles)
+        obstacles(obstacleIndex).time_s(end) = requestHorizon_s;
+    end
+    tightGoal   = state([goalX_units, 0], requestHorizon_s);
+    tightResult = planner(obstacles, initialState, tightGoal, limits, options());
+    verifyValidatedStaticBmtp(testCase, tightResult);
+    verifyLessThanOrEqual(testCase, tightResult.ArrivalTime_s, requestHorizon_s);
+end
+
+function testProvenWallTravelExceedsAcceptedRequest(testCase)
+    % At x = 0, a clear path must reach |y| >= 5 + 0.1 = 5.1 units. It
+    % starts and ends at y = 0, so y travel is at least 2 x 5.1 = 10.2
+    % units. With |vy| <= 1 unit/s, every detour needs at least 10.2 s.
+    % The straight rest-to-rest chord takes about 9.69 s, so a 10 s request
+    % passes the free-space timing check and must fail at motion acceptance.
+    vertices_units   = [-1, -5; 1, -5; 1, 5; -1, 5];
+    requestHorizon_s = 10;
+    obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+        'tall wall', [0; requestHorizon_s], vertices_units(:, 1), ...
+        vertices_units(:, 2), 0.1);
+    limits = struct( ...
+        'xInterval_units',          [-6, 6], ...
+        'yInterval_units',          [-7, 7], ...
+        'maxVelocity_units_s',      [1, 1], ...
+        'maxAcceleration_units_s2', [0.75, 0.75], ...
+        'maxJerk_units_s3',         [2.5, 2.5]);
+    initialState = state([-4, 0], 0);
+    goalState    = state([4, 0], requestHorizon_s);
+    [~, straightSegmentTime_s] = bmtpEngine.motion.createC3Chord( ...
+        initialState.position_units, goalState.position_units, limits);
+    verifyLessThan(testCase, sum(straightSegmentTime_s), requestHorizon_s);
+    verifyLessThan(testCase, requestHorizon_s, 2 * (5 + 0.1) / limits.maxVelocity_units_s(2));
+
+    result = planner(obstacle, initialState, goalState, limits, options());
+    verifyFalse(testCase, result.Success);
+    verifyEqual(testCase, result.TerminationReason, "timeWindowInfeasible");
+    verifyEqual(testCase, result.Diagnostics.FailureStage, "optimization");
+    verifyEqual(testCase, result.Diagnostics.FailureKind, "timeWindowInfeasible");
+    verifyFalse(testCase, result.Diagnostics.AlternativeGuideEligible);
+    verifyTrue(testCase, contains(result.Message, "The collision-free motion needs"));
+    verifyTrue(testCase, contains(result.Message, "more than the 10.0 s horizon."));
+end
+
 function testAffinePlaneBlockConsolidation(testCase)
     limits=struct('xInterval_units',[-100,100],'yInterval_units',[-100,100]);
     source=plane([1,0;0.5,0.5],[-2,-2]);

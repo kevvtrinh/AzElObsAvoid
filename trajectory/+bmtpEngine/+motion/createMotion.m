@@ -35,9 +35,10 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %   - preparedMotion (scalar struct)
 %       Prepared controls, final polynomial, segment times, duration check,
 %       and SourceSegmentIndex linking each output piece to an input segment.
-%       Success = false if total duration exceeds the available time or a
-%       curve-join correction is too large. Message and TerminationReason
-%       explain either outcome.
+%       FitsRequestHorizon reports whether the duration fits the request.
+%       Success = false if a curve-join correction is too large; Message and
+%       TerminationReason explain that outcome. Preparation and checking are
+%       horizon-free; acceptance applies the horizon once.
 %       MotionProof.Passed reports the rate check separately and can be false
 %       even when Success is true. The caller validates the complete motion.
 %**************************************************************************
@@ -87,7 +88,6 @@ if ~isFixedArrival
     durationScale = max(1, max(requiredTime_s ./ segmentTime_s)) * (1 + 64 * eps);
     segmentTime_s = segmentTime_s * durationScale;
 end
-motionDuration_s            = sum(segmentTime_s);
 durationMatchesFixedArrival = isFixedArrival && ...
     abs(sum(segmentTime_s) - solverRequest.MotionHorizon_s) <= 64 * eps(solverRequest.MotionHorizon_s);
 if durationMatchesFixedArrival
@@ -105,8 +105,9 @@ finalTime_s = solverRequest.InitialState.time_s + sum(segmentTime_s);
 if durationMatchesFixedArrival
     finalTime_s = solverRequest.GoalState.time_s;
 end
+motionDuration_s = sum(segmentTime_s);
 
-%% Section 3: Reject Excessive Join Changes Or Insufficient Time
+%% Section 3: Reject Excessive Join Changes And Record Time Fit
 
 % Joining curves may move controls slightly. Reject a larger change because
 % it would alter the path optimized for obstacle clearance. Allow the larger
@@ -118,23 +119,15 @@ joinCorrectionTolerance_units = max( ...
     solverRequest.Options.CollisionClearanceTolerance_units, 1e-6 * coordinateScale_units);
 joinCorrectionDistance_units   = motionPolynomial.ContinuityProjectionDisplacement_units;
 joinCorrectionExceedsTolerance = joinCorrectionDistance_units > joinCorrectionTolerance_units;
-motionFitsAvailableTime        = motionDuration_s <= solverRequest.MotionHorizon_s + ...
+fitsRequestHorizon             = motionDuration_s <= solverRequest.MotionHorizon_s + ...
     solverRequest.Options.ArrivalTimeTolerance_s;
 
-success           = motionFitsAvailableTime && ~joinCorrectionExceedsTolerance;
+success           = ~joinCorrectionExceedsTolerance;
 message           = "";
 terminationReason = "";
 if joinCorrectionExceedsTolerance
     message           = "The C3 join projection would move the supplied controls beyond the join-repair tolerance.";
     terminationReason = "continuityProjectionExceedsTolerance";
-elseif ~motionFitsAvailableTime
-    if isFixedArrival
-        message           = "The proven minimum exceeds the fixed arrival.";
-        terminationReason = "fixedArrivalInfeasible";
-    else
-        message           = "The proven motion exceeds the goal horizon.";
-        terminationReason = "timeWindowInfeasible";
-    end
 end
 
 %% Section 4: Retain One Polynomial For Checks And Output
@@ -156,6 +149,8 @@ preparedMotion = struct( ...
     "SegmentTime_s",                          segmentTime_s, ...
     "SourceSegmentIndex",                     sourceSegmentIndex, ...
     "FinalTime_s",                            finalTime_s, ...
+    "MotionDuration_s",                       motionDuration_s, ...
+    "FitsRequestHorizon",                     fitsRequestHorizon, ...
     "RequiredSegmentTime_s",                  requiredTime_s, ...
     "DilationScale",                          durationScale, ...
     "MotionProof",                            durationCheck, ...

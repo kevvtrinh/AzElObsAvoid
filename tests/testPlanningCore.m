@@ -91,7 +91,8 @@ function testTimeToleranceIsIndependentOfConstraintTolerance(testCase)
         output = createProvenOutput(baseResult, request, preparedMotion);
         validation = obstacleAvoidance.validateTrajectory(output);
 
-        verifyEqual(testCase, preparedMotion.Success, expectedAcceptance(settingIndex));
+        verifyTrue(testCase, preparedMotion.Success);
+        verifyEqual(testCase, preparedMotion.FitsRequestHorizon, expectedAcceptance(settingIndex));
         verifyEqual(testCase, validation.Passed, expectedAcceptance(settingIndex));
     end
 

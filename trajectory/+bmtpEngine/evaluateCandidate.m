@@ -18,6 +18,7 @@ function [preparedMotion, motionCheck, savedPairChecks, unverifiedPairsBySegment
 % PURPOSE
 %   - Build one motion from selected controls and times, then check that
 %     exact motion. Keep any proof subdivision with the motion it checked.
+%     The request horizon does not stop preparation or checking.
 %**************************************************************************
 % INPUTS
 %   - solverRequest (scalar struct)

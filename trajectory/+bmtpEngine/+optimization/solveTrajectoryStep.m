@@ -20,7 +20,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajec
 %       SegmentCount is a positive integer. Planes is S-by-R, with each
 %       TimeFraction selecting part of a segment. Other required fields are
 %       RoundoffReserve_units (nonnegative), MaximumMotionDuration_s
-%       (positive for variable clocks), MinimumMotionDuration_s (zero when
+%       (positive for variable clocks; Inf leaves the physical clock without
+%       an upper duration bound), MinimumMotionDuration_s (zero when
 %       unused), SegmentRatio (S positive values for variable clocks, or []
 %       for scaledClock's common time), FixedClock (logical),
 %       IntrinsicVariationEnabled (logical, false for scaledClock), and
@@ -95,7 +96,11 @@ if hasFixedSegmentTimes
         {'real', 'finite', 'positive', 'size', [segmentCount, 1]});
     returnsCommonSegmentTime = false;
 else
-    validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+    if formulation.ScaleTimePowers
+        validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+    else
+        validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'scalar', 'positive'});
+    end
     validateattributes(minimumMotionDuration_s, {'numeric'}, ...
         {'real', 'finite', 'scalar', 'nonnegative', '<=', maximumMotionDuration_s});
     assert(formulation.AllowMinimumDuration || minimumMotionDuration_s == 0, ...
@@ -189,7 +194,13 @@ if hasFixedSegmentTimes
         'Fixed segment times must lie between 1e-9 s and 1e9 s.');
 else
     maximumTimeScale_s = maximumMotionDuration_s / sum(segmentTimeRatios);
-    fixedSegmentTime_s = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
+    if isinf(maximumMotionDuration_s)
+        % Resting endpoint controls do not depend on their duration. Use the
+        % finite segment ratios to avoid Inf x 0 when setting those controls.
+        fixedSegmentTime_s = segmentTimeRatios;
+    else
+        fixedSegmentTime_s = maximumMotionDuration_s * segmentTimeRatios / sum(segmentTimeRatios);
+    end
 end
 if formulation.PinEndpointControls
     endpointControlPoint_units = bmtpEngine.motion.imposeEndpointControls( ...
@@ -338,11 +349,13 @@ if formulation.ScaleTimePowers
             minimumTimeFraction ^ 2; minimumTimeFraction ^ 3];
     end
 else
-    maximumTimePowers = [1; maximumTimeScale_s; ...
-        maximumTimeScale_s ^ 2; maximumTimeScale_s ^ 3];
-    upperBounds(timePowerIndices) = maximumTimePowers;
-    if hasFixedSegmentTimes
-        lowerBounds(timePowerIndices) = maximumTimePowers;
+    if isfinite(maximumTimeScale_s)
+        maximumTimePowers = [1; maximumTimeScale_s; ...
+            maximumTimeScale_s ^ 2; maximumTimeScale_s ^ 3];
+        upperBounds(timePowerIndices) = maximumTimePowers;
+        if hasFixedSegmentTimes
+            lowerBounds(timePowerIndices) = maximumTimePowers;
+        end
     end
 end
 solverCones = repmat(secondordercone( ...

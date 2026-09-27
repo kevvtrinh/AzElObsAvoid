@@ -28,6 +28,7 @@ function [result, diagnostics] = solveActivePairTrajectory( ...
 %   - result (scalar struct)
 %       Fastest retained candidate and any accepted shorter-path refinement.
 %       Success = false when no candidate passes the selection checks below.
+%       The request horizon is checked after shortening by the caller.
 %       The caller must still validate the final motion.
 %   - diagnostics (scalar struct)
 %       Updated conic, plane, collision-pair, and refinement measurements.
@@ -115,6 +116,26 @@ for iterationIndex = 1:maximumIterationCount
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver, solverOutput);
+    % The horizon bound is a numerical anchor that keeps today's iterates.
+    % Only the conic solver's infeasibility exit (exitFlag -2) relaxes it:
+    % the same step is solved again without an upper duration bound, the
+    % proposal phase's true formulation. A 300 s horizon can have a 302 s
+    % transient before shortening to 258 s. The caller applies the horizon
+    % once at acceptance.
+    if exitFlag == -2
+        trajectoryStep.MaximumMotionDuration_s = Inf;
+        trajectoryStep.ConstraintBase = savedTrajectoryConstraints;
+        [trialControl_units, trialSegmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
+            bmtpEngine.optimization.solveTrajectoryStep(solverRequest, trajectoryStep);
+        diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
+        diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
+            diagnostics.ConicSolver, solverOutput);
+        if isfield(diagnostics, 'HorizonRelaxedStepCount')
+            diagnostics.HorizonRelaxedStepCount = diagnostics.HorizonRelaxedStepCount + 1;
+        else
+            diagnostics.HorizonRelaxedStepCount = 1;
+        end
+    end
     % Record why this attempt stopped so the caller can decide whether a
     % different route is allowed. A numerical failure must not be hidden.
     if ~bmtpEngine.optimization.hasUsableConicIterate(trialControl_units, exitFlag)
