@@ -224,6 +224,13 @@ result = exampleMovingBarrierWait( ...
     struct('PlotOutputs', false, 'Verbose', false));
 ```
 
+To start deep inside a large C-shaped pocket and reach a far goal as early as
+the limits allow, as recorded in `Rogue Cases/notworking.json`, run:
+
+```matlab
+result = exampleExitConcavePocketEarliest();
+```
+
 The maintained suite covers obstacle-free motion, static detours, concave and
 dense geometry, expected no-path outcomes, moving obstacles, rotating obstacles,
 moving targets, and large source histories. `exampleSpinningUAtStartAndGoal`
