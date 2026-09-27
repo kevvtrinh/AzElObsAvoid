@@ -14,6 +14,8 @@ function [route_units, routeTime_s, timedSearchDetails] = timeExpandedVisibility
 %     can become usable after an obstacle moves.
 %   - Check each connection throughout its travel time. The returned route
 %     is a proposal for BMTP, not yet a complete validated vehicle motion.
+%   - For fixed arrival, use route-independent travel bounds at each node.
+%     A finishing goal visit must leave time to stop by the deadline.
 %**************************************************************************
 % INPUTS
 %   - nodePosition_units (N-by-2 numeric array)
@@ -80,6 +82,30 @@ hasAccelerationAndJerkLimits = all(isfield(limits, {'maxAcceleration_units_s2', 
 if hasEndpointMotionValues && hasAccelerationAndJerkLimits
     minimumDuration_s        = obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
     minimumGoalArrivalTime_s = initialState.time_s + minimumDuration_s;
+end
+% A fixed-arrival route gives BMTP a binding clock. If both endpoint motion
+% fields and limits are available, account for the time needed to leave or
+% reach rest. Earliest-arrival BMTP may scale the whole proposed clock.
+fixedClockHasMotionLimits = options.GoalTimeMode ~= "earliestArrival" && ...
+    hasEndpointMotionValues && hasAccelerationAndJerkLimits;
+startIsAtRest = fixedClockHasMotionLimits && ...
+    all(initialState.velocity_units_s == 0) && all(initialState.acceleration_units_s2 == 0);
+goalIsAtRest = fixedClockHasMotionLimits && ...
+    all(goalState.velocity_units_s == 0) && all(goalState.acceleration_units_s2 == 0);
+% Net displacement from a resting start has the same lower time bound on
+% every route to a node. It does not depend on which route the search keeps.
+minimumStartArrivalTime_s = zeros(nodeCount, 1);
+if startIsAtRest
+    startDisplacement_units = abs(nodePosition_units - initialPosition_units);
+    minimumStartArrivalTime_s = initialState.time_s + ...
+        max(timeFromRest(startDisplacement_units, limits), [], 2);
+end
+% A finishing visit to a resting goal must allow stopping by the deadline.
+% Reverse each source-to-goal displacement to get its lower time bound.
+minimumGoalStopDuration_s = zeros(nodeCount, 1);
+if goalIsAtRest
+    goalEdgeDisplacement_units = abs(goalPosition_units - nodePosition_units);
+    minimumGoalStopDuration_s = max(timeFromRest(goalEdgeDisplacement_units, limits), [], 2);
 end
 % Allow for roundoff when comparing large absolute times.
 timeTolerance_s                = 256 * eps(max(1, max(abs(layerTimes_s))));
@@ -204,6 +230,8 @@ end
 % The candidate-building helpers use these arrays to list possible moves.
 timedConnectionData = struct( ...
     'LayerTimes_s',                 layerTimes_s, ...
+    'StartIsAtRest',                startIsAtRest, ...
+    'MinimumStartArrivalTime_s',    minimumStartArrivalTime_s, ...
     'NodeIsFree',                   nodeIsFree, ...
     'IsWaitComponentStart',         waitWindowStartsHere, ...
     'WaitComponentFinalLayerIndex', waitWindowEndLayerIndex, ...
@@ -425,7 +453,8 @@ function applyPendingNodeArrivals(layerIndex)
     if ~isempty(arrivalProposals)
         arrivalProposals = sortrows(arrivalProposals, [1, 5, 6]);
         for proposalIndex = 1:size(arrivalProposals, 1)
-            [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = keepShorterRouteAtNodeAndTime( ...
+            [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = ...
+                keepShorterRouteAtNodeAndTime( ...
                 nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex, ...
                 arrivalProposals(proposalIndex, 1), arrivalProposals(proposalIndex, 2), ...
                 layerIndex, arrivalProposals(proposalIndex, 3), arrivalProposals(proposalIndex, 4));
@@ -488,7 +517,8 @@ function propagateFixedArrivalLayer(layerIndex)
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         if waitIsClear(layerIndex, currentNodeIndex)
-            [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = keepShorterRouteAtNodeAndTime( ...
+            [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = ...
+                keepShorterRouteAtNodeAndTime( ...
                 nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex, ...
                 layerIndex, currentNodeIndex, layerIndex + 1, currentNodeIndex, 0);
         else
@@ -541,7 +571,8 @@ function propagateFixedArrivalLayer(layerIndex)
                 layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
             clearIndices = queryIndices(queryIsClear);
             for motionIndex = reshape(clearIndices, 1, [])
-                [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = keepShorterRouteAtNodeAndTime( ...
+                [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = ...
+                    keepShorterRouteAtNodeAndTime( ...
                     nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex, ...
                     layerIndex, motionCandidates(motionIndex, 1), ...
                     motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), ...
@@ -549,6 +580,21 @@ function propagateFixedArrivalLayer(layerIndex)
             end
             arrivalCompletesRequest = motionCandidates(clearIndices, 2) == 2 & ...
                 goalArrivalCompletesRequest(motionCandidates(clearIndices, 3));
+            hasTimeToStop = true(size(clearIndices));
+            if goalIsAtRest
+                % A clear goal visit may continue as transit. A finishing visit
+                % must allow stopping by the deadline, including a goal hold.
+                % SpinningU: 10.98 units at v = 4 and a = 4 needs 3.25 s to
+                % stop. Its 3.0 s edge leaves 7.5 s until the deadline.
+                sourceNodeIndices = motionCandidates(clearIndices, 1);
+                % Scale roundoff to the time left, not the absolute clock.
+                remainingTime_s = layerTimes_s(end) - layerTimes_s(layerIndex);
+                % Clamp overflowed time so eps stays finite.
+                hasTimeToStop = remainingTime_s >= ...
+                    minimumGoalStopDuration_s(sourceNodeIndices) - ...
+                    256 * eps(max(1, min(remainingTime_s, realmax)));
+                arrivalCompletesRequest = arrivalCompletesRequest & hasTimeToStop;
+            end
             terminalIndices = clearIndices(arrivalCompletesRequest);
             if ~isempty(terminalIndices)
                 goalRouteLengths_units = reshape( ...
@@ -570,12 +616,11 @@ function propagateFixedArrivalLayer(layerIndex)
                 ~queryIsClear & motionCandidates(queryIndices, 3) < motionCandidates(queryIndices, 4));
             motionCandidates(advanceIndices, 3) = motionCandidates(advanceIndices, 3) + 1;
             motionIsPending(advanceIndices)     = true;
-            % A clear visit to the goal may be too early or unable to wait
-            % through the deadline. Try the next allowed finishing layer
-            % within this connection's target wait window.
-            clearTransitGoalIndices = queryIndices( ...
-                queryIsClear & motionCandidates(queryIndices, 2) == 2 & ...
-                ~goalArrivalCompletesRequest(motionCandidates(queryIndices, 3)));
+            % A clear goal visit that cannot finish here may finish at a
+            % later layer. A source without time to stop cannot finish later.
+            clearTransitGoalIndices = clearIndices( ...
+                motionCandidates(clearIndices, 2) == 2 & ...
+                ~arrivalCompletesRequest & hasTimeToStop);
             for motionIndex = reshape(clearTransitGoalIndices, 1, [])
                 currentTargetLayerIndex = motionCandidates(motionIndex, 3);
                 if currentTargetLayerIndex == layerCount
@@ -784,8 +829,8 @@ end
 function [motionCandidates, rejectedCount] = buildLayerCandidates( ...
         sourceNodeIndices, sourceLayerIndex, timedConnectionData)
     % List possible moves in the same layer/node order for every batch.
-    % Batching limits temporary memory; the speed limit still determines the
-    % earliest time each connection could finish.
+    % Batching limits temporary memory. The start bound uses each target
+    % node's net displacement, independent of the route to its source.
     % Columns: source node, target node, first arrival layer to try, last
     % layer in that target wait window, and physical connection length.
     motionCandidates = zeros(0, 5);
@@ -831,7 +876,14 @@ function [motionCandidates, rejectedCount] = buildCandidateBatch( ...
     nodeCount    = size(nodeIsFree, 2);
     sourceCount  = numel(sourceNodeIndices);
 
-    earliestEdgeArrivalTimes_s      = sourceTime_s + minimumEdgeDuration_s(sourceNodeIndices, :).' - 1e-12;
+    earliestEdgeArrivalTimes_s = sourceTime_s + minimumEdgeDuration_s(sourceNodeIndices, :).';
+    if timedConnectionData.StartIsAtRest
+        earliestEdgeArrivalTimes_s = max(earliestEdgeArrivalTimes_s, ...
+            timedConnectionData.MinimumStartArrivalTime_s);
+    end
+    % Keep the search's existing allowance for floating-point layer times
+    % after all physical bounds have been combined.
+    earliestEdgeArrivalTimes_s = earliestEdgeArrivalTimes_s - 1e-12;
     firstAllowedArrivalLayerIndices = 1 + sum( ...
         reshape(layerTimes_s, [], 1, 1) <= ...
         reshape(earliestEdgeArrivalTimes_s, 1, nodeCount, sourceCount), 1);
@@ -870,6 +922,48 @@ function [motionCandidates, rejectedCount] = buildCandidateBatch( ...
     motionCandidates          = [selectedSourceNodeIndices, targetNodeIndices, ...
         entryLayerIndices, finalLayerIndices, ...
         motionEdgeLengths_units(edgeIndices)];
+end
+
+function travelTime_s = timeFromRest(distance_units, limits)
+    % An axis starting at rest covers D with sqrt(2 D / a) before it reaches
+    % full speed, then needs D / v + v / (2 a). Jerk can only add time.
+    % Take square roots separately: 2 D / a can overflow even when the
+    % travel time fits in a finite number.
+    % A zero limit still permits zero distance, but no positive distance.
+    travelTime_s = zeros(size(distance_units));
+    for axisIndex = 1:2
+        axisDistance_units           = distance_units(:, axisIndex);
+        maximumSpeed_units_s         = limits.maxVelocity_units_s(axisIndex);
+        maximumAcceleration_units_s2 = limits.maxAcceleration_units_s2(axisIndex);
+        if maximumSpeed_units_s == 0 || maximumAcceleration_units_s2 == 0
+            travelTime_s(axisDistance_units > 0, axisIndex) = Inf;
+            continue
+        end
+        if isinf(maximumAcceleration_units_s2)
+            travelTime_s(:, axisIndex) = axisDistance_units ./ maximumSpeed_units_s;
+            continue
+        end
+        if isinf(maximumSpeed_units_s)
+            travelTime_s(:, axisIndex) = sqrt(2) * sqrt(axisDistance_units) ./ sqrt(maximumAcceleration_units_s2);
+            continue
+        end
+        % Compare travel-time ratios so neither a tiny nor a huge limit
+        % rounds the switch point to the wrong distance.
+        usesAccelerationOnly = axisDistance_units ./ maximumSpeed_units_s <= ...
+            (maximumSpeed_units_s / maximumAcceleration_units_s2) / 2;
+        travelTime_s(usesAccelerationOnly, axisIndex) = ...
+            sqrt(2) * sqrt(axisDistance_units(usesAccelerationOnly)) ./ sqrt(maximumAcceleration_units_s2);
+        travelTime_s(~usesAccelerationOnly, axisIndex) = ...
+            axisDistance_units(~usesAccelerationOnly) ./ maximumSpeed_units_s + ...
+            (maximumSpeed_units_s / maximumAcceleration_units_s2) / 2;
+    end
+    % The displacement subtraction and up to four rounded operations can put
+    % this a few ULPs above the true bound. Stepping down eight ULPs keeps
+    % every finite positive bound below it, and eight ULPs at 100 s is about
+    % 1e-13 s, far inside the search's 1e-12 s layer allowance.
+    isFinitePositive = isfinite(travelTime_s) & travelTime_s > 0;
+    travelTime_s(isFinitePositive) = travelTime_s(isFinitePositive) - ...
+        8 * eps(travelTime_s(isFinitePositive));
 end
 
 function [nodeIsReachable, routeLengthToNode_units, parentLayerIndex, parentNodeIndex] = ...
