@@ -1,12 +1,22 @@
 function tests = testTimeScopedPlanes
 %% Section 0: Header & Readme
-% SYNTAX: results = runtests('tests/testTimeScopedPlanes.m')
-% PURPOSE: Verify constraints act on their physical time intervals, and
-%          moving detours preserve endpoint states and dense-history
-%          earliest-arrival motions use fewer active than applicable pairs.
-% INPUTS: MATLAB unit test framework.
-% OUTPUTS: Behavioral constraint, collision, and endpoint regressions.
-% UNITS: Coordinate units and seconds.
+% SYNTAX
+%   results = runtests('tests/testTimeScopedPlanes.m')
+%**************************************************************************
+% PURPOSE
+%   - Check timed separating lines, trajectory constraints, moving detours,
+%     endpoint states, and earliest-arrival behavior.
+%**************************************************************************
+% INPUTS
+%   - MATLAB unit test framework runs the local test functions.
+%**************************************************************************
+% OUTPUTS
+%   - tests (function test array)
+%       Tests of timed motion and its independent checks.
+%**************************************************************************
+% UNITS
+%   - Position uses coordinate units and time uses seconds.
+%**************************************************************************
 tests = functiontests(localfunctions);
 end
 
@@ -298,8 +308,39 @@ function testTimedSolverReturnsCoherentEmptyRecord(testCase)
     verifyEqual(testCase, diagnostics.FinalCollisionPairCount, 0);
     verifyEqual(testCase, result.FailureStage, "proposal");
     verifyEqual(testCase, result.FailureKind, ...
-        "timedCorridorInitializationUnavailable");
+        "trajectorySubproblemInfeasible");
     verifyFalse(testCase, result.AlternativeGuideEligible);
+end
+
+function testTimedSolverUsesAvailableUnverifiedSeedLines(testCase)
+    [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
+        createCrossingTimedSolveFixture();
+
+    % This straight seed crosses a small moving square. On HEAD, the line
+    % exists but does not verify, so initialization wrongly returns
+    % timedCorridorInitializationUnavailable before solving a trajectory.
+    [~, seedActivePairs, allRequiredLinesVerified, lineReport] = ...
+        bmtpEngine.separation.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
+        warmStart.SegmentTime_s, request, target_units, roundoffReserve_units);
+    verifyGreaterThan(testCase, nnz(seedActivePairs), 0);
+    verifyFalse(testCase, allRequiredLinesVerified);
+    verifyEqual(testCase, lineReport.UnavailablePairCount, 0);
+
+    [result, ~] = bmtpEngine.optimization.solveTimedAlternatingTrajectory( ...
+        request, warmStart, diagnostics, target_units, roundoffReserve_units);
+    verifyTrue(testCase, result.Success, result.SolverMessage);
+
+    retainedBoundaryTime_s = request.InitialState.time_s + [0; cumsum(result.SegmentTime_s(:))];
+    retainedActivePairs = bmtpEngine.separation.activePairsOnClock( ...
+        retainedBoundaryTime_s, request.Coverage, numel(request.Regions_units));
+    verifiedPairs = reshape([result.Planes.Verified], size(result.Planes));
+    verifyTrue(testCase, all(verifiedPairs(retainedActivePairs), 'all'));
+
+    [preparedMotion, motionCheck] = bmtpEngine.evaluateCandidate( ...
+        request, result.ControlPoint_units, result.SegmentTime_s, ...
+        roundoffReserve_units, target_units);
+    verifyTrue(testCase, preparedMotion.Success);
+    verifyTrue(testCase, motionCheck.Passed);
 end
 
 function testTimedSolverRetainsAtomicRecordAfterLaterRejectedTrial(testCase)
@@ -810,6 +851,53 @@ function [request, warmStart, diagnostics, target_units, roundoffReserve_units] 
         'ConicSolver',             bmtpEngine.optimization.accumulateConicDiagnostics());
     roundoffReserve_units = normalized.Diagnostics.SeparationProof.RoundoffReserve_units;
     target_units  = normalized.Diagnostics.SeparationProof.RequiredGap_units - roundoffReserve_units;
+end
+
+function [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...
+        createCrossingTimedSolveFixture()
+    initial = struct('time_s', 0, 'position_units', [-4, 0]);
+    goal    = struct('time_s', 20, 'position_units', [4, 0]);
+    limits = struct( ...
+        'xInterval_units',          [-6, 6], ...
+        'yInterval_units',          [-6, 6], ...
+        'maxVelocity_units_s',      [3, 3], ...
+        'maxAcceleration_units_s2', [3, 3], ...
+        'maxJerk_units_s3',         [6, 6]);
+    normalized = planner([], initial, goal, limits, struct('GoalTimeMode', "earliestArrival"));
+
+    route_units = [-4, 0; -1, 0; 1, 0; 4, 0];
+    routeLength_units = vecnorm(diff(route_units), 2, 2);
+    firstRegion_units = [-0.35, -0.35; 0.35, -0.35; 0.35, 0.35; -0.35, 0.35];
+    lastRegion_units  = firstRegion_units + [0, 0.3];
+    seed = struct( ...
+        'position_units',               route_units, ...
+        'tau',                          [0; cumsum(routeLength_units)] / sum(routeLength_units), ...
+        'UsesVariableClock',            true, ...
+        'MaximumAlternatingIterations', 8);
+    coverage = struct( ...
+        'Passed',                  true, ...
+        'ExactRegionCount',        1, ...
+        'EndRegions_units',        {{lastRegion_units}}, ...
+        'ActiveTimeInterval_s',    [0, 20], ...
+        'MinimumMotionDuration_s', 0, ...
+        'SeedMotionDuration_s',    12);
+    request = bmtpEngine.prepareRequest(seed, ...
+        struct('regions_units', {{firstRegion_units}}, 'coverage', coverage), ...
+        struct('initialState', normalized.Inputs.initialState, ...
+        'goalState', normalized.Inputs.goalState, ...
+        'limits', normalized.Diagnostics.Limits, ...
+        'options', normalized.Options));
+    warmStart = bmtpEngine.createStartingCurve(request);
+    diagnostics = struct( ...
+        'IterationCount',          0, ...
+        'Converged',               false, ...
+        'ApplicablePairCount',     nnz(warmStart.RegionActiveBySegment), ...
+        'TrajectorySocpCount',     0, ...
+        'FinalCollisionPairCount', 0, ...
+        'PlaneSocpCount',          0, ...
+        'SolverMessage',           "");
+    roundoffReserve_units = normalized.Diagnostics.SeparationProof.RoundoffReserve_units;
+    target_units = normalized.Diagnostics.SeparationProof.RequiredGap_units - roundoffReserve_units;
 end
 
 function [request, warmStart, diagnostics, target_units, roundoffReserve_units] = ...

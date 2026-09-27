@@ -10,6 +10,9 @@ function [result, diagnostics] = solveTimedAlternatingTrajectory( ...
 %   - Seek an earlier arrival around moving obstacles. After durations change,
 %     rebuild separating lines for the actual times when each curve segment
 %     overlaps each obstacle interval. A line keeps the two on opposite sides.
+%   - The seed lines give the first solve constraint directions. An available
+%     line need not certify a seed that grazes a protected corner. Every trial
+%     receives a full check before its motion and verified lines are retained.
 %**************************************************************************
 % INPUTS
 %   - solverRequest (scalar struct)
@@ -70,17 +73,19 @@ failureStage               = "optimization";
 failureKind                = "iterationLimit";
 diagnostics.ConicSolver    = bmtpEngine.optimization.accumulateConicDiagnostics();
 
-% Build obstacle constraints before the first solve, using the starting
-% curve and its segment times. Otherwise the solver could choose a straight
-% path through an obstacle before any separating lines were available.
-[separatingPlanes, ~, allRequiredLinesVerified] = ...
+% Build obstacle constraints before the first solve so it cannot choose a
+% path through an obstacle without a separating line. As in the fixed-clock
+% solver, each seed line must exist but need not certify the seed: a route
+% grazing a protected corner may not admit one certifying line. The lines
+% give the first solve constraint directions; the full check proves trials.
+[separatingPlanes, ~, ~, lineReport] = ...
     bmtpEngine.separation.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
     warmStart.SegmentTime_s, solverRequest, separationTarget_units, roundoffReserve_units);
-if ~allRequiredLinesVerified
+if lineReport.UnavailablePairCount > 0
     diagnostics.ApplicablePairCount     = 0;
     diagnostics.FinalCollisionPairCount = 0;
     diagnostics.TaggedPairCount         = 0;
-    diagnostics.SolverMessage           = "The timed visibility guide could not initialize its exact corridor.";
+    diagnostics.SolverMessage           = "A required separating line could not be built for the timed starting curve.";
     result = bmtpEngine.optimization.createOptimizationResult(diagnostics.SolverMessage, "proposal", ...
         "timedCorridorInitializationUnavailable", false, selectedControl_units, selectedSegmentTime_s, ...
         selectedPlanes, selectedPairs);
@@ -183,13 +188,14 @@ for iterationIndex = 1:solverRequest.MaximumAlternatingIterations
         continue
     end
 
-    % This trial did not pass. Keep the starting curve's shape and rebuild
-    % its lines at the new durations before another trajectory solve.
-    [separatingPlanes, ~, allRequiredLinesVerified] = ...
+    % This trial did not pass its full check. Rebuild the seed curve's lines
+    % at the new durations. As for the first solve, each required line must
+    % exist; the next trial receives its own full check.
+    [separatingPlanes, ~, ~, lineReport] = ...
         bmtpEngine.separation.createTimeScopedPlanes(warmStart.ControlPoint_units, ...
         trialSegmentTime_s, solverRequest, separationTarget_units, roundoffReserve_units);
-    if ~allRequiredLinesVerified
-        lastAttemptMessage = "The timed visibility guide could not initialize every exact clock pair.";
+    if lineReport.UnavailablePairCount > 0
+        lastAttemptMessage = "A required separating line could not be built for the timed starting curve at the new durations.";
         failureStage       = "proposal";
         failureKind        = "timedClockPairInitializationUnavailable";
         break
