@@ -43,6 +43,42 @@ function testSeparatedSlalomBarriers(testCase)
     verifyTrue(testCase,result.Diagnostics.SolverDiagnostics.TravelRefinementAccepted);
 end
 
+function testArrivalImprovementToleranceEndsRefinement(testCase)
+    % An L-shaped wall with both endpoints outside it. The start is above the
+    % tall side and the goal sits beside the foot, so the route wraps the top
+    % outer corner and runs down the wall. Each rebuild of the separating
+    % lines then gains a little less arrival time than the last: refining
+    % until a pass gains nothing takes 19 passes here, the default stop 4.
+    % Unlike the cavity escape, neither endpoint is enclosed.
+    vertices_units=[-8,-6;2,-6;2,-4;0,-4;0,4;-8,4];
+    obstacle=obstacleAvoidance.obstacles.createObstacle( ...
+        'L wall',[0;120],vertices_units(:,1),vertices_units(:,2),0.1);
+    limits=struct('xInterval_units',[-20,20],'yInterval_units',[-10,10], ...
+        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[1,1], ...
+        'maxJerk_units_s3',[2.5,2.5]);
+    initial=state([-4,6],0);
+    goal=state([4,-2],120);
+    stopped=planner(obstacle,initial,goal,limits,options());
+    verifyValidatedStaticBmtp(testCase,stopped);
+    stoppedSolver=stopped.Diagnostics.SolverDiagnostics;
+    verifyTrue(testCase,stoppedSolver.Converged);
+    verifyLessThan(testCase,stoppedSolver.IterationCount, ...
+        stoppedSolver.MaximumAlternatingIterations);
+    % Refining until a pass gains nothing repeats the same passes and then
+    % continues, so it can only arrive earlier, and only by the small gains
+    % the default stop gave up. The shortening pass may move either arrival
+    % by at most one millionth of its duration.
+    exactOptions=options();
+    exactOptions.ArrivalImprovementTolerance_s=0;
+    exact=planner(obstacle,initial,goal,limits,exactOptions);
+    verifyValidatedStaticBmtp(testCase,exact);
+    verifyLessThanOrEqual(testCase,stoppedSolver.IterationCount, ...
+        exact.Diagnostics.SolverDiagnostics.IterationCount);
+    verifyGreaterThanOrEqual(testCase,stopped.ArrivalTime_s, ...
+        exact.ArrivalTime_s-1e-4);
+    verifyLessThanOrEqual(testCase,stopped.ArrivalTime_s-exact.ArrivalTime_s,0.05);
+end
+
 function testAffinePlaneBlockConsolidation(testCase)
     limits=struct('xInterval_units',[-100,100],'yInterval_units',[-100,100]);
     source=plane([1,0;0.5,0.5],[-2,-2]);

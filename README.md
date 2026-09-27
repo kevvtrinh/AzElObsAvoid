@@ -143,6 +143,9 @@ Public planner options are:
 - `ConstraintTolerance`
 - `CollisionClearanceTolerance_units`
 - `ArrivalTimeTolerance_s`
+- `ArrivalImprovementTolerance_s`: with static obstacles and earliest arrival,
+  stop refining the motion once one refinement pass gains less arrival time
+  than this (default `0.01` s; `0` refines until a pass gains nothing)
 - `WrapX`, `WrapY`: `"false"` (default), `"both"`, `"forward"` (the path
   may pass the upper interval end but not the lower), or `"backward"` (the
   lower end but not the upper). `true` and `false` still mean `"both"` and

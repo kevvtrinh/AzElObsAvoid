@@ -80,6 +80,12 @@ alternativeGuideEligible = true;
 
 maximumIterationCount      = solverRequest.MaximumAlternatingIterations;
 savedTrajectoryConstraints = struct();
+% Each rebuild of the lines around a clear curve gains a little less arrival
+% time than the last, so waiting for a gain below the arrival-time tolerance
+% can use every allowed iteration. Stop once a pass gains less than
+% ArrivalImprovementTolerance_s; 0 keeps refining until a pass gains nothing.
+stopImprovement_s          = max(solverRequest.Options.ArrivalTimeTolerance_s, ...
+    solverRequest.Options.ArrivalImprovementTolerance_s);
 for iterationIndex = 1:maximumIterationCount
     diagnostics.IterationCount = iterationIndex;
     trajectoryPlanes           = separatingPlanes;
@@ -162,7 +168,7 @@ for iterationIndex = 1:maximumIterationCount
             trialWasRetained     = true;
         end
         improvementReachedTolerance = isfinite(arrivalImprovement_s) && ...
-            arrivalImprovement_s <= solverRequest.Options.ArrivalTimeTolerance_s;
+            arrivalImprovement_s <= stopImprovement_s;
         if improvementReachedTolerance
             diagnostics.Converged = true;
             if trialWasRetained
