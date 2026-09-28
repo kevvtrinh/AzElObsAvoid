@@ -857,15 +857,19 @@ function inside = boundaryStatesInsideLimits(request)
     velocityAllowance     = 128 * eps(max(1, velocityMax));
     accelerationAllowance = 128 * eps(max(1, accelerationMax));
     positionAllowance     = 128 * eps(max([1, abs(positionLower(isfinite(positionLower))), abs(positionUpper(isfinite(positionUpper)))]));
+    % Written as the engine writes it (violation = max(lower - x, x - upper),
+    % refused when violation > allowance) so the two agree to the last ulp.
     inside = true;
     for stateCell = {request.initialState, request.terminalState}
-        state  = stateCell{1};
-        inside = inside && all(abs(state.velocity) <= velocityMax + velocityAllowance);
+        state = stateCell{1};
+        velocityViolation = max(-velocityMax - state.velocity, state.velocity - velocityMax);
+        inside = inside && ~any(velocityViolation > velocityAllowance);
         if request.controlOrder == 3
-            inside = inside && all(abs(state.acceleration) <= accelerationMax + accelerationAllowance);
+            accelerationViolation = max(-accelerationMax - state.acceleration, state.acceleration - accelerationMax);
+            inside = inside && ~any(accelerationViolation > accelerationAllowance);
         end
-        inside = inside && all(state.position >= positionLower - positionAllowance) ...
-            && all(state.position <= positionUpper + positionAllowance);
+        positionViolation = max(positionLower - state.position, state.position - positionUpper);
+        inside = inside && ~any(positionViolation > positionAllowance);
     end
 end
 
@@ -1082,10 +1086,11 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
     % Exact check of the piecewise polynomial the control defines: limits on
     % every segment (acceleration at ends, velocity at ends and its vertex,
     % position densely plus where velocity is zero) and the terminal state.
-    % Each quantity is judged against its own scale: velocity against the
-    % velocity bound, acceleration against the acceleration bound, position
-    % against the size of the positions involved. A large absolute position
-    % must not loosen the velocity or acceleration checks.
+    % Limit excess is judged with one absolute allowance, the same 1e-6 the
+    % engine's validator uses, so neither a large coordinate, a wide box, nor
+    % a long travel can loosen the proof. Only the terminal-state match is
+    % judged relative to the magnitude of the quantities, because that is
+    % where the LP's floating-point precision shows.
     % excess reports how far velocity and position went past their bounds,
     % so the caller can tighten the LP node bounds and try again. A missed
     % terminal state cannot be fixed that way and is reported as Inf.
@@ -1096,13 +1101,6 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
     accelerationScale = max(1, axisProblem.A);
     positionScale     = max([1, abs(axisProblem.p0), abs(axisProblem.pf), ...
         abs(axisProblem.pLo(isfinite(axisProblem.pLo))), abs(axisProblem.pHi(isfinite(axisProblem.pHi)))]);
-    % Limit excess is judged against the size of the motion, not where it
-    % sits on the axis: a box violation of 0.06 is a violation whether the
-    % box is at 0 or at 1e6.
-    travelScale = max([1, abs(axisProblem.pf - axisProblem.p0)]);
-    if isfinite(axisProblem.pLo) && isfinite(axisProblem.pHi)
-        travelScale = max(travelScale, axisProblem.pHi - axisProblem.pLo);
-    end
     excess = struct("velocity", 0, "position", 0, "acceleration", 0);
     for k = 1:segmentCount
         if controlOrder == 3
@@ -1140,8 +1138,8 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
         excess.velocity = Inf;
         excess.position = Inf;
     end
-    ok = terminalOk && excess.acceleration <= tolerance * accelerationScale ...
-        && excess.velocity <= tolerance * velocityScale && excess.position <= tolerance * travelScale;
+    ok = terminalOk && excess.acceleration <= tolerance ...
+        && excess.velocity <= tolerance && excess.position <= tolerance;
 end
 
 function t = realRootsInInterval(coefficients, h)
