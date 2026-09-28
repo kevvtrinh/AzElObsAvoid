@@ -30,6 +30,9 @@ function result = solve(initialState, terminalState, limits, options, pathConstr
 %   - L. Berscheid and T. Kroeger, "Jerk-limited Real-time Trajectory
 %     Generation with Arbitrary Target States," Robotics: Science and
 %     Systems XVII, 2021. https://doi.org/10.15607/RSS.2021.XVII.015
+% LICENSE
+%   - This MATLAB port derives from Ruckig under the MIT License, copyright
+%     (c) 2021 Lars Berscheid; LICENSE-ruckig.txt carries the full notice.
 
 if nargin == 0
     result = ruckigEngine.defaultOptions();
