@@ -266,6 +266,40 @@ function testUnknownOptionsWarnOnceAndAreIgnored(testCase)
     verifyWarning(testCase, @() ruckigEngine.solve(initialState, terminalState, limits, options), "ruckigEngine:UnknownOptions");
 end
 
+function testSameSignTransitNearBoundIsSolved(testCase)
+    % A short motion that keeps acceleration +1 the whole way: velocity runs
+    % from -0.95 to -0.7 inside the bound of 1, so it must solve, and holding
+    % jerk at zero does it in exactly 0.25 s, so the earliest arrival can be
+    % no later than that. The old terminal rule mirrored the initial one in
+    % time and refused the request outright.
+    initialState  = struct("time", 0, "position", 0, "velocity", -0.95, "acceleration", 1);
+    terminalState = struct("position", -0.20625, "velocity", -0.7, "acceleration", 1, "maximumTime", 10);
+    limits        = struct("maximumVelocity", 1, "maximumAcceleration", 2, "maximumJerk", 1);
+    result = ruckigEngine.solve(initialState, terminalState, limits, struct("SampleTime", 0.01));
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyLessThanOrEqual(testCase, result.Duration, 0.25 + 1e-9);
+    verifyLessThanOrEqual(testCase, max(abs(result.velocity)), 1 + 1e-9);
+
+    % Truly impossible states are still refused. Starting at v = 0.95 with
+    % a = +1 must keep a positive forever (canceling it would push v to
+    % 1.45), so a terminal acceleration of -1 is unreachable.
+    blockedInitialState  = struct("time", 0, "position", 0, "velocity", 0.95, "acceleration", 1);
+    blockedTerminalState = struct("position", 0.5, "velocity", 0.7, "acceleration", -1, "maximumTime", 10);
+    refused = ruckigEngine.solve(blockedInitialState, blockedTerminalState, limits, struct("SampleTime", 0.01));
+    verifyFalse(testCase, refused.Success);
+    verifyEqual(testCase, refused.TerminationReason, "kinematicallyInfeasibleBoundaryState");
+    verifySubstring(testCase, refused.Message, "initial acceleration cannot be canceled");
+
+    % Arriving at v = -0.7 with a = +1 needs a prior velocity of -1.2, past
+    % the bound, so it is only reachable from a start that keeps a positive
+    % from even further down. Starting at rest cannot do it.
+    restStart = struct("time", 0, "position", 0, "velocity", 0, "acceleration", 0);
+    refused = ruckigEngine.solve(restStart, terminalState, limits, struct("SampleTime", 0.01));
+    verifyFalse(testCase, refused.Success);
+    verifyEqual(testCase, refused.TerminationReason, "kinematicallyInfeasibleBoundaryState");
+    verifySubstring(testCase, refused.Message, "terminal acceleration cannot be reached");
+end
+
 function [initialState, terminalState, limits] = restToRestFixture()
     % Create an exact two-axis request with one shared scalar progress law.
     initialState = struct();
