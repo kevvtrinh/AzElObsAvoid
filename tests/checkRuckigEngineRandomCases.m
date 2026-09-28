@@ -37,19 +37,52 @@ function report = checkRuckigEngineRandomCases(caseCount, seed, options)
 %   - Position boxes only reject a motion; they do not steer it. Boxed
 %     requests therefore often end as exactProfileValidationFailed, which
 %     is counted, not flagged.
+%   - Refusals are checked too (CheckRefusals). For every refused base
+%     request an independent search looks for any motion between the two
+%     states that stays inside every limit. For a fixed duration the
+%     motion is a feasibility LP over piecewise-constant control; the LP
+%     minimizes one violation slack, so the smallest violation is a
+%     continuous function of the duration. That function is sampled on a
+%     coarse log grid, its lowest dips are refined with a one-dimensional
+%     minimizer, and every candidate duration is then re-verified exactly.
+%     Near-bound requests often have a feasible duration window only a few
+%     percent wide, which a grid alone would miss. When a motion exists the
+%     refusal is bucketed:
+%       * falseRefusal (defect): a motion exists and both boundary states
+%         are continuable, meaning Ruckig's own input rule would accept
+%         the request (initial: v + a|a|/(2J) inside the velocity bounds;
+%         terminal: the same quantity, since the motion has to be
+%         continued forward after arrival).
+%       * refusedByContinuationRule (observation): a motion exists but a
+%         boundary state is not continuable, so the refusal follows the
+%         Ruckig convention even though a point-to-point motion exists.
+%       * boxRefusedButSolvable (observation): a boxed request the engine
+%         rejected after validation, although a motion inside the box
+%         exists. Expected, because boxes do not steer the profile.
+%     The LP search is a search, not a proof, so a refusal it cannot
+%     overturn is reported as unchallenged, not as confirmed.
 %
 % INPUTS
 %   - caseCount (positive integer scalar, optional; default 200)
 %       Number of random base requests to generate.
 %   - seed (nonnegative integer scalar, optional; default 1)
 %       Random generator seed. The same seed always builds the same cases,
-%       so any defect can be reproduced from its case index alone.
+%       so any defect can be reproduced from its case index alone. Extra
+%       requests follow the random ones, so their indices start at
+%       caseCount + 1.
 %   - options (scalar struct, optional; default struct())
 %       Verbose (logical; default true) prints one line per defect.
 %       ShortFactor (scalar; default 0.98) scales the earliest duration to
 %       build the fixed-time request that must be refused.
 %       LongFactor (scalar; default 1.5) scales the earliest duration to
 %       build the fixed-time request that is expected to succeed.
+%       CheckRefusals (logical; default true) runs the LP search on every
+%       refused base request. It needs linprog and adds up to a second per
+%       refused request.
+%       ExtraRequests (cell array; default {}) hand-written requests to run
+%       after the random ones, each a struct with initialState,
+%       terminalState, and limits exactly as ruckigEngine.solve takes them.
+%       They go through every check, so a known case can be replayed here.
 %
 % OUTPUTS
 %   - report (scalar struct)
@@ -62,6 +95,9 @@ function report = checkRuckigEngineRandomCases(caseCount, seed, options)
 %         failed check, in the order they were found.
 %       Observations: same layout, for the expected behaviors listed above.
 %       ReasonCounts: table of TerminationReason counts over base requests.
+%       Refusals: one table row per refused base request with the engine
+%         reason, whether the LP search found a motion, at what duration,
+%         and the bucket it landed in.
 %       Seed, CaseCount: the inputs, so the run can be repeated.
 %
 % UNITS
@@ -84,6 +120,11 @@ validateattributes(seed, {'numeric'}, {'scalar', 'integer', 'nonnegative'});
 verbose     = resolveOption(options, "Verbose", true);
 shortFactor = resolveOption(options, "ShortFactor", 0.98);
 longFactor  = resolveOption(options, "LongFactor", 1.5);
+checkRefusals = resolveOption(options, "CheckRefusals", true);
+extraRequests = resolveOption(options, "ExtraRequests", {});
+validateattributes(extraRequests, {'cell'}, {});
+randomCount = caseCount;
+caseCount   = randomCount + numel(extraRequests);
 validateattributes(shortFactor, {'numeric'}, {'scalar', '>', 0, '<', 1});
 validateattributes(longFactor, {'numeric'}, {'scalar', '>', 1});
 
@@ -111,7 +152,11 @@ observations = struct("CaseIndex", {}, "Check", {}, "Detail", {});
 requests     = cell(caseCount, 1);
 
 for caseIndex = 1:caseCount
-    request             = createRandomRequest(generator);
+    if caseIndex <= randomCount
+        request = createRandomRequest(generator);
+    else
+        request = normalizeExtraRequest(extraRequests{caseIndex - randomCount});
+    end
     requests{caseIndex} = request;
     caseTable.Dimension(caseIndex)    = numel(request.initialState.position);
     caseTable.ControlOrder(caseIndex) = request.controlOrder;
@@ -233,14 +278,76 @@ for caseIndex = 1:caseCount
     end
 end
 
-%% Section 3: Summarize
+%% Section 3: Challenge Every Refusal
+
+refusedIndex  = find(~caseTable.Success);
+refusalTable  = table('Size', [numel(refusedIndex), 5], ...
+    'VariableTypes', ["double", "string", "logical", "double", "string"], ...
+    'VariableNames', ["CaseIndex", "Reason", "MotionFound", "Duration_s", "Bucket"]);
+refusalTable.CaseIndex = refusedIndex;
+refusalTable.Reason    = caseTable.Reason(refusedIndex);
+refusalTable.Bucket(:) = "unchallenged";
+if checkRefusals && ~isempty(refusedIndex)
+    if exist("linprog", "file") ~= 2
+        warning("checkRuckigEngineRandomCases:NoLinprog", "linprog is not available; refusals were not challenged.");
+    else
+        % Calibrate the search first: on solved cases it must find a motion,
+        % otherwise its silence on refused cases means nothing.
+        solvedIndex = find(caseTable.Success, 10);
+        for caseIndex = solvedIndex(:).'
+            [found, ~] = findMotionByLp(requests{caseIndex}, limitTolerance);
+            if ~found
+                caseDefect = makeDefect(caseIndex, "lpSearchMissedSolvedCase", ...
+                    sprintf("engine solved it in %.6g s", caseTable.Duration_s(caseIndex)));
+                defects(end + 1) = caseDefect; %#ok<AGROW>
+                caseTable.DefectCount(caseIndex) = caseTable.DefectCount(caseIndex) + 1;
+                if verbose
+                    fprintf("case %4d  %-32s %s\n", caseIndex, caseDefect.Check, caseDefect.Detail);
+                end
+            end
+        end
+        for rowIndex = 1:numel(refusedIndex)
+            caseIndex = refusedIndex(rowIndex);
+            request   = requests{caseIndex};
+            [found, foundDuration] = findMotionByLp(request, limitTolerance);
+            refusalTable.MotionFound(rowIndex) = found;
+            refusalTable.Duration_s(rowIndex)  = foundDuration;
+            if ~found
+                continue;
+            end
+            reason = caseTable.Reason(caseIndex);
+            if request.hasBox && reason == "exactProfileValidationFailed"
+                bucket = "boxRefusedButSolvable";
+                observations(end + 1) = makeDefect(caseIndex, bucket, ...
+                    sprintf("motion inside the box exists at %.6g s", foundDuration)); %#ok<AGROW>
+            elseif ~boundaryStatesAreContinuable(request)
+                bucket = "refusedByContinuationRule";
+                observations(end + 1) = makeDefect(caseIndex, bucket, ...
+                    sprintf("%s, but a motion exists at %.6g s", reason, foundDuration)); %#ok<AGROW>
+            else
+                bucket = "falseRefusal";
+                caseDefect = makeDefect(caseIndex, bucket, ...
+                    sprintf("%s: %s, but a motion exists at %.6g s", reason, ...
+                    caseTable.Message(caseIndex), foundDuration));
+                defects(end + 1) = caseDefect; %#ok<AGROW>
+                caseTable.DefectCount(caseIndex) = caseTable.DefectCount(caseIndex) + 1;
+                if verbose
+                    fprintf("case %4d  %-32s %s\n", caseIndex, caseDefect.Check, caseDefect.Detail);
+                end
+            end
+            refusalTable.Bucket(rowIndex) = bucket;
+        end
+    end
+end
+
+%% Section 4: Summarize
 
 [reasonNames, ~, reasonIndex] = unique(caseTable.Reason);
 reasonCounts = table(reasonNames, accumarray(reasonIndex, 1), ...
     'VariableNames', ["Reason", "Count"]);
 report = struct("Seed", seed, "CaseCount", caseCount, "Cases", caseTable, ...
     "Requests", {requests}, "Defects", defects, "Observations", observations, ...
-    "ReasonCounts", reasonCounts);
+    "ReasonCounts", reasonCounts, "Refusals", refusalTable);
 
 fprintf("\nRandom cases: %d (seed %d), solved %d, wall %.2f s\n", caseCount, seed, ...
     nnz(caseTable.Success), sum(caseTable.WallTime_s));
@@ -252,6 +359,12 @@ if ~isempty(solved)
         nnz(solved.ExactFixed == "goalReached"), height(solved), ...
         nnz(solved.LongFixed == "goalReached"), height(solved), ...
         nnz(solved.Symmetry == "same"), height(solved));
+end
+if ~isempty(refusalTable)
+    fprintf("Refusals challenged by LP search: %d, motion found for %d (%s)\n", ...
+        height(refusalTable), nnz(refusalTable.MotionFound), ...
+        strjoin(compose("%s %d", unique(refusalTable.Bucket), ...
+        accumarray(findgroups(refusalTable.Bucket), 1)).', ", "));
 end
 if ~isempty(observations)
     [observationNames, ~, observationIndex] = unique(string({observations.Check}));
@@ -265,7 +378,7 @@ if ~isempty(defects)
 end
 end
 
-%% Section 4: Local Functions
+%% Section 5: Local Functions
 
 function value = resolveOption(options, name, default)
     % Read one option field, falling back to the default when absent or empty.
@@ -345,6 +458,31 @@ function request = createRandomRequest(generator)
     request = struct("kind", kind, "controlOrder", controlOrder, ...
         "initialState", initialState, "terminalState", terminalState, ...
         "limits", limits, "options", struct("SampleTime", 0.01), "hasBox", hasBox);
+end
+
+function request = normalizeExtraRequest(supplied)
+    % Give a hand-written request the same bookkeeping fields the random
+    % generator produces, reading the control order from the fields given.
+    validateattributes(supplied, {'struct'}, {'scalar'});
+    if ~all(isfield(supplied, ["initialState", "terminalState", "limits"]))
+        error("checkRuckigEngineRandomCases:InvalidExtraRequest", ...
+            "Each extra request needs initialState, terminalState, and limits.");
+    end
+    request = struct("kind", "extra", "controlOrder", 2, ...
+        "initialState", supplied.initialState, "terminalState", supplied.terminalState, ...
+        "limits", supplied.limits, "options", struct("SampleTime", 0.01), "hasBox", false);
+    if isfield(supplied.limits, "maximumJerk") && all(isfinite(supplied.limits.maximumJerk))
+        request.controlOrder = 3;
+    end
+    if isfield(supplied.limits, "positionLower") || isfield(supplied.limits, "positionUpper")
+        request.hasBox = true;
+    end
+    if ~isfield(request.terminalState, "maximumTime")
+        request.terminalState.maximumTime = 1e6;
+    end
+    if ~isfield(request.initialState, "time")
+        request.initialState.time = 0;
+    end
 end
 
 function result = solveFixed(request, finalTime)
@@ -602,4 +740,333 @@ function limits = mirrorLimits(limits)
         limits.positionLower = -limits.positionUpper;
         limits.positionUpper = -lower;
     end
+end
+
+function continuable = boundaryStatesAreContinuable(request)
+    % Ruckig's input rule: canceling a boundary acceleration at full jerk
+    % changes velocity by a|a|/(2J); the result must stay inside the bounds.
+    % Second-order requests have no acceleration state, so they always pass.
+    continuable = true;
+    if request.controlOrder ~= 3
+        return;
+    end
+    dimension    = numel(request.initialState.position);
+    velocityMax  = expandToAxes(request.limits.maximumVelocity, dimension);
+    jerkMax      = expandToAxes(request.limits.maximumJerk, dimension);
+    for stateCell = {request.initialState, request.terminalState}
+        state   = stateCell{1};
+        settled = state.velocity + state.acceleration .* abs(state.acceleration) ./ (2 * jerkMax);
+        if any(abs(settled) > velocityMax + 1e-9)
+            continuable = false;
+            return;
+        end
+    end
+end
+
+function value = expandToAxes(value, dimension)
+    if isscalar(value)
+        value = repmat(value, 1, dimension);
+    end
+end
+
+function [found, foundDuration] = findMotionByLp(request, tolerance)
+    % Search durations for any motion between the two states inside every
+    % limit. The smallest violation slack over all axes is sampled on a
+    % log grid spanning the request's own time scale, its dips are refined
+    % with fminbnd, and each candidate is confirmed by an exact feasibility
+    % solve. A run of equal grid slacks counts as one dip, so a plateau of
+    % zeros at long durations (node-only feasibility that the exact check
+    % may reject) cannot crowd out a narrow dip elsewhere.
+    found         = false;
+    foundDuration = NaN;
+    segmentCount  = 100;
+    referenceTime = requestTimeScale(request);
+    logGrid       = log10(referenceTime) + linspace(-2, 1.5, 29);
+    slackOnGrid   = arrayfun(@(logDuration) totalSlack(request, 10 ^ logDuration, segmentCount), logGrid);
+
+    isDip    = [true, slackOnGrid(2:end - 1) <= slackOnGrid(1:end - 2) & slackOnGrid(2:end - 1) <= slackOnGrid(3:end), true];
+    dipIndex = find(isDip);
+    dipIndex = dipIndex([true, diff(dipIndex) > 1 | abs(diff(slackOnGrid(dipIndex))) > 1e-9]);
+    [~, order] = sort(slackOnGrid(dipIndex));
+    dipIndex   = dipIndex(order(1:min(6, numel(order))));
+    fminOptions = optimset("TolX", 1e-4, "MaxFunEvals", 60, "Display", "off");
+    for gridIndex = dipIndex
+        candidateLog = logGrid(gridIndex);
+        if slackOnGrid(gridIndex) > 1e-7
+            lowerLog     = logGrid(max(1, gridIndex - 1));
+            upperLog     = logGrid(min(numel(logGrid), gridIndex + 1));
+            candidateLog = fminbnd(@(logDuration) totalSlack(request, 10 ^ logDuration, segmentCount), lowerLog, upperLog, fminOptions);
+        end
+        if confirmDuration(request, 10 ^ candidateLog, segmentCount, tolerance)
+            found         = true;
+            foundDuration = 10 ^ candidateLog;
+            return;
+        end
+    end
+end
+
+function referenceTime = requestTimeScale(request)
+    % Rough time a motion of this size needs: travel at the velocity bound
+    % plus the time to build and cancel velocity and acceleration.
+    dimension       = numel(request.initialState.position);
+    velocityMax     = expandToAxes(request.limits.maximumVelocity, dimension);
+    accelerationMax = expandToAxes(request.limits.maximumAcceleration, dimension);
+    displacement    = abs(request.terminalState.position - request.initialState.position);
+    velocityChange  = abs(request.terminalState.velocity - request.initialState.velocity) + abs(request.initialState.velocity);
+    referenceTime   = max(displacement ./ velocityMax + (velocityChange + velocityMax) ./ accelerationMax);
+    if request.controlOrder == 3
+        jerkMax       = expandToAxes(request.limits.maximumJerk, dimension);
+        referenceTime = referenceTime + max(3 * accelerationMax ./ jerkMax);
+    end
+    referenceTime = max(referenceTime, 1e-3);
+end
+
+function slack = totalSlack(request, duration, segmentCount)
+    % Sum over axes of the smallest violation slack at this duration.
+    dimension = numel(request.initialState.position);
+    slack     = 0;
+    for axisIndex = 1:dimension
+        axisProblem = extractAxisProblem(request, axisIndex, dimension);
+        slack       = slack + axisSlack(axisProblem, request.controlOrder, duration, segmentCount);
+    end
+end
+
+function ok = confirmDuration(request, duration, baseSegmentCount, tolerance)
+    % Exact feasibility at one duration: a feasibility LP per axis whose
+    % node bounds are tightened by any excursion the exact check finds.
+    % Between nodes a segment can overshoot its node values by about
+    % control * h^2 / 8, so the segment count grows with the duration to
+    % keep that overshoot near one percent of the velocity bound. The count
+    % is capped; a duration that would need more stays unconfirmed. A
+    % single slack LP at the finer resolution filters out durations that
+    % only looked feasible at the coarse one before the costlier solves.
+    dimension = numel(request.initialState.position);
+    ok = true;
+    for axisIndex = 1:dimension
+        axisProblem = extractAxisProblem(request, axisIndex, dimension);
+        if request.controlOrder == 3
+            targetStep = sqrt(0.08 * axisProblem.V / axisProblem.J);
+        else
+            targetStep = sqrt(0.08 * axisProblem.V / axisProblem.A);
+        end
+        segmentCount = min(400, max(baseSegmentCount, ceil(duration / targetStep)));
+        if segmentCount > baseSegmentCount && axisSlack(axisProblem, request.controlOrder, duration, segmentCount) > 1e-7
+            ok = false;
+            return;
+        end
+        margins      = struct("velocity", 0, "position", 0);
+        axisFeasible = false;
+        for attempt = 1:3
+            control = solveAxisLp(axisProblem, request.controlOrder, duration, segmentCount, margins);
+            if isempty(control)
+                break;
+            end
+            [axisFeasible, excess] = verifyAxisMotion(axisProblem, request.controlOrder, control, duration, tolerance);
+            if axisFeasible || ~isfinite(excess.velocity) || ~isfinite(excess.position)
+                break;
+            end
+            margins.velocity = margins.velocity + 1.5 * excess.velocity + 1e-9;
+            margins.position = margins.position + 1.5 * excess.position + 1e-9;
+        end
+        if ~axisFeasible
+            ok = false;
+            return;
+        end
+    end
+end
+
+function lp = buildAxisLp(axisProblem, controlOrder, duration, segmentCount)
+    % Node values of every state are affine in the piecewise-constant
+    % control vector, so the limits become linear inequalities at the nodes
+    % and the terminal state becomes equalities. Rows are grouped so the
+    % caller can tighten velocity and position bounds by a margin.
+    h = duration / segmentCount;
+    lowerTriangle = tril(ones(segmentCount));
+    if controlOrder == 3
+        % a_k = a0 + h * sum(j_1..j_k); v_k = v_{k-1} + a_{k-1} h + j_k h^2/2;
+        % p_k = p_{k-1} + v_{k-1} h + a_{k-1} h^2/2 + j_k h^3/6.
+        accelerationMatrix = h * lowerTriangle;
+        accelerationOffset = axisProblem.a0 * ones(segmentCount, 1);
+        previousAcceleration = [zeros(1, segmentCount); accelerationMatrix(1:end - 1, :)];
+        previousAccelerationOffset = [axisProblem.a0; accelerationOffset(1:end - 1)];
+        velocityMatrix = lowerTriangle * (h * previousAcceleration + h ^ 2 / 2 * eye(segmentCount));
+        velocityOffset = axisProblem.v0 + lowerTriangle * (h * previousAccelerationOffset);
+        previousVelocityMatrix = [zeros(1, segmentCount); velocityMatrix(1:end - 1, :)];
+        previousVelocityOffset = [axisProblem.v0; velocityOffset(1:end - 1)];
+        positionMatrix = lowerTriangle * (h * previousVelocityMatrix + h ^ 2 / 2 * previousAcceleration + h ^ 3 / 6 * eye(segmentCount));
+        positionOffset = axisProblem.p0 + lowerTriangle * (h * previousVelocityOffset + h ^ 2 / 2 * previousAccelerationOffset);
+        lp.controlBound   = axisProblem.J;
+        lp.equalityMatrix = [accelerationMatrix(end, :); velocityMatrix(end, :); positionMatrix(end, :)];
+        lp.equalityValue  = [axisProblem.af - accelerationOffset(end); axisProblem.vf - velocityOffset(end); axisProblem.pf - positionOffset(end)];
+        lp.fixedMatrix    = [accelerationMatrix; -accelerationMatrix];
+        lp.fixedBound     = [axisProblem.A - accelerationOffset; axisProblem.A + accelerationOffset];
+    else
+        % v_k = v0 + h * sum(a_1..a_k); p_k = p_{k-1} + v_{k-1} h + a_k h^2/2.
+        velocityMatrix = h * lowerTriangle;
+        velocityOffset = axisProblem.v0 * ones(segmentCount, 1);
+        previousVelocityMatrix = [zeros(1, segmentCount); velocityMatrix(1:end - 1, :)];
+        previousVelocityOffset = [axisProblem.v0; velocityOffset(1:end - 1)];
+        positionMatrix = lowerTriangle * (h * previousVelocityMatrix + h ^ 2 / 2 * eye(segmentCount));
+        positionOffset = axisProblem.p0 + lowerTriangle * (h * previousVelocityOffset);
+        lp.controlBound   = axisProblem.A;
+        lp.equalityMatrix = [velocityMatrix(end, :); positionMatrix(end, :)];
+        lp.equalityValue  = [axisProblem.vf - velocityOffset(end); axisProblem.pf - positionOffset(end)];
+        lp.fixedMatrix    = zeros(0, segmentCount);
+        lp.fixedBound     = zeros(0, 1);
+    end
+    lp.velocityMatrix = [velocityMatrix; -velocityMatrix];
+    lp.velocityBound  = [axisProblem.V - velocityOffset; axisProblem.V + velocityOffset];
+    lp.positionMatrix = [positionMatrix; -positionMatrix];
+    lp.positionBound  = [axisProblem.pHi - positionOffset; -axisProblem.pLo + positionOffset];
+    lp.segmentCount   = segmentCount;
+    lp.scale          = max([1, abs(axisProblem.pf), abs(axisProblem.vf), axisProblem.V, axisProblem.A]);
+end
+
+function control = solveAxisLp(axisProblem, controlOrder, duration, segmentCount, margins)
+    % Feasibility LP at one duration with the node bounds tightened by
+    % margins. It minimizes the largest control magnitude, which returns
+    % the gentlest control that fits and so keeps the excursions between
+    % nodes small enough for the exact check to pass.
+    lp = buildAxisLp(axisProblem, controlOrder, duration, segmentCount);
+    inequalityMatrix = [lp.fixedMatrix; lp.velocityMatrix; lp.positionMatrix];
+    inequalityBound  = [lp.fixedBound; lp.velocityBound - margins.velocity; lp.positionBound - margins.position];
+    keep = isfinite(inequalityBound);
+    % Variables: [control; peak]. |control_k| <= peak <= controlBound.
+    peakMatrix = [inequalityMatrix(keep, :), zeros(nnz(keep), 1); ...
+        eye(segmentCount), -ones(segmentCount, 1); ...
+        -eye(segmentCount), -ones(segmentCount, 1)];
+    peakBound  = [inequalityBound(keep); zeros(2 * segmentCount, 1)];
+    objective  = [zeros(segmentCount, 1); 1];
+    lowerBound = [-lp.controlBound * ones(segmentCount, 1); 0];
+    upperBound = [lp.controlBound * ones(segmentCount, 1); lp.controlBound];
+    lpOptions = optimoptions("linprog", "Display", "off", "Algorithm", "dual-simplex", "ConstraintTolerance", 1e-9);
+    [solution, ~, exitFlag] = linprog(objective, peakMatrix, peakBound, ...
+        [lp.equalityMatrix, zeros(numel(lp.equalityValue), 1)], lp.equalityValue, lowerBound, upperBound, lpOptions);
+    control = [];
+    if exitFlag == 1
+        control = solution(1:segmentCount).';
+    end
+end
+
+function slack = axisSlack(axisProblem, controlOrder, duration, segmentCount)
+    % Smallest single slack that makes every node bound and the terminal
+    % equalities hold, divided by the axis scale. Zero means feasible at
+    % the nodes; it grows continuously with the duration otherwise.
+    lp = buildAxisLp(axisProblem, controlOrder, duration, segmentCount);
+    inequalityMatrix = [lp.fixedMatrix; lp.velocityMatrix; lp.positionMatrix];
+    inequalityBound  = [lp.fixedBound; lp.velocityBound; lp.positionBound];
+    keep = isfinite(inequalityBound);
+    rowCount = nnz(keep);
+    equalityCount = numel(lp.equalityValue);
+    % Variables: [control; slack]. Every inequality and both sides of every
+    % equality get the same slack, scaled so the slack is unitless.
+    slackMatrix = [inequalityMatrix(keep, :), -lp.scale * ones(rowCount, 1); ...
+        lp.equalityMatrix, -lp.scale * ones(equalityCount, 1); ...
+        -lp.equalityMatrix, -lp.scale * ones(equalityCount, 1)];
+    slackBound  = [inequalityBound(keep); lp.equalityValue; -lp.equalityValue];
+    objective   = [zeros(segmentCount, 1); 1];
+    lowerBound  = [-lp.controlBound * ones(segmentCount, 1); 0];
+    upperBound  = [lp.controlBound * ones(segmentCount, 1); Inf];
+    lpOptions = optimoptions("linprog", "Display", "off", "Algorithm", "dual-simplex", "ConstraintTolerance", 1e-9);
+    [solution, slack, exitFlag] = linprog(objective, slackMatrix, slackBound, [], [], lowerBound, upperBound, lpOptions);
+    if exitFlag ~= 1 || isempty(solution)
+        slack = Inf;
+    end
+end
+
+function axisProblem = extractAxisProblem(request, axisIndex, dimension)
+    % One axis of the request with every bound spelled out per side.
+    limits = request.limits;
+    velocityMax     = expandToAxes(limits.maximumVelocity, dimension);
+    accelerationMax = expandToAxes(limits.maximumAcceleration, dimension);
+    axisProblem = struct();
+    axisProblem.p0 = request.initialState.position(axisIndex);
+    axisProblem.v0 = request.initialState.velocity(axisIndex);
+    axisProblem.pf = request.terminalState.position(axisIndex);
+    axisProblem.vf = request.terminalState.velocity(axisIndex);
+    axisProblem.a0 = 0;
+    axisProblem.af = 0;
+    axisProblem.J  = Inf;
+    if request.controlOrder == 3
+        axisProblem.a0 = request.initialState.acceleration(axisIndex);
+        axisProblem.af = request.terminalState.acceleration(axisIndex);
+        axisProblem.J  = expandToAxes(limits.maximumJerk, dimension);
+        axisProblem.J  = axisProblem.J(axisIndex);
+    end
+    axisProblem.V   = velocityMax(axisIndex);
+    axisProblem.A   = accelerationMax(axisIndex);
+    axisProblem.pLo = -Inf;
+    axisProblem.pHi = Inf;
+    if isfield(limits, "positionLower")
+        axisProblem.pLo = limits.positionLower(axisIndex);
+        axisProblem.pHi = limits.positionUpper(axisIndex);
+    end
+end
+
+
+function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, duration, tolerance)
+    % Exact check of the piecewise polynomial the control defines: limits on
+    % every segment (acceleration at ends, velocity at ends and its vertex,
+    % position densely plus where velocity is zero) and the terminal state.
+    % excess reports how far velocity and position went past their bounds,
+    % so the caller can tighten the LP node bounds and try again. A missed
+    % terminal state cannot be fixed that way and is reported as Inf.
+    segmentCount = numel(control);
+    h = duration / segmentCount;
+    p = axisProblem.p0; v = axisProblem.v0; a = axisProblem.a0;
+    scale  = max([1, abs(axisProblem.pf), abs(axisProblem.vf), axisProblem.V, axisProblem.A]);
+    excess = struct("velocity", 0, "position", 0, "acceleration", 0);
+    for k = 1:segmentCount
+        if controlOrder == 3
+            j = control(k);
+        else
+            j = 0;
+            a = control(k);
+        end
+        % Local polynomials in t on [0, h], ascending powers.
+        positionCoefficients     = [p, v, a / 2, j / 6];
+        velocityCoefficients     = [v, a, j / 2];
+        endAcceleration = a + j * h;
+        excess.acceleration = max(excess.acceleration, max(abs([a, endAcceleration])) - axisProblem.A);
+        velocityTimes = [0, h];
+        if j ~= 0
+            vertex = -a / j;
+            if vertex > 0 && vertex < h
+                velocityTimes(end + 1) = vertex; %#ok<AGROW>
+            end
+        end
+        velocityValues  = polyvalAscending(velocityCoefficients, velocityTimes);
+        excess.velocity = max(excess.velocity, max(abs(velocityValues)) - axisProblem.V);
+        positionTimes   = [linspace(0, h, 33), realRootsInInterval(velocityCoefficients, h)];
+        positionValues  = polyvalAscending(positionCoefficients, positionTimes);
+        excess.position = max([excess.position, max(positionValues) - axisProblem.pHi, axisProblem.pLo - min(positionValues)]);
+        p = polyvalAscending(positionCoefficients, h);
+        v = polyvalAscending(velocityCoefficients, h);
+        a = endAcceleration;
+    end
+    terminalError = max([abs(p - axisProblem.pf), abs(v - axisProblem.vf)]);
+    if controlOrder == 3
+        terminalError = max(terminalError, abs(a - axisProblem.af));
+    end
+    if terminalError > 1e-6 * scale
+        excess.velocity = Inf;
+        excess.position = Inf;
+    end
+    ok = terminalError <= 1e-6 * scale && excess.acceleration <= tolerance * scale ...
+        && excess.velocity <= tolerance * scale && excess.position <= tolerance * scale;
+end
+
+function t = realRootsInInterval(coefficients, h)
+    % Real roots of an ascending-power polynomial inside (0, h).
+    coefficients = coefficients(:).';
+    while ~isempty(coefficients) && coefficients(end) == 0
+        coefficients(end) = [];
+    end
+    if numel(coefficients) < 2
+        t = zeros(1, 0);
+        return;
+    end
+    candidates = roots(flip(coefficients));
+    candidates = real(candidates(abs(imag(candidates)) < 1e-9));
+    t = candidates(candidates > 0 & candidates < h).';
 end
