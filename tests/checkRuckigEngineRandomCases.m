@@ -293,9 +293,14 @@ for caseIndex = 1:caseCount
                         sprintf("x%g refused (%s) but the LP search finds a motion there", ...
                         solvableFactor, longResult.TerminationReason)); %#ok<AGROW>
                 else
+                    if checkRefusals && exist("linprog", "file") == 2
+                        searchNote = "and the LP search finds none either";
+                    else
+                        searchNote = "(LP search not run)";
+                    end
                     caseObservations(end + 1) = makeDefect(caseIndex, "noLongerDurationFound", ...
-                        sprintf("x%g through x20 all refused (%s) and the LP search finds none either", ...
-                        longFactor, longResult.TerminationReason)); %#ok<AGROW>
+                        sprintf("x%g through x20 all refused (%s) %s", ...
+                        longFactor, longResult.TerminationReason, searchNote)); %#ok<AGROW>
                 end
             end
         end
@@ -778,9 +783,18 @@ end
 
 function limits = mirrorLimits(limits)
     % Symmetric limits stay; a position box flips and swaps sides.
-    if isfield(limits, "positionLower")
-        lower = limits.positionLower;
-        limits.positionLower = -limits.positionUpper;
+    hasLower = isfield(limits, "positionLower") && ~isempty(limits.positionLower);
+    hasUpper = isfield(limits, "positionUpper") && ~isempty(limits.positionUpper);
+    if hasLower || hasUpper
+        lower = -Inf;
+        upper = Inf;
+        if hasLower
+            lower = limits.positionLower;
+        end
+        if hasUpper
+            upper = limits.positionUpper;
+        end
+        limits.positionLower = -upper;
         limits.positionUpper = -lower;
     end
 end
@@ -837,17 +851,34 @@ function inside = boundaryStatesInsideLimits(request)
     dimension       = numel(request.initialState.position);
     velocityMax     = expandToAxes(request.limits.maximumVelocity, dimension);
     accelerationMax = expandToAxes(request.limits.maximumAcceleration, dimension);
+    [positionLower, positionUpper] = positionBox(request.limits, dimension);
+    % Same allowance the engine uses for its own boundary test: a few ulps of
+    % the bound, so a state the engine calls outside is outside here too.
+    velocityAllowance     = 128 * eps(max(1, velocityMax));
+    accelerationAllowance = 128 * eps(max(1, accelerationMax));
+    positionAllowance     = 128 * eps(max([1, abs(positionLower(isfinite(positionLower))), abs(positionUpper(isfinite(positionUpper)))]));
     inside = true;
     for stateCell = {request.initialState, request.terminalState}
         state  = stateCell{1};
-        inside = inside && all(abs(state.velocity) <= velocityMax + 1e-9);
+        inside = inside && all(abs(state.velocity) <= velocityMax + velocityAllowance);
         if request.controlOrder == 3
-            inside = inside && all(abs(state.acceleration) <= accelerationMax + 1e-9);
+            inside = inside && all(abs(state.acceleration) <= accelerationMax + accelerationAllowance);
         end
-        if isfield(request.limits, "positionLower")
-            inside = inside && all(state.position >= request.limits.positionLower - 1e-9) ...
-                && all(state.position <= request.limits.positionUpper + 1e-9);
-        end
+        inside = inside && all(state.position >= positionLower - positionAllowance) ...
+            && all(state.position <= positionUpper + positionAllowance);
+    end
+end
+
+function [positionLower, positionUpper] = positionBox(limits, dimension)
+    % Position bounds per axis, either side optional (the engine accepts a
+    % one-sided box), missing sides read as unbounded.
+    positionLower = -Inf(1, dimension);
+    positionUpper = Inf(1, dimension);
+    if isfield(limits, "positionLower") && ~isempty(limits.positionLower)
+        positionLower = expandToAxes(limits.positionLower, dimension);
+    end
+    if isfield(limits, "positionUpper") && ~isempty(limits.positionUpper)
+        positionUpper = expandToAxes(limits.positionUpper, dimension);
     end
 end
 
@@ -1041,12 +1072,9 @@ function axisProblem = extractAxisProblem(request, axisIndex, dimension)
     end
     axisProblem.V   = velocityMax(axisIndex);
     axisProblem.A   = accelerationMax(axisIndex);
-    axisProblem.pLo = -Inf;
-    axisProblem.pHi = Inf;
-    if isfield(limits, "positionLower")
-        axisProblem.pLo = limits.positionLower(axisIndex);
-        axisProblem.pHi = limits.positionUpper(axisIndex);
-    end
+    [positionLower, positionUpper] = positionBox(limits, dimension);
+    axisProblem.pLo = positionLower(axisIndex);
+    axisProblem.pHi = positionUpper(axisIndex);
 end
 
 
@@ -1068,6 +1096,13 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
     accelerationScale = max(1, axisProblem.A);
     positionScale     = max([1, abs(axisProblem.p0), abs(axisProblem.pf), ...
         abs(axisProblem.pLo(isfinite(axisProblem.pLo))), abs(axisProblem.pHi(isfinite(axisProblem.pHi)))]);
+    % Limit excess is judged against the size of the motion, not where it
+    % sits on the axis: a box violation of 0.06 is a violation whether the
+    % box is at 0 or at 1e6.
+    travelScale = max([1, abs(axisProblem.pf - axisProblem.p0)]);
+    if isfinite(axisProblem.pLo) && isfinite(axisProblem.pHi)
+        travelScale = max(travelScale, axisProblem.pHi - axisProblem.pLo);
+    end
     excess = struct("velocity", 0, "position", 0, "acceleration", 0);
     for k = 1:segmentCount
         if controlOrder == 3
@@ -1106,7 +1141,7 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
         excess.position = Inf;
     end
     ok = terminalOk && excess.acceleration <= tolerance * accelerationScale ...
-        && excess.velocity <= tolerance * velocityScale && excess.position <= tolerance * positionScale;
+        && excess.velocity <= tolerance * velocityScale && excess.position <= tolerance * travelScale;
 end
 
 function t = realRootsInInterval(coefficients, h)
