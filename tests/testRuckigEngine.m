@@ -367,7 +367,8 @@ end
 
 function testNewFixedTimeFamiliesAreSelected(testCase)
     % Exercise one public fixed-time request for each newly ported Step-2
-    % family: ACC0_ACC1, ACC0, ACC1, NONE, and NONE_SMOOTH.
+    % family dispatched by the official get_profile: ACC0_ACC1, ACC0, ACC1,
+    % and NONE.
     fixtures = createFixedTimeFamilyFixtures();
     for fixtureIndex = 1:numel(fixtures)
         fixture = fixtures{fixtureIndex};
@@ -380,6 +381,22 @@ function testNewFixedTimeFamiliesAreSelected(testCase)
             fixture.expectedFamily), sprintf("Expected fixed-time family %s.", ...
             fixture.expectedFamily));
     end
+
+    % This fixed-time request reaches the time_none cubic with a leading
+    % coefficient below eps. The official unscaled solver returns only zero;
+    % normalizing first creates a spurious lower-jerk candidate.
+    cubicRequest = createRequest( ...
+        6.767400583811376, -1.6648711109549663, 0.5004203545232311, ...
+        6.409822215907295, -1.5536784830803447, 0.500420354621056, ...
+        10, 10, 1e-6);
+    options = struct("TimeMode", "fixed", "FinalTime", 0.22219845148039014);
+    cubicResult = ruckigEngine.solve(cubicRequest.initialState, ...
+        cubicRequest.terminalState, cubicRequest.limits, options);
+    verifyTrue(testCase, cubicResult.Success, cubicResult.Message);
+    verifyTrue(testCase, cubicResult.Validation.Passed, ...
+        cubicResult.Validation.Message);
+    verifyEqual(testCase, max(abs(cubicResult.jerk)), ...
+        cubicRequest.limits.maximumJerk);
 end
 
 function [initialState, terminalState, limits] = restToRestFixture()
@@ -436,7 +453,7 @@ end
 function fixtures = createFixedTimeFamilyFixtures()
     % Use deterministic requests whose selected diagnostic names identify the
     % exact newly ported family, rather than only reaching a nearby boundary.
-    fixtures = cell(1, 5);
+    fixtures = cell(1, 4);
     fixtures{1} = createFixedFixture(createRequest(0, 0, 0, 3.75, 0, 0, ...
         100, 1, 2), 5, "synchronizedAccelerationBounds");
     fixtures{2} = createFixedFixture(createRequest( ...
@@ -452,11 +469,6 @@ function fixtures = createFixedTimeFamilyFixtures()
     regressionRequests = createMissingFamilyRegressionFixtures();
     fixtures{4} = createFixedFixture(regressionRequests{2}, ...
         11.639036828787253, "synchronizedNoLimit");
-    fixtures{5} = createFixedFixture(createRequest( ...
-        -7.3565379950544347, 0.83121010666569217, 0.099910874201434532, ...
-        2.9034822593730993, 0.14669077674100778, 0.040334768761807749, ...
-        0.99509433858469998, 0.55947402413775393, 9.0868891010266708), ...
-        23.11605281805911, "synchronizedSmoothNoLimit");
 end
 
 function request = createRequest(initialPosition, initialVelocity, initialAcceleration, ...

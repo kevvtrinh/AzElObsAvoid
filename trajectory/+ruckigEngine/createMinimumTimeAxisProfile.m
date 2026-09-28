@@ -336,15 +336,25 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
         if time < (aMinimum - context.a0) / jMaximum || time > (aMaximum - context.a0) / jMaximum || time <= eps
             continue;
         end
-        % Repeat the refinement alternatives needed to refine the current solution.
-        for refinementIndex = 1:3
-            h1         = jMaximum * time;
-            residual   = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+        % Match the official polish: clamp the first Newton step to the current
+        % time, then take up to two ordinary steps while the error remains large.
+        h1         = jMaximum * time;
+        residual   = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+        derivative = (aMinimum - context.a0 - h1) * (h2Terminal + h1 * (4 * context.a0 - aMinimum + 2 * h1));
+        time       = time - min(residual / derivative, time);
+
+        h1       = jMaximum * time;
+        residual = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+        if abs(residual) > 1e-9
             derivative = (aMinimum - context.a0 - h1) * (h2Terminal + h1 * (4 * context.a0 - aMinimum + 2 * h1));
-            if abs(residual) <= 1e-9 || ~isfinite(derivative) || derivative == 0
-                break;
+            time       = time - residual / derivative;
+
+            h1       = jMaximum * time;
+            residual = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+            if abs(residual) > 1e-9
+                derivative = (aMinimum - context.a0 - h1) * (h2Terminal + h1 * (4 * context.a0 - aMinimum + 2 * h1));
+                time       = time - residual / derivative;
             end
-            time = time - min(residual / derivative, time);
         end
         phase = [time, 0, (context.a0 - aMinimum) / jMaximum + time, ...
             0, 0, h3Terminal - ...
