@@ -55,23 +55,26 @@ else
 end
 localTau     = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ selectedDuration_s;
 localTau     = min(1, max(0, localTau));
-position_units = evaluateRecords(polynomial.positionPower_units, segmentIndex, localTau);
+maximumCoefficientCount = size(polynomial.positionPower_units, 3);
+power = reshape(localTau .^ (0:maximumCoefficientCount - 1), ...
+    [], 1, maximumCoefficientCount);
+position_units = evaluateRecords(polynomial.positionPower_units, segmentIndex, power);
 if nargout >= 3
-    velocity_units_s = evaluateRecords(polynomial.velocityPower_units_s, segmentIndex, localTau);
+    velocity_units_s = evaluateRecords(polynomial.velocityPower_units_s, segmentIndex, power);
 end
 if nargout >= 4
-    acceleration_units_s2 = evaluateRecords(polynomial.accelerationPower_units_s2, segmentIndex, localTau);
+    acceleration_units_s2 = evaluateRecords(polynomial.accelerationPower_units_s2, segmentIndex, power);
 end
 if nargout >= 5
-    jerk_units_s3 = evaluateRecords(polynomial.jerkPower_units_s3, segmentIndex, localTau);
+    jerk_units_s3 = evaluateRecords(polynomial.jerkPower_units_s3, segmentIndex, power);
 end
 end
 
 %% Section 3: Local Functions
 
-function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
-    % Evaluate the selected polynomial segments in local time.
+function value = evaluateRecords(coefficientArray, segmentIndex, power)
+    % Reuse the shared local-time powers needed by each derivative record.
     coefficientCount = size(coefficientArray, 3);
-    power            = reshape(localTau .^ (0:coefficientCount - 1), [], 1, coefficientCount);
-    value            = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
+    value = sum(coefficientArray(segmentIndex, :, :) .* ...
+        power(:, :, 1:coefficientCount), 3);
 end

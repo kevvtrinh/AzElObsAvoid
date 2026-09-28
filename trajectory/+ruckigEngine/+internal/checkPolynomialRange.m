@@ -1,6 +1,7 @@
-function [within, minimumValue, maximumValue] = checkPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
+function [within, minimumValue, maximumValue] = checkPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance, batchColumns)
 %% Section 0: Header & Readme
 % SYNTAX: [within, minimumValue, maximumValue] = ruckigEngine.internal.checkPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
+% SYNTAX: [within, minimumValue, maximumValue] = ruckigEngine.internal.checkPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance, true)
 % PURPOSE: Independently bound a scalar polynomial on [0,1], using Bernstein
 %   hulls and two subdivisions before resolving ambiguity at stationary points.
 % INPUTS: Finite ascending coefficients, inclusive bounds (possibly infinite),
@@ -10,7 +11,13 @@ function [within, minimumValue, maximumValue] = checkPolynomialRange(powerCoeffi
 
 %% Section 1: Try Certified Bernstein Range Tests
 
-powerCoefficient     = double(powerCoefficient(:));
+powerCoefficient = double(powerCoefficient);
+if nargin >= 5 && batchColumns
+    [within, minimumValue, maximumValue] = checkPolynomialRanges( ...
+        powerCoefficient, lowerBound, upperBound, tolerance);
+    return;
+end
+powerCoefficient     = powerCoefficient(:);
 lastCoefficientIndex = find(powerCoefficient ~= 0, 1, "last");
 if isempty(lastCoefficientIndex)
     lastCoefficientIndex = 1;
@@ -53,9 +60,89 @@ end
 
 %% Section 3: Local Functions
 
+function [within, minimumValue, maximumValue] = checkPolynomialRanges(powerCoefficient, lowerBound, upperBound, tolerance)
+    % Batch segments of equal degree and preserve scalar fallback decisions.
+    polynomialCount    = size(powerCoefficient, 2);
+    maximumCoefficientCount = size(powerCoefficient, 1);
+    lastCoefficientIndex = ones(1, polynomialCount);
+    for polynomialIndex = 1:polynomialCount
+        lastNonzeroIndex = find(powerCoefficient(:, polynomialIndex) ~= 0, 1, "last");
+        if ~isempty(lastNonzeroIndex)
+            lastCoefficientIndex(polynomialIndex) = lastNonzeroIndex;
+        end
+    end
+
+    checkedLowerBound = lowerBound - tolerance;
+    checkedUpperBound = upperBound + tolerance;
+    within             = false(1, polynomialCount);
+    minimumValue        = NaN(1, polynomialCount);
+    maximumValue        = NaN(1, polynomialCount);
+    for coefficientCount = 1:maximumCoefficientCount
+        polynomialIndex = find(lastCoefficientIndex == coefficientCount);
+        if isempty(polynomialIndex)
+            continue;
+        end
+        coefficientGroup = powerCoefficient(1:coefficientCount, polynomialIndex);
+        if coefficientCount <= 2
+            endpointValue                  = [coefficientGroup(1, :); sum(coefficientGroup, 1)];
+            minimumValue(polynomialIndex)  = min(endpointValue, [], 1);
+            maximumValue(polynomialIndex)  = max(endpointValue, [], 1);
+            within(polynomialIndex) = minimumValue(polynomialIndex) >= checkedLowerBound & ...
+                maximumValue(polynomialIndex) <= checkedUpperBound;
+            continue;
+        end
+
+        bernsteinControl = convertPowerToBernstein(coefficientGroup);
+        [decision, certifiedMinimum, certifiedMaximum] = classifyBernsteinRanges( ...
+            bernsteinControl, checkedLowerBound, checkedUpperBound, 2);
+        certifiedInside = decision > 0;
+        if any(certifiedInside)
+            certifiedIndex = polynomialIndex(certifiedInside);
+            minimumValue(certifiedIndex) = certifiedMinimum(certifiedInside);
+            maximumValue(certifiedIndex) = certifiedMaximum(certifiedInside);
+            within(certifiedIndex)       = true;
+        end
+        unresolvedIndex = polynomialIndex(~certifiedInside);
+        for localIndex = 1:numel(unresolvedIndex)
+            currentIndex = unresolvedIndex(localIndex);
+            [minimumValue(currentIndex), maximumValue(currentIndex)] = ...
+                polynomialExtrema(powerCoefficient(1:coefficientCount, currentIndex));
+            within(currentIndex) = minimumValue(currentIndex) >= checkedLowerBound && ...
+                maximumValue(currentIndex) <= checkedUpperBound;
+        end
+    end
+end
+
+function [decision, certifiedMinimum, certifiedMaximum] = classifyBernsteinRanges(control, lowerBound, upperBound, remainingDepth)
+    % Classify independent Bernstein columns together through two subdivisions.
+    certifiedMinimum = min(control, [], 1);
+    certifiedMaximum = max(control, [], 1);
+    isInside          = all(control >= lowerBound & control <= upperBound, 1);
+    isOutside         = certifiedMaximum < lowerBound | certifiedMinimum > upperBound;
+    decision          = zeros(1, size(control, 2));
+    decision(isInside)  = 1;
+    decision(isOutside) = -1;
+    isUnresolved = ~isInside & ~isOutside;
+    if remainingDepth == 0 || ~any(isUnresolved)
+        return;
+    end
+
+    [leftControl, rightControl] = subdivideAtMidpoint(control(:, isUnresolved));
+    [leftDecision, leftMinimum, leftMaximum] = classifyBernsteinRanges( ...
+        leftControl, lowerBound, upperBound, remainingDepth - 1);
+    [rightDecision, rightMinimum, rightMaximum] = classifyBernsteinRanges( ...
+        rightControl, lowerBound, upperBound, remainingDepth - 1);
+    unresolvedDecision = zeros(size(leftDecision));
+    unresolvedDecision(leftDecision < 0 | rightDecision < 0) = -1;
+    unresolvedDecision(leftDecision > 0 & rightDecision > 0) = 1;
+    decision(isUnresolved)          = unresolvedDecision;
+    certifiedMinimum(isUnresolved) = min(leftMinimum, rightMinimum);
+    certifiedMaximum(isUnresolved) = max(leftMaximum, rightMaximum);
+end
+
 function bernsteinControl = convertPowerToBernstein(powerCoefficient)
     % Convert ascending powers to same-degree Bernstein controls on [0, 1].
-    degree           = numel(powerCoefficient) - 1;
+    degree           = size(powerCoefficient, 1) - 1;
     coefficientCount = degree + 1;
     persistent transformByCoefficientCount
     needsTransform = isempty(transformByCoefficientCount) || numel(transformByCoefficientCount) < coefficientCount || isempty(transformByCoefficientCount{coefficientCount});
@@ -107,17 +194,17 @@ end
 
 function [leftControl, rightControl] = subdivideAtMidpoint(control)
     % Restrict one Bernstein polynomial to its two exact half intervals.
-    controlCount = numel(control);
-    leftControl  = zeros(controlCount, 1);
-    rightControl = zeros(controlCount, 1);
+    controlCount = size(control, 1);
+    leftControl  = zeros(size(control));
+    rightControl = zeros(size(control));
     work         = control;
-    leftControl(1) = work(1);
-    rightControl(end) = work(end);
+    leftControl(1, :) = work(1, :);
+    rightControl(end, :) = work(end, :);
     % Repeat the level alternatives needed to refine the current solution.
     for levelIndex = 2:controlCount
-        work = 0.5 * (work(1:end - 1) + work(2:end));
-        leftControl(levelIndex) = work(1);
-        rightControl(end - levelIndex + 1) = work(end);
+        work = 0.5 * (work(1:end - 1, :) + work(2:end, :));
+        leftControl(levelIndex, :) = work(1, :);
+        rightControl(end - levelIndex + 1, :) = work(end, :);
     end
 end
 

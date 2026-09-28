@@ -40,6 +40,7 @@ isStationary        = abs(context.displacement) <= stationaryTolerance && max(ab
 if isStationary
     % An unchanged axis needs zero motion time and can wait for the other axes.
     candidate = createEmptyCandidate();
+    candidate.Success = true;
     candidate.Position(:) = context.p0;
     candidate.Velocity(:) = 0;
     candidate.Acceleration(:) = 0;
@@ -178,6 +179,14 @@ function context = createContext(initialState, terminalState, limits)
         "vMaximum", limits.maximumVelocity, ...
         "aMaximum", limits.maximumAcceleration, ...
         "jMaximum", limits.maximumJerk);
+    context.InitialState = struct("position", context.p0, ...
+        "velocity", context.v0, ...
+        "acceleration", context.a0);
+    context.TerminalState = struct("position", context.pf, ...
+        "velocity", context.vf, ...
+        "acceleration", context.af);
+    context.PhysicalLimits = struct("maximumVelocity", context.vMaximum, ...
+        "maximumAcceleration", context.aMaximum);
     context.displacement = context.pf - context.p0;
     context.v0Squared    = context.v0^2;
     context.vfSquared    = context.vf^2;
@@ -509,30 +518,15 @@ end
 
 function candidates = appendCandidate(candidates, context, limits, phaseDuration, family)
     % Integrate one seven-phase UDDU law and retain it only when fully valid.
-    phaseJerk    = limits.jMaximum * [1, 0, -1, 0, -1, 0, 1];
-    initialState = struct("position", context.p0, ...
-        "velocity", context.v0, ...
-        "acceleration", context.a0);
-    terminalState = struct("position", context.pf, ...
-        "velocity", context.vf, ...
-        "acceleration", context.af);
-    physicalLimits = struct("maximumVelocity", context.vMaximum, ...
-        "maximumAcceleration", context.aMaximum);
-    evaluated = ruckigEngine.evaluateAxisSwitchingProfile(initialState, terminalState, physicalLimits, phaseDuration, phaseJerk, family);
-    if ~evaluated.Success
+    phaseJerk = limits.jMaximum * [1, 0, -1, 0, -1, 0, 1];
+    candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
+        context.InitialState, context.TerminalState, context.PhysicalLimits, ...
+        phaseDuration, phaseJerk, family, false);
+    if ~candidate.Success
         return;
     end
 
-    candidate = createEmptyCandidate();
-    candidate.PhaseDuration = evaluated.PhaseDuration;
-    candidate.PhaseJerk     = evaluated.PhaseJerk;
-    candidate.Position      = evaluated.Position;
-    candidate.Velocity      = evaluated.Velocity;
-    candidate.Acceleration  = evaluated.Acceleration;
-    candidate.Family        = family;
-    candidate.PathLength    = evaluated.PathLength;
-    candidate.Duration      = sum(evaluated.PhaseDuration);
-    candidate.Direction     = sign(limits.jMaximum);
+    candidate.Direction = sign(limits.jMaximum);
     candidates(end + 1, 1) = candidate;
 end
 
@@ -675,16 +669,19 @@ end
 
 function candidate = createEmptyCandidate()
     % Initialize a switching-profile candidate.
-    candidate = struct();
-    candidate.PhaseDuration = zeros(1, 7);
-    candidate.PhaseJerk     = zeros(1, 7);
-    candidate.Position      = zeros(1, 8);
-    candidate.Velocity      = zeros(1, 8);
-    candidate.Acceleration  = zeros(1, 8);
-    candidate.Family        = "";
-    candidate.PathLength    = Inf;
-    candidate.Duration      = NaN;
-    candidate.Direction     = 0;
+    candidate = struct("Success", false, ...
+        "PhaseDuration", zeros(1, 7), ...
+        "PhaseJerk", zeros(1, 7), ...
+        "Duration", NaN, ...
+        "Position", zeros(1, 8), ...
+        "Velocity", zeros(1, 8), ...
+        "Acceleration", zeros(1, 8), ...
+        "Family", "", ...
+        "EndpointError", Inf, ...
+        "MaximumVelocity", Inf, ...
+        "MaximumAcceleration", Inf, ...
+        "PathLength", Inf, ...
+        "Direction", 0);
 end
 
 function profile = createEmptyProfile()

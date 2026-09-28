@@ -5,20 +5,18 @@ function value = safeSqrt(radicand)
 % PURPOSE
 %   - Evaluate a square root while accepting only roundoff-scale negatives.
 % INPUTS
-%   - radicand (finite numeric scalar)
-%       Value from a switching-profile equation.
+%   - radicand (finite numeric array)
+%       Values from a switching-profile equation.
 % OUTPUTS
-%   - value (numeric scalar)
-%       The nonnegative root, or NaN for a genuinely negative radicand.
+%   - value (numeric array)
+%       Nonnegative roots, with NaN for genuinely negative radicands.
 % UNITS
 %   - Units are the square root of the caller's radicand units.
 
 %% Section 1: Distinguish Roundoff From A Negative Root
 
 % The inherited factor 64 has no documented derivation.
-if radicand < -64 * eps(max(1, abs(radicand)))
-    value = NaN;
-else
-    value = sqrt(max(0, radicand));
-end
+isGenuinelyNegative       = radicand < -64 * eps(max(1, abs(radicand)));
+value                     = sqrt(max(0, radicand));
+value(isGenuinelyNegative) = NaN;
 end

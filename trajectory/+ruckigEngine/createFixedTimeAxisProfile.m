@@ -289,24 +289,28 @@ function phase = createUdduPhase(time, context, limits)
     % Complete the terminal-acceleration UDDU family from its first ramp time.
     jMaximum = limits.jMaximum;
     aMinimum = limits.aMinimum;
-    h1       = -((context.a0Squared + context.afSquared) / 2 + jMaximum * (-context.velocityDifference + 2 * context.a0 * time + jMaximum * time^2)) / aMinimum;
-    phase    = [time, 0, context.a0 / jMaximum + time, ...
+    time     = time(:);
+    h1       = -((context.a0Squared + context.afSquared) / 2 + jMaximum * (-context.velocityDifference + 2 * context.a0 * time + jMaximum * time .^ 2)) / aMinimum;
+    phase    = [time, zeros(size(time)), context.a0 / jMaximum + time, ...
         context.duration - ...
         (h1 - aMinimum + context.a0 + context.af) / jMaximum - 2 * time, ...
-        -aMinimum / jMaximum, (h1 + aMinimum) / jMaximum, ...
-        -aMinimum / jMaximum + context.af / jMaximum];
+        repmat(-aMinimum / jMaximum, size(time)), ...
+        (h1 + aMinimum) / jMaximum, ...
+        repmat(-aMinimum / jMaximum + context.af / jMaximum, size(time))];
 end
 
 function phase = createUdudPhase(time, context, limits)
     % Complete the terminal-acceleration UDUD family from its first ramp time.
     jMaximum = limits.jMaximum;
     aMaximum = limits.aMaximum;
-    h1       = ((context.a0Squared - context.afSquared) / 2 + jMaximum^2 * time^2 - jMaximum * (context.velocityDifference - 2 * context.a0 * time)) / aMaximum;
-    phase    = [time, 0, time + context.a0 / jMaximum, ...
+    time     = time(:);
+    h1       = ((context.a0Squared - context.afSquared) / 2 + jMaximum^2 * time .^ 2 - jMaximum * (context.velocityDifference - 2 * context.a0 * time)) / aMaximum;
+    phase    = [time, zeros(size(time)), time + context.a0 / jMaximum, ...
         context.duration + ...
         (h1 + context.accelerationDifference - aMaximum) / jMaximum - ...
-        2 * time, aMaximum / jMaximum, -(h1 + aMaximum) / jMaximum, ...
-        aMaximum / jMaximum - context.af / jMaximum];
+        2 * time, repmat(aMaximum / jMaximum, size(time)), ...
+        -(h1 + aMaximum) / jMaximum, ...
+        repmat(aMaximum / jMaximum - context.af / jMaximum, size(time))];
 end
 
 function candidates = appendVelocityProfiles(candidates, context, limits)
@@ -332,23 +336,25 @@ end
 function phase = createVelocityUdduPhase(time, context, limits)
     % Complete the UDDU velocity family from its first ramp time.
     jMaximum = limits.jMaximum;
-    radicand = (context.a0Squared + context.afSquared) / (2 * jMaximum^2) + (2 * context.a0 * time + jMaximum * time^2 - context.velocityDifference) / jMaximum;
+    time     = time(:);
+    radicand = (context.a0Squared + context.afSquared) / (2 * jMaximum^2) + (2 * context.a0 * time + jMaximum * time .^ 2 - context.velocityDifference) / jMaximum;
     h1       = ruckigEngine.internal.safeSqrt(radicand);
-    phase    = [time, 0, time + context.a0 / jMaximum, ...
+    phase    = [time, zeros(size(time)), time + context.a0 / jMaximum, ...
         context.duration - 2 * (time + h1) - ...
         (context.a0 + context.af) / jMaximum, ...
-        h1, 0, h1 + context.af / jMaximum];
+        h1, zeros(size(time)), h1 + context.af / jMaximum];
 end
 
 function phase = createVelocityUdudPhase(time, context, limits)
     % Complete the UDUD velocity family from its first ramp time.
     jMaximum = limits.jMaximum;
-    radicand = (context.afSquared - context.a0Squared) / (2 * jMaximum^2) - ((2 * context.a0 + jMaximum * time) * time - context.velocityDifference) / jMaximum;
+    time     = time(:);
+    radicand = (context.afSquared - context.a0Squared) / (2 * jMaximum^2) - ((2 * context.a0 + jMaximum * time) .* time - context.velocityDifference) / jMaximum;
     h1       = ruckigEngine.internal.safeSqrt(radicand);
-    phase    = [time, 0, time + context.a0 / jMaximum, ...
+    phase    = [time, zeros(size(time)), time + context.a0 / jMaximum, ...
         context.duration - 2 * (time + h1) + ...
         context.accelerationDifference / jMaximum, ...
-        h1, 0, h1 - context.af / jMaximum];
+        h1, zeros(size(time)), h1 - context.af / jMaximum];
 end
 
 function candidates = appendAccelerationProfiles(candidates, context, limits)
@@ -1113,12 +1119,9 @@ function rootsFound = findProfileRoots(phaseFunction, lower, upper, context, lim
     end
     sampleCount = 65;
     sample      = linspace(lower, upper, sampleCount);
-    residual    = NaN(size(sample));
+    residual    = positionResidual(sample, phaseFunction, context, limits, controlSigns);
     rootsFound  = zeros(1, 2 * sampleCount + 1);
     rootCount   = 0;
-    for sampleIndex = 1:sampleCount
-        residual(sampleIndex) = positionResidual(sample(sampleIndex), phaseFunction, context, limits, controlSigns);
-    end
     scale         = max(1, abs(context.displacement));
     zeroTolerance = 1e-9 * scale;
     for sampleIndex = 1:(sampleCount - 1)
@@ -1140,7 +1143,10 @@ function rootsFound = findProfileRoots(phaseFunction, lower, upper, context, lim
         rootsFound(rootCount) = sample(end);
     end
     rootsFound = rootsFound(1:rootCount);
-    rootsFound = unique(round(rootsFound, 12));
+    if rootCount > 0
+        rootsFound = round(rootsFound, 12);
+        rootsFound = rootsFound([true, diff(rootsFound) ~= 0]);
+    end
 end
 
 function values = realNonnegativeRoots(coefficients)
@@ -1381,25 +1387,24 @@ end
 function residual = positionResidual(time, phaseFunction, context, limits, controlSigns)
     % Integrate trial phases and measure the terminal position error.
     phase = phaseFunction(time, context, limits);
-    if any(~isfinite(phase)) || any(phase < -1e-9)
-        residual = NaN;
-        return;
-    end
+    invalidTrial = any(~isfinite(phase) | phase < -1e-9, 2);
     if controlSigns == "UDDU"
         jerk = limits.jMaximum * [1, 0, -1, 0, -1, 0, 1];
     else
         jerk = limits.jMaximum * [1, 0, -1, 0, 1, 0, -1];
     end
-    position     = context.p0;
-    velocity     = context.v0;
-    acceleration = context.a0;
+    trialCount   = size(phase, 1);
+    position     = repmat(context.p0, trialCount, 1);
+    velocity     = repmat(context.v0, trialCount, 1);
+    acceleration = repmat(context.a0, trialCount, 1);
     for phaseIndex = 1:7
-        duration     = phase(phaseIndex);
-        position     = position + duration * (velocity + duration * (acceleration / 2 + duration * jerk(phaseIndex) / 6));
-        velocity     = velocity + duration * (acceleration + duration * jerk(phaseIndex) / 2);
+        duration     = phase(:, phaseIndex);
+        position     = position + duration .* (velocity + duration .* (acceleration / 2 + duration * jerk(phaseIndex) / 6));
+        velocity     = velocity + duration .* (acceleration + duration * jerk(phaseIndex) / 2);
         acceleration = acceleration + duration * jerk(phaseIndex);
     end
     residual = position - context.pf;
+    residual(invalidTrial) = NaN;
 end
 
 function candidates = appendEvaluated(candidates, initialState, terminalState, limits, phaseDuration, phaseJerk, family)
@@ -1410,11 +1415,11 @@ function candidates = appendEvaluated(candidates, initialState, terminalState, l
     if any(abs(phaseJerk) > limits.maximumJerk)
         return;
     end
-    candidate = ruckigEngine.evaluateAxisSwitchingProfile(initialState, terminalState, limits, phaseDuration, phaseJerk, family);
+    candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
+        initialState, terminalState, limits, phaseDuration, phaseJerk, family, false);
     % Promote the successful candidate; otherwise continue the configured fallback or search path.
     if candidate.Success
         candidate.Message = "";
-        candidate = orderfields(candidate, createEmptyProfile());
         candidates(end + 1, 1) = candidate;
     end
 end
@@ -1429,7 +1434,6 @@ function profile = createEmptyProfile()
     % Initialize the candidate and fallback fields.
     profile = struct();
     profile.Success             = false;
-    profile.Message             = "No fixed-time axis profile was created.";
     profile.PhaseDuration       = zeros(1, 0);
     profile.PhaseJerk           = zeros(1, 0);
     profile.Duration            = NaN;
@@ -1441,4 +1445,5 @@ function profile = createEmptyProfile()
     profile.MaximumVelocity     = Inf;
     profile.MaximumAcceleration = Inf;
     profile.PathLength          = Inf;
+    profile.Message             = "No fixed-time axis profile was created.";
 end
