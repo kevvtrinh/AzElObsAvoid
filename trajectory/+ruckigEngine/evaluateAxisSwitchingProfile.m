@@ -1,8 +1,11 @@
-function candidate = evaluateAxisSwitchingProfile(initialState, terminalState, limits, phaseDuration, phaseJerk, family)
+function candidate = evaluateAxisSwitchingProfile(initialState, terminalState, limits, phaseDuration, phaseJerk, family, keepRejectedDetails)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
 %       initialState, terminalState, limits, phaseDuration, phaseJerk, family)
+%   candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
+%       initialState, terminalState, limits, phaseDuration, phaseJerk, ...
+%       family, keepRejectedDetails)
 % PURPOSE
 %   - Integrate and certify one scalar piecewise-constant-jerk profile.
 % INPUTS
@@ -18,6 +21,8 @@ function candidate = evaluateAxisSwitchingProfile(initialState, terminalState, l
 %       Constant jerk applied during each corresponding phase.
 %   - family (scalar text)
 %       Diagnostic name for the switching family.
+%   - keepRejectedDetails (logical scalar, optional; default true)
+%       False returns only Success for rejected internal candidates.
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Success and exact phase-boundary position, velocity, acceleration,
@@ -30,8 +35,11 @@ function candidate = evaluateAxisSwitchingProfile(initialState, terminalState, l
 phaseDuration = phaseDuration(:).';
 phaseJerk     = phaseJerk(:).';
 phaseCount    = numel(phaseDuration);
-candidate     = createEmptyCandidate(phaseCount, family);
+if nargin < 7
+    keepRejectedDetails = true;
+end
 if numel(phaseJerk) ~= phaseCount || any(~isfinite(phaseDuration)) || any(~isfinite(phaseJerk)) || any(phaseDuration < -1e-10)
+    candidate = createRejectedCandidate(phaseCount, family, keepRejectedDetails);
     return;
 end
 phaseDuration(abs(phaseDuration) < 1e-12) = 0;
@@ -58,17 +66,23 @@ endpointError     = max([ abs(position(end) - terminalState.position) / position
 velocityPeak      = maximumAbsoluteVelocity(phaseDuration, phaseJerk, velocity, acceleration);
 isFeasible        = endpointError <= 5e-8 && max(abs(acceleration)) <= limits.maximumAcceleration + 5e-9 * accelerationScale && velocityPeak <= limits.maximumVelocity + 5e-9 * velocityScale;
 
-candidate.Success             = isFeasible;
-candidate.PhaseDuration       = phaseDuration;
-candidate.PhaseJerk           = phaseJerk;
-candidate.Duration            = sum(phaseDuration);
-candidate.Position            = position;
-candidate.Velocity            = velocity;
-candidate.Acceleration        = acceleration;
-candidate.EndpointError       = endpointError;
-candidate.MaximumVelocity     = velocityPeak;
-candidate.MaximumAcceleration = max(abs(acceleration));
-candidate.PathLength          = continuousPathLength(phaseDuration, phaseJerk, position, velocity, acceleration);
+if ~isFeasible && ~keepRejectedDetails
+    candidate = struct("Success", false);
+    return;
+end
+
+candidate = struct("Success", isFeasible, ...
+    "PhaseDuration", phaseDuration, ...
+    "PhaseJerk", phaseJerk, ...
+    "Duration", sum(phaseDuration), ...
+    "Position", position, ...
+    "Velocity", velocity, ...
+    "Acceleration", acceleration, ...
+    "Family", string(family), ...
+    "EndpointError", endpointError, ...
+    "MaximumVelocity", velocityPeak, ...
+    "MaximumAcceleration", max(abs(acceleration)), ...
+    "PathLength", continuousPathLength(phaseDuration, phaseJerk, position, velocity, acceleration));
 end
 
 %% Section 3: Local Functions
@@ -117,15 +131,36 @@ function zeroTimes = velocityZeroTimes(velocity, acceleration, jerk, duration)
             zeroTimes = zeros(1, 0);
         else
             root      = sqrt(discriminant);
-            zeroTimes = [(-acceleration - root) / jerk, ...
-                (-acceleration + root) / jerk];
+            firstTime  = (-acceleration - root) / jerk;
+            secondTime = (-acceleration + root) / jerk;
+            if firstTime > secondTime
+                [firstTime, secondTime] = deal(secondTime, firstTime);
+            end
+            firstIsInterior  = firstTime > 1e-12 && firstTime < duration - 1e-12;
+            secondIsInterior = secondTime > 1e-12 && secondTime < duration - 1e-12;
+            if firstIsInterior && secondIsInterior && firstTime ~= secondTime
+                zeroTimes = [firstTime, secondTime];
+            elseif firstIsInterior
+                zeroTimes = firstTime;
+            elseif secondIsInterior
+                zeroTimes = secondTime;
+            else
+                zeroTimes = zeros(1, 0);
+            end
+            return;
         end
     end
-    zeroTimes = sort(unique(zeroTimes(zeroTimes > 1e-12 & zeroTimes < duration - 1e-12)));
+    zeroTimes = zeroTimes(zeroTimes > 1e-12 & zeroTimes < duration - 1e-12);
 end
 
-function candidate = createEmptyCandidate(phaseCount, family)
-    % Initialize profile fields for accepted and rejected candidates.
+function candidate = createRejectedCandidate(phaseCount, family, keepRejectedDetails)
+    % Internal searches inspect only Success when a candidate is rejected.
+    if ~keepRejectedDetails
+        candidate = struct("Success", false);
+        return;
+    end
+
+    % Keep the detailed record returned by the original public call form.
     candidate = struct("Success", false, ...
         "PhaseDuration", zeros(1, phaseCount), ...
         "PhaseJerk", zeros(1, phaseCount), ...

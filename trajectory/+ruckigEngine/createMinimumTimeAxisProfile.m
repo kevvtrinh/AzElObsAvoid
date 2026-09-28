@@ -40,6 +40,7 @@ isStationary        = abs(context.displacement) <= stationaryTolerance && max(ab
 if isStationary
     % An unchanged axis needs zero motion time and can wait for the other axes.
     candidate = createEmptyCandidate();
+    candidate.Success = true;
     candidate.Position(:) = context.p0;
     candidate.Velocity(:) = 0;
     candidate.Acceleration(:) = 0;
@@ -61,14 +62,80 @@ if isStationary
     profile.PathLength    = 0;
     return;
 end
-directions = [1, -1];
+% Port PositionThirdOrderStep1::get_profile. The public input checks reject
+% zero derivative limits, so Ruckig's time_all_single_step zero-limit branch
+% is unreachable in this engine and is deliberately not duplicated here.
+targetIsSettled = abs(context.vf) < eps && abs(context.af) < eps;
+if targetIsSettled
+    if context.displacement >= 0
+        firstDirection = 1;
+    else
+        firstDirection = -1;
+    end
+    directions = [firstDirection, -firstDirection];
+    for direction = directions
+        directedLimits = createDirectedLimits(context, direction);
+        candidates     = appendVelocityProfiles(candidates, context, directedLimits);
+        if ~isempty(candidates)
+            break;
+        end
+        candidates = appendUnconstrainedProfiles(candidates, context, directedLimits);
+        if ~isempty(candidates)
+            break;
+        end
+        candidates = appendAccelerationProfiles(candidates, context, directedLimits);
+        if ~isempty(candidates)
+            break;
+        end
+    end
+else
+    directedPositive = createDirectedLimits(context, 1);
+    directedNegative = createDirectedLimits(context, -1);
+    candidates = appendUnconstrainedProfiles(candidates, context, directedPositive);
+    candidates = appendUnconstrainedProfiles(candidates, context, directedNegative);
+    candidates = appendAccelerationProfiles(candidates, context, directedPositive);
+    candidates = appendAccelerationProfiles(candidates, context, directedNegative);
+    candidates = appendVelocityProfiles(candidates, context, directedPositive);
+    candidates = appendVelocityProfiles(candidates, context, directedNegative);
+end
 
-% Repeat the direction alternatives needed to refine the current solution.
-for direction = directions
-    directedLimits = createDirectedLimits(context, direction);
-    candidates     = appendVelocityProfiles(candidates, context, directedLimits);
-    candidates     = appendAccelerationProfiles(candidates, context, directedLimits);
-    candidates     = appendUnconstrainedProfiles(candidates, context, directedLimits);
+% The official two-step cases are true fallbacks. They are not retries for a
+% rejected full profile; they represent lower-phase-count boundary solutions.
+if isempty(candidates)
+    for direction = [1, -1]
+        candidates = appendNoneTwoStep(candidates, context, ...
+            createDirectedLimits(context, direction));
+        if ~isempty(candidates)
+            break;
+        end
+    end
+end
+if isempty(candidates)
+    for direction = [1, -1]
+        candidates = appendInitialAccelerationTwoStep(candidates, context, ...
+            createDirectedLimits(context, direction));
+        if ~isempty(candidates)
+            break;
+        end
+    end
+end
+if isempty(candidates)
+    for direction = [1, -1]
+        candidates = appendVelocityTwoStep(candidates, context, ...
+            createDirectedLimits(context, direction));
+        if ~isempty(candidates)
+            break;
+        end
+    end
+end
+if isempty(candidates)
+    for direction = [1, -1]
+        candidates = appendTerminalAccelerationVelocityTwoStep(candidates, ...
+            context, createDirectedLimits(context, direction));
+        if ~isempty(candidates)
+            break;
+        end
+    end
 end
 %% Section 2: Select The Shortest Valid Profile
 
@@ -112,6 +179,14 @@ function context = createContext(initialState, terminalState, limits)
         "vMaximum", limits.maximumVelocity, ...
         "aMaximum", limits.maximumAcceleration, ...
         "jMaximum", limits.maximumJerk);
+    context.InitialState = struct("position", context.p0, ...
+        "velocity", context.v0, ...
+        "acceleration", context.a0);
+    context.TerminalState = struct("position", context.pf, ...
+        "velocity", context.vf, ...
+        "acceleration", context.af);
+    context.PhysicalLimits = struct("maximumVelocity", context.vMaximum, ...
+        "maximumAcceleration", context.aMaximum);
     context.displacement = context.pf - context.p0;
     context.v0Squared    = context.v0^2;
     context.vfSquared    = context.vf^2;
@@ -211,7 +286,9 @@ function candidates = appendAccelerationProfiles(candidates, context, limits)
 end
 
 function candidates = appendUnconstrainedProfiles(candidates, context, limits)
-    % Try quartic families with no velocity plateau and at most one acceleration hold.
+    % Port PositionThirdOrderStep1::time_all_none_acc0_acc1.
+    % The supplied v0.19.4 source checks UDDU here; despite the source comment
+    % mentioning UDUD strategy, it contains no separate UDUD check to port.
     aMaximum = limits.aMaximum;
     aMinimum = limits.aMinimum;
     jMaximum = limits.jMaximum;
@@ -268,15 +345,25 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
         if time < (aMinimum - context.a0) / jMaximum || time > (aMaximum - context.a0) / jMaximum || time <= eps
             continue;
         end
-        % Repeat the refinement alternatives needed to refine the current solution.
-        for refinementIndex = 1:3
-            h1         = jMaximum * time;
-            residual   = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+        % Match the official polish: clamp the first Newton step to the current
+        % time, then take up to two ordinary steps while the error remains large.
+        h1         = jMaximum * time;
+        residual   = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+        derivative = (aMinimum - context.a0 - h1) * (h2Terminal + h1 * (4 * context.a0 - aMinimum + 2 * h1));
+        time       = time - min(residual / derivative, time);
+
+        h1       = jMaximum * time;
+        residual = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+        if abs(residual) > 1e-9
             derivative = (aMinimum - context.a0 - h1) * (h2Terminal + h1 * (4 * context.a0 - aMinimum + 2 * h1));
-            if abs(residual) <= 1e-9 || ~isfinite(derivative) || derivative == 0
-                break;
+            time       = time - residual / derivative;
+
+            h1       = jMaximum * time;
+            residual = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;
+            if abs(residual) > 1e-9
+                derivative = (aMinimum - context.a0 - h1) * (h2Terminal + h1 * (4 * context.a0 - aMinimum + 2 * h1));
+                time       = time - residual / derivative;
             end
-            time = time - min(residual / derivative, time);
         end
         phase = [time, 0, (context.a0 - aMinimum) / jMaximum + time, ...
             0, 0, h3Terminal - ...
@@ -286,55 +373,315 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     end
 end
 
-function candidates = appendCandidate(candidates, context, limits, phaseDuration, family)
-    % Integrate one seven-phase UDDU law and retain it only when fully valid.
-    phaseJerk    = limits.jMaximum * [1, 0, -1, 0, -1, 0, 1];
-    initialState = struct("position", context.p0, ...
-        "velocity", context.v0, ...
-        "acceleration", context.a0);
-    terminalState = struct("position", context.pf, ...
-        "velocity", context.vf, ...
-        "acceleration", context.af);
-    physicalLimits = struct("maximumVelocity", context.vMaximum, ...
-        "maximumAcceleration", context.aMaximum);
-    evaluated = ruckigEngine.evaluateAxisSwitchingProfile(initialState, terminalState, physicalLimits, phaseDuration, phaseJerk, family);
-    if ~evaluated.Success
+function candidates = appendTerminalAccelerationVelocityTwoStep(candidates, context, limits)
+    % Port PositionThirdOrderStep1::time_acc1_vel_two_step.
+    vMaximum = limits.vMaximum;
+    aMinimum = limits.aMinimum;
+    jMaximum = limits.jMaximum;
+    jSquared = jMaximum^2;
+    phase = [0, 0, context.a0 / jMaximum, 0, ...
+        -aMinimum / jMaximum, 0, -aMinimum / jMaximum + context.af / jMaximum];
+    phase(4) = -(3 * context.afFourth - 8 * aMinimum * ...
+        (context.afCubed - context.a0Cubed) - 24 * aMinimum * jMaximum * ...
+        (context.a0 * context.v0 - context.af * context.vf) + ...
+        6 * context.afSquared * (aMinimum^2 - 2 * jMaximum * context.vf) - ...
+        12 * jMaximum * (2 * aMinimum * jMaximum * context.displacement + ...
+        aMinimum^2 * (context.vf + vMaximum) + jMaximum * ...
+        (vMaximum^2 - context.vfSquared) + aMinimum * context.a0 * ...
+        (context.a0Squared - 2 * jMaximum * (context.v0 + vMaximum)) / jMaximum)) / ...
+        (24 * aMinimum * jSquared * vMaximum);
+    phase(6) = -(context.afSquared / 2 - aMinimum^2 + ...
+        jMaximum * (vMaximum - context.vf)) / (aMinimum * jMaximum);
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "terminalAccelerationVelocityTwoStep");
+end
+
+function candidates = appendInitialAccelerationTwoStep(candidates, context, limits)
+    % Port PositionThirdOrderStep1::time_acc0_two_step.
+    aMaximum = limits.aMaximum;
+    aMinimum = limits.aMinimum;
+    jMaximum = limits.jMaximum;
+    initialCount = numel(candidates);
+
+    phase = [0, (context.afSquared - context.a0Squared + ...
+        2 * jMaximum * (context.vf - context.v0)) / ...
+        (2 * context.a0 * jMaximum), ...
+        (context.a0 - context.af) / jMaximum, 0, 0, 0, 0];
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "initialAccelerationTwoStep");
+    if numel(candidates) > initialCount
         return;
     end
 
-    candidate = createEmptyCandidate();
-    candidate.PhaseDuration = evaluated.PhaseDuration;
-    candidate.PhaseJerk     = evaluated.PhaseJerk;
-    candidate.Position      = evaluated.Position;
-    candidate.Velocity      = evaluated.Velocity;
-    candidate.Acceleration  = evaluated.Acceleration;
-    candidate.Family        = family;
-    candidate.PathLength    = evaluated.PathLength;
-    candidate.Duration      = sum(evaluated.PhaseDuration);
-    candidate.Direction     = sign(limits.jMaximum);
+    phase = [(-context.a0 + aMaximum) / jMaximum, ...
+        (context.a0Squared + context.afSquared - 2 * aMaximum^2 + ...
+        2 * jMaximum * (context.vf - context.v0)) / ...
+        (2 * aMaximum * jMaximum), ...
+        (-context.af + aMaximum) / jMaximum, 0, 0, 0, 0];
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "initialAccelerationTwoStep");
+    if numel(candidates) > initialCount
+        return;
+    end
+
+    h0 = 3 * (context.afSquared - context.a0Squared + ...
+        2 * jMaximum * (context.v0 + context.vf));
+    h2 = context.a0Cubed + 2 * context.afCubed + ...
+        6 * jMaximum^2 * context.displacement + ...
+        6 * (context.af - context.a0) * jMaximum * context.vf - ...
+        3 * context.a0 * context.afSquared;
+    h1 = ruckigEngine.internal.safeSqrt(2 * (2 * h2^2 + h0 * ...
+        (context.a0Fourth - 6 * context.a0Squared * ...
+        (context.afSquared + 2 * jMaximum * context.vf) + ...
+        8 * context.a0 * (context.afCubed + 3 * jMaximum^2 * ...
+        context.displacement + 3 * context.af * jMaximum * context.vf) - ...
+        3 * (context.afFourth + 4 * context.afSquared * jMaximum * context.vf + ...
+        4 * jMaximum^2 * (context.vfSquared - context.v0Squared))))) * ...
+        sign(jMaximum);
+    phase = [(4 * context.afCubed + 2 * context.a0Cubed - ...
+        6 * context.a0 * context.afSquared + 12 * jMaximum^2 * ...
+        context.displacement + 12 * (context.af - context.a0) * ...
+        jMaximum * context.vf + h1) / (2 * jMaximum * h0), ...
+        -h1 / (jMaximum * h0), ...
+        (-4 * context.a0Cubed - 2 * context.afCubed + ...
+        6 * context.a0Squared * context.af + 12 * jMaximum^2 * ...
+        context.displacement - 12 * (context.af - context.a0) * ...
+        jMaximum * context.v0 + h1) / (2 * jMaximum * h0), 0, 0, 0, 0];
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "initialAccelerationTwoStep");
+    if numel(candidates) > initialCount
+        return;
+    end
+
+    time  = (aMaximum - aMinimum) / jMaximum;
+    phase = [(-context.a0 + aMaximum) / jMaximum, ...
+        (context.a0Squared - context.afSquared) / ...
+        (2 * aMaximum * jMaximum) + ...
+        (context.vf - context.v0 + jMaximum * time^2) / aMaximum - 2 * time, ...
+        time, 0, 0, 0, (context.af - aMinimum) / jMaximum];
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "initialAccelerationTwoStep");
+end
+
+function candidates = appendVelocityTwoStep(candidates, context, limits)
+    % Port PositionThirdOrderStep1::time_vel_two_step.
+    vMaximum = limits.vMaximum;
+    jMaximum = limits.jMaximum;
+    h1 = ruckigEngine.internal.safeSqrt(context.afSquared / ...
+        (2 * jMaximum^2) + (vMaximum - context.vf) / jMaximum);
+    initialCount = numel(candidates);
+    phase = [-context.a0 / jMaximum, 0, 0, 0, h1, 0, ...
+        h1 + context.af / jMaximum];
+    phase(4) = (context.afCubed - context.a0Cubed) / ...
+        (3 * jMaximum^2 * vMaximum) + ...
+        (context.a0 * context.v0 - context.af * context.vf + ...
+        context.afSquared * h1 / 2) / (jMaximum * vMaximum) - ...
+        (context.vf / vMaximum + 1) * h1 + context.displacement / vMaximum;
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "velocityTwoStep");
+    if numel(candidates) > initialCount
+        return;
+    end
+
+    phase = [0, 0, context.a0 / jMaximum, 0, h1, 0, ...
+        h1 + context.af / jMaximum];
+    phase(4) = (context.afCubed - context.a0Cubed) / ...
+        (3 * jMaximum^2 * vMaximum) + ...
+        (context.a0 * context.v0 - context.af * context.vf + ...
+        (context.afSquared * h1 + context.a0Cubed / jMaximum) / 2) / ...
+        (jMaximum * vMaximum) - (context.v0 / vMaximum + 1) * ...
+        context.a0 / jMaximum - (context.vf / vMaximum + 1) * h1 + ...
+        context.displacement / vMaximum;
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "velocityTwoStep");
+end
+
+function candidates = appendNoneTwoStep(candidates, context, limits)
+    % Port PositionThirdOrderStep1::time_none_two_step.
+    jMaximum = limits.jMaximum;
+    h0 = ruckigEngine.internal.safeSqrt((context.a0Squared + ...
+        context.afSquared) / 2 + jMaximum * (context.vf - context.v0)) * ...
+        sign(jMaximum);
+    initialCount = numel(candidates);
+    phase = [(h0 - context.a0) / jMaximum, 0, ...
+        (h0 - context.af) / jMaximum, 0, 0, 0, 0];
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "noneTwoStep");
+    if numel(candidates) > initialCount
+        return;
+    end
+
+    phase = [(context.af - context.a0) / jMaximum, 0, 0, 0, 0, 0, 0];
+    candidates = appendCandidate(candidates, context, limits, phase, ...
+        "noneSingleStep");
+end
+
+function candidates = appendCandidate(candidates, context, limits, phaseDuration, family)
+    % Integrate one seven-phase UDDU law and retain it only when fully valid.
+    phaseJerk = limits.jMaximum * [1, 0, -1, 0, -1, 0, 1];
+    candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
+        context.InitialState, context.TerminalState, context.PhysicalLimits, ...
+        phaseDuration, phaseJerk, family, false);
+    if ~candidate.Success
+        return;
+    end
+
+    candidate.Direction = sign(limits.jMaximum);
     candidates(end + 1, 1) = candidate;
 end
 
 function values = realQuarticRoots(coefficients)
-    % Keep nearly real roots; validate their resulting profiles.
-    allRoots           = roots(coefficients);
-    imaginaryTolerance = 1e-8 * max(1, max(abs(allRoots)));
-    isReal             = abs(imag(allRoots)) <= imaginaryTolerance;
-    values             = sort(real(allRoots(isReal))).';
+    % Port roots::solve_quart_monic from roots.hpp.
+    coefficients = coefficients / coefficients(1);
+    values = solveQuarticMonic(coefficients(2), coefficients(3), ...
+        coefficients(4), coefficients(5));
+end
+
+function values = solveQuarticMonic(a, b, c, d)
+    % Factor the quartic using Ruckig's resolvent-cubic method.
+    values = zeros(1, 0);
+    if abs(d) < eps
+        if abs(c) < eps
+            values = insertPositive(values, 0);
+            discriminant = a^2 - 4 * b;
+            if abs(discriminant) < eps
+                values = insertPositive(values, -a / 2);
+            elseif discriminant > 0
+                root   = sqrt(discriminant);
+                values = insertPositive(values, (-a - root) / 2);
+                values = insertPositive(values, (-a + root) / 2);
+            end
+            values = sort(values);
+            return;
+        end
+        if abs(a) < eps && abs(b) < eps
+            values = insertPositive(values, 0);
+            values = insertPositive(values, -realCubeRoot(c));
+            values = sort(values);
+            return;
+        end
+    end
+
+    [resolvent, count] = solveResolvent(-b, a * c - 4 * d, ...
+        -a^2 * d - c^2 + 4 * b * d);
+    y = resolvent(1);
+    if count ~= 1
+        if abs(resolvent(2)) > abs(y)
+            y = resolvent(2);
+        end
+        if abs(resolvent(3)) > abs(y)
+            y = resolvent(3);
+        end
+    end
+    discriminant = y^2 - 4 * d;
+    if abs(discriminant) < eps
+        q1 = y / 2;
+        q2 = q1;
+        discriminant = a^2 - 4 * (b - y);
+        if abs(discriminant) < eps
+            p1 = a / 2;
+            p2 = p1;
+        else
+            root = sqrt(discriminant);
+            p1   = (a + root) / 2;
+            p2   = (a - root) / 2;
+        end
+    else
+        root = sqrt(discriminant);
+        q1   = (y + root) / 2;
+        q2   = (y - root) / 2;
+        p1   = (a * q1 - c) / (q1 - q2);
+        p2   = (c - a * q2) / (q1 - q2);
+    end
+    rootTolerance = 16 * eps;
+    discriminant  = p1^2 - 4 * q1;
+    if abs(discriminant) < rootTolerance
+        values = insertPositive(values, -p1 / 2);
+    elseif discriminant > 0
+        root   = sqrt(discriminant);
+        values = insertPositive(values, (-p1 - root) / 2);
+        values = insertPositive(values, (-p1 + root) / 2);
+    end
+    discriminant = p2^2 - 4 * q2;
+    if abs(discriminant) < rootTolerance
+        values = insertPositive(values, -p2 / 2);
+    elseif discriminant > 0
+        root   = sqrt(discriminant);
+        values = insertPositive(values, (-p2 - root) / 2);
+        values = insertPositive(values, (-p2 + root) / 2);
+    end
+    values = sort(values);
+end
+
+function [solutions, count] = solveResolvent(a, b, c)
+    % Port roots::solve_resolvent, including its repeated-root convention.
+    cos120 = -0.5;
+    sin120 = 0.866025403784438646764;
+    a      = a / 3;
+    a2     = a^2;
+    q      = a2 - b / 3;
+    r      = (a * (2 * a2 - b) + c) / 2;
+    r2     = r^2;
+    q3     = q^3;
+    solutions = zeros(1, 3);
+    if r2 < q3
+        qRoot = sqrt(q);
+        angle = acos(min(max(r / (q * qRoot), -1), 1)) / 3;
+        q     = -2 * qRoot;
+        ux    = cos(angle) * q;
+        uy    = sin(angle) * q;
+        solutions = [ux - a, ux * cos120 - uy * sin120 - a, ...
+            ux * cos120 + uy * sin120 - a];
+        count = 3;
+        return;
+    end
+    valueA = -realCubeRoot(abs(r) + sqrt(r2 - q3));
+    if r < 0
+        valueA = -valueA;
+    end
+    if valueA == 0
+        valueB = 0;
+    else
+        valueB = q / valueA;
+    end
+    solutions(1) = valueA + valueB - a;
+    solutions(2) = -(valueA + valueB) / 2 - a;
+    solutions(3) = sqrt(3) * (valueA - valueB) / 2;
+    if abs(solutions(3)) < eps
+        solutions(3) = solutions(2);
+        count = 2;
+    else
+        count = 1;
+    end
+end
+
+function values = insertPositive(values, value)
+    % Match roots::PositiveSet: negative roots are not profile candidates.
+    if isreal(value) && value >= 0
+        values(end + 1) = value;
+    end
+end
+
+function value = realCubeRoot(value)
+    % Match std::cbrt for negative real inputs.
+    value = sign(value) * abs(value)^(1 / 3);
 end
 
 function candidate = createEmptyCandidate()
     % Initialize a switching-profile candidate.
-    candidate = struct();
-    candidate.PhaseDuration = zeros(1, 7);
-    candidate.PhaseJerk     = zeros(1, 7);
-    candidate.Position      = zeros(1, 8);
-    candidate.Velocity      = zeros(1, 8);
-    candidate.Acceleration  = zeros(1, 8);
-    candidate.Family        = "";
-    candidate.PathLength    = Inf;
-    candidate.Duration      = NaN;
-    candidate.Direction     = 0;
+    candidate = struct("Success", false, ...
+        "PhaseDuration", zeros(1, 7), ...
+        "PhaseJerk", zeros(1, 7), ...
+        "Duration", NaN, ...
+        "Position", zeros(1, 8), ...
+        "Velocity", zeros(1, 8), ...
+        "Acceleration", zeros(1, 8), ...
+        "Family", "", ...
+        "EndpointError", Inf, ...
+        "MaximumVelocity", Inf, ...
+        "MaximumAcceleration", Inf, ...
+        "PathLength", Inf, ...
+        "Direction", 0);
 end
 
 function profile = createEmptyProfile()

@@ -94,7 +94,9 @@ end
 %% Section 4: Local Functions
 
 function [profile, candidates] = createMinimumAxisProfile(initialState, terminalState, limits, dimensionIndex)
-    % Create all certified second-order Step-1 extremal profiles for one axis.
+    % Port PositionSecondOrderStep1::time_none and time_acc0.
+    % Its time_all_single_step branch only serves a zero velocity limit;
+    % normalizeRequest rejects non-positive limits before this function runs.
     p0                  = initialState.position(dimensionIndex);
     pf                  = terminalState.position(dimensionIndex);
     v0                  = initialState.velocity(dimensionIndex);
@@ -136,7 +138,7 @@ function [profile, candidates] = createMinimumAxisProfile(initialState, terminal
 end
 
 function profile = createFixedAxisProfile(initialState, terminalState, limits, dimensionIndex, duration)
-    % Evaluate every official second-order Step-2 family at one duration.
+    % Port PositionSecondOrderStep2::time_acc0 and time_none.
     p0                  = initialState.position(dimensionIndex);
     pf                  = terminalState.position(dimensionIndex);
     v0                  = initialState.velocity(dimensionIndex);
@@ -297,7 +299,6 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     switchTime(1) = 0;
     switchTime(end) = commonDuration;
     segmentDuration     = diff(switchTime).';
-    segmentStartTime    = initialState.time + switchTime(1:end - 1).';
     segmentCount        = numel(segmentDuration);
     controlAcceleration = zeros(segmentCount, dimensionCount);
     % Evaluate each coordinate axis and combine its limiting result.

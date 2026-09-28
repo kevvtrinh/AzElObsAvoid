@@ -53,7 +53,13 @@ function inequality = continuousBoundConstraints(polynomial, limits)
         "positionUpper", "velocityUpper", ...
         "accelerationUpper", "jerkUpper"];
     dimensionCount = size(polynomial.positionPower_units, 2);
-    inequality     = zeros(0, 1);
+    boundCount = 0;
+    for quantityIndex = 1:numel(coefficientFields)
+        boundCount = boundCount + nnz(isfinite(limits.(upperFields(quantityIndex)))) + ...
+            nnz(isfinite(limits.(lowerFields(quantityIndex))));
+    end
+    inequality      = zeros(polynomial.SegmentCount * boundCount, 1);
+    inequalityIndex = 0;
     % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
         for quantityIndex = 1:numel(coefficientFields)
@@ -62,16 +68,19 @@ function inequality = continuousBoundConstraints(polynomial, limits)
             lowerBounds      = limits.(lowerFields(quantityIndex));
             upperBound       = upperBounds(dimensionIndex);
             lowerBound       = lowerBounds(dimensionIndex);
+            powerCoefficient = reshape( ...
+                coefficientArray(:, dimensionIndex, :), polynomial.SegmentCount, []).';
+            [~, minimumValue, maximumValue] = ...
+                ruckigEngine.internal.checkPolynomialRange( ...
+                powerCoefficient, lowerBound, upperBound, 0, true);
             for segmentIndex = 1:polynomial.SegmentCount
-                powerCoefficient = reshape(coefficientArray(segmentIndex, dimensionIndex, :), [], 1);
-                [~, minimumValue, maximumValue] = ruckigEngine.internal.checkPolynomialRange(powerCoefficient, lowerBound, upperBound, 0);
                 if isfinite(upperBound)
-                    inequality(end + 1, 1) = ...
-                        maximumValue - upperBound; %#ok<AGROW>
+                    inequalityIndex = inequalityIndex + 1;
+                    inequality(inequalityIndex) = maximumValue(segmentIndex) - upperBound;
                 end
                 if isfinite(lowerBound)
-                    inequality(end + 1, 1) = ...
-                        lowerBound - minimumValue; %#ok<AGROW>
+                    inequalityIndex = inequalityIndex + 1;
+                    inequality(inequalityIndex) = lowerBound - minimumValue(segmentIndex);
                 end
             end
         end

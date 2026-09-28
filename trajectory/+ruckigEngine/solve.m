@@ -30,6 +30,9 @@ function result = solve(initialState, terminalState, limits, options, pathConstr
 %   - L. Berscheid and T. Kroeger, "Jerk-limited Real-time Trajectory
 %     Generation with Arbitrary Target States," Robotics: Science and
 %     Systems XVII, 2021. https://doi.org/10.15607/RSS.2021.XVII.015
+% LICENSE
+%   - This MATLAB port derives from Ruckig under the MIT License, copyright
+%     (c) 2021 Lars Berscheid; LICENSE-ruckig.txt carries the full notice.
 
 if nargin == 0
     result = ruckigEngine.defaultOptions();
@@ -169,12 +172,42 @@ function [value, message] = detectBoundaryKinematicInfeasibility(initialState, t
     initialAccelerationViolation  = max(limits.accelerationLower - initialState.acceleration, initialState.acceleration - limits.accelerationUpper);
     terminalAccelerationViolation = max(limits.accelerationLower - terminalState.acceleration, terminalState.acceleration - limits.accelerationUpper);
 
-    % Canceling acceleration requires a velocity change of magnitude a^2/(2*j).
-    % Reject the state if even maximum opposing jerk cannot avoid a velocity-limit violation.
-    initialStoppingVelocity     = initialState.velocity + sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
-    terminalPredecessorVelocity = terminalState.velocity - sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
-    initialStoppingViolation    = max(limits.velocityLower - initialStoppingVelocity, initialStoppingVelocity - limits.velocityUpper);
-    terminalStoppingViolation   = max(limits.velocityLower - terminalPredecessorVelocity, terminalPredecessorVelocity - limits.velocityUpper);
+    % Canceling an acceleration a at maximum opposing jerk changes velocity by
+    % a^2/(2*j) in the direction of a, and no bounded-jerk control changes it
+    % by less. While a keeps its sign, the "settled velocity" v + a*|a|/(2*j)
+    % can only move further out, never back. So if the initial settled
+    % velocity is already past a bound, the motion can never let a reach zero
+    % (velocity would be past the bound at that instant): it must keep the
+    % sign of a the whole way and end at a terminal state whose own settled
+    % velocity is at least as far out. Anything else is impossible. The same
+    % argument run backward in time uses the "prior velocity" v - a*|a|/(2*j)
+    % of the terminal state. Keeping the sign of a the whole way also means
+    % velocity moves one way the whole way, so the end velocity must lie on
+    % that side of the start velocity: with a > 0 throughout, vf > v0.
+    % Example with j = 1 and bounds +-1: starting at v = -0.95, a = +1 and
+    % ending at v = -0.7, a = +1 is a legitimate short transit (prior
+    % velocity of the end, -1.2, is below the bound, but the start's prior
+    % velocity, -1.45, is further down, a stays positive, and -0.7 > -0.95).
+    velocityLower   = limits.velocityLower;
+    velocityUpper   = limits.velocityUpper;
+    initialSettled  = initialState.velocity + sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    terminalSettled = terminalState.velocity + sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    initialPrior    = initialState.velocity - sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    terminalPrior   = terminalState.velocity - sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    % Tolerance sits on the permissive side: a change too small to call is
+    % left to the solver, so only a clearly wrong-way velocity change refuses.
+    velocityRises = terminalState.velocity > initialState.velocity - velocityTolerance;
+    velocityFalls = terminalState.velocity < initialState.velocity + velocityTolerance;
+    initialBlocked = ...
+        (initialState.acceleration > 0 & initialSettled > velocityUpper + velocityTolerance ...
+            & ~(terminalState.acceleration > 0 & velocityRises & terminalSettled >= initialSettled - velocityTolerance)) ...
+        | (initialState.acceleration < 0 & initialSettled < velocityLower - velocityTolerance ...
+            & ~(terminalState.acceleration < 0 & velocityFalls & terminalSettled <= initialSettled + velocityTolerance));
+    terminalBlocked = ...
+        (terminalState.acceleration > 0 & terminalPrior < velocityLower - velocityTolerance ...
+            & ~(initialState.acceleration > 0 & velocityRises & initialPrior <= terminalPrior + velocityTolerance)) ...
+        | (terminalState.acceleration < 0 & terminalPrior > velocityUpper + velocityTolerance ...
+            & ~(initialState.acceleration < 0 & velocityFalls & initialPrior >= terminalPrior - velocityTolerance));
 
     if limits.ControlOrder == 2
         checks = [ ...
@@ -189,15 +222,15 @@ function [value, message] = detectBoundaryKinematicInfeasibility(initialState, t
         terminalVelocityViolation > velocityTolerance; ...
         initialAccelerationViolation > accelerationTolerance; ...
         terminalAccelerationViolation > accelerationTolerance; ...
-        initialStoppingViolation > velocityTolerance; ...
-        terminalStoppingViolation > velocityTolerance];
+        initialBlocked; ...
+        terminalBlocked];
         descriptions = [ ...
             "initial velocity is outside its supplied bound", ...
             "terminal velocity is outside its supplied bound", ...
             "initial acceleration is outside its supplied bound", ...
             "terminal acceleration is outside its supplied bound", ...
             "initial acceleration cannot be canceled before velocity crosses a bound", ...
-            "terminal acceleration requires a predecessor velocity outside a bound"];
+            "terminal acceleration cannot be reached without velocity crossing a bound"];
     end
     [value, linearIndex] = max(checks(:));
     if ~value
