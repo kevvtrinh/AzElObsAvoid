@@ -33,7 +33,10 @@ function report = checkRuckigEngineRandomCases(caseCount, seed, options)
 %         way, velocity is monotone and the displacement pins the duration
 %         to a narrow window. A refused long fixed time is therefore only a
 %         defect when the same LP search used for refusals finds a motion
-%         at one of the refused durations; otherwise it is an observation.
+%         at the refused duration; otherwise it is an observation. This
+%         applies whether or not a longer duration solves, because a
+%         refusal at a duration where a motion exists means the fixed-time
+%         step lacks a profile family, not that physics blocks it.
 %       * A too-short fixed time refused with a reason other than
 %         fixedTimeBelowMinimum. Multi-axis requests can have a synchronized
 %         minimum above every single-axis minimum, and the engine then
@@ -258,9 +261,21 @@ for caseIndex = 1:caseCount
                 end
             end
             if ladderSolved
-                caseObservations(end + 1) = makeDefect(caseIndex, "blockedInterval", ...
-                    sprintf("x%g refused (%s), x%g solves", longFactor, ...
-                    longResult.TerminationReason, ladderFactor)); %#ok<AGROW>
+                % A longer duration solves, so the refused one may sit in a
+                % blocked interval. Ask the LP search whether a motion exists
+                % there anyway; if it does, the engine is missing a profile
+                % family rather than facing physics.
+                refusedDuration = longFactor * result.Duration;
+                if checkRefusals && exist("linprog", "file") == 2 ...
+                        && confirmDuration(request, refusedDuration, 100, limitTolerance)
+                    caseDefects(end + 1) = makeDefect(caseIndex, "longFixedRefusedButSolvable", ...
+                        sprintf("x%g refused (%s) but the LP search finds a motion there; x%g solves", ...
+                        longFactor, longResult.TerminationReason, ladderFactor)); %#ok<AGROW>
+                else
+                    caseObservations(end + 1) = makeDefect(caseIndex, "blockedInterval", ...
+                        sprintf("x%g refused (%s), x%g solves", longFactor, ...
+                        longResult.TerminationReason, ladderFactor)); %#ok<AGROW>
+                end
             else
                 % No longer duration solved. That is a defect only if a motion
                 % exists at one of the refused durations.

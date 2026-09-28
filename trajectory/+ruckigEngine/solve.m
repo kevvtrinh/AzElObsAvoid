@@ -178,26 +178,31 @@ function [value, message] = detectBoundaryKinematicInfeasibility(initialState, t
     % sign of a the whole way and end at a terminal state whose own settled
     % velocity is at least as far out. Anything else is impossible. The same
     % argument run backward in time uses the "prior velocity" v - a*|a|/(2*j)
-    % of the terminal state. Example with j = 1 and bounds +-1: starting at
-    % v = -0.95, a = +1 and ending at v = -0.7, a = +1 is a legitimate short
-    % transit (prior velocity of the end, -1.2, is below the bound, but the
-    % start's prior velocity, -1.45, is further down and a stays positive).
+    % of the terminal state. Keeping the sign of a the whole way also means
+    % velocity moves one way the whole way, so the end velocity must lie on
+    % that side of the start velocity: with a > 0 throughout, vf > v0.
+    % Example with j = 1 and bounds +-1: starting at v = -0.95, a = +1 and
+    % ending at v = -0.7, a = +1 is a legitimate short transit (prior
+    % velocity of the end, -1.2, is below the bound, but the start's prior
+    % velocity, -1.45, is further down, a stays positive, and -0.7 > -0.95).
     velocityLower   = limits.velocityLower;
     velocityUpper   = limits.velocityUpper;
     initialSettled  = initialState.velocity + sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
     terminalSettled = terminalState.velocity + sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
     initialPrior    = initialState.velocity - sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
     terminalPrior   = terminalState.velocity - sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    velocityRises = terminalState.velocity > initialState.velocity + velocityTolerance;
+    velocityFalls = terminalState.velocity < initialState.velocity - velocityTolerance;
     initialBlocked = ...
         (initialState.acceleration > 0 & initialSettled > velocityUpper + velocityTolerance ...
-            & ~(terminalState.acceleration > 0 & terminalSettled >= initialSettled - velocityTolerance)) ...
+            & ~(terminalState.acceleration > 0 & velocityRises & terminalSettled >= initialSettled - velocityTolerance)) ...
         | (initialState.acceleration < 0 & initialSettled < velocityLower - velocityTolerance ...
-            & ~(terminalState.acceleration < 0 & terminalSettled <= initialSettled + velocityTolerance));
+            & ~(terminalState.acceleration < 0 & velocityFalls & terminalSettled <= initialSettled + velocityTolerance));
     terminalBlocked = ...
         (terminalState.acceleration > 0 & terminalPrior < velocityLower - velocityTolerance ...
-            & ~(initialState.acceleration > 0 & initialPrior <= terminalPrior + velocityTolerance)) ...
+            & ~(initialState.acceleration > 0 & velocityRises & initialPrior <= terminalPrior + velocityTolerance)) ...
         | (terminalState.acceleration < 0 & terminalPrior > velocityUpper + velocityTolerance ...
-            & ~(initialState.acceleration < 0 & initialPrior >= terminalPrior - velocityTolerance));
+            & ~(initialState.acceleration < 0 & velocityFalls & initialPrior >= terminalPrior - velocityTolerance));
 
     if limits.ControlOrder == 2
         checks = [ ...

@@ -298,6 +298,16 @@ function testSameSignTransitNearBoundIsSolved(testCase)
     verifyFalse(testCase, refused.Success);
     verifyEqual(testCase, refused.TerminationReason, "kinematicallyInfeasibleBoundaryState");
     verifySubstring(testCase, refused.Message, "terminal acceleration cannot be reached");
+
+    % Velocity sitting on its bound with acceleration still pushing outward
+    % leaves the bound at once. The settled-velocity escape alone would let
+    % it through (the end keeps the sign and settles further out), so the
+    % rule also demands that velocity moves toward the end value.
+    onBoundStart = struct("time", 0, "position", 0, "velocity", -1, "acceleration", -0.5);
+    onBoundEnd   = struct("position", -0.3, "velocity", -0.6, "acceleration", -1, "maximumTime", 10);
+    refused = ruckigEngine.solve(onBoundStart, onBoundEnd, limits, struct("SampleTime", 0.01));
+    verifyFalse(testCase, refused.Success);
+    verifyEqual(testCase, refused.TerminationReason, "kinematicallyInfeasibleBoundaryState");
 end
 
 function [initialState, terminalState, limits] = restToRestFixture()
