@@ -191,8 +191,10 @@ function [value, message] = detectBoundaryKinematicInfeasibility(initialState, t
     terminalSettled = terminalState.velocity + sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
     initialPrior    = initialState.velocity - sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
     terminalPrior   = terminalState.velocity - sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
-    velocityRises = terminalState.velocity > initialState.velocity + velocityTolerance;
-    velocityFalls = terminalState.velocity < initialState.velocity - velocityTolerance;
+    % Tolerance sits on the permissive side: a change too small to call is
+    % left to the solver, so only a clearly wrong-way velocity change refuses.
+    velocityRises = terminalState.velocity > initialState.velocity - velocityTolerance;
+    velocityFalls = terminalState.velocity < initialState.velocity + velocityTolerance;
     initialBlocked = ...
         (initialState.acceleration > 0 & initialSettled > velocityUpper + velocityTolerance ...
             & ~(terminalState.acceleration > 0 & velocityRises & terminalSettled >= initialSettled - velocityTolerance)) ...

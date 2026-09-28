@@ -308,6 +308,17 @@ function testSameSignTransitNearBoundIsSolved(testCase)
     refused = ruckigEngine.solve(onBoundStart, onBoundEnd, limits, struct("SampleTime", 0.01));
     verifyFalse(testCase, refused.Success);
     verifyEqual(testCase, refused.TerminationReason, "kinematicallyInfeasibleBoundaryState");
+
+    % A tiny but real velocity change must not be refused by the monotone
+    % condition: the tolerance has to sit on the permissive side. Holding
+    % jerk at zero for one microsecond at a velocity bound of 1e9 is valid.
+    tinyStep    = 1e-6;
+    tinyStart   = struct("time", 0, "position", 0, "velocity", 1e9 - 0.25, "acceleration", 1);
+    tinyEnd     = struct("position", tinyStart.velocity * tinyStep + tinyStep ^ 2 / 2, ...
+        "velocity", tinyStart.velocity + tinyStep, "acceleration", 1, "maximumTime", 10);
+    tinyLimits  = struct("maximumVelocity", 1e9, "maximumAcceleration", 2, "maximumJerk", 1);
+    tinyResult  = ruckigEngine.solve(tinyStart, tinyEnd, tinyLimits, struct("SampleTime", 1e-7));
+    verifyNotEqual(testCase, tinyResult.TerminationReason, "kinematicallyInfeasibleBoundaryState");
 end
 
 function [initialState, terminalState, limits] = restToRestFixture()
