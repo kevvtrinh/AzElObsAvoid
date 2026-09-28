@@ -27,9 +27,13 @@ function report = checkRuckigEngineRandomCases(caseCount, seed, options)
 %       * Blocked intervals. With nonzero boundary velocities a fixed time
 %         longer than the earliest one can be impossible even though a
 %         still longer time works again (the reachable displacement at a
-%         given duration is an interval that moves with the duration). A
-%         refused long fixed time is only a defect when no duration on a
-%         ladder up to 20 times the earliest one solves either.
+%         given duration is an interval that moves with the duration). Some
+%         requests have no longer duration at all: when an end state's
+%         acceleration can only be reached by keeping its sign the whole
+%         way, velocity is monotone and the displacement pins the duration
+%         to a narrow window. A refused long fixed time is therefore only a
+%         defect when the same LP search used for refusals finds a motion
+%         at one of the refused durations; otherwise it is an observation.
 %       * A too-short fixed time refused with a reason other than
 %         fixedTimeBelowMinimum. Multi-axis requests can have a synchronized
 %         minimum above every single-axis minimum, and the engine then
@@ -39,23 +43,24 @@ function report = checkRuckigEngineRandomCases(caseCount, seed, options)
 %     is counted, not flagged.
 %   - Refusals are checked too (CheckRefusals). For every refused base
 %     request an independent search looks for any motion between the two
-%     states that stays inside every limit. For a fixed duration the
-%     motion is a feasibility LP over piecewise-constant control; the LP
-%     minimizes one violation slack, so the smallest violation is a
-%     continuous function of the duration. That function is sampled on a
-%     coarse log grid, its lowest dips are refined with a one-dimensional
+%     states that stays inside every limit. Fix the duration and split it
+%     into equal segments with one constant control (jerk, or acceleration
+%     for second-order requests) per segment. Every node state is then a
+%     linear function of those controls, so "is there a control that meets
+%     every limit and the end state" is a linear program (LP): a set of
+%     linear inequalities that a standard solver (linprog) answers exactly.
+%     To search over durations, a second LP asks for the smallest single
+%     amount ("slack") by which every constraint would have to be loosened
+%     for a solution to exist. Zero slack means feasible at the nodes; the
+%     slack grows continuously as the duration moves away from a feasible
+%     one. That slack is sampled on a log grid around the request's own
+%     time scale, its lowest dips are refined with a one-dimensional
 %     minimizer, and every candidate duration is then re-verified exactly.
 %     Near-bound requests often have a feasible duration window only a few
 %     percent wide, which a grid alone would miss. When a motion exists the
 %     refusal is bucketed:
-%       * falseRefusal (defect): a motion exists and both boundary states
-%         are continuable, meaning Ruckig's own input rule would accept
-%         the request (initial: v + a|a|/(2J) inside the velocity bounds;
-%         terminal: the same quantity, since the motion has to be
-%         continued forward after arrival).
-%       * refusedByContinuationRule (observation): a motion exists but a
-%         boundary state is not continuable, so the refusal follows the
-%         Ruckig convention even though a point-to-point motion exists.
+%       * falseRefusal (defect): a motion exists, so the engine's claim
+%         that the request is impossible is wrong.
 %       * boxRefusedButSolvable (observation): a boxed request the engine
 %         rejected after validation, although a motion inside the box
 %         exists. Expected, because boxes do not steer the profile.
@@ -151,13 +156,20 @@ defects      = struct("CaseIndex", {}, "Check", {}, "Detail", {});
 observations = struct("CaseIndex", {}, "Check", {}, "Detail", {});
 requests     = cell(caseCount, 1);
 
+% Build every request first so the random stream never depends on how the
+% engine answered an earlier case. The symmetry check draws its axis
+% permutations from a second stream for the same reason.
 for caseIndex = 1:caseCount
     if caseIndex <= randomCount
-        request = createRandomRequest(generator);
+        requests{caseIndex} = createRandomRequest(generator);
     else
-        request = normalizeExtraRequest(extraRequests{caseIndex - randomCount});
+        requests{caseIndex} = normalizeExtraRequest(extraRequests{caseIndex - randomCount});
     end
-    requests{caseIndex} = request;
+end
+permutationGenerator = RandStream("mt19937ar", "Seed", seed + 1);
+
+for caseIndex = 1:caseCount
+    request = requests{caseIndex};
     caseTable.Dimension(caseIndex)    = numel(request.initialState.position);
     caseTable.ControlOrder(caseIndex) = request.controlOrder;
     caseTable.Kind(caseIndex)         = request.kind;
@@ -250,15 +262,32 @@ for caseIndex = 1:caseCount
                     sprintf("x%g refused (%s), x%g solves", longFactor, ...
                     longResult.TerminationReason, ladderFactor)); %#ok<AGROW>
             else
-                caseDefects(end + 1) = makeDefect(caseIndex, "longFixedRefused", ...
-                    sprintf("x%g through x20 all refused: %s: %s", longFactor, ...
-                    longResult.TerminationReason, longResult.Message)); %#ok<AGROW>
+                % No longer duration solved. That is a defect only if a motion
+                % exists at one of the refused durations.
+                solvableFactor = NaN;
+                if checkRefusals && exist("linprog", "file") == 2
+                    for candidateFactor = [longFactor, 2, 3, 5, 10, 20]
+                        if confirmDuration(request, candidateFactor * result.Duration, 100, limitTolerance)
+                            solvableFactor = candidateFactor;
+                            break;
+                        end
+                    end
+                end
+                if isfinite(solvableFactor)
+                    caseDefects(end + 1) = makeDefect(caseIndex, "longFixedRefusedButSolvable", ...
+                        sprintf("x%g refused (%s) but the LP search finds a motion there", ...
+                        solvableFactor, longResult.TerminationReason)); %#ok<AGROW>
+                else
+                    caseObservations(end + 1) = makeDefect(caseIndex, "noLongerDurationFound", ...
+                        sprintf("x%g through x20 all refused (%s) and the LP search finds none either", ...
+                        longFactor, longResult.TerminationReason)); %#ok<AGROW>
+                end
             end
         end
 
         % Reordering the axes or mirroring every coordinate must not change
         % the earliest duration.
-        symmetryDefects = checkSymmetry(caseIndex, request, result.Duration, generator, durationTolerance);
+        symmetryDefects = checkSymmetry(caseIndex, request, result.Duration, permutationGenerator, durationTolerance);
         if isempty(symmetryDefects)
             caseTable.Symmetry(caseIndex) = "same";
         else
@@ -320,10 +349,6 @@ if checkRefusals && ~isempty(refusedIndex)
                 bucket = "boxRefusedButSolvable";
                 observations(end + 1) = makeDefect(caseIndex, bucket, ...
                     sprintf("motion inside the box exists at %.6g s", foundDuration)); %#ok<AGROW>
-            elseif ~boundaryStatesAreContinuable(request)
-                bucket = "refusedByContinuationRule";
-                observations(end + 1) = makeDefect(caseIndex, bucket, ...
-                    sprintf("%s, but a motion exists at %.6g s", reason, foundDuration)); %#ok<AGROW>
             else
                 bucket = "falseRefusal";
                 caseDefect = makeDefect(caseIndex, bucket, ...
@@ -512,18 +537,18 @@ function defects = checkReturnedMotion(caseIndex, result, request, endpointToler
 
     % Segment partition: positive durations that chain start to finish.
     if any(durations <= 0) || any(abs(startTimes(2:end) - (startTimes(1:end - 1) + durations(1:end - 1))) > durationTolerance)
-        defects(end + 1) = makeDefect(caseIndex, "segmentPartition", "segment starts do not chain by their durations"); %#ok<AGROW>
+        defects(end + 1) = makeDefect(caseIndex, "segmentPartition", "segment starts do not chain by their durations");
         return;
     end
     finalTime = startTimes(end) + durations(end);
     if abs(finalTime - request.initialState.time - result.Duration) > durationTolerance
         defects(end + 1) = makeDefect(caseIndex, "durationMismatch", ...
-            sprintf("Duration %.12g vs polynomial span %.12g", result.Duration, finalTime - request.initialState.time)); %#ok<AGROW>
+            sprintf("Duration %.12g vs polynomial span %.12g", result.Duration, finalTime - request.initialState.time));
     end
     if isfield(result.Options, "TimeMode") && string(result.Options.TimeMode) == "fixed" ...
             && abs(result.Duration - (result.Options.FinalTime - request.initialState.time)) > durationTolerance
         defects(end + 1) = makeDefect(caseIndex, "fixedTimeNotHonored", ...
-            sprintf("requested %.12g got %.12g", result.Options.FinalTime, result.Duration)); %#ok<AGROW>
+            sprintf("requested %.12g got %.12g", result.Options.FinalTime, result.Duration));
     end
 
     % Each record must be the time derivative of the one above it. The
@@ -539,7 +564,7 @@ function defects = checkReturnedMotion(caseIndex, result, request, endpointToler
         derivativeMismatch(accelerationPower, jerkPower, durations)]);
     if derivativeError > limitTolerance
         defects(end + 1) = makeDefect(caseIndex, "recordsNotDerivatives", ...
-            sprintf("largest coefficient mismatch %.3g", derivativeError)); %#ok<AGROW>
+            sprintf("largest coefficient mismatch %.3g", derivativeError));
     end
 
     % Endpoints from the record itself.
@@ -556,7 +581,7 @@ function defects = checkReturnedMotion(caseIndex, result, request, endpointToler
     end
     if endpointError > endpointTolerance
         defects(end + 1) = makeDefect(caseIndex, "endpointMismatch", ...
-            sprintf("largest endpoint error %.3g", endpointError)); %#ok<AGROW>
+            sprintf("largest endpoint error %.3g", endpointError));
     end
 
     % Continuity at every segment join. Third order: position, velocity,
@@ -572,7 +597,7 @@ function defects = checkReturnedMotion(caseIndex, result, request, endpointToler
     end
     if jumpError > endpointTolerance
         defects(end + 1) = makeDefect(caseIndex, "discontinuousAtSwitch", ...
-            sprintf("largest jump %.3g", jumpError)); %#ok<AGROW>
+            sprintf("largest jump %.3g", jumpError));
     end
 
     % Limits. Velocity is at most quadratic in tau per segment, so its
@@ -614,16 +639,16 @@ function defects = checkReturnedMotion(caseIndex, result, request, endpointToler
         end
     end
     if velocityExcess > limitTolerance
-        defects(end + 1) = makeDefect(caseIndex, "velocityLimitExceeded", sprintf("by %.3g", velocityExcess)); %#ok<AGROW>
+        defects(end + 1) = makeDefect(caseIndex, "velocityLimitExceeded", sprintf("by %.3g", velocityExcess));
     end
     if accelerationExcess > limitTolerance
-        defects(end + 1) = makeDefect(caseIndex, "accelerationLimitExceeded", sprintf("by %.3g", accelerationExcess)); %#ok<AGROW>
+        defects(end + 1) = makeDefect(caseIndex, "accelerationLimitExceeded", sprintf("by %.3g", accelerationExcess));
     end
     if jerkExcess > limitTolerance
-        defects(end + 1) = makeDefect(caseIndex, "jerkLimitExceeded", sprintf("by %.3g", jerkExcess)); %#ok<AGROW>
+        defects(end + 1) = makeDefect(caseIndex, "jerkLimitExceeded", sprintf("by %.3g", jerkExcess));
     end
     if positionExcess > limitTolerance
-        defects(end + 1) = makeDefect(caseIndex, "positionBoundExceeded", sprintf("by %.3g", positionExcess)); %#ok<AGROW>
+        defects(end + 1) = makeDefect(caseIndex, "positionBoundExceeded", sprintf("by %.3g", positionExcess));
     end
 
     % The sampled histories the engine returns must agree with the record.
@@ -637,7 +662,7 @@ function defects = checkReturnedMotion(caseIndex, result, request, endpointToler
             abs(state.velocity - result.velocity(sampleIndex, :))]);
     end
     if sampleError > endpointTolerance
-        defects(end + 1) = makeDefect(caseIndex, "historyDisagreesWithRecord", sprintf("by %.3g", sampleError)); %#ok<AGROW>
+        defects(end + 1) = makeDefect(caseIndex, "historyDisagreesWithRecord", sprintf("by %.3g", sampleError));
     end
 end
 
@@ -706,7 +731,7 @@ function defects = checkSymmetry(caseIndex, request, duration, generator, durati
     if ~permutedResult.Success || abs(permutedResult.Duration - duration) > max(durationTolerance, 1e-9 * duration)
         defects(end + 1) = makeDefect(caseIndex, "axisOrderChangesAnswer", ...
             sprintf("order [%s]: %s, duration %.12g vs %.12g", num2str(order), ...
-            permutedResult.TerminationReason, permutedResult.Duration, duration)); %#ok<AGROW>
+            permutedResult.TerminationReason, permutedResult.Duration, duration));
     end
 
     mirroredResult = ruckigEngine.solve(mirrorState(request.initialState), ...
@@ -714,7 +739,7 @@ function defects = checkSymmetry(caseIndex, request, duration, generator, durati
     if ~mirroredResult.Success || abs(mirroredResult.Duration - duration) > max(durationTolerance, 1e-9 * duration)
         defects(end + 1) = makeDefect(caseIndex, "mirroringChangesAnswer", ...
             sprintf("%s, duration %.12g vs %.12g", mirroredResult.TerminationReason, ...
-            mirroredResult.Duration, duration)); %#ok<AGROW>
+            mirroredResult.Duration, duration));
     end
 end
 
@@ -745,26 +770,6 @@ function limits = mirrorLimits(limits)
     end
 end
 
-function continuable = boundaryStatesAreContinuable(request)
-    % Ruckig's input rule: canceling a boundary acceleration at full jerk
-    % changes velocity by a|a|/(2J); the result must stay inside the bounds.
-    % Second-order requests have no acceleration state, so they always pass.
-    continuable = true;
-    if request.controlOrder ~= 3
-        return;
-    end
-    dimension    = numel(request.initialState.position);
-    velocityMax  = expandToAxes(request.limits.maximumVelocity, dimension);
-    jerkMax      = expandToAxes(request.limits.maximumJerk, dimension);
-    for stateCell = {request.initialState, request.terminalState}
-        state   = stateCell{1};
-        settled = state.velocity + state.acceleration .* abs(state.acceleration) ./ (2 * jerkMax);
-        if any(abs(settled) > velocityMax + 1e-9)
-            continuable = false;
-            return;
-        end
-    end
-end
 
 function value = expandToAxes(value, dimension)
     if isscalar(value)
@@ -783,6 +788,9 @@ function [found, foundDuration] = findMotionByLp(request, tolerance)
     found         = false;
     foundDuration = NaN;
     segmentCount  = 100;
+    if ~boundaryStatesInsideLimits(request)
+        return;
+    end
     referenceTime = requestTimeScale(request);
     logGrid       = log10(referenceTime) + linspace(-2, 1.5, 29);
     slackOnGrid   = arrayfun(@(logDuration) totalSlack(request, 10 ^ logDuration, segmentCount), logGrid);
@@ -804,6 +812,26 @@ function [found, foundDuration] = findMotionByLp(request, tolerance)
             found         = true;
             foundDuration = 10 ^ candidateLog;
             return;
+        end
+    end
+end
+
+function inside = boundaryStatesInsideLimits(request)
+    % A boundary state outside the supplied bounds rules out every motion,
+    % so the search has nothing to look for.
+    dimension       = numel(request.initialState.position);
+    velocityMax     = expandToAxes(request.limits.maximumVelocity, dimension);
+    accelerationMax = expandToAxes(request.limits.maximumAcceleration, dimension);
+    inside = true;
+    for stateCell = {request.initialState, request.terminalState}
+        state  = stateCell{1};
+        inside = inside && all(abs(state.velocity) <= velocityMax + 1e-9);
+        if request.controlOrder == 3
+            inside = inside && all(abs(state.acceleration) <= accelerationMax + 1e-9);
+        end
+        if isfield(request.limits, "positionLower")
+            inside = inside && all(state.position >= request.limits.positionLower - 1e-9) ...
+                && all(state.position <= request.limits.positionUpper + 1e-9);
         end
     end
 end
@@ -1011,13 +1039,20 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
     % Exact check of the piecewise polynomial the control defines: limits on
     % every segment (acceleration at ends, velocity at ends and its vertex,
     % position densely plus where velocity is zero) and the terminal state.
+    % Each quantity is judged against its own scale: velocity against the
+    % velocity bound, acceleration against the acceleration bound, position
+    % against the size of the positions involved. A large absolute position
+    % must not loosen the velocity or acceleration checks.
     % excess reports how far velocity and position went past their bounds,
     % so the caller can tighten the LP node bounds and try again. A missed
     % terminal state cannot be fixed that way and is reported as Inf.
     segmentCount = numel(control);
     h = duration / segmentCount;
     p = axisProblem.p0; v = axisProblem.v0; a = axisProblem.a0;
-    scale  = max([1, abs(axisProblem.pf), abs(axisProblem.vf), axisProblem.V, axisProblem.A]);
+    velocityScale     = max(1, axisProblem.V);
+    accelerationScale = max(1, axisProblem.A);
+    positionScale     = max([1, abs(axisProblem.p0), abs(axisProblem.pf), ...
+        abs(axisProblem.pLo(isfinite(axisProblem.pLo))), abs(axisProblem.pHi(isfinite(axisProblem.pHi)))]);
     excess = struct("velocity", 0, "position", 0, "acceleration", 0);
     for k = 1:segmentCount
         if controlOrder == 3
@@ -1027,8 +1062,8 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
             a = control(k);
         end
         % Local polynomials in t on [0, h], ascending powers.
-        positionCoefficients     = [p, v, a / 2, j / 6];
-        velocityCoefficients     = [v, a, j / 2];
+        positionCoefficients = [p, v, a / 2, j / 6];
+        velocityCoefficients = [v, a, j / 2];
         endAcceleration = a + j * h;
         excess.acceleration = max(excess.acceleration, max(abs([a, endAcceleration])) - axisProblem.A);
         velocityTimes = [0, h];
@@ -1047,16 +1082,16 @@ function [ok, excess] = verifyAxisMotion(axisProblem, controlOrder, control, dur
         v = polyvalAscending(velocityCoefficients, h);
         a = endAcceleration;
     end
-    terminalError = max([abs(p - axisProblem.pf), abs(v - axisProblem.vf)]);
+    terminalOk = abs(p - axisProblem.pf) <= 1e-6 * positionScale && abs(v - axisProblem.vf) <= 1e-6 * velocityScale;
     if controlOrder == 3
-        terminalError = max(terminalError, abs(a - axisProblem.af));
+        terminalOk = terminalOk && abs(a - axisProblem.af) <= 1e-6 * accelerationScale;
     end
-    if terminalError > 1e-6 * scale
+    if ~terminalOk
         excess.velocity = Inf;
         excess.position = Inf;
     end
-    ok = terminalError <= 1e-6 * scale && excess.acceleration <= tolerance * scale ...
-        && excess.velocity <= tolerance * scale && excess.position <= tolerance * scale;
+    ok = terminalOk && excess.acceleration <= tolerance * accelerationScale ...
+        && excess.velocity <= tolerance * velocityScale && excess.position <= tolerance * positionScale;
 end
 
 function t = realRootsInInterval(coefficients, h)
