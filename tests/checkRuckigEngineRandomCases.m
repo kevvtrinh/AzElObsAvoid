@@ -360,11 +360,14 @@ if ~isempty(solved)
         nnz(solved.LongFixed == "goalReached"), height(solved), ...
         nnz(solved.Symmetry == "same"), height(solved));
 end
-if ~isempty(refusalTable)
+if ~isempty(refusalTable) && checkRefusals
+    [bucketNames, ~, bucketIndex] = unique(refusalTable.Bucket);
+    bucketCounts = accumarray(bucketIndex, 1);
     fprintf("Refusals challenged by LP search: %d, motion found for %d (%s)\n", ...
         height(refusalTable), nnz(refusalTable.MotionFound), ...
-        strjoin(compose("%s %d", unique(refusalTable.Bucket), ...
-        accumarray(findgroups(refusalTable.Bucket), 1)).', ", "));
+        strjoin(bucketNames(:).' + " " + string(bucketCounts(:).'), ", "));
+elseif ~isempty(refusalTable)
+    fprintf("Refusals: %d (not challenged; CheckRefusals is false)\n", height(refusalTable));
 end
 if ~isempty(observations)
     [observationNames, ~, observationIndex] = unique(string({observations.Check}));
