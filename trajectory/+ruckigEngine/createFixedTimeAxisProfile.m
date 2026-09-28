@@ -1268,7 +1268,12 @@ function rootsFound = findProfileRoots(phaseFunction, lower, upper, context, lim
 end
 
 function values = realNonnegativeRoots(coefficients)
-    % Port roots::solve_cubic and roots::solve_quart_monic from roots.hpp.
+    % Use Ruckig's roots.hpp solvers for every shared cubic and quartic family,
+    % including families that existed before the full Step-2 port. The official
+    % equations call these solvers directly, so their nonnegative-root and
+    % degenerate-polynomial rules must determine the same physical candidates.
+    % Other degrees still use roots, but only machine-roundoff imaginary parts
+    % are real: 1e-8 times the root scale could admit a truly complex root.
     lastIndex = find(coefficients ~= 0, 1, "last");
     if isempty(lastIndex) || lastIndex == 1
         values = zeros(1, 0);
@@ -1523,6 +1528,12 @@ end
 
 function candidates = appendEvaluated(candidates, initialState, terminalState, limits, phaseDuration, phaseJerk, family)
     % Accept a profile only after integration and continuous checks pass.
+    % Ruckig's check_with_timing overload rejects a solved jerk magnitude above
+    % jMax. Fixed-time families that solve for jerk need the same check before
+    % they can enter the certified candidate set.
+    if any(abs(phaseJerk) > limits.maximumJerk)
+        return;
+    end
     candidate = ruckigEngine.evaluateAxisSwitchingProfile(initialState, terminalState, limits, phaseDuration, phaseJerk, family);
     % Promote the successful candidate; otherwise continue the configured fallback or search path.
     if candidate.Success
