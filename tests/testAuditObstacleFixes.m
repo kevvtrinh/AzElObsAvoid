@@ -69,8 +69,8 @@ function testThinWallCrossingIsNotPromotedBySampling(testCase)
     result   = planner(obstacle, initial, goal, testCase.TestData.Limits, struct('GoalTimeMode', 'earliestArrival'));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.VisibilityGraph.SearchKind, "initialSpatialSnapshot");
-    verifyGreaterThan(testCase, result.SolverDiagnostics.TaggedPairCount, 0);
+    verifyEqual(testCase, result.Diagnostics.VisibilityGraph.SearchKind, "initialSpatialSnapshot");
+    verifyGreaterThan(testCase, result.Diagnostics.SolverDiagnostics.TaggedPairCount, 0);
 end
 
 function testGalleryPlotsPartiallyPreparedFailureResult(testCase)
@@ -85,7 +85,7 @@ function testGalleryPlotsPartiallyPreparedFailureResult(testCase)
     result  = planner(obstacle, initial, goal, testCase.TestData.Limits, struct('GoalTimeMode', 'fixedArrival'));
     verifyFalse(testCase, result.Success);
     verifyEqual(testCase, result.TerminationReason, "unsupportedObstacleInterpolation");
-    verifyFalse(testCase, all(result.PreparedObstacles.InternalPreparation.SamplePrepared));
+    verifyFalse(testCase, all(result.Diagnostics.PreparedObstacles.InternalPreparation.SamplePrepared));
 
     figureHandles = obstacleAvoidance.plotting.plotTrajectoryGallery({result}, "unsupported", 'off');
     cleanup = onCleanup(@() close(figureHandles(isvalid(figureHandles))));

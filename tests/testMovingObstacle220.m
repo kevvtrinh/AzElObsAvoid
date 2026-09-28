@@ -17,17 +17,17 @@ function testMovingObstacle220Quality(testCase)
     result = exampleMovingObstacle220(struct('PlotOutputs',false,'Verbose',false));
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.TrajectoryDuration_s,230,'AbsTol',1e-10);
+    verifyEqual(testCase,result.Diagnostics.TrajectoryDuration_s,230,'AbsTol',1e-10);
     referenceLength_units=121.503236303671;
     verifyLessThanOrEqual(testCase,abs( ...
         result.MotionLength_units/referenceLength_units-1),0.01);
-    verifyGreaterThan(testCase,result.SeparationProof.MinimumSignedGap_units,0);
-    verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyGreaterThan(testCase,result.SeparationProof.CachedGeometryPairCount,0);
-    verifyGreaterThan(testCase,result.SolverDiagnostics.FullPlaneUpdateSkippedCount,0);
+    verifyGreaterThan(testCase,result.Diagnostics.SeparationProof.MinimumSignedGap_units,0);
+    verifyTrue(testCase,result.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyGreaterThan(testCase,result.Diagnostics.SeparationProof.CachedGeometryPairCount,0);
+    verifyGreaterThan(testCase,result.Diagnostics.SolverDiagnostics.FullPlaneUpdateSkippedCount,0);
     verifyGreaterThan(testCase, ...
-        result.SolverDiagnostics.ConstraintRowPairVerificationCount,0);
+        result.Diagnostics.SolverDiagnostics.ConstraintRowPairVerificationCount,0);
     verifyEqual(testCase, ...
-        result.SolverDiagnostics.ExistingPlanePairVerificationCount,0);
-    verifyTrue(testCase,result.SolverDiagnostics.ConstraintGenerationComplete);
+        result.Diagnostics.SolverDiagnostics.ExistingPlanePairVerificationCount,0);
+    verifyTrue(testCase,result.Diagnostics.SolverDiagnostics.ConstraintGenerationComplete);
 end

@@ -7,28 +7,30 @@ function [plane, exitFlag, solverOutput] = solveMaximumMarginLine(controlPoint_u
 %       roundoffReserve_units, solverOptions)
 %**************************************************************************
 % PURPOSE
-%   - Find a line that changes linearly over one Bezier segment and separates
-%     the curve from a static convex obstacle. Check the whole segment.
+%   - Ask the conic solver for a line between one Bezier segment and one
+%     static convex obstacle. Its normal and offset may change linearly
+%     during the segment. Verify the returned line over the whole segment.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (N-by-2 numeric array)
-%       Bezier control points for one trajectory segment.
+%       Bezier controls for one motion segment, in [x, y] rows.
 %   - vertices_units (M-by-2 numeric array)
-%       Vertices of one static convex obstacle region.
+%       Vertices of one prepared static convex obstacle polygon.
 %   - separationTarget_units (nonnegative numeric scalar)
-%       Required obstacle-side separation target.
+%       Minimum required obstacle-side value at the line.
 %   - roundoffReserve_units (nonnegative numeric scalar)
-%       Numerical reserve applied on the trajectory side.
+%       Extra curve-side margin checked after the solve for rounding.
 %   - solverOptions (optim.options.Coneprog scalar)
 %       Options for the conic solver.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
-%       Candidate line. Verified is true only if all separation checks pass.
+%       Active is true for a finite solver proposal. Verified is true only
+%       if the separate line check proves the required separation.
 %   - exitFlag (numeric scalar)
-%       Conic solver termination flag.
+%       Conic solver status; it does not by itself prove clearance.
 %   - solverOutput (scalar struct)
-%       Conic solver diagnostics including measured total time.
+%       Conic solver diagnostics with TotalTime_s measured around the call.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, margin, target, and reserve are coordinate units;
@@ -37,9 +39,10 @@ function [plane, exitFlag, solverOutput] = solveMaximumMarginLine(controlPoint_u
 
 %% Section 1: Constrain The Obstacle And Curve To Opposite Sides
 
-% Seven unknowns: two endpoint normals (four values), two endpoint offsets,
-% and an upper bound on the curve-side value. Minimize that upper bound
-% while each obstacle vertex stays at or above the separation target.
+% Seven solver unknowns: [nx, ny] at both ends, an offset at both ends,
+% and one upper bound on the curve-side value. Keep every obstacle vertex
+% at or above the target and minimize the curve-side upper bound. A lower
+% curve-side bound leaves more room between the obstacle and curve.
 
 degree                = size(controlPoint_units, 1) - 1;
 decisionVariableCount = 7;
@@ -49,8 +52,9 @@ inequalityMatrix      = zeros(2 * size(vertices_units, 1) + degree + 2, decision
 inequalityBounds      = zeros(size(inequalityMatrix, 1), 1);
 filledRowCount        = 0;
 
-% The obstacle is static and the line changes linearly. Checking each vertex
-% with the start/end lines also bounds its line value between those times.
+% For a fixed obstacle vertex, a line that changes linearly gives a
+% line-side value that changes linearly too. If both endpoint values meet
+% the obstacle target, every time between them meets it.
 for endpointIndex = 0:1
     selectedRowIndices = filledRowCount + (1:size(vertices_units, 1));
     inequalityMatrix(selectedRowIndices, endpointIndex * 2 + (1:2)) = -vertices_units;
@@ -59,8 +63,9 @@ for endpointIndex = 0:1
     filledRowCount = selectedRowIndices(end);
 end
 
-% Multiplying the degree-D curve by a degree-1 line normal gives degree D + 1.
-% Bounding all D + 2 product coefficients bounds the whole curve-side value.
+% A degree-D position curve times a linear normal has degree D+1, with
+% D+2 Bezier coefficients. Bound each coefficient, including the offset;
+% then every point between the curve endpoints obeys the same bound.
 endNormalWeights   = (0:degree + 1).' / (degree + 1);
 startNormalWeights = 1 - endNormalWeights;
 
@@ -76,8 +81,9 @@ inequalityMatrix(selectedRowIndices, maximumCurveSideIndex) = -1;
 objectiveWeights = zeros(decisionVariableCount, 1);
 objectiveWeights(maximumCurveSideIndex) = 1;
 
-% Limit both normal lengths to 1 so rescaling a line cannot create an
-% artificially larger gap. Interpolated normal lengths are then <= 1 too.
+% Limit each endpoint normal to length 1. Otherwise multiplying every
+% normal and offset by a large number could inflate the apparent gap.
+% Linear interpolation keeps intermediate normal lengths at most 1 too.
 emptyCone = secondordercone(zeros(2, decisionVariableCount), zeros(2, 1), ...
     zeros(decisionVariableCount, 1), -1);
 normalLengthCones = repmat(emptyCone, 2, 1);
@@ -90,8 +96,8 @@ end
 
 %% Section 2: Solve And Verify The Returned Line
 
-% A finite solver proposal still needs the continuous separation check.
-% Its exit flag alone does not establish a safe gap.
+% A finite proposal is only a candidate. The check below separately
+% bounds the complete curve and obstacle; solver status alone is not proof.
 solveTimer = tic;
 [solverValues, ~, exitFlag, solverOutput] = coneprog( ...
     objectiveWeights, normalLengthCones, inequalityMatrix, inequalityBounds, ...

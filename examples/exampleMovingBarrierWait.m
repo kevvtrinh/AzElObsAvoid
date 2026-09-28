@@ -82,7 +82,7 @@ clear warningCleanup
 % barrier too early even if its geometric path looks correct.
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 hasStationarySpan = result.Success && ...
-    any(all(result.Polynomial.positionPower_units(:, :, 2:end) == 0, [2, 3]));
+    any(all(result.Diagnostics.Polynomial.positionPower_units(:, :, 2:end) == 0, [2, 3]));
 exampleValidation.HasStationarySpan = hasStationarySpan;
 exampleValidation.Passed            = exampleValidation.Passed && hasStationarySpan;
 if ~hasStationarySpan

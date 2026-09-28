@@ -1,7 +1,7 @@
-function solverRequest = createSolveRequest(startingPath, planningEnvironment, motionRequest)
+function solverRequest = prepareRequest(startingPath, planningEnvironment, motionRequest)
 %% Section 0: Header & Readme
 % SYNTAX
-%   solverRequest = bmtpEngine.pipeline.createSolveRequest(startingPath, planningEnvironment, motionRequest)
+%   solverRequest = bmtpEngine.prepareRequest(startingPath, planningEnvironment, motionRequest)
 %**************************************************************************
 % PURPOSE
 %   - Check the starting route, obstacle regions, and requested motion.
@@ -243,6 +243,14 @@ function validateEngineInputs(startingPath, regions_units, coverage, initialStat
         if ~endRegionsAreValid
             error("bmtpEngine:InvalidCoverage", ...
                 "EndRegions_units must contain one finite polygon per region.");
+        end
+        if ~isfield(coverage, 'ActiveTimeInterval_s')
+            for regionIndex = 1:numel(regions_units)
+                if ~isequal(coverage.EndRegions_units{regionIndex}, regions_units{regionIndex})
+                    error("bmtpEngine:InvalidCoverage", ...
+                        "EndRegions_units that differ from Regions_units require ActiveTimeInterval_s.");
+                end
+            end
         end
     end
 

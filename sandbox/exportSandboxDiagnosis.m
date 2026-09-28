@@ -83,8 +83,11 @@ end
 result    = modeState.LastPlannerResult;
 hasPlannerResult = isstruct(result) && isscalar(result) && ~isempty(fieldnames(result));
 solverDiagnostics = struct();
-if hasPlannerResult && (~isfield(result, "Inputs") || ~isfield(result, "Options"))
-    error("exportSandboxDiagnosis:InvalidResult", "The retained planner result must contain Inputs and Options.");
+if hasPlannerResult && (~isfield(result, "Inputs") || ~isfield(result, "Options") || ...
+        ~isfield(result, "Diagnostics") || ~isstruct(result.Diagnostics) || ...
+        ~isscalar(result.Diagnostics))
+    error("exportSandboxDiagnosis:InvalidResult", ...
+        "The retained planner result must contain Inputs, Options, and Diagnostics.");
 end
 if hasPlannerResult
     % A completed plan contains the exact normalized inputs and resolved
@@ -96,12 +99,12 @@ if hasPlannerResult
         plannerInputs = modeState.LastPlannerRequest.PlannerInputs;
         plannerOptions = modeState.LastPlannerRequest.PlannerOptions;
     else
-        if isfield(result, "SuppliedGoalState"), plannerInputs.goalState = result.SuppliedGoalState; end
-        if isfield(result, "SuppliedLimits"), plannerInputs.limits = result.SuppliedLimits; end
+        if isfield(result.Diagnostics, "SuppliedGoalState"), plannerInputs.goalState = result.Diagnostics.SuppliedGoalState; end
+        if isfield(result.Diagnostics, "SuppliedLimits"), plannerInputs.limits = result.Diagnostics.SuppliedLimits; end
     end
     independentValidation = modeState.LastValidation;
-    if isfield(result,"SolverDiagnostics")
-        solverDiagnostics = result.SolverDiagnostics;
+    if isfield(result.Diagnostics, "SolverDiagnostics")
+        solverDiagnostics = result.Diagnostics.SolverDiagnostics;
     end
     plannerSuccess        = logical(result.Success);
     terminationReason     = string(result.TerminationReason);

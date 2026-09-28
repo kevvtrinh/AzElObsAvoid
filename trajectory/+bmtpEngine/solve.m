@@ -45,7 +45,7 @@ function [motionCandidate, solverDiagnostics, directMotion] = solve( ...
 totalTimer = tic;
 
 % Check the request and collect shared solver settings.
-solverRequest = bmtpEngine.pipeline.createSolveRequest(startingPath, planningEnvironment, motionRequest);
+solverRequest = bmtpEngine.prepareRequest(startingPath, planningEnvironment, motionRequest);
 
 initialState  = solverRequest.InitialState;
 goalState     = solverRequest.GoalState;
@@ -56,7 +56,7 @@ options       = solverRequest.Options;
 
 % Convert the route into an initial Bezier curve for the optimizer.
 % Its control points define the curve; the completed motion is checked later.
-startingCurve = bmtpEngine.pipeline.createWarmStart(solverRequest);
+startingCurve = bmtpEngine.createStartingCurve(solverRequest);
 
 curveDegree           = solverRequest.Degree;
 route_units           = startingCurve.Route_units;
@@ -95,13 +95,10 @@ motionValidationCache = [];
 if size(route_units, 1) == 2 && options.GoalTimeMode == "earliestArrival" && solverRequest.IsRest
     [controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units] = bmtpEngine.motion.createC3Chord( ...
         initialState.position_units, goalState.position_units, limits);
-    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
-        solverRequest, controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units);
-    if preparedMotion.Success
-        [motionValidation, motionValidationCache] = bmtpEngine.validation.checkFinalMotion(solverRequest, ...
-            preparedMotion, roundoffReserve_units, ...
-            requiredSeparation_units, motionValidationCache, true);
-    end
+    [preparedMotion, motionValidation, motionValidationCache] = bmtpEngine.evaluateCandidate( ...
+        solverRequest, controlPoint_units, segmentTime_s, roundoffReserve_units, ...
+        requiredSeparation_units, suppliedPowerCoefficients_units, ...
+        "firstUnverified", motionValidationCache);
 elseif options.GoalTimeMode == "fixedArrival"
     % Moving obstacles may leave the direct path clear at the required
     % times even when a snapshot suggests a detour. Reuse a previous direct
@@ -138,7 +135,8 @@ end
 canTryWaitingBeforeDeparture = size(route_units, 1) == 2 && ...
     options.GoalTimeMode == "earliestArrival" && solverRequest.IsRest && ...
     ~solverRequest.UsesTimeScopedSolver && isfield(coverage, 'ActiveTimeInterval_s');
-if canTryWaitingBeforeDeparture && ~(preparedMotion.Success && motionValidation.Passed)
+if canTryWaitingBeforeDeparture && ...
+        ~(preparedMotion.Success && motionValidation.Passed && preparedMotion.FitsRequestHorizon)
     [controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units, departureTiming] = ...
         bmtpEngine.motion.createDelayedChord(solverRequest);
     solverDiagnostics.DepartureSchedule = departureTiming;
@@ -152,20 +150,26 @@ if canTryWaitingBeforeDeparture && ~(preparedMotion.Success && motionValidation.
             'AlternativeGuideEligible', true));
         return;
     end
-    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
-        solverRequest, controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units);
-    if ~preparedMotion.Success
+    [preparedMotion, motionValidation, motionValidationCache] = bmtpEngine.evaluateCandidate( ...
+        solverRequest, controlPoint_units, segmentTime_s, roundoffReserve_units, ...
+        requiredSeparation_units, suppliedPowerCoefficients_units, ...
+        "completeOnce", motionValidationCache);
+    if ~preparedMotion.Success || ~preparedMotion.FitsRequestHorizon
+        failureMessage = preparedMotion.Message;
+        failureReason  = preparedMotion.TerminationReason;
+        if preparedMotion.Success
+            failureMessage = "The proven motion exceeds the goal horizon.";
+            failureReason  = "timeWindowInfeasible";
+        end
         [motionCandidate, solverDiagnostics] = finishFailure(motionCandidate, solverDiagnostics, totalTimer, struct( ...
-            'Message',                  preparedMotion.Message, ...
-            'TerminationReason',        preparedMotion.TerminationReason, ...
+            'Message',                  failureMessage, ...
+            'TerminationReason',        failureReason, ...
             'OptimizerFeasible',        false, ...
             'FailureStage',             "reconstruction", ...
-            'FailureKind',              string(preparedMotion.TerminationReason), ...
+            'FailureKind',              string(failureReason), ...
             'AlternativeGuideEligible', false));
         return;
     end
-    [motionValidation, motionValidationCache] = bmtpEngine.validation.checkFinalMotion( ...
-        solverRequest, preparedMotion, roundoffReserve_units, requiredSeparation_units, motionValidationCache);
     if ~motionValidation.Passed
         % Another route may help if obstacle separation is the only failed
         % check. Failures in the motion itself must stop this attempt.
@@ -197,7 +201,7 @@ if canTryWaitingBeforeDeparture && ~(preparedMotion.Success && motionValidation.
 end
 
 %% Section 4: Optimize The Route If Direct Motion Did Not Pass
-if preparedMotion.Success && motionValidation.Passed
+if preparedMotion.Success && motionValidation.Passed && preparedMotion.FitsRequestHorizon
     solverDiagnostics.Converged          = true;
     solverDiagnostics.OptimizerSpanCount = 0;
     solverDiagnostics.SegmentCount       = numel(preparedMotion.SegmentTime_s);
@@ -219,10 +223,10 @@ else
             if optimizationResult.Success
                 % Try to shorten the control-point polygon while keeping
                 % the selected arrival time.
-                [refinedTimedResult, solverDiagnostics] = bmtpEngine.pipeline.refineTimedTravel( ...
-                    solverRequest, optimizationResult, solverDiagnostics, ...
+                [optimizationResult, solverDiagnostics] = bmtpEngine.optimization.refineTravel( ...
+                    solverRequest, optimizationResult, optimizationResult.PreparedMotion, ...
+                    optimizationResult.Proof, solverDiagnostics, ...
                     requiredSeparation_units, roundoffReserve_units);
-                optimizationResult = refinedTimedResult;
             end
         else
             [optimizationResult, solverDiagnostics] = bmtpEngine.optimization.solveAlternatingTrajectory( ...
@@ -234,12 +238,9 @@ else
         % Record the failure type so the planner can decide whether another
         % route or arrival time is allowed.
         motionCandidate.OptimizerIterateUnavailable = true;
-        failureStage = string(readFailureField( ...
-            optimizationResult, "FailureStage", "optimization"));
-        failureKind = string(readFailureField( ...
-            optimizationResult, "FailureKind", "optimizerIterateUnavailable"));
-        canTryAnotherPlanningAttempt = logical(readFailureField( ...
-            optimizationResult, "AlternativeGuideEligible", false));
+        failureStage = string(optimizationResult.FailureStage);
+        failureKind = string(optimizationResult.FailureKind);
+        canTryAnotherPlanningAttempt = logical(optimizationResult.AlternativeGuideEligible);
         [motionCandidate, solverDiagnostics] = finishFailure(motionCandidate, solverDiagnostics, totalTimer, struct( ...
             'Message',                  "No optimized collision-free iterate was found. " + ...
                 optimizationResult.SolverMessage, ...
@@ -250,25 +251,18 @@ else
             'AlternativeGuideEligible', canTryAnotherPlanningAttempt));
         return;
     end
-    if isfield(optimizationResult, 'PreparedMotion') && optimizationResult.PreparedMotion.Success && ...
-            isfield(optimizationResult, 'Proof') && optimizationResult.Proof.Passed
-        % Reuse these checks with the exact prepared motion they checked.
-        preparedMotion   = optimizationResult.PreparedMotion;
-        motionValidation = optimizationResult.Proof;
-    else
-        % Recheck after preparing the final curve: setting endpoint values
-        % and converting coefficients can change velocity, acceleration, or jerk.
-        preparedMotion = bmtpEngine.pipeline.prepareFinalMotion( ...
-            solverRequest, optimizationResult.ControlPoint_units, optimizationResult.SegmentTime_s);
-        motionValidation      = struct('Passed', false);
-        motionValidationCache = [];
-    end
+    % Every optimizer returns the prepared motion and proof for its selected
+    % controls and clock. Rebuilding here could change the motion after it
+    % was selected and make the saved proof describe different data.
+    preparedMotion           = optimizationResult.PreparedMotion;
+    motionValidation         = optimizationResult.Proof;
 end
 
 %% Section 5: Check The Complete Prepared Motion
 solverDiagnostics.DilationScale = preparedMotion.DilationScale;
-% Stop if preparation rejected the motion, for example because it exceeds
-% the available time or needs too large a change at its curve joins.
+% A selected motion carries its full check. Apply the request horizon here,
+% after static arrival shortening, before returning the motion to the planner.
+% Other motion paths keep their existing time-window failure reasons.
 if ~preparedMotion.Success
     [motionCandidate, solverDiagnostics] = finishFailure(motionCandidate, solverDiagnostics, totalTimer, struct( ...
         'Message',                  preparedMotion.Message, ...
@@ -279,13 +273,33 @@ if ~preparedMotion.Success
         'AlternativeGuideEligible', false));
     return;
 end
-
-% Check the entire curve against each obstacle region that applies.
-% Clear sampled points alone do not establish safety between those points.
-if ~motionValidation.Passed
-    [preparedMotion, motionValidation] = bmtpEngine.pipeline.refineMotionSeparation( ...
-        solverRequest, preparedMotion, roundoffReserve_units, requiredSeparation_units, motionValidationCache);
+if ~preparedMotion.FitsRequestHorizon
+    failureStage = "reconstruction";
+    if options.GoalTimeMode == "fixedArrival"
+        failureMessage = "The proven minimum exceeds the fixed arrival.";
+        failureReason  = "fixedArrivalInfeasible";
+    elseif ~isfield(coverage, 'ActiveTimeInterval_s')
+        failureMessage = string(sprintf( ...
+            'The collision-free motion needs %.1f s, more than the %.1f s horizon.', ...
+            preparedMotion.MotionDuration_s, solverRequest.MotionHorizon_s));
+        failureReason = "timeWindowInfeasible";
+        failureStage  = "optimization";
+    else
+        failureMessage = "The proven motion exceeds the goal horizon.";
+        failureReason  = "timeWindowInfeasible";
+    end
+    [motionCandidate, solverDiagnostics] = finishFailure(motionCandidate, solverDiagnostics, totalTimer, struct( ...
+        'Message',                  failureMessage, ...
+        'TerminationReason',        failureReason, ...
+        'OptimizerFeasible',        true, ...
+        'FailureStage',             failureStage, ...
+        'FailureKind',              failureReason, ...
+        'AlternativeGuideEligible', false));
+    return;
 end
+
+% Every selected motion already carries the full check of its final
+% polynomial and clock. Clear samples alone would not establish safety.
 solverDiagnostics.SegmentCount            = numel(preparedMotion.SegmentTime_s);
 solverDiagnostics.FinalCollisionPairCount = ...
     motionValidation.AllPairCount - motionValidation.VerifiedPairCount;
@@ -294,7 +308,7 @@ solverDiagnostics.SeparationProof = motionValidation;
 motionCandidate.SeparationProof   = motionValidation;
 
 % Convert the checked curve to the public motion format and sample it.
-motionCandidate = bmtpEngine.pipeline.createMotionOutput(motionCandidate, solverRequest, preparedMotion);
+motionCandidate = bmtpEngine.createMotionOutput(motionCandidate, solverRequest, preparedMotion);
 motionCandidate.OptimizerFeasible = true;
 
 % Solver success is not enough: the completed motion must also pass
@@ -374,12 +388,10 @@ function [preparedMotion, motionValidation, motionValidationCache] = createFixed
         positionPower_units(4:6, :) = [1 1 1; 3 4 5; 6 12 20] \ remainingEndpointValues_units;
         controlPoint_units          = bmtpEngine.motion.powerToBernstein(positionPower_units, curveDegree);
     end
-    preparedMotion = bmtpEngine.pipeline.prepareFinalMotion(solverRequest, ...
-        reshape(controlPoint_units, 1, curveDegree + 1, 2), solverRequest.MotionHorizon_s);
-    if preparedMotion.Success
-        [motionValidation, motionValidationCache] = bmtpEngine.validation.checkFinalMotion(solverRequest, ...
-            preparedMotion, roundoffReserve_units, requiredSeparation_units, motionValidationCache, true);
-    end
+    [preparedMotion, motionValidation, motionValidationCache] = bmtpEngine.evaluateCandidate( ...
+        solverRequest, reshape(controlPoint_units, 1, curveDegree + 1, 2), ...
+        solverRequest.MotionHorizon_s, roundoffReserve_units, requiredSeparation_units, ...
+        [], "firstUnverified", motionValidationCache);
 end
 
 function motionCandidate = createEmptyCandidate(initialState)
@@ -406,15 +418,6 @@ function motionCandidate = createEmptyCandidate(initialState)
     motionCandidate.jerk_units_s3                   = zeros(0, dimensionCount);
     motionCandidate.Polynomial                      = struct();
     motionCandidate.SeparationProof                 = struct();
-end
-
-function fieldValue = readFailureField(failureDetails, fieldName, defaultValue)
-    % Some solvers omit optional failure details. Use the supplied default
-    % when the requested field is absent or empty.
-    fieldValue = defaultValue;
-    if isfield(failureDetails, fieldName) && ~isempty(failureDetails.(fieldName))
-        fieldValue = failureDetails.(fieldName);
-    end
 end
 
 function solverDiagnostics = createEmptyDiagnostics(curveDegree, segmentCount, regionCount)

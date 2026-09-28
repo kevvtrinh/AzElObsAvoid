@@ -7,23 +7,26 @@ function separatingPlanes = verifyMovingSeparatingLines(separatingPlanes, contro
 %       roundoffReserve_units, separationTarget_units)
 %**************************************************************************
 % PURPOSE
-%   - Check one curve against several moving convex regions together. Use
-%     the same whole-interval bounds and acceptance rules as the one-line check.
+%   - Check one motion curve against several moving regions in one batch.
+%     Each region keeps its own line; batching repeats the same full-time
+%     bounds and acceptance rules used for one line.
 %**************************************************************************
 % INPUTS
 %   - separatingPlanes (R-element struct array)
-%       One separating line per convex region whose vertices move linearly.
+%       One line per convex region, with normal and offset at both ends of
+%       the interval. Each changes linearly between those ends.
 %   - controlPoint_units (N-by-2 numeric array)
-%       Common Bezier control points over the checked physical interval.
+%       Bezier controls for the same motion interval against all R regions.
 %   - startRegions_units, endRegions_units (R-by-1 cell arrays)
-%       Corresponding convex-region vertices at the interval endpoints.
+%       Matching convex polygon vertices at the interval endpoints. Vertex
+%       i at the start moves linearly to vertex i at the end.
 %   - roundoffReserve_units, separationTarget_units (nonnegative numeric scalars)
-%       Required trajectory roundoff reserve and obstacle-side target.
+%       Required curve-side rounding margin and obstacle-side target.
 %**************************************************************************
 % OUTPUTS
 %   - separatingPlanes (R-element struct array)
-%       Updated offsets and gap bounds. Verified is true only where every
-%       separation condition passes for the entire interval.
+%       Same line records with updated offsets and conservative SignedGap
+%       bounds. Verified is true only when the whole-interval check passes.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, reserve, and gap are coordinate units;
@@ -50,8 +53,8 @@ regionsAreValid   = all(startVertexCounts >= 3) && isequal(startVertexCounts, en
 assert(regionsAreValid, ...
     'bmtpEngine:InvalidMovingPlaneBatch', ...
     'Moving-region endpoint vertices must be finite corresponding convex polygons.');
-% Stack the regions for one calculation. Keep the region index of each
-% vertex so every projection uses its own line normal and offset.
+% Stack all vertices for one calculation. Record which region owns each
+% vertex so each projection uses that region's normal and offset.
 normalByEndpointAndRegion = reshape([separatingPlanes.Normal], 2, 2, regionCount);
 startNormals             = reshape(normalByEndpointAndRegion(1, :, :), 2, regionCount).';
 endNormals               = reshape(normalByEndpointAndRegion(2, :, :), 2, regionCount).';
@@ -64,9 +67,10 @@ regionIndexByVertex = regionIndexByVertex(:);
 
 %% Section 2: Bound Both Sides Of Each Line Throughout The Interval
 
-% A linearly moving vertex x a linearly changing normal gives a quadratic.
-% Its three Bernstein coefficients bound its value for the whole interval,
-% including between the endpoints. Take the lowest bound over each region.
+% A linearly moving vertex dotted with a linearly changing normal makes a
+% quadratic in time fraction. Its three Bezier coefficients bound its
+% line-side value between endpoints. Take the smallest coefficient for
+% each vertex, then the smallest of those bounds for each region.
 startSideWithoutOffset_units = sum(startVertices_units .* startNormals(regionIndexByVertex, :), 2);
 endSideWithoutOffset_units   = sum(endVertices_units .* endNormals(regionIndexByVertex, :), 2);
 crossSideWithoutOffset_units = sum(startVertices_units .* endNormals(regionIndexByVertex, :), 2) + ...
@@ -77,8 +81,9 @@ minimumVertexSide_units = min([startSideWithoutOffset_units + lineOffset_units(r
 minimumObstacleSide_units = accumarray(regionIndexByVertex, minimumVertexSide_units, ...
     [regionCount, 1], @min);
 
-% For the degree-D curve, the corresponding product has degree D + 1.
-% Its largest coefficient bounds the curve-side value without time sampling.
+% A degree-D curve dotted with a linear normal has degree D+1. The
+% largest of its D+2 Bezier coefficients bounds the curve-side value for
+% the whole interval, including between any plotted or sampled points.
 degree             = size(controlPoint_units, 1) - 1;
 endNormalWeights   = (0:degree + 1).' / (degree + 1);
 startNormalWeights = 1 - endNormalWeights;
@@ -90,14 +95,16 @@ curveSideCoefficients_units = startNormalWeights .* [startNormalProjection_units
     endNormalWeights .* [zeros(1, regionCount); endNormalProjection_units] + ...
     startNormalWeights * lineOffset_units(:, 1).' + endNormalWeights * lineOffset_units(:, 2).';
 maximumTrajectorySide_units = max(curveSideCoefficients_units, [], 1).';
+% A normal interpolated between two endpoint normals cannot be longer
+% than the longer endpoint normal.
 maximumNormalLength = max( ...
     [vecnorm(startNormals, 2, 2), vecnorm(endNormals, 2, 2)], [], 2);
 
 %% Section 3: Shift The Lines When Possible And Apply All Gap Checks
 
-% Size the rounding allowance from each region, its offsets and the curve.
-% The shared check may shift both offsets equally, but all required curve
-% and obstacle gaps must still pass after that shift.
+% Scale the rounding allowance to each region's coordinates, its offsets,
+% and the common curve. proveSeparation may shift both offsets equally,
+% but every required margin must still pass after that shift.
 
 vertexScale_units = max([max(abs(startVertices_units), [], 2), ...
     max(abs(endVertices_units), [], 2)], [], 2);

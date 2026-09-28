@@ -6,28 +6,34 @@ function [controlPoint_units, segmentTime_s, powerCoefficients_units, departureT
 %       bmtpEngine.motion.createDelayedChord(solverRequest)
 %**************************************************************************
 % PURPOSE
-%   - Find the first departure delay outside the blocked time intervals for
-%     smooth straight-line motion. Include collisions that could occur while
-%     waiting at the start. The returned motion still needs final validation.
+%   - Try a smooth, straight-line trip after waiting at the start. Convert
+%     each moving obstacle's path crossing into departure delays that would
+%     collide, including contact during the wait. Use the first remaining
+%     delay that fits the horizon. The public validator must still check
+%     the complete returned motion.
 %**************************************************************************
 % INPUTS
 %   - solverRequest (scalar struct)
-%       Checked rest-to-rest request and moving convex obstacle regions.
+%       Checked rest-to-rest start and goal, motion limits, horizon, and
+%       protected convex regions. Coverage supplies each moving region's
+%       active times and end shape; Options supplies collision clearance.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-6-by-2 numeric array)
-%       Bezier controls for waiting followed by straight-line motion, or empty
-%       if no departure fits within the available time.
+%       Bezier controls for S segments, including a wait when needed;
+%       the last dimension selects x or y. Empty if no departure fits.
 %   - segmentTime_s (numeric column)
-%       Duration of each waiting or moving segment, or empty if unavailable.
+%       Duration of each wait or move segment, or empty if unavailable.
 %   - powerCoefficients_units (S-by-2-by-6 numeric array)
-%       Position coefficients c0 through c5 in segment fraction u from 0 to 1.
-%       These describe the same motion as the controls; empty if unavailable.
+%       The same positions as c0 + c1 x u + ... + c5 x u^5, with local
+%       segment fraction u from 0 to 1. Empty if no departure fits.
 %   - departureTiming (scalar struct)
-%       Selected departure delay and availability state.
+%       DepartureDelay_s is the earliest delay outside the calculated
+%       blocked intervals. Available says whether it fits the horizon.
 %**************************************************************************
 % UNITS
-%   - Position is coordinate units and time is seconds.
+%   - Positions and coefficients: coordinate units; times: seconds;
+%     progress and segment fractions: dimensionless.
 %**************************************************************************
 
 %% Section 1: Build The Motion And Its Progress Along The Straight Path
@@ -40,23 +46,27 @@ segmentTiming     = struct('StartTime_s', segmentStartTime_s, 'SegmentTime_s', s
 motionDuration_s = sum(segmentTime_s);
 maximumWait_s    = solverRequest.MotionHorizon_s - motionDuration_s;
 
+% Project each x/y position onto the start-to-goal line. The squared
+% displacement appears in that projection; the perpendicular unit vector
+% measures how far a region sits to either side of the path.
 start_units        = solverRequest.InitialState.position_units;
 displacement_units = solverRequest.GoalState.position_units - start_units;
 displacementLengthSquared_units2 = sum(displacement_units .^ 2);
 pathNormalDirection = [-displacement_units(2), displacement_units(1)] / ...
     sqrt(displacementLengthSquared_units2);
 
-% Convert x/y position into path progress: 0 at start, 1 at goal.
-% This lets obstacle occupancy be compared with the time the vehicle
-% reaches each position along the straight path.
+% Convert the position polynomial into progress: 0 at start, 1 at goal.
+% Subtract start only from its constant coefficient; higher powers already
+% describe changes from the start. This links each path position to its
+% travel time after departure.
 positionOffsetCoefficients_units = powerCoefficients_units;
 positionOffsetCoefficients_units(:, :, 1) = positionOffsetCoefficients_units(:, :, 1) - start_units;
 progressCoefficients = reshape(sum( ...
     positionOffsetCoefficients_units .* reshape(displacement_units, 1, 2, 1), 2), [], 6) / ...
     displacementLengthSquared_units2;
 
-% Bezier control values bound the progress slope within each segment.
-% This slope is with respect to segment fraction, not seconds.
+% The smallest and largest Bezier controls bound the progress slope over
+% each segment. This slope is per unit of local fraction, not per second.
 progressSlopeCoefficients = progressCoefficients(:, 2:end) .* (1:5);
 progressSlopeControls     = bmtpEngine.motion.powerToBernstein(progressSlopeCoefficients.');
 minimumProgressSlope      = min(progressSlopeControls, [], 1).';
@@ -70,8 +80,8 @@ end
     solverRequest.GoalState.position_units, solverRequest.Limits.xInterval_units, ...
     solverRequest.Limits.yInterval_units, solverRequest.Regions_units, endRegions_units);
 
-% The regions already include obstacle safety margins. Reserve the
-% collision-check clearance and rounding allowance beyond those regions.
+% Prepared regions already contain the obstacle safety margin. Add only
+% the validator's clearance and a rounding reserve for this calculation.
 requiredClearance_units = (1 + 2 ^ 20 * eps) * solverRequest.Options.CollisionClearanceTolerance_units + ...
     3 * roundoffReserve_units;
 blockedDelayIntervals_s   = zeros(0, 2);
@@ -83,6 +93,8 @@ clearanceProgressFraction        = requiredClearance_units * sum(abs(displacemen
 %% Section 2: Find Departure Delays Blocked By Each Moving Region
 
 for regionIndex = 1:numel(solverRequest.Regions_units)
+    % A timed region matters only during its active interval. Otherwise
+    % inspect the full requested motion horizon.
     activeInterval_s = solverRequest.InitialState.time_s + [0, solverRequest.MotionHorizon_s];
     if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
         activeInterval_s = solverRequest.Coverage.ActiveTimeInterval_s(regionIndex, :);
@@ -90,8 +102,8 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
     regionVertices_units = bmtpEngine.separation.regionOnInterval( ...
         solverRequest.Regions_units{regionIndex}, solverRequest.Coverage, regionIndex, activeInterval_s);
 
-    % Exclude regions whose full motion cannot reach the path, using their
-    % x/y bounds, perpendicular distance, and position along the path.
+    % Skip a region only when its entire movement misses the path. Check
+    % x/y bounds, distance across the path, and distance along the path.
     endpointVertices_units = [regionVertices_units(:, :, 1); regionVertices_units(:, :, end)];
     coordinateScale_units  = max([1; abs(endpointVertices_units(:)); ...
         abs(start_units(:)); abs(solverRequest.GoalState.position_units(:)); requiredClearance_units]);
@@ -117,9 +129,10 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
         continue
     end
 
-    % Expand for clearance, then join the start/end vertices in [x y time].
-    % Intersect this enclosing volume with the straight path. Each pair of
-    % points on opposite sides contributes a possible intersection point.
+    % Add clearance to both endpoint polygons. Their [x, y, time] points
+    % enclose the moving region between those times. Intersect that volume
+    % with the plane through the straight path. A line between points on
+    % opposite sides crosses the plane; keep every such crossing.
     expandedStartVertices_units = expandRegionForClearance(regionVertices_units(:, :, 1), requiredClearance_units);
     expandedEndVertices_units   = expandRegionForClearance(regionVertices_units(:, :, end), requiredClearance_units);
     regionSpaceTimePoints       = [expandedStartVertices_units, ...
@@ -139,8 +152,9 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
         continue;
     end
 
-    % Express the intersections as [progress time] and keep their outer
-    % boundary. If all points lie on one line, only its two ends are needed.
+    % Express each crossing as [path progress, absolute time]. The outer
+    % boundary covers all possible path occupancy by this region. When
+    % every point is on one line, its two ends describe that boundary.
     progressTimeBoundary = unique([ ...
         (pathIntersectionPoints(:, 1:2) - start_units) * displacement_units.' / displacementLengthSquared_units2, ...
         pathIntersectionPoints(:, 3)], 'rows');
@@ -153,9 +167,10 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
         progressTimeBoundary = progressTimeBoundary(sortOrder([1, end]), :);
     end
 
-    % delay = obstacle time - request start time - travel time to that progress.
-    % For start time 0, an obstacle at halfway at 8 s and travel time 3 s
-    % blocks a 5 s departure delay. Find the full blocked range on each edge.
+    % Blocked delay = obstacle time - request start time - travel time to
+    % that progress. For a request at 0 s, an obstacle halfway along the
+    % path at 8 s, and 3 s of travel to halfway, departure at 5 s collides.
+    % Find the full range of blocked delays along each boundary edge.
     minimumBlockedDelay_s   = Inf;
     maximumBlockedDelay_s   = -Inf;
     firstStartBlockedTime_s = Inf;
@@ -168,7 +183,8 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
             continue;
         end
 
-        % A vertical edge covers several times at one path position.
+        % A vertical edge in [progress, time] keeps progress fixed while
+        % obstacle time changes. Its two times give the delay range there.
         if edgeStartProgressTime(1) == edgeEndProgressTime(1)
             timeFromDeparture_s   = findTimeAtProgress(progressCoefficients, segmentTiming, edgeProgressInterval(1));
             minimumBlockedDelay_s = min(minimumBlockedDelay_s, ...
@@ -184,7 +200,8 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
             continue;
         end
 
-        % Every other boundary edge has time = slope x progress + intercept.
+        % On every other straight boundary edge, obstacle time is
+        % slope x path progress + intercept.
         boundaryTimeSlope_s = (edgeEndProgressTime(2) - edgeStartProgressTime(2)) / ...
             (edgeEndProgressTime(1) - edgeStartProgressTime(1));
         boundaryTimeIntercept_s = edgeStartProgressTime(2) - boundaryTimeSlope_s * edgeStartProgressTime(1);
@@ -192,7 +209,8 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
             firstStartBlockedTime_s = min(firstStartBlockedTime_s, boundaryTimeIntercept_s);
         end
 
-        % Each segment only needs the part of the edge it can reach.
+        % Only compare an edge's progress range with segments that pass
+        % through that range.
         for segmentIndex = 1:numel(segmentTime_s)
             overlappingProgressInterval = [max(edgeProgressInterval(1), progressCoefficients(segmentIndex, 1)), ...
                 min(edgeProgressInterval(2), sum(progressCoefficients(segmentIndex, :)))];
@@ -204,16 +222,18 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
                 findSegmentFractionAtProgress( ...
                 progressCoefficients(segmentIndex, :), overlappingProgressInterval(2))];
 
-            % Substitute this segment's progress curve into that boundary
-            % line and subtract elapsed travel time to get a delay polynomial.
+            % Substitute this segment's progress curve into the edge's time
+            % line, then subtract travel time. The result is blocked delay
+            % as a polynomial of the segment fraction.
             delayCoefficients_s = boundaryTimeSlope_s * progressCoefficients(segmentIndex, :);
             delayCoefficients_s(1) = delayCoefficients_s(1) + boundaryTimeIntercept_s - ...
                 solverRequest.InitialState.time_s - segmentTiming.StartTime_s(segmentIndex);
             delayCoefficients_s(2) = delayCoefficients_s(2) - segmentTime_s(segmentIndex);
             delaySlopeCoefficients_s = delayCoefficients_s(2:end) .* (1:5);
 
-            % Delays reach their extremes at interval ends or turning points.
-            % Skip root finding when slope bounds prove there is no turn.
+            % A polynomial reaches its largest or smallest delay at an
+            % overlap endpoint or where its slope is zero. Bezier slope
+            % bounds let us skip root finding when the slope keeps one sign.
             lastNonzeroSlopeIndex = find(delaySlopeCoefficients_s ~= 0, 1, 'last');
             turningPointFractions = [];
             if ~isempty(lastNonzeroSlopeIndex)
@@ -239,7 +259,8 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
                 end
             end
 
-            % Keep real turning points within this edge/segment overlap.
+            % Only real slope-zero fractions inside this overlap can set
+            % an additional extreme delay.
             turningPointFractions = real(turningPointFractions(abs(imag(turningPointFractions)) <= ...
                 64 * eps(max(1, abs(turningPointFractions)))));
             turningPointIsInRange = turningPointFractions >= evaluationFractions(1) & ...
@@ -257,15 +278,15 @@ for regionIndex = 1:numel(solverRequest.Regions_units)
         blockedDelayIntervals_s(end + 1, :) = [minimumBlockedDelay_s, maximumBlockedDelay_s]; %#ok<AGROW>
     end
 
-    % Waiting occupies the start for the entire delay. Once an obstacle
-    % reaches that point, every later departure would already have collided.
+    % Waiting occupies the start point for the entire delay. Once a region
+    % reaches that point, every later departure waits through that contact.
     if isfinite(firstStartBlockedTime_s)
         blockedDelayIntervals_s(end + 1, :) = ...
             [firstStartBlockedTime_s - solverRequest.InitialState.time_s, maximumWait_s]; %#ok<AGROW>
     end
 
-    % Periodically stop if the regions checked so far block every allowed
-    % delay. Remaining regions can only add blocked intervals.
+    % Every 128 regions, stop early if the current blocked intervals leave
+    % no delay within the horizon. More regions can only block more delays.
     if mod(regionIndex, 128) == 0
         firstAllowedDelay_s = findFirstAllowedDelay(blockedDelayIntervals_s);
         if firstAllowedDelay_s > maximumWait_s
@@ -289,8 +310,8 @@ if ~departureTiming.Available
     return
 end
 
-% A waiting segment has identical position controls, so its velocity,
-% acceleration, and jerk are zero throughout the delay.
+% Add the wait as a constant-position segment. Identical controls make
+% its velocity, acceleration, and jerk zero throughout the delay.
 if departureDelay_s > 0
     controlPoint_units = cat(1, reshape(repmat(start_units, solverRequest.Degree + 1, 1), ...
         1, solverRequest.Degree + 1, 2), controlPoint_units);
@@ -304,8 +325,9 @@ end
 %% Section 4: Local Functions
 
 function departureDelay_s = findFirstAllowedDelay(blockedDelayIntervals_s)
-    % Scan blocked intervals in start-time order. Extend the wait past each
-    % interval that contains it; the first gap gives the earliest allowed wait.
+    % Start with no wait. Scan blocked delays in increasing order; when an
+    % interval contains the current delay, move just beyond its end. The
+    % first gap is the earliest remaining departure delay.
     blockedDelayIntervals_s = sortrows(blockedDelayIntervals_s, 1);
     departureDelay_s        = 0;
     for blockedIntervalIndex = 1:size(blockedDelayIntervals_s, 1)
@@ -321,9 +343,9 @@ function departureDelay_s = findFirstAllowedDelay(blockedDelayIntervals_s)
 end
 
 function regionVertices_units = expandRegionForClearance(regionVertices_units, requiredClearance_units)
-    % Shift every vertex by the four corners of a clearance square, then
-    % keep the boundary around all shifted points. The square includes the
-    % requested distance in every direction, including around corners.
+    % Put a clearance square around every polygon vertex, then keep the
+    % outer boundary. This includes every point within the requested
+    % Euclidean clearance, including around corners.
     cornerOffsets_units  = requiredClearance_units * [-1, -1; 1, -1; 1, 1; -1, 1];
     regionVertices_units = reshape(permute(regionVertices_units + ...
         reshape(cornerOffsets_units.', 1, 2, 4), [1, 3, 2]), [], 2);
@@ -332,8 +354,8 @@ function regionVertices_units = expandRegionForClearance(regionVertices_units, r
 end
 
 function timeFromDeparture_s = findTimeAtProgress(progressCoefficients, segmentTiming, requestedProgress)
-    % Find the segment containing this progress value, then convert its
-    % fraction into elapsed seconds since departure.
+    % Find the segment containing the requested path progress. Convert
+    % that segment's 0-to-1 fraction into time since departure.
     segmentIndex = find(sum(progressCoefficients, 2) >= requestedProgress, 1);
     if isempty(segmentIndex)
         segmentIndex = size(progressCoefficients, 1);
@@ -344,8 +366,9 @@ function timeFromDeparture_s = findTimeAtProgress(progressCoefficients, segmentT
 end
 
 function segmentFraction = findSegmentFractionAtProgress(segmentProgressCoefficients, requestedProgress)
-    % Progress increases from start to goal. Segment endpoints already have
-    % known fractions (0 or 1); other positions use repeated interval halving.
+    % Progress increases along this chord. Segment start and end have
+    % known fractions 0 and 1. For an interior value, halve the possible
+    % fraction interval 48 times until it locates the requested progress.
     if requestedProgress <= segmentProgressCoefficients(1)
         segmentFraction = 0;
         return

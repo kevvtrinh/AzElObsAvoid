@@ -44,45 +44,48 @@ result.Inputs = struct( ...
     "obstacles",    {request.obstacles}, ...
     "initialState", request.initialState, ...
     "goalState",    request.goalState);
-result.PreparedObstacles = preparedObstacles;
-result.Limits            = request.limits;
-result.Options           = request.options;
-result.VisibilityGraph   = visibilityGraph;
+result.Options = request.options;
 
 % Keep empty position and derivative arrays in [x y] column layout.
 % Later stages fill the starting route and the actual motion separately.
-result.Route_units           = zeros(0, 2);
 result.time_s                = zeros(0, 1);
 result.position_units        = zeros(0, 2);
 result.velocity_units_s      = zeros(0, 2);
 result.acceleration_units_s2 = zeros(0, 2);
 result.jerk_units_s3         = zeros(0, 2);
+result.ArrivalTime_s         = NaN;
+result.MotionLength_units    = Inf;
 
-result.Polynomial        = struct();
-result.SeparationProof   = struct();
-result.SolverDiagnostics = struct();
-result.Attempts          = attempts;
-result.Validation       = struct("Passed", false, "Message", "No motion is available.");
+% Diagnostics retain the prepared geometry and each planning stage's output.
+% Optional fields are appended by the stages that produce them.
+result.Diagnostics                   = struct();
+result.Diagnostics.PreparedObstacles = preparedObstacles;
+result.Diagnostics.Limits            = request.limits;
+result.Diagnostics.VisibilityGraph   = visibilityGraph;
+result.Diagnostics.Route_units       = zeros(0, 2);
+result.Diagnostics.Polynomial        = struct();
+result.Diagnostics.SeparationProof   = struct();
+result.Diagnostics.SolverDiagnostics = struct();
+result.Diagnostics.Attempts          = attempts;
+result.Diagnostics.Validation        = struct("Passed", false, "Message", "No motion is available.");
 
-% NaN means no arrival has been calculated. The intercept fields are
-% placeholders until a successful motion supplies the actual meeting point.
-result.ArrivalTime_s = NaN;
-result.Intercept     = struct( ...
+% The intercept is a placeholder until motion supplies the meeting point.
+result.Diagnostics.Intercept = struct( ...
     'Time_s',                 NaN, ...
     'TargetPosition_units',   request.goalState.position_units, ...
     'TerminalVelocityPolicy', "zero");
-result.TrajectoryDuration_s = NaN;
-result.ElapsedTime_s        = elapsedTime_s;
+result.Diagnostics.TrajectoryDuration_s = NaN;
+result.Diagnostics.ElapsedTime_s        = elapsedTime_s;
 
 % Supplied values retain the fields present before normalization; entirely
 % empty inputs already use defaults. Requested values also have missing fields
 % filled and standard row shapes, before target matching or unwrapping.
 % Retain both so later trials can be checked against the original request.
-result.SuppliedLimits     = request.originalInputs.suppliedLimits;
-result.RequestedLimits    = request.originalInputs.requestedLimits;
-result.RequestedGoalState = request.originalInputs.requestedGoalState;
-result.SuppliedGoalState  = request.originalInputs.suppliedGoalState;
+result.Diagnostics.SuppliedLimits     = request.originalInputs.suppliedLimits;
+result.Diagnostics.RequestedLimits    = request.originalInputs.requestedLimits;
+result.Diagnostics.RequestedGoalState = request.originalInputs.requestedGoalState;
+result.Diagnostics.SuppliedGoalState  = request.originalInputs.suppliedGoalState;
 if ~isempty(request.parentRequest)
-    result.ParentRequest = request.parentRequest;
+    result.Diagnostics.ParentRequest = request.parentRequest;
 end
 end

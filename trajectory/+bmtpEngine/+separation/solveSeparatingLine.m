@@ -9,32 +9,37 @@ function [plane, exitFlag, lineDiagnostics] = solveSeparatingLine(controlPoint_u
 %       roundoffReserve_units, obstacleGeometry)
 %**************************************************************************
 % PURPOSE
-%   - Choose a line direction from obstacle edges and curve control points,
-%     then check separation throughout the trajectory segment.
-%   - When no direction has enough gap, return the best available direction
-%     for the trajectory solver to try. It must still pass verification.
+%   - Try line directions perpendicular to obstacle and curve-control
+%     edges. Keep one normal direction through the segment, allow its
+%     offset to move with the obstacle, and check the whole curve.
+%   - If no direction proves enough gap, return the best available
+%     direction as a proposal. A proposal is not verified clearance.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (N-by-2 numeric array)
-%       Bezier control points for one trajectory segment.
+%       Bezier controls for one motion segment, in [x, y] rows.
 %   - vertices_units (M-by-2 or M-by-2-by-2 numeric array)
-%       Static vertices, or matching vertices at the start/end of linear motion.
+%       Static polygon vertices, or matching vertices at the start and end
+%       of linear region motion in the third dimension.
 %   - separationTarget_units (nonnegative numeric scalar)
-%       Required obstacle-side separation target.
+%       Minimum required obstacle-side value at the line.
 %   - roundoffReserve_units (nonnegative numeric scalar)
-%       Numerical reserve applied on the trajectory side.
+%       Extra curve-side margin checked for numerical rounding.
 %   - obstacleGeometry (scalar struct, optional)
-%       Saved edge normals and minimum vertex projections for these exact vertices.
+%       Saved obstacle edge normals and vertex projections for these exact
+%       vertices. Omit to calculate them for this call.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
-%       Line direction, offsets and checked gap. Verified reports whether the
-%       curve and obstacle remain on the required sides throughout the segment.
+%       Selected normal, endpoint offsets, and checked gap. Active means a
+%       direction was constructed; Verified means the full separation
+%       check passed.
 %   - exitFlag (numeric scalar)
 %       1 means a direction was constructed; -2 means none was available.
 %       A value of 1 does not mean separation passed verification.
 %   - lineDiagnostics (scalar struct)
-%       Records that the line was constructed directly, without a solver.
+%       IsAnalytic is true and TotalTime_s is zero; this direction search
+%       does not call a numerical optimization solver.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, and reserve are coordinate units; normals
@@ -47,8 +52,8 @@ startVertices_units = vertices_units(:, :, 1);
 endVertices_units   = vertices_units(:, :, end);
 controlPointCount   = size(controlPoint_units, 1);
 
-% These weights and control-point pairs depend only on the curve degree.
-% Reuse them for later calls with the same number of control points.
+% Fraction weights and every pair of curve controls depend only on the
+% curve degree. Cache them for later calls with the same control count.
 persistent cachedControlPointCount cachedControlFractions cachedProductFractions ...
     cachedSecondControlIndices cachedFirstControlIndices cachedEmptyPlane cachedLineDiagnostics
 if isempty(cachedControlPointCount) || cachedControlPointCount ~= controlPointCount
@@ -70,14 +75,15 @@ productFractions     = cachedProductFractions;
 secondControlIndices = cachedSecondControlIndices;
 firstControlIndices  = cachedFirstControlIndices;
 
-% Remove the obstacle centroid displacement when forming control-point
-% edges. This expresses those edges relative to the obstacle motion.
+% Subtract the obstacle centroid's start-to-end displacement before
+% forming control-to-control edges. Their directions then describe curve
+% movement relative to that overall obstacle translation.
 movingFrameControls_units = controlPoint_units - ...
     controlFractions .* (mean(endVertices_units, 1) - mean(startVertices_units, 1));
 
-% A normal is perpendicular to an edge. Try both signs because the curve
-% can lie on either side. Projecting vertices onto a normal reduces each
-% region to bounds along that direction.
+% A line normal is perpendicular to an edge. Try both signs because the
+% curve could be on either side of the obstacle. For each normal, project
+% obstacle vertices onto it and keep the nearest obstacle-side value.
 if nargin < 5 || isempty(obstacleGeometry)
     edges_units = diff([startVertices_units; startVertices_units(1, :)], 1, 1);
     if size(vertices_units, 3) > 1
@@ -93,7 +99,8 @@ if nargin < 5 || isempty(obstacleGeometry)
     startObstacleBound_units = min(startVertices_units * candidateNormals.', [], 1);
     endObstacleBound_units   = min(endVertices_units * candidateNormals.', [], 1);
 else
-    % Reuse the obstacle edge calculations; only the curve changes per call.
+    % Prepared obstacle edge directions and their vertex projections are
+    % reusable when only the candidate curve changes between calls.
     positiveObstacleNormals     = obstacleGeometry.PositiveNormals;
     startObstaclePositive_units = obstacleGeometry.FirstPositiveSupport_units;
     endObstaclePositive_units   = obstacleGeometry.LastPositiveSupport_units;
@@ -124,15 +131,17 @@ end
 
 %% Section 2: Select The Direction With The Largest Usable Gap
 
-% For each direction, compare curve controls with the nearest obstacle bound.
-% A positive gap means the curve controls lie on the other side of that bound.
+% For each direction, compare each curve control with the obstacle bound
+% at the same fraction. A positive gap puts all controls on the curve side.
+% This control gap ranks candidate directions; it is not the final proof.
 curveMinusObstacleBound_units = controlPoint_units * candidateNormals.' - ...
     (1 - controlFractions) .* startObstacleBound_units - controlFractions .* endObstacleBound_units;
 controlGaps_units = -max(curveMinusObstacleBound_units, [], 1);
 
-% The verifier uses degree D + 1 product coefficients. Check those same
-% coefficients before selecting a direction. If any direction has enough
-% gap, exclude the others; otherwise keep the best available proposal.
+% The final line-side polynomial has degree D+1. Bound its D+2 Bezier
+% coefficients, just as the verifier will. If any direction already has
+% enough gap, choose only among those; otherwise keep the best control-gap
+% direction as an unverified proposal for the trajectory solver.
 productGaps_units = -max((1 - productFractions) .* ...
     [curveMinusObstacleBound_units; zeros(1, size(candidateNormals, 1))] + ...
     productFractions .* [zeros(1, size(candidateNormals, 1)); curveMinusObstacleBound_units], [], 1);
@@ -152,8 +161,9 @@ end
 
 %% Section 3: Place The Line And Verify The Whole Segment
 
-% Offset the line so the nearest obstacle vertex meets the separation target.
-% The final check also requires the curve-side reserve and a nonzero normal.
+% Place the line so the nearest obstacle vertex meets the target at each
+% endpoint. The offsets interpolate between them. Verification still
+% checks the curve-side reserve, full obstacle motion, and normal length.
 
 plane.Active       = true;
 plane.ExitFlag     = 1;

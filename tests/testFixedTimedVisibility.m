@@ -24,9 +24,9 @@ function testGivenArrivalAndContinuousMotion(testCase)
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,10,'AbsTol',1e-8);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
-    verifyTrue(testCase,result.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyLessThan(testCase,size(result.Route_units,1),9);
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
+    verifyTrue(testCase,result.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
+    verifyLessThan(testCase,size(result.Diagnostics.Route_units,1),9);
 end
 
 function testMovingTargetEndsAtExactGivenClock(testCase)
@@ -49,7 +49,7 @@ function testMovingTargetEndsAtExactGivenClock(testCase)
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,goal.time_s);
-    verifyEqual(testCase,result.Polynomial.FinalTime_s,goal.time_s);
+    verifyEqual(testCase,result.Diagnostics.Polynomial.FinalTime_s,goal.time_s);
     verifyEqual(testCase,result.time_s(end),goal.time_s);
 end
 
@@ -70,7 +70,7 @@ function testStaticGoalUsesExactGivenClock(testCase)
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase,result.ArrivalTime_s,goal.time_s);
-    verifyEqual(testCase,result.Polynomial.FinalTime_s,goal.time_s);
+    verifyEqual(testCase,result.Diagnostics.Polynomial.FinalTime_s,goal.time_s);
     verifyEqual(testCase,result.time_s(end),goal.time_s);
 end
 
@@ -88,7 +88,7 @@ function testFixedTimedSearchRetainsBoundaryVelocity(testCase)
     data.Initial.velocity_units_s=[0.1,0];
     result=planner([],data.Initial,data.Goal,data.Limits,data.Options);
     assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,result.Validation.Passed);
+    verifyTrue(testCase,result.Diagnostics.Validation.Passed);
     verifyEqual(testCase,result.velocity_units_s([1,end],:),[0.1,0;0,0], ...
         'AbsTol',1e-8);
 end
@@ -113,7 +113,7 @@ function testSavedDetourUsesGivenDeadline(testCase)
     % The unified spatial result stays within one percent of the former
     % explicitly selected timed motion (229.400575729 units).
     verifyLessThan(testCase,result.MotionLength_units,232);
-    verifyGreaterThan(testCase,result.SolverDiagnostics.OptimizerSpanCount,16);
+    verifyGreaterThan(testCase,result.Diagnostics.SolverDiagnostics.OptimizerSpanCount,16);
 end
 
 function testMovingCrossingRetainsProvenEndpointJerk(testCase)
@@ -161,15 +161,15 @@ function testArrivalSnapshotAvoidsTimedSearch(testCase)
         scenario.GoalState,scenario.Limits,scenario.Options);
     assertTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind, ...
         "arrivalSpatialSnapshot");
-    verifyEqual(testCase,numel(result.Attempts),2);
-    verifyEqual(testCase,[result.Attempts.IsShortcut],[true,true]);
-    verifyEqual(testCase,[result.Attempts.IterationLimit],[2,2]);
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),2);
+    verifyEqual(testCase,[result.Diagnostics.Attempts.IsShortcut],[true,true]);
+    verifyEqual(testCase,[result.Diagnostics.Attempts.IterationLimit],[2,2]);
     verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,2);
-    verifyEqual(testCase,result.Attempts(1).FailureKind,"iterationLimit");
-    verifyTrue(testCase,result.Attempts(1).NextAttemptAllowed);
-    verifyGreaterThan(testCase,size(result.Route_units,1),2);
+    verifyEqual(testCase,result.Diagnostics.Attempts(1).FailureKind,"iterationLimit");
+    verifyTrue(testCase,result.Diagnostics.Attempts(1).NextAttemptAllowed);
+    verifyGreaterThan(testCase,size(result.Diagnostics.Route_units,1),2);
 end
 
 function testTimedSearchCrossesARecurrentCurtain(testCase)
@@ -189,18 +189,18 @@ function testTimedSearchCrossesARecurrentCurtain(testCase)
     result=planner(obstacle,initial,goal,limits,options);
 
     assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,result.Validation.Passed);
+    verifyTrue(testCase,result.Diagnostics.Validation.Passed);
     verifyEqual(testCase,result.Message, ...
         "The given goal layer produced an independently validated timed BMTP motion.");
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
-    verifyEqual(testCase,result.FixedArrivalTrialTime_s,goal.time_s);
-    verifyFalse(testCase,isfield(result,'GoalArrivalWindow_s'));
-    verifyFalse(testCase,isfield(result,'TrajectoryCoverageEndTime_s'));
-    verifyEqual(testCase,numel(result.Attempts),3);
-    verifyFalse(testCase,any([result.Attempts(1:2).SolverAttempted]));
+    verifyEqual(testCase,result.Diagnostics.FixedArrivalTrialTime_s,goal.time_s);
+    verifyFalse(testCase,isfield(result.Diagnostics, 'GoalArrivalWindow_s'));
+    verifyFalse(testCase,isfield(result.Diagnostics, 'TrajectoryCoverageEndTime_s'));
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),3);
+    verifyFalse(testCase,any([result.Diagnostics.Attempts(1:2).SolverAttempted]));
     % Fixed-arrival attempts keep the requested time in FixedArrivalTrialTime_s.
-    verifyTrue(testCase,isnan(result.Attempts(end).CandidateArrival_s));
+    verifyTrue(testCase,isnan(result.Diagnostics.Attempts(end).CandidateArrival_s));
 end
 
 function testFailedTimedSearchDoesNotLeakSpatialState(testCase)
@@ -222,27 +222,29 @@ function testFailedTimedSearchDoesNotLeakSpatialState(testCase)
     verifyEqual(testCase,result.TerminationReason,"noTimedRoute");
     verifyEqual(testCase,result.Message, ...
         "No route reached the requested goal layer in the discrete timed graph.");
-    verifyEqual(testCase,result.Validation,struct( ...
+    verifyEqual(testCase,result.Diagnostics.Validation,struct( ...
         'Passed',false,'Message',"No timed motion is available."));
-    verifyEqual(testCase,result.VisibilityGraph.SearchKind, ...
+    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind, ...
         "timeExpandedVisibilityGraph");
-    verifyFalse(testCase,result.VisibilityGraph.IsConnected);
-    verifyEmpty(testCase,result.Route_units);
+    verifyFalse(testCase,result.Diagnostics.VisibilityGraph.IsConnected);
+    verifyEmpty(testCase,result.Diagnostics.Route_units);
     verifyEmpty(testCase,result.time_s);
-    verifyEqual(testCase,numel(result.Attempts),3);
-    verifyEqual(testCase,result.Attempts(end).FailureStage,"search");
-    verifyEqual(testCase,result.Attempts(end).FailureKind,"noTimedRoute");
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),3);
+    verifyEqual(testCase,result.Diagnostics.Attempts(end).FailureStage,"search");
+    verifyEqual(testCase,result.Diagnostics.Attempts(end).FailureKind,"noTimedRoute");
     % The public planner appends its plot shortcut after the core fields.
     verifyEqual(testCase,fieldnames(result),[timedFailureFieldNames();'plotTrajectory']);
-    verifyEqual(testCase,fieldnames(result.VisibilityGraph),timedGraphFieldNames());
+    verifyEqual(testCase,fieldnames(result.Diagnostics),timedFailureDiagnosticFieldNames());
+    verifyEqual(testCase,fieldnames(result.Diagnostics.VisibilityGraph),timedGraphFieldNames());
     verifyEqual(testCase,result.MotionLength_units,Inf);
-    verifyEqual(testCase,result.IntegratedSquaredJerk_units2_s5,Inf);
-    verifyEqual(testCase,result.MaximumConstraintViolation,Inf);
-    verifyFalse(testCase,result.OptimizerFeasible);
-    verifyFalse(testCase,result.OptimizerIterateUnavailable);
-    verifyFalse(testCase,result.AlternativeGuideEligible);
-    verifyFalse(testCase,isfield(result,'EarliestArrival'));
-    verifyFalse(testCase,isfield(result,'WrappedGoalCopies'));
+    verifyTrue(testCase,isnan(result.ArrivalTime_s));
+    verifyEqual(testCase,result.Diagnostics.IntegratedSquaredJerk_units2_s5,Inf);
+    verifyEqual(testCase,result.Diagnostics.MaximumConstraintViolation,Inf);
+    verifyFalse(testCase,result.Diagnostics.OptimizerFeasible);
+    verifyFalse(testCase,result.Diagnostics.OptimizerIterateUnavailable);
+    verifyFalse(testCase,result.Diagnostics.AlternativeGuideEligible);
+    verifyFalse(testCase,isfield(result.Diagnostics, 'EarliestArrival'));
+    verifyFalse(testCase,isfield(result.Diagnostics, 'WrappedGoalCopies'));
 end
 
 function testTimedResultFieldOrderDoesNotDependOnTheRouteTaken(testCase)
@@ -309,14 +311,15 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     verifyEqual(testCase,unsupported.Message, ...
         "Free-arrival timed visibility requires a fixed-position goal " + ...
         "with zero endpoint velocity and acceleration.");
-    verifyEqual(testCase,unsupported.Attempts,attempts);
-    verifyGreaterThanOrEqual(testCase,unsupported.ElapsedTime_s,elapsedTime_s);
-    verifyEqual(testCase,unsupported.Validation,struct( ...
+    verifyEqual(testCase,unsupported.Diagnostics.Attempts,attempts);
+    verifyGreaterThanOrEqual(testCase,unsupported.Diagnostics.ElapsedTime_s,elapsedTime_s);
+    verifyEqual(testCase,unsupported.Diagnostics.Validation,struct( ...
         'Passed',false,'Message',"No timed motion is available."));
     verifyEqual(testCase,fieldnames(unsupported),timedFailureFieldNames());
-    verifyEqual(testCase,fieldnames(unsupported.VisibilityGraph),timedGraphFieldNames());
-    verifyFalse(testCase,isfield(unsupported,'EarliestArrival'));
-    verifyFalse(testCase,isfield(unsupported,'WrappedGoalCopies'));
+    verifyEqual(testCase,fieldnames(unsupported.Diagnostics),timedFailureDiagnosticFieldNames());
+    verifyEqual(testCase,fieldnames(unsupported.Diagnostics.VisibilityGraph),timedGraphFieldNames());
+    verifyFalse(testCase,isfield(unsupported.Diagnostics, 'EarliestArrival'));
+    verifyFalse(testCase,isfield(unsupported.Diagnostics, 'WrappedGoalCopies'));
 
     freeWindowRequest=request;
     freeWindowRequest.options.GoalTimeMode="earliestArrival";
@@ -325,13 +328,13 @@ function exerciseFreshTimedOutcomeSchema(testCase)
     assertTrue(testCase,accepted,freeWindow.Message);
     verifyEqual(testCase,freeWindow.Message, ...
         "The first reachable goal window produced an independently validated free-clock BMTP motion.");
-    verifyTrue(testCase,freeWindow.Validation.Passed);
-    verifyEqual(testCase,freeWindow.Attempts,attempts);
-    verifyEqual(testCase,freeWindow.GoalArrivalWindow_s,[3.5,6],'AbsTol',1e-8);
-    verifyEqual(testCase,freeWindow.TrajectoryCoverageEndTime_s,6);
-    verifyFalse(testCase,isfield(freeWindow,'FixedArrivalTrialTime_s'));
-    verifyFalse(testCase,isfield(freeWindow,'EarliestArrival'));
-    verifyFalse(testCase,isfield(freeWindow,'WrappedGoalCopies'));
+    verifyTrue(testCase,freeWindow.Diagnostics.Validation.Passed);
+    verifyEqual(testCase,freeWindow.Diagnostics.Attempts,attempts);
+    verifyEqual(testCase,freeWindow.Diagnostics.GoalArrivalWindow_s,[3.5,6],'AbsTol',1e-8);
+    verifyEqual(testCase,freeWindow.Diagnostics.TrajectoryCoverageEndTime_s,6);
+    verifyFalse(testCase,isfield(freeWindow.Diagnostics, 'FixedArrivalTrialTime_s'));
+    verifyFalse(testCase,isfield(freeWindow.Diagnostics, 'EarliestArrival'));
+    verifyFalse(testCase,isfield(freeWindow.Diagnostics, 'WrappedGoalCopies'));
 
     rawLimits=struct('xInterval_units',[-2,2],'yInterval_units',[-2,2], ...
         'maxVelocity_units_s',[20,20],'maxAcceleration_units_s2',[1,1], ...
@@ -352,29 +355,29 @@ function exerciseFreshTimedOutcomeSchema(testCase)
         "The timed route did not produce a feasible BMTP motion: " + ...
         "No optimized collision-free iterate was found. " + ...
         "Trajectory SOCP failed: Problem is infeasible.");
-    verifyEqual(testCase,rawFailure.FailureStage,"proposal");
-    verifyEqual(testCase,rawFailure.FailureKind,"trajectorySubproblemInfeasible");
-    verifyFalse(testCase,rawFailure.SolverDiagnostics.Accepted);
+    verifyEqual(testCase,rawFailure.Diagnostics.FailureStage,"proposal");
+    verifyEqual(testCase,rawFailure.Diagnostics.FailureKind,"trajectorySubproblemInfeasible");
+    verifyFalse(testCase,rawFailure.Diagnostics.SolverDiagnostics.Accepted);
     verifyEqual(testCase,rawFailure.Options.WrapX,"false");
-    verifyTrue(testCase,isfield(rawFailure,'ParentRequest'));
+    verifyTrue(testCase,isfield(rawFailure.Diagnostics, 'ParentRequest'));
 
     rejectedRequest=request;
     rejectedRequest.parentRequest=createTrialParentRequest(request,6,5);
     [rejected,accepted]=obstacleAvoidance.planning.tryTimedArrival( ...
         rejectedRequest,preparedObstacles,attempts,elapsedTime_s,struct(),rejectedRequest.goalState.time_s);
     verifyFalse(testCase,accepted);
-    verifyTrue(testCase,rejected.SolverDiagnostics.Accepted);
+    verifyTrue(testCase,rejected.Diagnostics.SolverDiagnostics.Accepted);
     verifyEqual(testCase,rejected.TerminationReason,"invalidMotion");
     % The parent claims x wrapping, but the trial's limits were built without
     % it, so the validator rejects the record before the motion checks.
     verifyEqual(testCase,rejected.Message, ...
         "BMTP returned motion that failed independent validation: " + ...
         "The requested wrapped limits do not match the supplied limits.");
-    verifyEqual(testCase,rejected.Validation.Message, ...
+    verifyEqual(testCase,rejected.Diagnostics.Validation.Message, ...
         "The requested wrapped limits do not match the supplied limits.");
-    verifyEqual(testCase,rejected.FixedArrivalTrialTime_s,5);
+    verifyEqual(testCase,rejected.Diagnostics.FixedArrivalTrialTime_s,5);
     verifyTrue(testCase,rejected.Options.WrapX);
-    verifyFalse(testCase,isfield(rejected,'ParentRequest'));
+    verifyFalse(testCase,isfield(rejected.Diagnostics, 'ParentRequest'));
 end
 
 function [request,preparedObstacles]=explicitTimedInputs(result)
@@ -383,16 +386,16 @@ function [request,preparedObstacles]=explicitTimedInputs(result)
     request=struct( ...
         'initialState',result.Inputs.initialState, ...
         'goalState',result.Inputs.goalState, ...
-        'limits',result.Limits, ...
+        'limits',result.Diagnostics.Limits, ...
         'options',result.Options);
     request.obstacles=result.Inputs.obstacles;
     request.parentRequest=[];
     request.originalInputs=struct( ...
-        'suppliedLimits',result.SuppliedLimits, ...
-        'requestedLimits',result.RequestedLimits, ...
-        'suppliedGoalState',result.SuppliedGoalState, ...
-        'requestedGoalState',result.RequestedGoalState);
-    preparedObstacles=result.PreparedObstacles;
+        'suppliedLimits',result.Diagnostics.SuppliedLimits, ...
+        'requestedLimits',result.Diagnostics.RequestedLimits, ...
+        'suppliedGoalState',result.Diagnostics.SuppliedGoalState, ...
+        'requestedGoalState',result.Diagnostics.RequestedGoalState);
+    preparedObstacles=result.Diagnostics.PreparedObstacles;
 end
 
 function parentRequest=createTrialParentRequest(request,goalTime_s,trialTime_s)
@@ -406,14 +409,19 @@ end
 
 function names=timedFailureFieldNames()
     names={ ...
-        'Success';'Message';'TerminationReason';'Inputs';'PreparedObstacles'; ...
-        'Limits';'Options';'VisibilityGraph';'Route_units';'time_s'; ...
-        'position_units';'velocity_units_s';'acceleration_units_s2'; ...
-        'jerk_units_s3';'Polynomial';'SeparationProof';'SolverDiagnostics'; ...
-        'Attempts';'Validation';'ArrivalTime_s';'Intercept'; ...
-        'TrajectoryDuration_s';'ElapsedTime_s';'SuppliedLimits'; ...
-        'RequestedLimits';'RequestedGoalState';'SuppliedGoalState'; ...
-        'MotionLength_units';'IntegratedSquaredJerk_units2_s5'; ...
+        'Success';'Message';'TerminationReason';'Inputs';'Options'; ...
+        'time_s';'position_units';'velocity_units_s'; ...
+        'acceleration_units_s2';'jerk_units_s3';'ArrivalTime_s'; ...
+        'MotionLength_units';'Diagnostics'};
+end
+
+function names=timedFailureDiagnosticFieldNames()
+    names={ ...
+        'PreparedObstacles';'Limits';'VisibilityGraph';'Route_units'; ...
+        'Polynomial';'SeparationProof';'SolverDiagnostics';'Attempts'; ...
+        'Validation';'Intercept';'TrajectoryDuration_s';'ElapsedTime_s'; ...
+        'SuppliedLimits';'RequestedLimits';'RequestedGoalState'; ...
+        'SuppliedGoalState';'IntegratedSquaredJerk_units2_s5'; ...
         'MaximumConstraintViolation';'OptimizerFeasible'; ...
         'OptimizerIterateUnavailable';'AlternativeGuideEligible'; ...
         'FailureStage';'FailureKind'};
@@ -449,13 +457,16 @@ function testTimedFailureFieldOrderMatchesTimedSuccess(testCase)
     % A spatial candidate must actually have run, or this fixture no longer
     % exercises the history the test exists for.
     assertFalse(testCase,result.Success);
-    verifyTrue(testCase,any([result.Attempts.SolverAttempted]));
+    verifyTrue(testCase,any([result.Diagnostics.Attempts.SolverAttempted]));
     verifyTrue(testCase,measureBeforeOptimizer(result));
 end
 
 function isBefore=measureBeforeOptimizer(result)
-    names=string(fieldnames(result));
-    isBefore=find(names=="MotionLength_units",1)<find(names=="OptimizerFeasible",1);
+    topLevelNames=string(fieldnames(result));
+    diagnosticNames=string(fieldnames(result.Diagnostics));
+    isBefore=find(topLevelNames=="MotionLength_units",1)<find(topLevelNames=="Diagnostics",1) && ...
+        find(diagnosticNames=="IntegratedSquaredJerk_units2_s5",1)< ...
+        find(diagnosticNames=="OptimizerFeasible",1);
 end
 
 function testDuplicateArrivalGuideIsNotSolvedTwice(testCase)
@@ -474,10 +485,10 @@ function testDuplicateArrivalGuideIsNotSolvedTwice(testCase)
         scenario.Limits,scenario.Options);
 
     assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,result.Validation.Passed);
+    verifyTrue(testCase,result.Diagnostics.Validation.Passed);
     verifyEqual(testCase,result.Options.SpatialProbeIterationLimit,1);
-    verifyEqual(testCase,result.Attempts(1).IterationLimit,1);
-    verifyEqual(testCase,numel(result.Attempts),3);
-    verifyFalse(testCase,result.Attempts(2).SolverAttempted);
-    verifyEqual(testCase,result.Attempts(3).Kind,"timedVisibility");
+    verifyEqual(testCase,result.Diagnostics.Attempts(1).IterationLimit,1);
+    verifyEqual(testCase,numel(result.Diagnostics.Attempts),3);
+    verifyFalse(testCase,result.Diagnostics.Attempts(2).SolverAttempted);
+    verifyEqual(testCase,result.Diagnostics.Attempts(3).Kind,"timedVisibility");
 end

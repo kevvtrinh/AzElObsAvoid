@@ -77,17 +77,23 @@ end
 %% Section 3: Group Several Segments By Region And Check Them Together
 
 % Collect every surviving segment/region pair, keeping both indices.
-regionIndicesBySegment = cell(segmentCount, 1);
-segmentIndexBlocks     = cell(segmentCount, 1);
-for segmentIndex = 1:segmentCount
-    regionIndicesBySegment{segmentIndex} = selectCandidateRegions( ...
-        startNodeIndices(segmentIndex), endNodeIndices(segmentIndex), ...
-        startTime_s, endTime_s, movingCellLookup);
-    segmentIndexBlocks{segmentIndex} = repmat(segmentIndex, ...
-        numel(regionIndicesBySegment{segmentIndex}), 1);
+if movingCellLookup.IsPrecomputed
+    % Gather saved node-pair lists once and filter all segments together.
+    [candidateRegionIndices, candidateSegmentIndices] = selectCandidateRegionsBatch( ...
+        startNodeIndices, endNodeIndices, startTime_s, endTime_s, movingCellLookup);
+else
+    regionIndicesBySegment = cell(segmentCount, 1);
+    segmentIndexBlocks     = cell(segmentCount, 1);
+    for segmentIndex = 1:segmentCount
+        regionIndicesBySegment{segmentIndex} = selectCandidateRegions( ...
+            startNodeIndices(segmentIndex), endNodeIndices(segmentIndex), ...
+            startTime_s, endTime_s, movingCellLookup);
+        segmentIndexBlocks{segmentIndex} = repmat(segmentIndex, ...
+            numel(regionIndicesBySegment{segmentIndex}), 1);
+    end
+    candidateRegionIndices  = vertcat(regionIndicesBySegment{:});
+    candidateSegmentIndices = vertcat(segmentIndexBlocks{:});
 end
-candidateRegionIndices  = vertcat(regionIndicesBySegment{:});
-candidateSegmentIndices = vertcat(segmentIndexBlocks{:});
 if isempty(candidateRegionIndices)
     return
 end
@@ -179,6 +185,65 @@ function regionIndices = selectCandidateRegions( ...
         boxExitFractions(candidateCacheIndices) >= overlapStartFractions & ...
         boxEntryFractions(candidateCacheIndices) <= overlapEndFractions;
     regionIndices = regionIndices(pathCouldMeetRegion);
+end
+
+function [regionIndices, segmentIndices] = selectCandidateRegionsBatch( ...
+        startNodeIndices, endNodeIndices, startTime_s, endTime_s, movingCellLookup)
+    % Apply the single-segment filters to all stored node-pair lists together.
+    % Keep segment order and each list's order so grouping by region receives
+    % the same pairs in the same order as the per-segment loop.
+    segmentCount = numel(startNodeIndices);
+    pairIndices  = startNodeIndices(:) + movingCellLookup.NodeCount * (endNodeIndices(:) - 1);
+    regionLists  = movingCellLookup.CellIndices(pairIndices);
+    entryLists   = movingCellLookup.QEnter(pairIndices);
+    exitLists    = movingCellLookup.QExit(pairIndices);
+    startLists   = movingCellLookup.ActiveStart_s(pairIndices);
+    endLists     = movingCellLookup.ActiveEnd_s(pairIndices);
+    entryCounts  = cellfun(@numel, regionLists);
+    segmentIndices     = repelem((1:segmentCount).', entryCounts(:));
+    regionIndices      = vertcat(regionLists{:});
+    boxEntryFractions  = vertcat(entryLists{:});
+    boxExitFractions   = vertcat(exitLists{:});
+    activeStartTimes_s = vertcat(startLists{:});
+    activeEndTimes_s   = vertcat(endLists{:});
+    if isempty(regionIndices)
+        regionIndices  = zeros(0, 1);
+        segmentIndices = zeros(0, 1);
+        return
+    end
+    % Saved lists are ordered by start time. This comparison keeps exactly
+    % the entries before the single-segment path's sorted cut-off.
+    keep = activeStartTimes_s <= endTime_s & activeEndTimes_s >= startTime_s;
+    regionIndices     = regionIndices(keep);
+    segmentIndices    = segmentIndices(keep);
+    boxEntryFractions = boxEntryFractions(keep);
+    boxExitFractions  = boxExitFractions(keep);
+    if isempty(regionIndices)
+        return
+    end
+    activeIntervals_s   = movingCellLookup.Cells.ActiveTimeInterval_s(regionIndices, :);
+    overlapStart_s      = max(startTime_s, activeIntervals_s(:, 1));
+    overlapEnd_s        = min(endTime_s, activeIntervals_s(:, 2));
+    traversalDuration_s = endTime_s - startTime_s;
+    if traversalDuration_s > 0
+        % Widen the quick time check by the same rounding allowance used
+        % for one segment, so it cannot discard a possible collision.
+        absoluteTimeScale_s = max([ ...
+            repmat(max(abs([startTime_s, endTime_s])), numel(regionIndices), 1), ...
+            abs(activeIntervals_s)], [], 2);
+        timeRoundingFraction = 512 * eps(max(1, absoluteTimeScale_s)) / traversalDuration_s;
+        timeRoundingFraction(~isfinite(timeRoundingFraction)) = Inf;
+        overlapStartFractions = (overlapStart_s - startTime_s) / traversalDuration_s - timeRoundingFraction;
+        overlapEndFractions   = (overlapEnd_s - startTime_s) / traversalDuration_s + timeRoundingFraction;
+    else
+        overlapStartFractions = zeros(size(overlapStart_s));
+        overlapEndFractions   = zeros(size(overlapEnd_s));
+    end
+    pathCouldMeetRegion = overlapStart_s <= overlapEnd_s & ...
+        boxExitFractions >= overlapStartFractions & ...
+        boxEntryFractions <= overlapEndFractions;
+    regionIndices  = regionIndices(pathCouldMeetRegion);
+    segmentIndices = segmentIndices(pathCouldMeetRegion);
 end
 
 function [touchesRegion, collisionTimes_s] = checkSegmentsAgainstRegion( ...

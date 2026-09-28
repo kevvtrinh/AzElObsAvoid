@@ -308,18 +308,18 @@ for candidateIndex = 1:numel(candidateArrivalTimes_s)
         rethrow(exception);
     end
     attempt.ElapsedTime_s          = toc(attemptTimer);
-    attempt.ChildAttempts          = trialResult.Attempts;
-    attempt.GraphConnected         = trialResult.VisibilityGraph.IsConnected;
-    attempt.GraphIsFullyEnumerated = trialResult.VisibilityGraph.GraphIsFullyEnumerated;
-    attempt.RouteNodeCount         = size(trialResult.Route_units, 1);
-    attempt.RouteLength_units      = trialResult.VisibilityGraph.RouteLength_units;
-    attempt.ExpandedCount          = trialResult.VisibilityGraph.ExpandedCount;
-    attempt.IterationCount         = sumAttemptField(trialResult.Attempts, "IterationCount");
+    attempt.ChildAttempts          = trialResult.Diagnostics.Attempts;
+    attempt.GraphConnected         = trialResult.Diagnostics.VisibilityGraph.IsConnected;
+    attempt.GraphIsFullyEnumerated = trialResult.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated;
+    attempt.RouteNodeCount         = size(trialResult.Diagnostics.Route_units, 1);
+    attempt.RouteLength_units      = trialResult.Diagnostics.VisibilityGraph.RouteLength_units;
+    attempt.ExpandedCount          = trialResult.Diagnostics.VisibilityGraph.ExpandedCount;
+    attempt.IterationCount         = sumAttemptField(trialResult.Diagnostics.Attempts, "IterationCount");
     attempt.CandidateSuccess       = trialResult.Success || ...
-        readLogical(trialResult.SolverDiagnostics, "Accepted");
-    attempt.OptimizerFeasible           = readLogical(trialResult, "OptimizerFeasible");
+        readLogical(trialResult.Diagnostics.SolverDiagnostics, "Accepted");
+    attempt.OptimizerFeasible           = readLogical(trialResult.Diagnostics, "OptimizerFeasible");
     attempt.OptimizerIterateUnavailable = readLogical( ...
-        trialResult, "OptimizerIterateUnavailable");
+        trialResult.Diagnostics, "OptimizerIterateUnavailable");
     [attempt.FailureStage, attempt.FailureKind, ...
         attempt.AlternativeGuideEligible] = readTrialFailure(trialResult);
     attempt.Success = trialResult.Success;
@@ -358,7 +358,7 @@ for candidateIndex = 1:numel(candidateArrivalTimes_s)
     stoppingFailureResult = trialResult;
     % Keep the time that failed. Wrapped planning may replace the request
     % fields later, but this value must still identify the attempted arrival.
-    stoppingFailureResult.FixedArrivalTrialTime_s = trialTime_s;
+    stoppingFailureResult.Diagnostics.FixedArrivalTrialTime_s = trialTime_s;
     failureStopsPlanning                          = true;
     break
 end
@@ -387,12 +387,12 @@ stoppingTrial = struct([]);
 if keepBestExistingMotion && failureStopsPlanning
     stoppingTrial = struct( ...
         'AttemptIndex',      numel(attempts), ...
-        'TrialTime_s',       stoppingFailureResult.FixedArrivalTrialTime_s, ...
+        'TrialTime_s',       stoppingFailureResult.Diagnostics.FixedArrivalTrialTime_s, ...
         'TerminationReason', string(stoppingFailureResult.TerminationReason), ...
         'Message',           string(stoppingFailureResult.Message), ...
         'FailureStage',      attempts(end).FailureStage, ...
         'FailureKind',       attempts(end).FailureKind, ...
-        'SolverDiagnostics', stoppingFailureResult.SolverDiagnostics);
+        'SolverDiagnostics', stoppingFailureResult.Diagnostics.SolverDiagnostics);
 end
 if keepBestExistingMotion
     acceptedIndices = find([attempts.Success]);
@@ -412,8 +412,8 @@ else
     [attempts.Selected] = deal(false);
     result = stoppingFailureResult;
 end
-result.Attempts       = attempts;
-result.TemporalSearch = struct( ...
+result.Diagnostics.Attempts       = attempts;
+result.Diagnostics.TemporalSearch = struct( ...
     'Resolution_s',              arrivalTimeStep_s, ...
     'TrialTime_s',               trialTimes_s, ...
     'MaximumTrialCount',         maximumTrialCount, ...
@@ -441,21 +441,21 @@ elseif ~result.Success && ~failureStopsPlanning
     result.TerminationReason = "arrivalSearchExhausted";
     result.Message           = "No declared arrival trial was proven. Unsearched times and solver failures do not prove infeasibility.";
 end
-result.ElapsedTime_s = baseResult.ElapsedTime_s + toc(searchTimer);
+result.Diagnostics.ElapsedTime_s = baseResult.Diagnostics.ElapsedTime_s + toc(searchTimer);
 end
 
 %% Section 6: Local Functions
 
 function [failureStage, failureKind, alternativeGuideEligible] = readTrialFailure(trialResult)
     % Read the trial's failure fields. If absent, use its last planning attempt.
-    failureStage             = readString(trialResult, "FailureStage");
-    failureKind              = readString(trialResult, "FailureKind");
-    alternativeGuideEligible = readLogical(trialResult, "AlternativeGuideEligible");
-    if failureStage == "" && ~isempty(trialResult.Attempts)
-        failureStage             = string(trialResult.Attempts(end).FailureStage);
-        failureKind              = string(trialResult.Attempts(end).FailureKind);
+    failureStage             = readString(trialResult.Diagnostics, "FailureStage");
+    failureKind              = readString(trialResult.Diagnostics, "FailureKind");
+    alternativeGuideEligible = readLogical(trialResult.Diagnostics, "AlternativeGuideEligible");
+    if failureStage == "" && ~isempty(trialResult.Diagnostics.Attempts)
+        failureStage             = string(trialResult.Diagnostics.Attempts(end).FailureStage);
+        failureKind              = string(trialResult.Diagnostics.Attempts(end).FailureKind);
         alternativeGuideEligible = logical( ...
-            trialResult.Attempts(end).AlternativeGuideEligible);
+            trialResult.Diagnostics.Attempts(end).AlternativeGuideEligible);
     end
 end
 

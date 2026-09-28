@@ -23,9 +23,12 @@ function handles = plotTrajectory(result, optionOverrides)
 %       route, and motion data.
 %   - optionOverrides (scalar struct or Cartesian axes handle, optional)
 %       Display, animation, and GIF controls. ShowSpaceTime opens the x/y/time
-%       view; ShowSweptSurfaces connects matching obstacle boundaries, and
-%       MaximumDisplayedTimeSlices caps snapshots per obstacle. The graph
-%       display caps sample nodes and edges in the 3D figure.
+%       view; ShowSweptSurfaces draws translucent motion walls where input
+%       vertices correspond and protected interval envelopes otherwise.
+%       MaximumDisplayedTimeSlices caps outline snapshots per obstacle. The graph
+%       display caps sample nodes and edges in both 2D and 3D views.
+%       FastRotationPreview hides filled sweeps only while the 3D view rotates;
+%       the complete surfaces return when the drag ends.
 %       ShowExpandedWorkspace opens the expanded workspace when wrapping is
 %       on. ShowSphere maps degree-valued azimuth/elevation to a unit sphere;
 %       elevation must lie within [-90 90]. With WrapY on, the intervals must
@@ -62,9 +65,10 @@ defaults.ShowSweptSurfaces          = true;
 defaults.ShowExpandedWorkspace      = true;
 defaults.ShowSphere                 = false;
 defaults.SphereTime_s               = NaN;
-defaults.MaximumDisplayedTimeSlices = 25;
-defaults.MaximumDisplayedGraphNodes = 300;
-defaults.MaximumDisplayedGraphEdges = 300;
+defaults.MaximumDisplayedTimeSlices = 5;
+defaults.MaximumDisplayedGraphNodes = 80;
+defaults.MaximumDisplayedGraphEdges = 40;
+defaults.FastRotationPreview         = true;
 
 defaults.FrameStride = 5;
 defaults.Pause_s     = 0.001;
@@ -82,10 +86,14 @@ end
 
 % A failure result can still contain useful obstacles and route diagnostics.
 % Require the usual result fields, but do not require successful motion.
-requiredResultFieldNames = {'Inputs', 'Options', 'Limits', 'RequestedLimits', 'Success', ...
-    'TerminationReason', 'PreparedObstacles', 'VisibilityGraph', 'Route_units', ...
-    'time_s', 'position_units', 'velocity_units_s', 'acceleration_units_s2', 'jerk_units_s3'};
-if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredResultFieldNames))
+requiredResultFieldNames = {'Inputs', 'Options', 'Success', 'TerminationReason', ...
+    'time_s', 'position_units', 'velocity_units_s', 'acceleration_units_s2', ...
+    'jerk_units_s3', 'Diagnostics'};
+requiredDiagnosticFieldNames = {'Limits', 'RequestedLimits', ...
+    'PreparedObstacles', 'VisibilityGraph', 'Route_units'};
+if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredResultFieldNames)) || ...
+        ~isstruct(result.Diagnostics) || ~isscalar(result.Diagnostics) || ...
+        ~all(isfield(result.Diagnostics, requiredDiagnosticFieldNames))
     error("plotTrajectory:InvalidResult", "result must be a scalar planner result.");
 end
 
@@ -122,7 +130,8 @@ end
 
 logicalOptionNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSpaceTime", ...
-    "ShowSweptSurfaces", "ShowExpandedWorkspace", "ShowSphere", "SaveAnimationGif"];
+    "ShowSweptSurfaces", "ShowExpandedWorkspace", "ShowSphere", ...
+    "FastRotationPreview", "SaveAnimationGif"];
 for optionName = logicalOptionNames
     options.(optionName) = obstacleAvoidance.input.normalizeLogicalScalar( ...
         options.(optionName), optionName, "plotTrajectory:InvalidLogicalOption");
@@ -149,8 +158,8 @@ handles = createEmptyHandles(options);
 wrapModes    = readWrapModes(result.Options);
 wrapsAnyAxis = any(wrapModes ~= "false");
 if options.ShowSphere && ~useSuppliedAxes
-    xInterval_units = result.RequestedLimits.xInterval_units;
-    yInterval_units = result.RequestedLimits.yInterval_units;
+    xInterval_units = result.Diagnostics.RequestedLimits.xInterval_units;
+    yInterval_units = result.Diagnostics.RequestedLimits.yInterval_units;
     azimuthIsFullTurn = abs(diff(xInterval_units) - 360) <= 1e-8;
     elevationIsPhysical = yInterval_units(1) >= -90 - 1e-8 && ...
         yInterval_units(2) <= 90 + 1e-8;
@@ -169,8 +178,8 @@ end
 % a trial at 12 s in a request ending at 20 s should still display through 20 s.
 plotEndTime_s = result.Inputs.goalState.time_s;
 % Use the parent request's goal time when it extends that display range.
-if ~result.Success && isfield(result, 'ParentRequest')
-    parentGoalTime_s = result.ParentRequest.GoalTime_s;
+if ~result.Success && isfield(result.Diagnostics, 'ParentRequest')
+    parentGoalTime_s = result.Diagnostics.ParentRequest.GoalTime_s;
     if isnumeric(parentGoalTime_s) && isscalar(parentGoalTime_s) && ...
             isreal(parentGoalTime_s) && isfinite(parentGoalTime_s)
         plotEndTime_s = max(plotEndTime_s, double(parentGoalTime_s));
@@ -181,9 +190,9 @@ if options.ShowSphere && ~useSuppliedAxes && isfinite(options.SphereTime_s) && .
         (options.SphereTime_s < plotTimeRange_s(1) || options.SphereTime_s > plotTimeRange_s(2))
     error("plotTrajectory:InvalidSphereTime", "SphereTime_s must be within the plotted time range.");
 end
-planningObstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.PreparedObstacles, plotTimeRange_s);
+planningObstacles  = obstacleAvoidance.obstacles.prepareObstacles(result.Diagnostics.PreparedObstacles, plotTimeRange_s);
 protectedObstacles = planningObstacles;
-requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+requestedIntervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
 if wrapsAnyAxis
     % The 2D views fold motion into the requested interval. Prepare each
     % source obstacle once; draw its copies from the shape at the displayed
@@ -218,18 +227,22 @@ if options.ShowWorkspace
     end
     configureSpatialAxes(workspaceAxesHandle, result);
     if useSuppliedAxes
-        xlim(workspaceAxesHandle, result.RequestedLimits.xInterval_units);
-        ylim(workspaceAxesHandle, result.RequestedLimits.yInterval_units);
+        xlim(workspaceAxesHandle, result.Diagnostics.RequestedLimits.xInterval_units);
+        ylim(workspaceAxesHandle, result.Diagnostics.RequestedLimits.yInterval_units);
     end
     drawObstacles(workspaceAxesHandle, protectedObstacles, originalObstacles, ...
         result.Inputs.initialState.time_s, requestedIntervals_units, wrapModes);
     if options.ShowVisibilityGraphs
-        drawSearchDiagnostics(workspaceAxesHandle, result, options.ShowSearchEdges);
+        drawSearchDiagnostics(workspaceAxesHandle, result, options);
     end
     drawPlannerRoute(workspaceAxesHandle, result);
     drawTarget(workspaceAxesHandle, result, result.Inputs.initialState.time_s);
     drawEndpoints(workspaceAxesHandle, result);
-    finishAxes(workspaceAxesHandle, result, options.Title);
+    legendLocation = "bestoutside";
+    if useSuppliedAxes
+        legendLocation = "best";
+    end
+    finishAxes(workspaceAxesHandle, result, options.Title, legendLocation);
     handles.WorkspaceFigure = workspaceFigureHandle;
     handles.WorkspaceAxes   = workspaceAxesHandle;
 end
@@ -262,11 +275,11 @@ if options.ShowVisibilityGraphs
         configureSpatialAxes(handles.VisibilityAxes, result);
         drawObstacles(handles.VisibilityAxes, protectedObstacles, originalObstacles, ...
             result.Inputs.initialState.time_s, requestedIntervals_units, wrapModes);
-        drawSearchDiagnostics(handles.VisibilityAxes, result, options.ShowSearchEdges);
+        drawSearchDiagnostics(handles.VisibilityAxes, result, options);
         drawPlannerRoute(handles.VisibilityAxes, result);
         drawTarget(handles.VisibilityAxes, result, result.Inputs.initialState.time_s);
         drawEndpoints(handles.VisibilityAxes, result);
-        finishAxes(handles.VisibilityAxes, result, options.Title);
+        finishAxes(handles.VisibilityAxes, result, options.Title, "bestoutside");
     end
 end
 
@@ -328,6 +341,21 @@ if options.ShowSpaceTime
         zlim(spaceTimeAxesHandle, plotTimeRange_s);
     end
     legend(spaceTimeAxesHandle, "Location", "best");
+    if options.FastRotationPreview
+        sweepSurfaceHandles = findall(spaceTimeAxesHandle, ...
+            "Type", "surface", "Tag", "SpaceTimeObstacleSweep");
+        if ~isempty(sweepSurfaceHandles)
+            % Transparency is costly to redraw on every mouse movement.
+            % Keep the outlines, rails, and path visible during rotation,
+            % then restore the complete sweep when the drag ends.
+            rotationMode = rotate3d(spaceTimeFigureHandle);
+            rotationMode.ActionPreCallback = @(~, ~) ...
+                setSweepVisibility(sweepSurfaceHandles, "off");
+            rotationMode.ActionPostCallback = @(~, ~) ...
+                setSweepVisibility(sweepSurfaceHandles, "on");
+            rotationMode.Enable = "on";
+        end
+    end
     handles.SpaceTimeFigure = spaceTimeFigureHandle;
     handles.SpaceTimeAxes   = spaceTimeAxesHandle;
 end
@@ -486,8 +514,8 @@ function configureSpatialAxes(axesHandle, result)
     box(axesHandle, "on");
     axis(axesHandle, "equal");
     if any(readWrapModes(result.Options) ~= "false")
-        xlim(axesHandle, result.RequestedLimits.xInterval_units);
-        ylim(axesHandle, result.RequestedLimits.yInterval_units);
+        xlim(axesHandle, result.Diagnostics.RequestedLimits.xInterval_units);
+        ylim(axesHandle, result.Diagnostics.RequestedLimits.yInterval_units);
     end
 end
 
@@ -496,7 +524,7 @@ function [position_units, sourceSampleIndices] = createDisplayPath(result, posit
     % Source sample indices keep the animation aligned with the original times.
     % A point over a y end (a pole) is folded back by the planner's pole
     % copy rule: y mirrored about that end and x turned by half a turn.
-    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    intervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
     wrapAxes        = readWrapModes(result.Options) ~= "false";
     [position_units, sourceSampleIndices] = obstacleAvoidance.plotting.createWrappedSpatialPath( ...
         position_units, intervals_units, wrapAxes);
@@ -544,7 +572,7 @@ function [figureHandle, axesHandle] = createContinuousWorkspace(result, options)
     box(axesHandle, "on");
     axis(axesHandle, "equal");
     drawLine(axesHandle, result.position_units, "k-", "Timed motion", 2);
-    intervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
+    intervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
     wrapAxes        = readWrapModes(result.Options) ~= "false";
     for axisIndex = find(wrapAxes)
         interval_units   = intervals_units(axisIndex, :);
@@ -577,8 +605,8 @@ function [figureHandle, axesHandle] = createExpandedWorkspace(result, wrapModes,
     box(axesHandle, "on");
     axis(axesHandle, "equal");
 
-    requestedIntervals_units = [result.RequestedLimits.xInterval_units; result.RequestedLimits.yInterval_units];
-    planningRange_units      = [result.Limits.xInterval_units; result.Limits.yInterval_units];
+    requestedIntervals_units = [result.Diagnostics.RequestedLimits.xInterval_units; result.Diagnostics.RequestedLimits.yInterval_units];
+    planningRange_units      = [result.Diagnostics.Limits.xInterval_units; result.Diagnostics.Limits.yInterval_units];
     turnLength_units         = diff(requestedIntervals_units(1, :));
     height_units             = diff(requestedIntervals_units(2, :));
     startTime_s              = result.Inputs.initialState.time_s;
@@ -657,8 +685,8 @@ function [figureHandle, axesHandle] = createExpandedWorkspace(result, wrapModes,
     % Goal copies inside the planning range. The planner tries these
     % nearest first; the filled red marker is the copy it planned to.
     requestedGoalState = result.Inputs.goalState;
-    if isfield(result, 'RequestedGoalState')
-        requestedGoalState = result.RequestedGoalState;
+    if isfield(result.Diagnostics, 'RequestedGoalState')
+        requestedGoalState = result.Diagnostics.RequestedGoalState;
     end
     goalHasTarget = isfield(requestedGoalState, 'targetMotion') && ~isempty(requestedGoalState.targetMotion);
     if ~goalHasTarget
@@ -715,16 +743,18 @@ function [figureHandle, axesHandle] = createExpandedWorkspace(result, wrapModes,
     end
 
     % The returned motion and route are already in these coordinates.
-    if ~isempty(result.Route_units)
-        drawLine(axesHandle, result.Route_units, "--", "Selected geometric route", 1);
+    if ~isempty(result.Diagnostics.Route_units)
+        routeHandle = drawLine(axesHandle, result.Diagnostics.Route_units, ...
+            "--", "Selected geometric route", 1);
+        routeHandle.Color = [0.43 0.64 0.13];
     end
     if ~isempty(result.position_units)
         drawLine(axesHandle, result.position_units, "k-", "Timed motion", 2);
     end
     plot(axesHandle, result.Inputs.initialState.position_units(1), ...
         result.Inputs.initialState.position_units(2), "go", "MarkerFaceColor", "g", "DisplayName", "Start");
-    hasPlannedGoalCopy = ~isfield(result, 'WrappedGoalCopies') || ...
-        any(result.WrappedGoalCopies.CandidatePlanned);
+    hasPlannedGoalCopy = ~isfield(result.Diagnostics, 'WrappedGoalCopies') || ...
+        any(result.Diagnostics.WrappedGoalCopies.CandidatePlanned);
     if hasPlannedGoalCopy
         plot(axesHandle, result.Inputs.goalState.position_units(1), result.Inputs.goalState.position_units(2), ...
             "ro", "MarkerFaceColor", "r", "MarkerSize", 8, "DisplayName", "Planned goal copy");
@@ -750,9 +780,11 @@ end
 function drawPlannerRoute(axesHandle, result)
     % Show a saved route or candidate motion even if planning later failed.
     % The plot title retains the failure reason; these lines do not imply success.
-    if ~isempty(result.Route_units)
-        selectedRoute_units = createDisplayPath(result, result.Route_units);
-        drawLine(axesHandle, selectedRoute_units, "--", "Selected geometric route", 1);
+    if ~isempty(result.Diagnostics.Route_units)
+        selectedRoute_units = createDisplayPath(result, result.Diagnostics.Route_units);
+        routeHandle = drawLine(axesHandle, selectedRoute_units, ...
+            "--", "Selected geometric route", 1);
+        routeHandle.Color = [0.43 0.64 0.13];
     end
     if ~isempty(result.position_units)
         motionPath_units = createDisplayPath(result, result.position_units);
@@ -765,8 +797,8 @@ function drawEndpoints(axesHandle, result)
     % successful intercept ends at the target's actual arrival position.
     startPosition_units = result.Inputs.initialState.position_units;
     goalPosition_units  = result.Inputs.goalState.position_units;
-    if result.Success && hasData(result, 'Intercept') && isfinite(result.Intercept.Time_s)
-        goalPosition_units = result.Intercept.TargetPosition_units;
+    if result.Success && hasData(result.Diagnostics, 'Intercept') && isfinite(result.Diagnostics.Intercept.Time_s)
+        goalPosition_units = result.Diagnostics.Intercept.TargetPosition_units;
     end
     if result.Success && ~isempty(result.position_units)
         endpointPath_units = createDisplayPath(result, result.position_units);
@@ -785,53 +817,73 @@ function lineHandle = drawLine(axesHandle, position_units, lineStyle, displayNam
         lineStyle, "LineWidth", lineWidth, "DisplayName", displayName);
 end
 
-function drawSearchDiagnostics(axesHandle, result, showEdges)
-    % Draw the saved search connections and nodes; do not rebuild the graph.
-    visibilityGraph     = result.VisibilityGraph;
+function drawSearchDiagnostics(axesHandle, result, options)
+    % Show a small sample of accepted connections. Rejected pairs remain in
+    % the result for diagnostics but do not cover the workspace plot.
+    visibilityGraph     = result.Diagnostics.VisibilityGraph;
     nodePositions_units = visibilityGraph.NodePosition_units;
     edgeFieldNames      = ["AcceptedNodeIndex", "RejectedNodeIndex"];
-    edgeStyles          = ["-", ":"];
-    edgeLegendLabels    = ["Accepted visibility edge", "Collision-rejected edge"];
     allEdgeNodeIndices  = zeros(0, 2);
     for categoryIndex = 1:2
         if hasData(visibilityGraph, edgeFieldNames(categoryIndex))
-            allEdgeNodeIndices = [allEdgeNodeIndices; visibilityGraph.(edgeFieldNames(categoryIndex))]; %#ok<AGROW>
+            allEdgeNodeIndices = [allEdgeNodeIndices; ...
+                visibilityGraph.(edgeFieldNames(categoryIndex))]; %#ok<AGROW>
         end
     end
-    if showEdges
-        for categoryIndex = 1:2
-            if hasData(visibilityGraph, edgeFieldNames(categoryIndex))
-                edgeNodeIndices = visibilityGraph.(edgeFieldNames(categoryIndex));
-                edgeCount       = size(edgeNodeIndices, 1);
+    displayedEdgeNodeIndices = zeros(0, 1);
+    if options.ShowSearchEdges && hasData(visibilityGraph, 'AcceptedNodeIndex')
+        edgeNodeIndices = visibilityGraph.AcceptedNodeIndex;
+        selectedIndices = selectDisplayedVisibilityEdges( ...
+            edgeNodeIndices, options.MaximumDisplayedGraphEdges);
+        edgeNodeIndices = edgeNodeIndices(selectedIndices, :);
+        displayedEdgeNodeIndices = edgeNodeIndices(:);
+        edgeCount = size(edgeNodeIndices, 1);
 
-                % Add a NaN after each two-node edge so MATLAB draws
-                % separate connections instead of one continuous line.
-                x_units = reshape([nodePositions_units(edgeNodeIndices(:, 1), 1), ...
-                    nodePositions_units(edgeNodeIndices(:, 2), 1), nan(edgeCount, 1)].', [], 1);
-                y_units = reshape([nodePositions_units(edgeNodeIndices(:, 1), 2), ...
-                    nodePositions_units(edgeNodeIndices(:, 2), 2), nan(edgeCount, 1)].', [], 1);
+        % Add a NaN after each two-node edge so MATLAB draws separate
+        % connections instead of one continuous line.
+        x_units = reshape([nodePositions_units(edgeNodeIndices(:, 1), 1), ...
+            nodePositions_units(edgeNodeIndices(:, 2), 1), nan(edgeCount, 1)].', [], 1);
+        y_units = reshape([nodePositions_units(edgeNodeIndices(:, 1), 2), ...
+            nodePositions_units(edgeNodeIndices(:, 2), 2), nan(edgeCount, 1)].', [], 1);
 
-                % Split each wrapped edge at the display boundary before
-                % joining the edge arrays for plotting.
-                if any(readWrapModes(result.Options) ~= "false")
-                    edgePaths_units = cell(edgeCount, 1);
-                    for edgeIndex = 1:edgeCount
-                        edgeEndpoints_units = nodePositions_units(edgeNodeIndices(edgeIndex, :), :);
-                        edgePaths_units{edgeIndex} = [createDisplayPath(result, edgeEndpoints_units); NaN NaN];
-                    end
-                    edgePaths_units = vertcat(edgePaths_units{:});
-                    x_units         = edgePaths_units(:, 1);
-                    y_units         = edgePaths_units(:, 2);
-                end
-                plot(axesHandle, x_units, y_units, edgeStyles(categoryIndex), ...
-                    "DisplayName", edgeLegendLabels(categoryIndex));
+        % Split each wrapped edge at the display boundary before joining
+        % the edge arrays for plotting.
+        if any(readWrapModes(result.Options) ~= "false")
+            edgePaths_units = cell(edgeCount, 1);
+            for edgeIndex = 1:edgeCount
+                edgeEndpoints_units = nodePositions_units(edgeNodeIndices(edgeIndex, :), :);
+                edgePaths_units{edgeIndex} = [createDisplayPath(result, edgeEndpoints_units); NaN NaN];
             end
+            edgePaths_units = vertcat(edgePaths_units{:});
+            x_units         = edgePaths_units(:, 1);
+            y_units         = edgePaths_units(:, 2);
         end
+        plot(axesHandle, x_units, y_units, "--", ...
+            "Color", [0.32 0.49 0.70], "LineWidth", 1.2, ...
+            "DisplayName", "Accepted visibility edges (sampled)");
     end
     nodePositions_units = foldNodes(result, nodePositions_units, allEdgeNodeIndices);
-    if ~isempty(nodePositions_units)
-        scatter(axesHandle, nodePositions_units(:, 1), nodePositions_units(:, 2), ...
-            17, "filled", "DisplayName", "Visibility node");
+    nodeCount = size(nodePositions_units, 1);
+    if nodeCount > 0
+        % Keep the start, goal, and displayed edge endpoints whenever the
+        % node cap allows it. Fill any remaining slots around the boundary.
+        endpointNodeIndices = (1:min(2, nodeCount)).';
+        priorityNodeIndices = unique([endpointNodeIndices; displayedEdgeNodeIndices], 'stable');
+        maximumNodes = options.MaximumDisplayedGraphNodes;
+        if numel(priorityNodeIndices) > maximumNodes
+            remainingPriorityNodes = setdiff(priorityNodeIndices, endpointNodeIndices, 'stable');
+            endpointDisplayCount = min(maximumNodes, numel(endpointNodeIndices));
+            remainingNodeSlots = maximumNodes - endpointDisplayCount;
+            displayedNodeIndices = [endpointNodeIndices(1:endpointDisplayCount); ...
+                evenlySpacedRows(remainingPriorityNodes, remainingNodeSlots)];
+        else
+            otherNodeIndices = setdiff((1:nodeCount).', priorityNodeIndices, 'stable');
+            displayedNodeIndices = [priorityNodeIndices; ...
+                evenlySpacedRows(otherNodeIndices, maximumNodes - numel(priorityNodeIndices))];
+        end
+        displayedNodes_units = nodePositions_units(displayedNodeIndices, :);
+        scatter(axesHandle, displayedNodes_units(:, 1), displayedNodes_units(:, 2), ...
+            14, [0.45 0.16 0.60], "filled", "DisplayName", "Visibility nodes (sampled)");
     end
 end
 
@@ -839,7 +891,7 @@ function drawSpaceTimeSearch(axesHandle, result, options)
     % A spatial visibility graph was checked at one obstacle snapshot.
     % Timed search stores candidate positions and a timed route proposal,
     % but does not retain the tested connections for every time layer.
-    visibilityGraph = result.VisibilityGraph;
+    visibilityGraph = result.Diagnostics.VisibilityGraph;
     searchKind = "";
     if isfield(visibilityGraph, 'SearchKind')
         searchKind = string(visibilityGraph.SearchKind);
@@ -851,11 +903,11 @@ function drawSpaceTimeSearch(axesHandle, result, options)
         nodePositions_units = visibilityGraph.NodePosition_units;
         if ~isempty(nodePositions_units)
             snapshotTime_s = result.Inputs.initialState.time_s;
-            nodeLabel = "Visibility nodes at obstacle snapshot";
+            nodeLabel = "Visibility nodes at obstacle snapshot (sampled)";
             if searchKind == "arrivalSpatialSnapshot"
                 snapshotTime_s = result.Inputs.goalState.time_s;
             elseif isTimedSearch
-                nodeLabel = "Timed search positions (start-plane projection)";
+                nodeLabel = "Timed search positions (sampled start-plane projection)";
             end
 
             nodeCount = size(nodePositions_units, 1);
@@ -874,9 +926,8 @@ function drawSpaceTimeSearch(axesHandle, result, options)
             if isSpatialSnapshot && options.ShowSearchEdges && ...
                     hasData(visibilityGraph, 'AcceptedNodeIndex')
                 acceptedNodeIndices = visibilityGraph.AcceptedNodeIndex;
-                edgeCount = size(acceptedNodeIndices, 1);
-                displayedEdgeIndices = unique(round(linspace( ...
-                    1, edgeCount, min(edgeCount, options.MaximumDisplayedGraphEdges))));
+                displayedEdgeIndices = selectDisplayedVisibilityEdges( ...
+                    acceptedNodeIndices, options.MaximumDisplayedGraphEdges);
                 acceptedNodeIndices = acceptedNodeIndices(displayedEdgeIndices, :);
                 edgeCount = size(acceptedNodeIndices, 1);
                 edgePositions_units = reshape(permute(cat(3, ...
@@ -884,7 +935,7 @@ function drawSpaceTimeSearch(axesHandle, result, options)
                     nodePositions_units(acceptedNodeIndices(:, 2), :), NaN(edgeCount, 2)), [3 1 2]), [], 2);
                 plot3(axesHandle, edgePositions_units(:, 1), edgePositions_units(:, 2), ...
                     repmat(snapshotTime_s, size(edgePositions_units, 1), 1), ...
-                    "-", "Color", [0.42 0.73 0.82], "LineWidth", 0.5, ...
+                    "--", "Color", [0.32 0.49 0.70], "LineWidth", 0.7, ...
                     "DisplayName", "Accepted snapshot edges (sampled)");
             end
         end
@@ -894,6 +945,45 @@ function drawSpaceTimeSearch(axesHandle, result, options)
             size(visibilityGraph.Route_units, 1) == numel(visibilityGraph.RouteTime_s)
         drawSpaceTimePath(axesHandle, visibilityGraph.Route_units, ...
             visibilityGraph.RouteTime_s, "b--", "Timed route proposal", 1.3);
+    end
+end
+
+function selectedRows = selectDisplayedVisibilityEdges(edgeNodeIndices, maximumEdges)
+    % Saved visibility graphs place the start at node 1 and the goal at node 2.
+    % Reserve roughly half the display for each endpoint, then fill unused
+    % slots with other accepted edges. A direct start-to-goal edge comes first.
+    touchesStart = any(edgeNodeIndices == 1, 2);
+    touchesGoal  = any(edgeNodeIndices == 2, 2);
+    directRows   = find(touchesStart & touchesGoal);
+    selectedRows = directRows(1:min(numel(directRows), maximumEdges));
+
+    remainingCount = maximumEdges - numel(selectedRows);
+    startRows = find(touchesStart & ~touchesGoal);
+    goalRows  = find(touchesGoal & ~touchesStart);
+    selectedRows = [selectedRows; ...
+        evenlySpacedRows(startRows, ceil(remainingCount / 2)); ...
+        evenlySpacedRows(goalRows, floor(remainingCount / 2))];
+
+    remainingCount = maximumEdges - numel(selectedRows);
+    endpointRows = find(touchesStart | touchesGoal);
+    unusedEndpointRows = setdiff(endpointRows, selectedRows, 'stable');
+    selectedRows = [selectedRows; evenlySpacedRows(unusedEndpointRows, remainingCount)];
+
+    remainingCount = maximumEdges - numel(selectedRows);
+    otherRows = find(~touchesStart & ~touchesGoal);
+    selectedRows = [selectedRows; evenlySpacedRows(otherRows, remainingCount)];
+end
+
+function selectedRows = evenlySpacedRows(candidateRows, maximumCount)
+    % Choose from the whole saved group, including its ends when possible.
+    selectedCount = max(0, min(numel(candidateRows), maximumCount));
+    if selectedCount == 0
+        selectedRows = zeros(0, 1);
+    elseif selectedCount == 1
+        selectedRows = candidateRows(round((numel(candidateRows) + 1) / 2));
+    else
+        rowPositions = unique(round(linspace(1, numel(candidateRows), selectedCount)));
+        selectedRows = candidateRows(rowPositions);
     end
 end
 
@@ -951,13 +1041,22 @@ function drawObstacles(axesHandle, protectedObstacles, originalObstacles, ...
 end
 
 function drawSpaceTimeObstacles(axesHandle, protectedObstacles, plotTimeRange_s, options)
-    % Sample the prepared protected geometry. A slice is an observation at
-    % its labeled time; side faces connect only matching moving vertices.
+    % Draw a few outlines so rotating obstacles remain readable. An interval
+    % enclosure covers the whole motion and is not an instantaneous shape,
+    % so show recorded protected shapes for those obstacles. Draw solid
+    % source motion when input vertices correspond; otherwise show the
+    % protected interval envelope as a solid.
     obstacleColors = lines(max(1, numel(protectedObstacles)));
     firstSlice = true;
+    firstOriginalSweep = true;
+    firstProtectedSweep = true;
+    firstEnvelopeSweep = true;
     for obstacleIndex = 1:numel(protectedObstacles)
         obstacle = protectedObstacles(obstacleIndex);
         preparation = obstacle.InternalPreparation;
+        originalSweepData  = [];
+        protectedSweepData = [];
+        envelopeSweepData  = [];
         if isscalar(obstacle.time_s)
             activeRange_s = plotTimeRange_s;
         else
@@ -971,63 +1070,166 @@ function drawSpaceTimeObstacles(axesHandle, protectedObstacles, plotTimeRange_s,
         if activeRange_s(1) > activeRange_s(2)
             continue
         end
-        sliceTimes_s = unique(linspace(activeRange_s(1), activeRange_s(2), sliceCount));
-        previousBoundary = struct('x_units', [], 'y_units', []);
-        previousTime_s = NaN;
+        usesIntervalEnclosures = any(preparation.IntervalUsesMovingCells | ...
+            preparation.IntervalUsesEndpointHull);
+        if usesIntervalEnclosures
+            % A broad interval enclosure can make a spinning bar look like
+            % a different polygon at each arbitrary display time. Recorded
+            % samples show the actual protected boundaries supplied there.
+            recordedTimes_s = obstacle.time_s(:);
+            recordedTimes_s = recordedTimes_s( ...
+                recordedTimes_s >= activeRange_s(1) & recordedTimes_s <= activeRange_s(2));
+            sliceTimes_s = zeros(1, 0);
+            if ~isempty(recordedTimes_s)
+                selectedIndices = unique(round(linspace( ...
+                    1, numel(recordedTimes_s), min(sliceCount, numel(recordedTimes_s)))));
+                sliceTimes_s = recordedTimes_s(selectedIndices).';
+            end
+        else
+            sliceTimes_s = unique(linspace(activeRange_s(1), activeRange_s(2), sliceCount));
+        end
+        snapshotX_units = cell(1, numel(sliceTimes_s));
+        snapshotY_units = cell(1, numel(sliceTimes_s));
+        snapshotTime_s = cell(1, numel(sliceTimes_s));
+        snapshotCount = 0;
         for time_s = sliceTimes_s
             % An interval without a verified continuous model has no shape
             % between its samples; leave a gap there.
             if ~shapeIsAvailable(obstacle, time_s)
-                previousTime_s = NaN;
                 continue
             end
-            [shape, boundaryDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s);
+            shape = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s);
             if isempty(shape.Vertices)
-                previousTime_s = NaN;
                 continue
             end
             [x_units, y_units] = boundary(shape);
+            snapshotCount = snapshotCount + 1;
+            snapshotX_units{snapshotCount} = [x_units(:).', NaN];
+            snapshotY_units{snapshotCount} = [y_units(:).', NaN];
+            snapshotTime_s{snapshotCount} = [repmat(time_s, 1, numel(x_units)), NaN];
+        end
+        if snapshotCount > 0
             legendVisibility = "off";
             if firstSlice
                 legendVisibility = "on";
                 firstSlice = false;
             end
-            plot3(axesHandle, x_units, y_units, repmat(time_s, size(x_units)), ...
+            plot3(axesHandle, [snapshotX_units{1:snapshotCount}], ...
+                [snapshotY_units{1:snapshotCount}], [snapshotTime_s{1:snapshotCount}], ...
                 "-", "Color", obstacleColors(obstacleIndex, :), ...
-                "LineWidth", 0.8, "DisplayName", "Protected obstacle slices", ...
+                "LineWidth", 0.8, "DisplayName", "Protected obstacle snapshots", ...
                 "HandleVisibility", legendVisibility);
+        end
 
-            % A change in vertex count, loop layout, or motion interval can
-            % make a connecting surface depict space the obstacle never used.
-            if options.ShowSweptSurfaces && isfinite(previousTime_s) && ...
-                    boundaryCorresponds(obstacle, previousBoundary, boundaryDetails, ...
-                    previousTime_s, time_s)
-                if preparation.IsTimeInvariant
-                    % The shape does not change: extrude one boundary.
-                    [faceStart, faceEnd] = deal(previousBoundary);
-                else
-                    % A recorded sample keeps its supplied vertex order, but
-                    % inside an interval preparation uses matched vertices.
-                    % Read both face ends just inside the interval so their
-                    % vertices correspond. Example: slices at 0 and 1 s read
-                    % at 1e-9 s and (1 - 1e-9) s. At a large absolute time the
-                    % inset grows to stay above the spacing of doubles there;
-                    % skip a face too short to hold it.
-                    inset_s = max(1e-9 * (time_s - previousTime_s), 64 * eps(max(abs([previousTime_s, time_s]))));
-                    faceStart = struct('x_units', [], 'y_units', []);
-                    faceEnd   = struct('x_units', 0, 'y_units', 0);
-                    if 4 * inset_s < time_s - previousTime_s
-                        [~, faceStart] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, previousTime_s + inset_s);
-                        [~, faceEnd]   = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, time_s - inset_s);
-                    end
-                end
-                if isequal(size(faceStart.x_units), size(faceEnd.x_units))
-                    drawSweptBoundary(axesHandle, faceStart, faceEnd, ...
-                        previousTime_s, time_s, obstacleColors(obstacleIndex, :));
-                end
+        if ~options.ShowSweptSurfaces || activeRange_s(1) == activeRange_s(2)
+            continue
+        end
+        if preparation.IsTimeInvariant
+            % A fixed shape has one straight extrusion through the time range.
+            [~, fixedBoundary] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacle, activeRange_s(1));
+            protectedSweepData = appendSweptBoundary(protectedSweepData, ...
+                fixedBoundary, fixedBoundary, activeRange_s(1), activeRange_s(2));
+            if ~isempty(protectedSweepData)
+                renderSweptBoundary(axesHandle, protectedSweepData, ...
+                    obstacleColors(obstacleIndex, :), "Protected obstacle sweep", firstProtectedSweep);
+                firstProtectedSweep = false;
             end
-            previousBoundary = boundaryDetails;
-            previousTime_s = time_s;
+            continue
+        end
+
+        % Split at each source sample. Across a sample boundary, the matched
+        % vertex order can change even when the visible polygons look alike.
+        recordedTimes_s = obstacle.time_s(:);
+        timesInsideRange_s = recordedTimes_s( ...
+            recordedTimes_s > activeRange_s(1) & recordedTimes_s < activeRange_s(2));
+        sweepTimes_s = unique([activeRange_s(1); timesInsideRange_s; activeRange_s(2)]);
+        for intervalIndex = 1:numel(sweepTimes_s) - 1
+            startTime_s = sweepTimes_s(intervalIndex);
+            endTime_s   = sweepTimes_s(intervalIndex + 1);
+            middleTime_s = startTime_s + 0.5 * (endTime_s - startTime_s);
+            if ~shapeIsAvailable(obstacle, middleTime_s)
+                continue
+            end
+
+            sourceIntervalIndex = find(obstacle.time_s <= middleTime_s, 1, "last");
+            usesFixedEnvelope = preparation.IntervalIsStationary(sourceIntervalIndex) || ...
+                preparation.IntervalUsesMovingCells(sourceIntervalIndex) || ...
+                preparation.IntervalUsesEndpointHull(sourceIntervalIndex);
+            if usesFixedEnvelope
+                sourceStartX_units = obstacle.originalX_units{sourceIntervalIndex};
+                sourceStartY_units = obstacle.originalY_units{sourceIntervalIndex};
+                sourceEndX_units   = obstacle.originalX_units{sourceIntervalIndex + 1};
+                sourceEndY_units   = obstacle.originalY_units{sourceIntervalIndex + 1};
+                sourceVerticesCorrespond = obstacle.UsesSourceIndex && ...
+                    isequal(size(sourceStartX_units), size(sourceEndX_units)) && ...
+                    isequal(size(sourceStartY_units), size(sourceEndY_units)) && ...
+                    isequal(isfinite(sourceStartX_units), isfinite(sourceEndX_units)) && ...
+                    isequal(isfinite(sourceStartY_units), isfinite(sourceEndY_units));
+                if preparation.IntervalUsesMovingCells(sourceIntervalIndex) && ...
+                        sourceVerticesCorrespond
+                    % Draw straight motion between the supplied source
+                    % vertices. This is a visualization of original motion;
+                    % planning still uses its protected interval envelope.
+                    sourceStartTime_s = obstacle.time_s(sourceIntervalIndex);
+                    sourceDuration_s = obstacle.time_s(sourceIntervalIndex + 1) - sourceStartTime_s;
+                    startFraction = (startTime_s - sourceStartTime_s) / sourceDuration_s;
+                    endFraction   = (endTime_s - sourceStartTime_s) / sourceDuration_s;
+                    startBoundary = struct( ...
+                        'x_units', sourceStartX_units + startFraction * (sourceEndX_units - sourceStartX_units), ...
+                        'y_units', sourceStartY_units + startFraction * (sourceEndY_units - sourceStartY_units));
+                    endBoundary = struct( ...
+                        'x_units', sourceStartX_units + endFraction * (sourceEndX_units - sourceStartX_units), ...
+                        'y_units', sourceStartY_units + endFraction * (sourceEndY_units - sourceStartY_units));
+                    originalSweepData = appendSweptBoundary(originalSweepData, ...
+                        startBoundary, endBoundary, startTime_s, endTime_s);
+                    continue
+                end
+
+                % This solid is the planner's protected occupancy envelope
+                % for the whole interval. It can include space the original
+                % obstacle did not visit at a particular instant.
+                envelopeShape = preparation.IntervalUnionShapes{sourceIntervalIndex};
+                if ~isempty(envelopeShape.Vertices)
+                    [x_units, y_units] = boundary(envelopeShape);
+                    envelopeBoundary = struct('x_units', x_units, 'y_units', y_units);
+                    envelopeSweepData = appendSweptBoundary(envelopeSweepData, ...
+                        envelopeBoundary, envelopeBoundary, startTime_s, endTime_s);
+                end
+                continue
+            end
+
+            % Query just inside one verified interval. Its prepared vertices
+            % correspond there even if recorded sample boundaries use a
+            % different starting corner or loop order.
+            inset_s = max(1e-9 * (endTime_s - startTime_s), ...
+                64 * eps(max(abs([startTime_s, endTime_s]))));
+            if 4 * inset_s >= endTime_s - startTime_s
+                continue
+            end
+            [~, faceStart] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacle, startTime_s + inset_s);
+            [~, faceEnd] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+                obstacle, endTime_s - inset_s);
+            if boundaryCorresponds(obstacle, faceStart, faceEnd, startTime_s, endTime_s)
+                protectedSweepData = appendSweptBoundary(protectedSweepData, ...
+                    faceStart, faceEnd, startTime_s, endTime_s);
+            end
+        end
+        if ~isempty(originalSweepData)
+            renderSweptBoundary(axesHandle, originalSweepData, ...
+                obstacleColors(obstacleIndex, :), "Original sampled-motion sweep", firstOriginalSweep);
+            firstOriginalSweep = false;
+        end
+        if ~isempty(protectedSweepData)
+            renderSweptBoundary(axesHandle, protectedSweepData, ...
+                obstacleColors(obstacleIndex, :), "Protected obstacle sweep", firstProtectedSweep);
+            firstProtectedSweep = false;
+        end
+        if ~isempty(envelopeSweepData)
+            renderSweptBoundary(axesHandle, envelopeSweepData, ...
+                obstacleColors(obstacleIndex, :), "Protected occupancy envelope", firstEnvelopeSweep);
+            firstEnvelopeSweep = false;
         end
     end
 end
@@ -1053,10 +1255,11 @@ function matches = boundaryCorresponds(obstacle, previousBoundary, currentBounda
         obstacle.InternalPreparation.MatchingTopology(startSampleIndex);
 end
 
-function drawSweptBoundary(axesHandle, previousBoundary, currentBoundary, ...
-        previousTime_s, currentTime_s, obstacleColor)
+function sweepData = appendSweptBoundary(sweepData, previousBoundary, currentBoundary, ...
+        previousTime_s, currentTime_s)
     % NaN separates polygon loops. Close each loop separately so a surface
-    % cannot bridge a hole or a disconnected piece.
+    % cannot bridge a hole or a disconnected piece. Store the panels until
+    % one surface can draw all intervals of this obstacle at once.
     finiteVertex = isfinite(previousBoundary.x_units) & isfinite(previousBoundary.y_units);
     runStarts = find(diff([false; finiteVertex; false]) == 1);
     runEnds   = find(diff([false; finiteVertex; false]) == -1) - 1;
@@ -1065,14 +1268,58 @@ function drawSweptBoundary(axesHandle, previousBoundary, currentBoundary, ...
         if numel(vertexIndices) < 2
             continue
         end
+        if isempty(sweepData)
+            sweepData = struct('SurfaceX', {{}}, 'SurfaceY', {{}}, ...
+                'SurfaceTime', {{}}, 'RailX', {{}}, 'RailY', {{}}, 'RailTime', {{}});
+        end
         closedVertexIndices = [vertexIndices, vertexIndices(1)];
-        surface(axesHandle, ...
-            [previousBoundary.x_units(closedVertexIndices).'; currentBoundary.x_units(closedVertexIndices).'], ...
-            [previousBoundary.y_units(closedVertexIndices).'; currentBoundary.y_units(closedVertexIndices).'], ...
-            [repmat(previousTime_s, 1, numel(closedVertexIndices)); ...
-             repmat(currentTime_s, 1, numel(closedVertexIndices))], ...
-            "FaceColor", obstacleColor, "FaceAlpha", 0.12, ...
-            "EdgeColor", "none", "HandleVisibility", "off");
+        sweepData.SurfaceX{end + 1} = [[ ...
+            previousBoundary.x_units(closedVertexIndices).'; ...
+            currentBoundary.x_units(closedVertexIndices).'], nan(2, 1)];
+        sweepData.SurfaceY{end + 1} = [[ ...
+            previousBoundary.y_units(closedVertexIndices).'; ...
+            currentBoundary.y_units(closedVertexIndices).'], nan(2, 1)];
+        sweepData.SurfaceTime{end + 1} = [[ ...
+            repmat(previousTime_s, 1, numel(closedVertexIndices)); ...
+            repmat(currentTime_s, 1, numel(closedVertexIndices))], nan(2, 1)];
+
+        % Follow two opposite corners per loop through time. These rails
+        % reveal the twist without redrawing every polygon at every sample.
+        railPositions = unique([1, 1 + floor(numel(vertexIndices) / 2)]);
+        for railPosition = railPositions
+            vertexIndex = vertexIndices(railPosition);
+            sweepData.RailX{end + 1} = [ ...
+                previousBoundary.x_units(vertexIndex), currentBoundary.x_units(vertexIndex), NaN];
+            sweepData.RailY{end + 1} = [ ...
+                previousBoundary.y_units(vertexIndex), currentBoundary.y_units(vertexIndex), NaN];
+            sweepData.RailTime{end + 1} = [previousTime_s, currentTime_s, NaN];
+        end
+    end
+end
+
+function renderSweptBoundary(axesHandle, sweepData, obstacleColor, legendLabel, showInLegend)
+    % A NaN column separates adjacent panels without creating another graphics
+    % object. The same separation keeps the two wireframe rails independent.
+    legendVisibility = "off";
+    if showInLegend
+        legendVisibility = "on";
+    end
+    surface(axesHandle, [sweepData.SurfaceX{:}], [sweepData.SurfaceY{:}], ...
+        [sweepData.SurfaceTime{:}], "FaceColor", obstacleColor, ...
+        "FaceAlpha", 0.12, "EdgeColor", "none", ...
+        "Tag", "SpaceTimeObstacleSweep", ...
+        "DisplayName", legendLabel, "HandleVisibility", legendVisibility);
+    railColor = 0.45 * obstacleColor + 0.55 * [1 1 1];
+    plot3(axesHandle, [sweepData.RailX{:}], [sweepData.RailY{:}], ...
+        [sweepData.RailTime{:}], "-", "Color", railColor, ...
+        "LineWidth", 0.45, "HandleVisibility", "off");
+end
+
+function setSweepVisibility(sweepSurfaceHandles, visibility)
+    % A closed figure can delete these handles before a pending mouse callback.
+    validHandles = sweepSurfaceHandles(isgraphics(sweepSurfaceHandles));
+    if ~isempty(validHandles)
+        set(validHandles, "Visible", visibility);
     end
 end
 
@@ -1128,7 +1375,9 @@ function drawTarget(axesHandle, result, displayTime_s)
     end
     [targetPath_units, sourceSampleIndices] = createDisplayPath( ...
         result, obstacleAvoidance.input.targetPositionAtTime(targetMotion, targetSampleTimes_s));
-    drawLine(axesHandle, targetPath_units, "-.", "Moving target track", 1);
+    targetTrackHandle = drawLine(axesHandle, targetPath_units, ...
+        "-.", "Moving target track", 1);
+    targetTrackHandle.Color = [0.75 0.00 0.65];
 
     % Keep the full track when the display time is outside the target
     % history, but omit the current-position marker for that time.
@@ -1148,8 +1397,8 @@ function axesHandles = createKinematicPanels(layoutHandle, result, useAnimationL
     % position bounds.
     quantityFieldNames = ["position_units", "velocity_units_s", "acceleration_units_s2", "jerk_units_s3"];
     quantityAxisLabels = ["Position (units)", "Velocity (units/s)", "Acceleration (units/s^2)", "Jerk (units/s^3)"];
-    quantityLimits     = [nan(1, 2); result.Limits.maxVelocity_units_s; ...
-        result.Limits.maxAcceleration_units_s2; result.Limits.maxJerk_units_s3];
+    quantityLimits     = [nan(1, 2); result.Diagnostics.Limits.maxVelocity_units_s; ...
+        result.Diagnostics.Limits.maxAcceleration_units_s2; result.Diagnostics.Limits.maxJerk_units_s3];
     axesHandles = gobjects(4, 1);
     for quantityIndex = 1:4
         % In the animation layout, the spatial plot fills the left column;
@@ -1174,12 +1423,12 @@ function axesHandles = createKinematicPanels(layoutHandle, result, useAnimationL
     legend(axesHandles(1), "Location", "best");
 end
 
-function finishAxes(axesHandle, result, titlePrefix)
+function finishAxes(axesHandle, result, titlePrefix, legendLocation)
     % Label the plot with the planner's actual termination reason.
     xlabel(axesHandle, "X (units)");
     ylabel(axesHandle, "Y (units)");
     title(axesHandle, sprintf("%s | %s", titlePrefix, result.TerminationReason));
-    legend(axesHandle, "Location", "best");
+    legend(axesHandle, "Location", legendLocation);
 end
 
 function isAvailable = shapeIsAvailable(obstacle, time_s)

@@ -1007,7 +1007,7 @@ function [result, validation, logLines] = callPlanner(obstacles, initialState, g
     if result.Success
         validation = obstacleAvoidance.validateTrajectory(result);
     else
-        validation = result.Validation;
+        validation = result.Diagnostics.Validation;
     end
     logLines      = string(labelText);
     capturedLines = splitlines(plannerText);
@@ -1373,8 +1373,8 @@ function redrawGoalRequest(axesHandle, modeState, controls)
             plot(axesHandle, displayPosition_units(:, 1), displayPosition_units(:, 2), "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
             startMarker_units = displayPosition_units(1, :);
             goalMarker_units  = displayPosition_units(end, :);
-        elseif ~isempty(result.Route_units)
-            partialRoute_units = obstacleAvoidance.plotting.createWrappedSpatialPath(result.Route_units, intervals_units, [result.Options.WrapX result.Options.WrapY]);
+        elseif ~isempty(result.Diagnostics.Route_units)
+            partialRoute_units = obstacleAvoidance.plotting.createWrappedSpatialPath(result.Diagnostics.Route_units, intervals_units, [result.Options.WrapX result.Options.WrapY]);
             plot(axesHandle, partialRoute_units(:, 1), partialRoute_units(:, 2), "-.", "Color", [0.90 0.55 0.10], "LineWidth", 1.8, "DisplayName", "Unvalidated geometric guide");
         end
     end
@@ -1455,7 +1455,7 @@ function status = formatGoalStatus(result, validation)
         "TerminationReason: " + result.TerminationReason; ...
         "ArrivalTime_s: " + sprintf("%.6g", result.ArrivalTime_s); ...
         "TrajectoryDuration_s: " + ...
-            sprintf("%.6g", result.TrajectoryDuration_s); "Independent validation: " + string(logical(validation.Passed))];
+            sprintf("%.6g", result.Diagnostics.TrajectoryDuration_s); "Independent validation: " + string(logical(validation.Passed))];
 end
 
 function modeState = appendLogLines(modeState, lines)

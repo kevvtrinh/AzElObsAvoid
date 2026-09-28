@@ -6,24 +6,29 @@ function intervalVertices_units = regionOnInterval( ...
 %       startVertices_units, regionMotionData, regionIndex, requestedInterval_s)
 %**************************************************************************
 % PURPOSE
-%   - Return a convex obstacle region at the requested start/end times,
-%     using the stored linear motion of its vertices.
+%   - Return a prepared obstacle at two requested times. Moving vertices
+%     travel linearly from their stored start to end positions. With no
+%     requested times, return one polygon enclosing that whole movement.
+%     A static obstacle keeps its original vertices.
 %**************************************************************************
 % INPUTS
 %   - startVertices_units (N-by-2 numeric array)
-%       Region vertices at the start of its stored motion interval.
+%       Polygon vertices at the start of the stored motion interval.
 %   - regionMotionData (scalar struct)
-%       EndRegions_units and ActiveTimeInterval_s when motion is present.
+%       EndRegions_units holds matching end vertices and
+%       ActiveTimeInterval_s holds each moving region's [start, end] time.
+%       Without EndRegions_units, the region is static.
 %   - regionIndex (positive integer scalar)
-%       Region to select from the stored motion arrays.
+%       One-based region number in those stored arrays.
 %   - requestedInterval_s (empty or 1-by-2 numeric row)
-%       Two absolute times. Empty requests one polygon enclosing everywhere
-%       the region travels during its complete stored interval.
+%       Two absolute times inside the region's active interval. Empty asks
+%       for one polygon enclosing all positions over the stored interval.
 %**************************************************************************
 % OUTPUTS
 %   - intervalVertices_units (M-by-2 or N-by-2-by-2 numeric array)
-%       Static/enclosing polygon vertices, or moving-region vertices at the
-%       two requested times. An out-of-range moving-region request throws.
+%       For a static region or empty request, one polygon's [x, y] rows.
+%       For a moving region at two times, N vertices at each time in the
+%       third dimension. A moving request outside its active times throws.
 %**************************************************************************
 % UNITS
 %   - Position is coordinate units and time is seconds.
@@ -42,8 +47,9 @@ end
 
 %% Section 2: Enclose The Whole Motion When No Times Are Requested
 
-% Linear vertex paths stay inside the convex hull of their start/end points.
-% This enclosure can include extra area; it is a whole-motion obstacle bound.
+% Each vertex travels on a straight line between its start and end.
+% The convex hull of all endpoints therefore encloses every intermediate
+% polygon. It may include extra area that the region never occupies.
 
 if isempty(requestedInterval_s)
     endpointVertices_units = [startVertices_units; endVertices_units];
@@ -54,8 +60,10 @@ end
 
 %% Section 3: Interpolate Vertices At The Requested Times
 
-% fraction = (requested time - start time) / stored duration. Allow only
-% a small rounding error beyond [0 1], then clamp that error to the endpoint.
+% fraction = (requested time - active start) / active duration. For motion
+% from 2 to 6 s, a request at 3 s is one-quarter of the way to the end
+% vertices. Allow only a tiny rounding error outside [0, 1], then use
+% the nearest endpoint for that error.
 
 activeInterval_s  = regionMotionData.ActiveTimeInterval_s(regionIndex, :);
 intervalFractions = (requestedInterval_s - activeInterval_s(1)) / diff(activeInterval_s);

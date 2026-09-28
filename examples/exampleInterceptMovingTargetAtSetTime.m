@@ -84,8 +84,8 @@ result = planner(obstacles, initialState, goalState, limits, plannerOptions);
 % velocity, acceleration, and jerk limits.
 exampleValidation = validateExampleResult( ...
     result, "specified-time moving-target intercept", struct());
-specifiedTimeSatisfied = isempty(result.Inputs.obstacles) && result.Validation.Passed && ...
-    abs(result.Intercept.Time_s - interceptTime_s) <= 1e-8;
+specifiedTimeSatisfied = isempty(result.Inputs.obstacles) && result.Diagnostics.Validation.Passed && ...
+    abs(result.Diagnostics.Intercept.Time_s - interceptTime_s) <= 1e-8;
 exampleValidation.SpecifiedTimeSatisfied = specifiedTimeSatisfied;
 exampleValidation.Passed                 = exampleValidation.Passed && specifiedTimeSatisfied;
 if ~exampleValidation.Passed

@@ -50,7 +50,7 @@ Fixed-arrival requests use one deterministic policy. The planner evaluates the
 exact initial- and arrival-snapshot visibility guides as bounded runtime
 shortcuts, then constructs one time-expanded guide when neither shortcut
 returns a complete motion. A shortcut failure is not evidence of request
-infeasibility. Every stage is recorded in `result.Attempts`, including its
+infeasibility. Every stage is recorded in `result.Diagnostics.Attempts`, including its
 declared iteration limit, typed failure, selection, and child-attempt evidence.
 A validator rejection terminates as a defect; it never starts another attempt.
 
@@ -91,8 +91,8 @@ timed layers, route, and interval ends still depend on it, and a 27 s horizon
 arrives at 16.888 s.
 
 Every route, motion, and clock attempt is recorded in
-`result.Attempts`; an arrival-time parent attempt keeps its fixed-arrival child
-evidence. `EarliestArrival` records the capabilities, the selected attempt, the
+`result.Diagnostics.Attempts`; an arrival-time parent attempt keeps its fixed-arrival child
+evidence. `result.Diagnostics.EarliestArrival` records the capabilities, the selected attempt, the
 best plan so far, the bounded-search state, and whether the earliest possible
 arrival was actually attained.
 
@@ -143,6 +143,9 @@ Public planner options are:
 - `ConstraintTolerance`
 - `CollisionClearanceTolerance_units`
 - `ArrivalTimeTolerance_s`
+- `ArrivalImprovementTolerance_s`: with static obstacles and earliest arrival,
+  stop refining the motion once one refinement pass gains less arrival time
+  than this (default `0.01` s; `0` refines until a pass gains nothing)
 - `WrapX`, `WrapY`: `"false"` (default), `"both"`, `"forward"` (the path
   may pass the upper interval end but not the lower), or `"backward"` (the
   lower end but not the upper). `true` and `false` still mean `"both"` and
@@ -222,6 +225,13 @@ Add the examples directory, then call any maintained example with plots off:
 addpath(fullfile(pwd, 'examples'));
 result = exampleMovingBarrierWait( ...
     struct('PlotOutputs', false, 'Verbose', false));
+```
+
+To start deep inside a large C-shaped pocket and reach a far goal as early as
+the limits allow, as recorded in `Rogue Cases/notworking.json`, run:
+
+```matlab
+result = exampleExitConcavePocketEarliest();
 ```
 
 The maintained suite covers obstacle-free motion, static detours, concave and

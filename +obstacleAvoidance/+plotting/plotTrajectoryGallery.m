@@ -45,7 +45,9 @@ figureVisible = validatestring(figureVisible, {'on', 'off'});
 for resultIndex = 1:numel(results)
     result = results{resultIndex};
     resultHasRequiredFields = isstruct(result) && isscalar(result) && ...
-        all(isfield(result, {'Success', 'Inputs', 'PreparedObstacles', 'Limits'}));
+        all(isfield(result, {'Success', 'Inputs', 'Diagnostics'})) && ...
+        isstruct(result.Diagnostics) && isscalar(result.Diagnostics) && ...
+        all(isfield(result.Diagnostics, {'PreparedObstacles', 'Limits'}));
     assert(resultHasRequiredFields, 'plotTrajectoryGallery:InvalidResult');
 end
 
@@ -73,8 +75,8 @@ for pageIndex = 1:pageCount
         displayTimes_s = linspace( ...
             result.Inputs.initialState.time_s, result.Inputs.goalState.time_s, 3);
         unpreparedSnapshotCount = 0;
-        for obstacleIndex = 1:numel(result.PreparedObstacles)
-            obstacle               = result.PreparedObstacles(obstacleIndex);
+        for obstacleIndex = 1:numel(result.Diagnostics.PreparedObstacles)
+            obstacle               = result.Diagnostics.PreparedObstacles(obstacleIndex);
             obstacleIsMoving       = ~obstacle.InternalPreparation.IsTimeInvariant;
             obstacleDisplayTimes_s = displayTimes_s;
             obstacleColor          = [0.45, 0.48, 0.52];

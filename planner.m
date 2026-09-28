@@ -34,6 +34,10 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %           Clearance the motion must keep from protected obstacles.
 %       - ArrivalTimeTolerance_s (positive scalar) [Default is 1e-8]
 %           Tolerance when comparing arrival times.
+%       - ArrivalImprovementTolerance_s (nonnegative scalar) [Default is 0.01]
+%           With static obstacles and earliest arrival, BMTP stops refining
+%           the motion once one refinement pass gains less arrival time
+%           than this. 0 refines until a pass gains nothing.
 %       - WrapX, WrapY (string) [Default is "false"]
 %           "false", "both", "forward", or "backward". Allows travel past
 %           the interval ends. x copies shift by a whole turn: 350 to 10 on
@@ -56,10 +60,13 @@ function result = planner(obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Includes the request, prepared obstacles, route, motion, solver
-%       details, and Validation. Expected no-path or infeasible outcomes
-%       return Success = false with Message and TerminationReason explaining
-%       why. Invalid inputs throw an error.
+%       Headline fields: Success, Message, TerminationReason, Inputs, Options,
+%       time_s, position_units, velocity_units_s, acceleration_units_s2,
+%       jerk_units_s3, ArrivalTime_s, MotionLength_units, and plotTrajectory.
+%       Diagnostics holds prepared obstacles, limits, route, polynomial,
+%       solver details, attempts, and independent Validation.
+%       Expected no-path or infeasible outcomes return Success = false with
+%       Message and TerminationReason explaining why. Invalid inputs throw.
 %       result.plotTrajectory() plots the result as returned; it accepts the
 %       same optional overrides as obstacleAvoidance.plotting.plotTrajectory.
 %   - options (scalar struct, zero-input call)

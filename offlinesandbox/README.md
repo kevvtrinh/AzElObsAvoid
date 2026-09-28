@@ -70,8 +70,8 @@ Bundles retain `PlannerInputs`, `PlannerOptions`, the full core `Result`,
 `obstacleAvoidanceSandboxDiagnosis-v2` format. The original horizon and supplied
 goal are preserved even when the solver chooses an earlier temporal trial.
 Reconstruction uses original obstacle vertices and applies the saved margin
-once. `Result.VisibilityGraph`, `Result.SolverDiagnostics`, and optional
-`Result.TemporalSearch` contain the core evidence. Its compatibility `Diagnosis`
+once. `Result.Diagnostics.VisibilityGraph`, `Result.Diagnostics.SolverDiagnostics`, and optional
+`Result.Diagnostics.TemporalSearch` contain the core evidence. Its compatibility `Diagnosis`
 output is empty.
 
 Programmatic replay:

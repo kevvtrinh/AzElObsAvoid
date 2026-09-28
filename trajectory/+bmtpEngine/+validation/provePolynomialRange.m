@@ -57,7 +57,8 @@ if numel(powerCoefficients) <= 2
     return
 end
 
-bernsteinCoefficients = convertPowerToBernstein(powerCoefficients);
+% This conversion changes the coefficients, not the curve.
+bernsteinCoefficients = bmtpEngine.motion.powerToBernstein(powerCoefficients);
 % A Bezier polynomial stays between its smallest and largest coefficients.
 % Splitting into smaller intervals can tighten those bounds without changing
 % the polynomial. Try up to two subdivision levels before checking extrema.
@@ -75,34 +76,11 @@ end
 % derivative is zero. Those values settle cases the coefficient bounds could
 % not decide; an inconclusive bound alone is not a failure.
 
-isWithinRange = checkEndpointAndStationaryValues( ...
-    powerCoefficients, allowedLowerBound, allowedUpperBound);
+[minimumValue, maximumValue] = bmtpEngine.validation.boundPolynomialRange(powerCoefficients);
+isWithinRange = minimumValue >= allowedLowerBound && maximumValue <= allowedUpperBound;
 end
 
 %% Section 3: Local Functions
-
-function bernsteinCoefficients = convertPowerToBernstein(powerCoefficients)
-    % Represent the same polynomial using Bezier coefficients on [0 1].
-    % This changes the coefficients, not the curve. Reuse the conversion
-    % matrix for later polynomials with the same coefficient count.
-    persistent conversionMapsByCoefficientCount
-    degree           = numel(powerCoefficients) - 1;
-    coefficientCount = degree + 1;
-    conversionMapIsMissing = isempty(conversionMapsByCoefficientCount) || ...
-        numel(conversionMapsByCoefficientCount) < coefficientCount || ...
-        isempty(conversionMapsByCoefficientCount{coefficientCount});
-    if conversionMapIsMissing
-        powerToBernsteinMap = zeros(coefficientCount);
-        for bernsteinIndex = 0:degree
-            for powerIndex = 0:bernsteinIndex
-                powerToBernsteinMap(bernsteinIndex + 1, powerIndex + 1) = ...
-                    nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
-            end
-        end
-        conversionMapsByCoefficientCount{coefficientCount} = powerToBernsteinMap;
-    end
-    bernsteinCoefficients = conversionMapsByCoefficientCount{coefficientCount} * powerCoefficients;
-end
 
 function rangeDecision = classifyBernsteinRange( ...
         bernsteinCoefficients, lowerBound, upperBound, remainingSubdivisions)
@@ -143,23 +121,4 @@ function rangeDecision = classifyBernsteinRange( ...
     else
         rangeDecision = 0;
     end
-end
-
-function isWithinRange = checkEndpointAndStationaryValues(powerCoefficients, lowerBound, upperBound)
-    % A zero derivative identifies a possible interior maximum or minimum.
-    % Include both endpoints, and keep the real parts of derivative roots
-    % within [0 1]. Clamp roots just beyond an endpoint by the small fraction
-    % tolerance; the polynomial-value limits are unchanged.
-    derivativeCoefficients = (1:numel(powerCoefficients) - 1).' .* powerCoefficients(2:end);
-    lastDerivativeIndex    = find(derivativeCoefficients ~= 0, 1, "last");
-    candidateFractions     = [0; 1];
-    if ~isempty(lastDerivativeIndex)
-        stationaryFractions = real(roots(flip(derivativeCoefficients(1:lastDerivativeIndex))));
-        fractionTolerance   = 1e-9;
-        stationaryFractions = stationaryFractions( ...
-            stationaryFractions >= -fractionTolerance & stationaryFractions <= 1 + fractionTolerance);
-        candidateFractions = [candidateFractions; min(max(stationaryFractions, 0), 1)];
-    end
-    candidateValues = polyval(flip(powerCoefficients), candidateFractions);
-    isWithinRange   = all(candidateValues >= lowerBound & candidateValues <= upperBound);
 end

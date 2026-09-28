@@ -78,9 +78,9 @@ for caseIndex = reshape(caseIndices, 1, [])
         lowerBound_deg = scenario.EndpointDistance_deg;
         if includeStaticObstacle
             staticScene = obstacleAvoidance.obstacles.snapshot( ...
-                result.PreparedObstacles(2), scenario.InitialState.time_s);
+                result.Diagnostics.PreparedObstacles(2), scenario.InitialState.time_s);
             staticVertexVisibility = obstacleAvoidance.search.createVertexVisibility( ...
-                staticScene, result.Limits, result.Options);
+                staticScene, result.Diagnostics.Limits, result.Options);
             staticGraph = obstacleAvoidance.search.createVisibilityGraph( ...
                 staticVertexVisibility, scenario.InitialState.position_units, ...
                 scenario.GoalState.position_units);
@@ -89,14 +89,14 @@ for caseIndex = reshape(caseIndices, 1, [])
         searchTime_s = NaN;
         solveTime_s  = NaN;
         conicCount   = NaN;
-        if isfield(result.VisibilityGraph, 'TimedSearch')
-            searchTime_s = result.VisibilityGraph.TimedSearch.ElapsedTime_s;
+        if isfield(result.Diagnostics.VisibilityGraph, 'TimedSearch')
+            searchTime_s = result.Diagnostics.VisibilityGraph.TimedSearch.ElapsedTime_s;
         end
-        if isfield(result.SolverDiagnostics, 'ElapsedTime_s')
-            solveTime_s = result.SolverDiagnostics.ElapsedTime_s;
+        if isfield(result.Diagnostics.SolverDiagnostics, 'ElapsedTime_s')
+            solveTime_s = result.Diagnostics.SolverDiagnostics.ElapsedTime_s;
         end
-        if isfield(result.SolverDiagnostics, 'ConicSolver')
-            conicCount = result.SolverDiagnostics.ConicSolver.CallCount;
+        if isfield(result.Diagnostics.SolverDiagnostics, 'ConicSolver')
+            conicCount = result.Diagnostics.SolverDiagnostics.ConicSolver.CallCount;
         end
         rows{rowIndex} = table(caseIndex, includeStaticObstacle, ...
             scenario.RandomSeed, scenario.AzimuthSpan_deg, ...

@@ -209,7 +209,7 @@ function testChangingVertexCountPreservesTimingAndPlansValidMotion(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyEqual(testCase, result.TerminationReason, "goalReached");
     verifyTrue(testCase, validation.Passed, validation.Message);
-    verifyTrue(testCase, result.PreparedObstacles.InternalPreparation.IntervalUsesEndpointHull);
+    verifyTrue(testCase, result.Diagnostics.PreparedObstacles.InternalPreparation.IntervalUsesEndpointHull);
 end
 
 function testCachedEndpointHullPlansEarlierAndOverlappingHorizons(testCase)

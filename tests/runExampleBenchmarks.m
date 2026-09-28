@@ -85,9 +85,9 @@ for caseIndex = 1:numel(caseNames)
                     'PlannerTime_s',subcase.ElapsedTime_s,'Message',subcase.TerminationReason)]; %#ok<AGROW>
             end
             if result.Success
-                arrival_s(repeatIndex) = result.TrajectoryDuration_s;
+                arrival_s(repeatIndex) = result.Diagnostics.TrajectoryDuration_s;
                 length_units(repeatIndex) = result.MotionLength_units;
-                routeLength_units(repeatIndex) = sum(vecnorm(diff(result.Route_units), 2, 2));
+                routeLength_units(repeatIndex) = sum(vecnorm(diff(result.Diagnostics.Route_units), 2, 2));
             end
             message = result.TerminationReason;
         catch exception

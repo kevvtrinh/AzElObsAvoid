@@ -56,8 +56,8 @@ function testPositionOnlyInterceptAtLinearTargetCorner(testCase)
         struct('GoalTimeMode', 'fixedArrival'));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase, result.Intercept.TargetPosition_units, [4 0], 'AbsTol', 1e-9);
-    verifyFalse(testCase, isfield(result.Intercept, 'TargetVelocity_units_s'));
+    verifyEqual(testCase, result.Diagnostics.Intercept.TargetPosition_units, [4 0], 'AbsTol', 1e-9);
+    verifyFalse(testCase, isfield(result.Diagnostics.Intercept, 'TargetVelocity_units_s'));
 end
 
 function testMatchedDerivativeConflictUsesNormalizedValue(testCase)

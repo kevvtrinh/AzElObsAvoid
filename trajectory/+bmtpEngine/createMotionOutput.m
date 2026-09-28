@@ -1,7 +1,7 @@
 function candidate = createMotionOutput(candidate, solverRequest, preparedMotion)
 %% Section 0: Header & Readme
 % SYNTAX
-%   candidate = bmtpEngine.pipeline.createMotionOutput(candidate, solverRequest, preparedMotion)
+%   candidate = bmtpEngine.createMotionOutput(candidate, solverRequest, preparedMotion)
 %**************************************************************************
 % PURPOSE
 %   - Fill the candidate with its polynomial, sampled motion history,

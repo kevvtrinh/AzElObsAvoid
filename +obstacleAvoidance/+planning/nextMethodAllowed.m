@@ -34,10 +34,10 @@ end
 % Use those details when the overall result does not contain a failure stage.
 failureStage = readFailureField(methodResult, "FailureStage");
 failureKind  = readFailureField(methodResult, "FailureKind");
-if failureStage == "" && isfield(methodResult, 'Attempts') && ...
-        ~isempty(methodResult.Attempts)
-    failureStage = string(methodResult.Attempts(end).FailureStage);
-    failureKind  = string(methodResult.Attempts(end).FailureKind);
+if failureStage == "" && isfield(methodResult.Diagnostics, 'Attempts') && ...
+        ~isempty(methodResult.Diagnostics.Attempts)
+    failureStage = string(methodResult.Diagnostics.Attempts(end).FailureStage);
+    failureKind  = string(methodResult.Diagnostics.Attempts(end).FailureKind);
 end
 
 if any(failureStage == ["search", "timing", "proposal"])
@@ -63,7 +63,7 @@ end
 function failureText = readFailureField(methodResult, fieldName)
     % An empty string means this result did not supply the failure detail.
     failureText = "";
-    if isstruct(methodResult) && isscalar(methodResult) && isfield(methodResult, fieldName)
-        failureText = string(methodResult.(fieldName));
+    if isstruct(methodResult) && isscalar(methodResult) && isfield(methodResult.Diagnostics, fieldName)
+        failureText = string(methodResult.Diagnostics.(fieldName));
     end
 end

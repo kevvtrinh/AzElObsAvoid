@@ -99,7 +99,7 @@ result = planner(obstacles, initialState, goalState, limits, options);
 if result.Success
     validation = obstacleAvoidance.validateTrajectory(result);
 else
-    validation = result.Validation;
+    validation = result.Diagnostics.Validation;
 end
 
 %% Section 4: Project & Write The Browser Result
@@ -293,26 +293,40 @@ end
 
 function projection = projectPlannerResult(result, request)
     % Export actual core results, retaining the original request separately.
-    names = ["Success", "Message", "TerminationReason", "Options", "Route_units", ...
-        "time_s", "position_units", "velocity_units_s", "acceleration_units_s2", ...
-        "jerk_units_s3", "ArrivalTime_s", "TrajectoryDuration_s", "ElapsedTime_s"];
     projection = struct();
-    for name = names
-        projection.(name) = result.(name);
-    end
+    projection.Success                = result.Success;
+    projection.Message                = result.Message;
+    projection.TerminationReason      = result.TerminationReason;
+    projection.Options                = result.Options;
+    projection.Route_units            = result.Diagnostics.Route_units;
+    projection.time_s                 = result.time_s;
+    projection.position_units         = result.position_units;
+    projection.velocity_units_s       = result.velocity_units_s;
+    projection.acceleration_units_s2  = result.acceleration_units_s2;
+    projection.jerk_units_s3          = result.jerk_units_s3;
+    projection.ArrivalTime_s          = result.ArrivalTime_s;
+    projection.TrajectoryDuration_s   = result.Diagnostics.TrajectoryDuration_s;
+    projection.ElapsedTime_s          = result.Diagnostics.ElapsedTime_s;
     projection.Inputs = struct("initialState", result.Inputs.initialState, ...
-        "goalState", result.Inputs.goalState, "limits", result.Limits);
+        "goalState", result.Inputs.goalState, "limits", result.Diagnostics.Limits);
     projection.Request = struct("initialState", request.initialState, ...
         "goalState", request.goalState, "limits", request.limits, "options", request.options);
-    for name = ["RequestedLimits", "MotionLength_units", "IntegratedSquaredJerk_units2_s5", ...
-            "MaximumConstraintViolation", "FixedArrivalTrialTime_s"]
-        if isfield(result, name), projection.(name) = result.(name); end
+    projection.RequestedLimits   = result.Diagnostics.RequestedLimits;
+    projection.MotionLength_units = result.MotionLength_units;
+    if isfield(result.Diagnostics, "IntegratedSquaredJerk_units2_s5")
+        projection.IntegratedSquaredJerk_units2_s5 = result.Diagnostics.IntegratedSquaredJerk_units2_s5;
+    end
+    if isfield(result.Diagnostics, "MaximumConstraintViolation")
+        projection.MaximumConstraintViolation = result.Diagnostics.MaximumConstraintViolation;
+    end
+    if isfield(result.Diagnostics, "FixedArrivalTrialTime_s")
+        projection.FixedArrivalTrialTime_s = result.Diagnostics.FixedArrivalTrialTime_s;
     end
 end
 
 function projection = projectSearchDiagnostics(result)
     % Project only examined graph edges; unexamined pairs are not rejections.
-    graph = result.VisibilityGraph;
+    graph = result.Diagnostics.VisibilityGraph;
     nodes_units = graph.NodePosition_units;
     accepted = graph.AcceptedNodeIndex;
     rejected = graph.RejectedNodeIndex;
@@ -332,8 +346,8 @@ function projection = projectSearchDiagnostics(result)
         "Unexamined edges remain implicit; expanded-node identities and frontier are not recorded. " + ...
         "For moving obstacles this spatial guide alone does not prove timed collision freedom.";
     projection = struct("Search", search, ...
-        "SolverDiagnostics", result.SolverDiagnostics);
-    if isfield(result, "TemporalSearch"), projection.TemporalSearch = result.TemporalSearch; end
+        "SolverDiagnostics", result.Diagnostics.SolverDiagnostics);
+    if isfield(result.Diagnostics, "TemporalSearch"), projection.TemporalSearch = result.Diagnostics.TemporalSearch; end
 end
 
 function projection = projectObstacles(obstacles)

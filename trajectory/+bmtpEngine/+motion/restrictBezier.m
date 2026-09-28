@@ -5,19 +5,23 @@ function restrictedControlPoint_units = restrictBezier(controlPoint_units, segme
 %       controlPoint_units, segmentFractionInterval)
 %**************************************************************************
 % PURPOSE
-%   - Return controls for just the requested portion of a Bezier curve.
-%     Preserve its shape and degree without approximating it with samples.
+%   - Cut one Bezier curve to the requested fraction interval. Return new
+%     controls that trace exactly that portion as the new fraction runs from
+%     0 to 1; no sample-based approximation is used.
 %**************************************************************************
 % INPUTS
 %   - controlPoint_units (N-by-M numeric array)
-%       Control points of one Bezier curve, one row per control point.
+%       N controls for one curve, with one row per control and M coordinate
+%       axes in the columns.
 %   - segmentFractionInterval (1-by-2 numeric row)
-%       [start end] fractions with 0 <= start <= end <= 1. Fractions refer
-%       to the curve parameter, not the distance traveled along the curve.
+%       [start end] with 0 <= start <= end <= 1. A fraction measures progress
+%       in the curve parameter, not distance traveled; 0.25 need not be a
+%       quarter of the curve's length.
 %**************************************************************************
 % OUTPUTS
 %   - restrictedControlPoint_units (N-by-M numeric array)
-%       Controls for the selected portion, now parameterized from 0 to 1.
+%       Controls for the selected portion, with its new fraction from 0 to 1.
+%       If start equals end, every control marks that one point.
 %**************************************************************************
 % UNITS
 %   - Coordinate units; interval endpoints are dimensionless.
@@ -30,8 +34,9 @@ endFraction   = segmentFractionInterval(2);
 restrictedControlPoint_units = controlPoint_units;
 controlPointCount = size(controlPoint_units, 1);
 
-% Repeatedly blend adjacent controls (the de Casteljau split). The first
-% point at each level gives a control for the portion before the split.
+% At endFraction, repeatedly blend neighboring controls. This is the
+% de Casteljau split: the first point at each level becomes a control for
+% the left piece [0, endFraction]. If endFraction is 1, keep the full curve.
 if endFraction < 1
     interpolatedControls_units = restrictedControlPoint_units;
     for splitLevel = 1:controlPointCount - 1
@@ -43,9 +48,10 @@ end
 
 %% Section 2: Remove The Portion Before The Requested Start
 
-% The retained curve now covers [0 end], so its local split is start / end.
-% For [0.25 0.5], split the retained half again at 0.25 / 0.5 = 0.5.
-% Keeping the last point at each level selects the portion after this split.
+% The retained curve covers [0, endFraction] on a new 0-to-1 scale. The
+% requested start is therefore startFraction / endFraction on this piece.
+% For [0.25, 0.5], cut the retained half at 0.25 / 0.5 = 0.5. The last
+% point at each level becomes a control for the right piece.
 if startFraction > 0
     remainingSplitFraction     = startFraction / endFraction;
     interpolatedControls_units = restrictedControlPoint_units;

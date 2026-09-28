@@ -257,10 +257,10 @@ function testAlteredEndpointCoverageRejected(testCase)
         struct('time_s',12,'position_units',[4,0]),struct(),struct());
     verifyTrue(testCase,r.Success,r.Message);
     altered = r;
-    altered.SeparationProof.Coverage.EndRegions_units{1}(:,2) = altered.SeparationProof.Coverage.EndRegions_units{1}(:,2)+1;
+    altered.Diagnostics.SeparationProof.Coverage.EndRegions_units{1}(:,2) = altered.Diagnostics.SeparationProof.Coverage.EndRegions_units{1}(:,2)+1;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
     altered = r;
-    altered.SeparationProof.Coverage = rmfield(altered.SeparationProof.Coverage,'EndRegions_units');
+    altered.Diagnostics.SeparationProof.Coverage = rmfield(altered.Diagnostics.SeparationProof.Coverage,'EndRegions_units');
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
 
