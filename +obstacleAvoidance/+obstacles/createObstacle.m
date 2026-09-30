@@ -485,12 +485,26 @@ function [retainedVertexIndices, changedArea_units2] = removeCrossingZigzags(poi
             clear restoreWarning;
         end
 
-        % Remove the fold with the fewest intervening vertices. If tied,
-        % choose the pair with the lower first-edge index for a stable result.
-        [~, sortOrder]   = sortrows([diff(edgePairs, 1, 2), edgePairs(:, 1)], [1, 2]);
-        crossingToRemove = edgePairs(sortOrder(1), :);
+        % A crossing splits the ring into two loops. Remove the side with
+        % fewer vertices: edges 1 and 72 of a 73-point ring remove the
+        % 2-vertex seam sliver, not the other 71 vertices. Equal sides remove
+        % the interior run i+1..j. Equal repair counts choose the lower first
+        % edge index, then the lower second edge index, for a stable result.
+        interiorVertexCounts   = diff(edgePairs, 1, 2);
+        complementVertexCounts = vertexCount - interiorVertexCounts;
+        removedVertexCounts    = min(interiorVertexCounts, complementVertexCounts);
+        [~, sortOrder] = sortrows([removedVertexCounts, edgePairs], [1, 2, 3]);
+        selectedCrossingIndex = sortOrder(1);
+        crossingToRemove      = edgePairs(selectedCrossingIndex, :);
+        interiorVertexIndices = crossingToRemove(1) + 1:crossingToRemove(2);
 
-        retainedVertexIndices(crossingToRemove(1) + 1:crossingToRemove(2)) = [];
+        if interiorVertexCounts(selectedCrossingIndex) <= complementVertexCounts(selectedCrossingIndex)
+            retainedVertexIndices(interiorVertexIndices) = [];
+        else
+            % Removing the cyclic complement keeps i+1..j, with the new
+            % closing edge joining j back to i+1. Keep supplied coordinates.
+            retainedVertexIndices = retainedVertexIndices(interiorVertexIndices);
+        end
     end
 
     % Report removed and added areas separately so neither change is hidden.

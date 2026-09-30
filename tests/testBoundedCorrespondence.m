@@ -260,6 +260,94 @@ function testProperCrossingZigzagHasDeclaredRepair(testCase)
     verifyEqual(testCase,bow.NormalizationDiagnostics.RemovedRegionCount,[1,1]);
 end
 
+function testSmallInteriorFoldKeepsTheSameVertices(testCase)
+    % Edges 3 and 5 cross in the middle of this concave ring. The existing
+    % interior repair removes vertices 4 and 5, keeping the six others.
+    ring_units = [-1, 4; -1, 0; 0, 0; 2, 2; 0, 2; 2, 0; 4, 0; 4, 4];
+    expected_units = ring_units([1:3, 6:8], :);
+    verifyCrossingRepair(testCase, ring_units, expected_units, 2);
+end
+
+function testSmallSeamFoldRemovesTheCyclicComplement(testCase)
+    % Edges 1 and 7 cross. Removing their six-vertex interior would discard
+    % the main boundary; removing the two seam vertices keeps it instead.
+    ring_units = [0, 2; 2, 0; 4, 0; 4, 4; -1, 4; -1, 0; 0, 0; 2, 2];
+    expected_units = ring_units(2:7, :);
+    verifyCrossingRepair(testCase, ring_units, expected_units, 2);
+end
+
+function testPolygonClosureRoundoffKeepsTheLargerLoop(testCase)
+    % This closed hexagon ends a few ulps from its first coordinate. Edges
+    % 1 and 6 strictly cross; keep five vertices rather than empty the ring.
+    ring_units = [1, 1; 3, 1; 4, 2; 3, 3; 1, 3; 0, 2; ...
+        1 + 4 * eps(1), 1 - 2 * eps(1)];
+    expected_units = ring_units(2:6, :);
+    verifyCrossingRepair(testCase, ring_units, expected_units, 2);
+end
+
+function testClosingCopyRemovalRemainsExact(testCase)
+    % A distinct closing point with no strict crossing must remain, even
+    % when it differs by just two ulps. Only the exact copy is a duplicate.
+    square_units = [1, 1; 3, 1; 3, 3; 1, 3];
+    for closureOffset_units = [0, 2 * eps(1)]
+        ring_units = [square_units; 1, 1 + closureOffset_units];
+        obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+            'exact closure', 0, ring_units(:, 1), ring_units(:, 2), 0);
+        expected_units = ring_units;
+        duplicateCount = double(closureOffset_units == 0);
+        if duplicateCount > 0
+            expected_units(end, :) = [];
+        end
+        verifyEqual(testCase, [obstacle.x_units{1}, obstacle.y_units{1}], expected_units);
+        verifyEqual(testCase, obstacle.NormalizationDiagnostics.RemovedDuplicateVertexCount, ...
+            duplicateCount * ones(1, 2));
+        verifyEqual(testCase, obstacle.NormalizationDiagnostics.RemovedZigzagVertexCountBySample, [0, 0]);
+    end
+end
+
+function testRepairedSourceIndexCountChangeReportsEndpointHulls(testCase)
+    % The seam repair changes only the middle sample's count. Unknown
+    % vertex matches must produce an explicit conservative interval model.
+    folded_units = [0, 2; 2, 0; 4, 0; 4, 4; -1, 4; -1, 0; 0, 0; 2, 2];
+    neighbor_units = [-1, 0; 0, 0; 2, 0; 4, 0; 4, 2; 4, 4; -1, 4];
+    frames_units = {neighbor_units; folded_units + [0.1, 0]; neighbor_units + [0.2, 0]};
+    obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+        'repaired source indices', [0; 1; 2], ...
+        cellfun(@(frame) frame(:, 1), frames_units, 'UniformOutput', false), ...
+        cellfun(@(frame) frame(:, 2), frames_units, 'UniformOutput', false), ...
+        0, struct('vertexCorrespondence', 'sourceIndex'));
+    verifyEqual(testCase, cellfun(@numel, obstacle.x_units), [7; 6; 7]);
+    verifyEqual(testCase, obstacle.NormalizationDiagnostics.RemovedZigzagVertexCountBySample, ...
+        [0, 0; 2, 2; 0, 0]);
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
+    preparation = prepared.InternalPreparation;
+    verifyTrue(testCase, prepared.UsesSourceIndex);
+    verifyEqual(testCase, prepared.vertexCorrespondence, "sourceIndex");
+    verifyEqual(testCase, preparation.IntervalGeometryModel, repmat("endpointConvexHull", 2, 1));
+    verifyEqual(testCase, preparation.IntervalUsesEndpointHull, true(2, 1));
+    verifyEqual(testCase, preparation.MatchingTopology, false(2, 1));
+    verifyEqual(testCase, preparation.IntervalHasExactPartition, false(2, 1));
+    verifyEqual(testCase, preparation.IntervalUsesMovingCells, false(2, 1));
+    verifyEqual(testCase, preparation.IntervalIsStationary, false(2, 1));
+    verifyEqual(testCase, preparation.IntervalIsUnsupported, false(2, 1));
+    verifyEqual(testCase, preparation.IntervalProofReason, strings(2, 1));
+    for intervalIndex = 1:2
+        cells = obstacleAvoidance.obstacles.createTimeCells(prepared, intervalIndex - 1, intervalIndex);
+        verifyEqual(testCase, cells.Regions_units, cells.EndRegions_units);
+        enclosure = unionRegions(cells.Regions_units);
+        for sampleIndex = intervalIndex:intervalIndex + 1
+            verifyEqual(testCase, area(subtract(preparation.SampleShapes{sampleIndex}, enclosure)), 0);
+        end
+        lower_units = [obstacle.x_units{intervalIndex}, obstacle.y_units{intervalIndex}];
+        upper_units = [obstacle.x_units{intervalIndex + 1}, obstacle.y_units{intervalIndex + 1}];
+        for vertexIndex = 1:size(lower_units, 1)
+            midpoint_units = (lower_units(vertexIndex, :) + upper_units) / 2;
+            verifyTrue(testCase, all(obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+                prepared, midpoint_units(:, 1), midpoint_units(:, 2), intervalIndex - 0.5)));
+        end
+    end
+end
+
 function testMovingCellsContainUnprovableCorrespondingRing(testCase)
     [lower, upper] = thinNotchFixture();
     for margin_units=[0,0.1]
@@ -473,6 +561,29 @@ function testRedundantAffineKeyframesUseIdenticalCellsAndMotion(testCase)
     verifyTrue(testCase,sparseResult.Success);
     verifyEqual(testCase,denseResult.ArrivalTime_s,sparseResult.ArrivalTime_s);
     verifyEqual(testCase,denseResult.MotionLength_units,sparseResult.MotionLength_units);
+end
+
+function verifyCrossingRepair(testCase, ring_units, expected_units, removedVertexCount)
+    % Compare returned coordinates and both area directions against the
+    % declared simplified pre-repair fill, separately for each geometry role.
+    obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+        'crossing fold', 0, ring_units(:, 1), ring_units(:, 2), 0);
+    verifyEqual(testCase, [obstacle.x_units{1}, obstacle.y_units{1}], expected_units);
+    verifyEqual(testCase, [obstacle.originalX_units{1}, obstacle.originalY_units{1}], expected_units);
+    diagnostics = obstacle.NormalizationDiagnostics;
+    verifyEqual(testCase, diagnostics.RemovedZigzagVertexCountBySample, removedVertexCount * ones(1, 2));
+    verifyEqual(testCase, diagnostics.RemovedRegionCount, [0, 0]);
+    verifyEqual(testCase, diagnostics.RemovedDuplicateVertexCount, [0, 0]);
+    warningState = warning('off', 'MATLAB:polyshape:repairedBySimplify');
+    restoreWarning = onCleanup(@() warning(warningState));
+    beforeShape = polyshape(ring_units, 'Simplify', true, 'KeepCollinearPoints', true);
+    afterShape = polyshape(expected_units, 'Simplify', true, 'KeepCollinearPoints', true);
+    verifyEqual(testCase, diagnostics.RemovedZigzagAreaBySample_units2, ...
+        area(subtract(beforeShape, afterShape)) * ones(1, 2));
+    verifyEqual(testCase, diagnostics.AddedZigzagAreaBySample_units2, ...
+        area(subtract(afterShape, beforeShape)) * ones(1, 2));
+    rebuilt = obstacleAvoidance.obstacles.createObstacle(obstacle);
+    verifyEqual(testCase, rebuilt.NormalizationDiagnostics, diagnostics);
 end
 
 function prepared=preparePair(lower,upper)

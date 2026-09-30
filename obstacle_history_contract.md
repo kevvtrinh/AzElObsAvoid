@@ -16,12 +16,18 @@ No distance or area threshold classifies distinct coordinates as duplicates.
 In particular, nearby binary64 coordinates may bound a thin positive-area
 region and are retained. After duplicate removal, each ring is checked for
 proper crossings of non-adjacent edges `(i,i+1)` and `(j,j+1)`, with `i<j`,
-using strictly opposite orientation signs and no inflated tolerance. The
-interior run `i+1..j` is removed, joining vertex `i` to vertex `j+1` (cyclic
-at the last edge). Crossings are recomputed iteratively, shortest interior
-run first; equal-length runs use the smaller first index. If that leaves
-fewer than three distinct vertices, the whole run is removed and recorded.
-The rule uses the supplied ring order, identically for both geometry roles.
+using strictly opposite orientation signs and no inflated tolerance. Compare
+the interior run `i+1..j` (`j-i` vertices) with its cyclic complement
+`j+1..i` (`vertexCount-(j-i)` vertices), and remove the smaller side. Removing
+the interior joins vertex `i` to vertex `j+1` (cyclic at the last edge).
+Removing the complement keeps `i+1..j`, joining vertex `j` back to vertex
+`i+1`. For example, edges 1 and 72 of a 73-point ring remove the 2-vertex
+seam sliver rather than the other 71 vertices. Equal sides remove the
+interior run. Crossings are recomputed iteratively, fewest removed vertices
+first; equal repair counts use the smaller first edge index, then the
+smaller second edge index. If that leaves fewer than three distinct vertices,
+the whole run is removed and recorded. The rule uses the supplied ring order,
+identically for both geometry roles, with no distance or area threshold.
 
 This is a declared repair of the supplied ring: a self-crossing ring has no
 unique supplied fill. Removed vertex counts and both removed and added area
