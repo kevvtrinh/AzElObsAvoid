@@ -82,6 +82,64 @@ function testExactMotionMatchesIndependentMinimum(testCase)
     verifyEqual(testCase, stationaryResult.Diagnostics.Profile.AxisFamily(2), "stationary");
 end
 
+function testFixedAccelerationClippedTrailingPhase(testCase)
+    % This captured braking axis accepts a nearly zero negative last phase.
+    % Clipping it must leave one endpoint on the common two-axis clock.
+    initialState = struct("time", 0, ...
+        "position", [-1.2720160002561727, 0.42848097664857931], ...
+        "velocity", [7.1330666623970043, 0]);
+    terminalState = struct("position", [0, 0], "velocity", [0, 0], ...
+        "maximumTime", 2.5404643148803379);
+    limits = struct("maximumVelocity", [10, 10], ...
+        "maximumAcceleration", [20, 20]);
+    options = struct("TimeMode", "fixed", "FinalTime", 0.397539215306765, ...
+        "SampleTime", terminalState.maximumTime);
+    result = ruckigEngine.solve(initialState, terminalState, limits, options);
+    verifyAccelerationPartition(testCase, result, initialState, terminalState, options.FinalTime);
+end
+
+function testFixedAccelerationBoundaryWithZeroTrailingPhases(testCase)
+    % A single accelerating axis reaches a moving target at its minimum.
+    % The fixed clock is four floating-point steps later. Reusing that
+    % boundary profile must keep both zero trailing phases on the new clock.
+    initialState = struct("time", 0, "position", 0, "velocity", 0);
+    terminalState = struct("position", 0.5, "velocity", 1, "maximumTime", 2);
+    limits = struct("maximumVelocity", 2, "maximumAcceleration", 1);
+    options = struct("TimeMode", "fixed", "FinalTime", 1 + 4 * eps(1));
+    result = ruckigEngine.solve(initialState, terminalState, limits, options);
+    verifyAccelerationPartition(testCase, result, initialState, terminalState, options.FinalTime);
+    verifyEqual(testCase, result.Polynomial.SegmentCount, 1);
+    verifyEqual(testCase, result.Diagnostics.Profile.AxisFamily, "acceleration");
+end
+
+function verifyAccelerationPartition(testCase, result, initialState, terminalState, finalTime_s)
+    % Integrate each returned acceleration interval directly from the supplied
+    % initial state, without using engine integration or endpoint histories.
+    assertTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+    verifyEqual(testCase, result.Duration, finalTime_s - initialState.time);
+    polynomial = result.Polynomial;
+    verifyGreaterThan(testCase, polynomial.SegmentDuration_s, 0);
+    verifyEqual(testCase, polynomial.SegmentBreakTau(end), 1);
+    verifyEqual(testCase, nnz(polynomial.SegmentBreakTau == 1), 1);
+    verifyGreaterThan(testCase, diff(polynomial.SegmentBreakTau), 0);
+    verifyEqual(testCase, polynomial.accelerationPower_units_s2(:, :, 2), ...
+        zeros(polynomial.SegmentCount, numel(initialState.position)));
+    position_units   = initialState.position;
+    velocity_units_s = initialState.velocity;
+    for segmentIndex = 1:polynomial.SegmentCount
+        duration_s = polynomial.SegmentDuration_s(segmentIndex);
+        acceleration_units_s2 = polynomial.accelerationPower_units_s2(segmentIndex, :, 1);
+        position_units = position_units + duration_s * velocity_units_s + ...
+            duration_s^2 * acceleration_units_s2 / 2;
+        velocity_units_s = velocity_units_s + duration_s * acceleration_units_s2;
+    end
+    verifyEqual(testCase, position_units, terminalState.position, ...
+        "AbsTol", result.Validation.Tolerance);
+    verifyEqual(testCase, velocity_units_s, terminalState.velocity, ...
+        "AbsTol", result.Validation.Tolerance);
+end
+
 function testAsymmetricBoundsAreRejected(testCase)
     % Verify the exact engine identifies its unsupported derivative-bound family.
     [initialState, terminalState, limits] = restToRestFixture();

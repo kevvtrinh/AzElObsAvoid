@@ -1,11 +1,27 @@
 function attempt = createSynchronizedAccelerationMotion(initialState, terminalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX: attempt = ruckigEngine.createSynchronizedAccelerationMotion(initialState, terminalState, limits, options)
-% PURPOSE: Create exact second-order profiles with discontinuous acceleration and unbounded jerk.
-% INPUTS: Normalized position/velocity states, symmetric velocity/acceleration limits,
-%   and resolved timing/tolerance options. Endpoint accelerations are not imposed.
-% OUTPUTS: Synchronized profile, status, termination reason, and elapsed time.
-% UNITS: Caller-defined units consistent across position derivatives.
+% SYNTAX
+%   attempt = ruckigEngine.createSynchronizedAccelerationMotion( ...
+%       initialState, terminalState, limits, options)
+%**************************************************************************
+% PURPOSE
+%   - Create exact second-order profiles with discontinuous acceleration
+%     and unbounded jerk, synchronized on one common interval.
+%**************************************************************************
+% INPUTS
+%   - initialState, terminalState (normalized position/velocity structs)
+%       Endpoint accelerations are not imposed.
+%   - limits (normalized symmetric velocity/acceleration limits)
+%   - options (resolved engine timing and tolerance options)
+%**************************************************************************
+% OUTPUTS
+%   - attempt (scalar struct)
+%       Synchronized profile, Success, Message, TerminationReason, and elapsed
+%       time. An unsupported or infeasible motion returns Success = false.
+%**************************************************************************
+% UNITS
+%   - Caller-defined coordinate units and seconds, consistent across derivatives.
+%**************************************************************************
 % Switching equations adapted from MIT-licensed Ruckig v0.19.4;
 % see trajectory/THIRD_PARTY_NOTICES.txt.
 
@@ -50,18 +66,22 @@ else
     commonDuration = selectEarliestCommonDuration(candidateSets, minimumCommonDuration);
 end
 
+% Construct and check every axis on the requested interval, including reused
+% minimum-time profiles whose clocks differ by floating-point roundoff.
 axisProfiles = cell(dimensionCount, 1);
 % Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     timeTolerance   = 256 * eps(max([1, commonDuration, minimumDuration(dimensionIndex)]));
     boundaryProfile = findCandidateAtDuration(candidateSets{dimensionIndex}, commonDuration, timeTolerance);
     if ~isempty(boundaryProfile)
-        axisProfiles{dimensionIndex} = boundaryProfile;
+        selectedBoundaryProfile = boundaryProfile;
     elseif abs(commonDuration - minimumDuration(dimensionIndex)) <= timeTolerance
-        axisProfiles{dimensionIndex} = minimumProfiles{dimensionIndex};
+        selectedBoundaryProfile = minimumProfiles{dimensionIndex};
     else
-        axisProfiles{dimensionIndex} = createFixedAxisProfile(initialState, terminalState, limits, dimensionIndex, commonDuration);
+        selectedBoundaryProfile = [];
     end
+    axisProfiles{dimensionIndex} = createFixedAxisProfile(initialState, ...
+        terminalState, limits, dimensionIndex, commonDuration, options, selectedBoundaryProfile);
     if ~axisProfiles{dimensionIndex}.Success
         profile.Message = sprintf("Axis %d could not be synchronized at %.12g time units.", dimensionIndex, commonDuration);
         attempt = createAttempt(profile, solveTimer, "unsupportedSwitchingFamily");
@@ -137,7 +157,7 @@ function [profile, candidates] = createMinimumAxisProfile(initialState, terminal
     profile = candidates(selectedIndex);
 end
 
-function profile = createFixedAxisProfile(initialState, terminalState, limits, dimensionIndex, duration)
+function profile = createFixedAxisProfile(initialState, terminalState, limits, dimensionIndex, duration, options, boundaryProfile)
     % Port PositionSecondOrderStep2::time_acc0 and time_none.
     p0                  = initialState.position(dimensionIndex);
     pf                  = terminalState.position(dimensionIndex);
@@ -148,6 +168,21 @@ function profile = createFixedAxisProfile(initialState, terminalState, limits, d
     candidates          = repmat(createEmptyAxisProfile(), 0, 1);
     positionDifference  = pf - p0;
     velocityDifference  = vf - v0;
+    % Use the same absolute state accuracy as validateResult. A timing change
+    % changes position by at most maximum velocity x time and velocity by
+    % at most maximum acceleration x time.
+    stateAccuracy = max(10 * options.ConstraintTolerance, 1e-7);
+    if ~isempty(boundaryProfile)
+        candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, ...
+            maximumVelocity, maximumAcceleration, boundaryProfile.PhaseDuration, ...
+            boundaryProfile.PhaseAcceleration, boundaryProfile.Direction, ...
+            boundaryProfile.Family, duration, stateAccuracy);
+        profile = createEmptyAxisProfile();
+        if ~isempty(candidates)
+            profile = candidates(1);
+        end
+        return;
+    end
     % Repeat the direction alternatives needed to refine the current solution.
     for direction = [1, -1]
         aMaximum = direction * maximumAcceleration;
@@ -161,7 +196,10 @@ function profile = createFixedAxisProfile(initialState, terminalState, limits, d
                 (duration - root)) / (aMaximum * (aMaximum - aMinimum)), ...
                 root, 0];
             phaseDuration(3) = duration - sum(phaseDuration(1:2));
-            candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, phaseDuration, [aMaximum, 0, aMinimum], direction, "synchronizedAccelerationVelocity");
+            candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, ...
+                maximumVelocity, maximumAcceleration, phaseDuration, ...
+                [aMaximum, 0, aMinimum], direction, ...
+                "synchronizedAccelerationVelocity", duration, stateAccuracy);
         end
 
         denominator = -velocityDifference + aMaximum * duration;
@@ -170,22 +208,34 @@ function profile = createFixedAxisProfile(initialState, terminalState, limits, d
             phaseDuration = [firstDuration, ...
                 -velocityDifference / aMaximum + duration, 0, 0, 0, 0, 0];
             phaseDuration(7) = duration - sum(phaseDuration(1:6));
-            candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, phaseDuration, [aMaximum, 0, aMinimum, 0, aMinimum, 0, aMaximum], direction, "synchronizedSameAcceleration");
+            candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, ...
+                maximumVelocity, maximumAcceleration, phaseDuration, ...
+                [aMaximum, 0, aMinimum, 0, aMinimum, 0, aMaximum], direction, ...
+                "synchronizedSameAcceleration", duration, stateAccuracy);
         end
 
         phaseDuration = [0, ...
             -velocityDifference / aMaximum + duration, ...
             0, 0, 0, 0, velocityDifference / aMaximum];
-        candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, phaseDuration, [aMaximum, 0, aMinimum, 0, aMinimum, 0, aMaximum], direction, "synchronizedTwoStepAcceleration");
+        candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, ...
+            maximumVelocity, maximumAcceleration, phaseDuration, ...
+            [aMaximum, 0, aMinimum, 0, aMinimum, 0, aMaximum], direction, ...
+            "synchronizedTwoStepAcceleration", duration, stateAccuracy);
 
         if velocityDifference ~= 0
             firstDuration = 2 * (vf * duration - positionDifference) / velocityDifference;
             acceleration  = velocityDifference^2 / (2 * (vf * duration - positionDifference));
             if acceleration >= min(aMinimum, aMaximum) - 1e-12 && acceleration <= max(aMinimum, aMaximum) + 1e-12
-                candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, [firstDuration, duration - firstDuration, 0], [acceleration, -acceleration, 0], direction, "synchronizedFreeAcceleration");
+                candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, ...
+                    maximumVelocity, maximumAcceleration, ...
+                    [firstDuration, duration - firstDuration, 0], ...
+                    [acceleration, -acceleration, 0], direction, ...
+                    "synchronizedFreeAcceleration", duration, stateAccuracy);
             end
         elseif abs(positionDifference - duration * v0) <= 1e-10 * max(1, abs(positionDifference))
-            candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, [0, duration, 0], [0, 0, 0], direction, "constantVelocity");
+            candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, ...
+                maximumVelocity, maximumAcceleration, [0, duration, 0], ...
+                [0, 0, 0], direction, "constantVelocity", duration, stateAccuracy);
         end
     end
 
@@ -198,7 +248,7 @@ function profile = createFixedAxisProfile(initialState, terminalState, limits, d
     profile = candidates(selectedIndex);
 end
 
-function candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, phaseDuration, phaseAcceleration, direction, family)
+function candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVelocity, maximumAcceleration, phaseDuration, phaseAcceleration, direction, family, requestedDuration_s, stateAccuracy)
     % Integrate the profile and check derivative limits.
     phaseDuration     = double(phaseDuration(:).');
     phaseAcceleration = double(phaseAcceleration(:).');
@@ -210,6 +260,27 @@ function candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVel
         return;
     end
     phaseDuration = max(0, phaseDuration);
+    phaseEndTime_s = cumsum(phaseDuration);
+    if nargin >= 12
+        % Clipping an accepted negative phase to zero can move an earlier
+        % endpoint past the fixed clock, even when trailing phases are zero.
+        % Build the partition on that clock before integrating or selecting
+        % the candidate. Keep the existing phase allowance as an upper limit.
+        timeAllowance_s = min(durationTolerance, ...
+            stateAccuracy / max([1, maximumVelocity, maximumAcceleration]));
+        if abs(phaseEndTime_s(end) - requestedDuration_s) > timeAllowance_s
+            return;
+        end
+        phaseEndTime_s = min(phaseEndTime_s, requestedDuration_s);
+        lastPositivePhaseIndex = find(phaseDuration > 0, 1, "last");
+        if isempty(lastPositivePhaseIndex)
+            lastPositivePhaseIndex = numel(phaseDuration);
+        end
+        % All zero trailing phases share the terminal endpoint, including
+        % when summing the positive phases rounds below the requested time.
+        phaseEndTime_s(lastPositivePhaseIndex:end) = requestedDuration_s;
+        phaseDuration = diff([0, phaseEndTime_s]);
+    end
     position      = zeros(1, numel(phaseDuration) + 1);
     velocity      = position;
     position(1) = p0;
@@ -228,11 +299,12 @@ function candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVel
     candidate = createEmptyAxisProfile();
     candidate.Success           = true;
     candidate.PhaseDuration     = phaseDuration;
+    candidate.PhaseEndTime_s     = phaseEndTime_s;
     candidate.PhaseAcceleration = phaseAcceleration;
     candidate.Position          = position;
     candidate.Velocity          = velocity;
     candidate.Acceleration      = [phaseAcceleration, 0];
-    candidate.Duration          = sum(phaseDuration);
+    candidate.Duration          = phaseEndTime_s(end);
     candidate.Direction         = direction;
     candidate.Family            = family;
     candidate.PathLength        = sum(abs(diff(position)));
@@ -289,25 +361,21 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     switchTime     = [0, commonDuration];
     % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
-        axisTime = cumsum(axisProfiles{dimensionIndex}.PhaseDuration);
-        axisTime(end) = commonDuration;
+        axisTime = axisProfiles{dimensionIndex}.PhaseEndTime_s;
         switchTime = [switchTime, axisTime]; %#ok<AGROW>
     end
     switchTime    = unique(sort(switchTime));
-    timeTolerance = 512 * eps(max(1, commonDuration));
-    switchTime    = switchTime([true, diff(switchTime) > timeTolerance]);
-    switchTime(1) = 0;
-    switchTime(end) = commonDuration;
     segmentDuration     = diff(switchTime).';
     segmentCount        = numel(segmentDuration);
     controlAcceleration = zeros(segmentCount, dimensionCount);
     % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
-        axisEndTime      = cumsum(axisProfiles{dimensionIndex}.PhaseDuration);
+        axisEndTime      = axisProfiles{dimensionIndex}.PhaseEndTime_s;
         axisAcceleration = axisProfiles{dimensionIndex}.PhaseAcceleration;
         for segmentIndex = 1:segmentCount
-            middleTime = 0.5 * (switchTime(segmentIndex) + switchTime(segmentIndex + 1));
-            phaseIndex = find(middleTime < axisEndTime + 1e-12, 1);
+            % Each interval starts on or inside an axis phase. Strictly use
+            % its right-hand control, skipping zero-duration phases.
+            phaseIndex = find(switchTime(segmentIndex) < axisEndTime, 1);
             controlAcceleration(segmentIndex, dimensionIndex) = axisAcceleration(phaseIndex);
         end
     end
@@ -339,6 +407,7 @@ function profile = createEmptyAxisProfile()
     profile = struct();
     profile.Success           = false;
     profile.PhaseDuration     = zeros(1, 0);
+    profile.PhaseEndTime_s     = zeros(1, 0);
     profile.PhaseAcceleration = zeros(1, 0);
     profile.Position          = zeros(1, 0);
     profile.Velocity          = zeros(1, 0);
