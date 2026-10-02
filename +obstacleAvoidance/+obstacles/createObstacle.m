@@ -14,6 +14,7 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %   - Build obstacle histories in the standard planner format, retaining
 %     original boundaries separately from boundaries with a safety margin.
 %   - When applying a margin, rebuild from original geometry so it applies once.
+%   - Safety margins use miter joins at protected corners.
 %**************************************************************************
 % INPUTS
 %   - obstacleInput (scalar text, obstacle record, or collection of records)
@@ -589,7 +590,8 @@ function obstacles = applySafetyMargin(obstacles, safetyMargin_units, verbose)
 end
 
 function [protectedX_units, protectedY_units] = addMarginToSample(x_units, y_units, safetyMargin_units)
-    % Expand one boundary by the margin, using straight corner joins.
+    % Offset edges meet at a miter corner instead of a short diagonal edge.
+    % The margin is measured from each edge; a corner can extend farther.
     % A zero margin keeps the original coordinates and vertex order.
     x_units = double(x_units(:));
     y_units = double(y_units(:));
@@ -609,7 +611,7 @@ function [protectedX_units, protectedY_units] = addMarginToSample(x_units, y_uni
     requireCondition(~isempty(sourceShape.Vertices) && area(sourceShape) > 0, ...
         "createObstacle:DegeneratePolygon", ...
         "The boundary slice does not define a nonzero-area polygon.");
-    protectedShape = polybuffer(sourceShape, safetyMargin_units, "JointType", "square");
+    protectedShape = polybuffer(sourceShape, safetyMargin_units, "JointType", "miter");
 
     [protectedX_units, protectedY_units] = boundary(protectedShape);
     protectedX_units = double(protectedX_units(:));
