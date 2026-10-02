@@ -15,6 +15,7 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %     original boundaries separately from boundaries with a safety margin.
 %   - When applying a margin, rebuild from original geometry so it applies once.
 %   - Safety margins use miter joins at protected corners.
+%   - Margin source polygons remove collinear points using MATLAB simplification.
 %**************************************************************************
 % INPUTS
 %   - obstacleInput (scalar text, obstacle record, or collection of records)
@@ -607,7 +608,9 @@ function [protectedX_units, protectedY_units] = addMarginToSample(x_units, y_uni
         protectedY_units = zeros(0, 1);
         return;
     end
-    sourceShape = polyshape(x_units, y_units, "Simplify", true, "KeepCollinearPoints", true);
+    % Drop extra points along straight edges before building the margin.
+    % MATLAB can also remove tiny bends; keep supplied originals separately.
+    sourceShape = polyshape(x_units, y_units, "Simplify", true, "KeepCollinearPoints", false);
     requireCondition(~isempty(sourceShape.Vertices) && area(sourceShape) > 0, ...
         "createObstacle:DegeneratePolygon", ...
         "The boundary slice does not define a nonzero-area polygon.");
