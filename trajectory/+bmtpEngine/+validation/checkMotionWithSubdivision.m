@@ -54,7 +54,9 @@ end
 % One line may fail to separate a curved segment from an obstacle even when
 % the curve is clear. Smaller pieces can each admit their own line. Splitting
 % cannot repair workspace, motion-rate, or continuity failures.
-for refinementIndex = 1:10
+% Eleven halvings keep the depth reachable when preparation pre-split every
+% segment once.
+for refinementIndex = 1:11
     if ~preparedMotion.Success || motionCheck.Passed || ~motionCheck.WorkspacePassed || ...
             ~motionCheck.DynamicsPassed || ~motionCheck.ContinuityPassed
         break

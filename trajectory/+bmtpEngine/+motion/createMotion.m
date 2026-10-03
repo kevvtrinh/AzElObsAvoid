@@ -8,7 +8,7 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %**************************************************************************
 % PURPOSE
 %   - Turn proposed Bezier controls and segment times into one motion for
-%     later checks. Match the requested start and goal states, split selected
+%     later checks. Match the requested start and goal states, optionally split
 %     segments, and keep one polynomial for validation and output.
 %   - When arrival time can change, lengthen the segment times together if
 %     the curve needs more time to meet the motion-rate limits.
@@ -27,7 +27,8 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %       and so on, with segment fraction u from 0 to 1. A fully finite axis
 %       takes priority over converted controls; an axis with NaN uses them.
 %   - splitSegment (S-by-1 logical array, optional)
-%       True for each segment to split into two; defaults to all segments.
+%       True for each segment to split into two; defaults to no split.
+%       Separation refinement splits on demand in checkMotionWithSubdivision.
 %   - splitProgress (S-by-1 numeric array, optional)
 %       Where to split each selected segment, between 0 and 1; defaults to 0.5.
 %**************************************************************************
@@ -52,14 +53,14 @@ if nargin < 4
     suppliedPowerCoefficients_units = [];
 end
 if nargin < 5
-    splitSegment = true(size(controlPoint_units, 1), 1);
+    splitSegment = false(size(controlPoint_units, 1), 1);
 end
 if nargin < 6
     splitProgress = repmat(0.5, numel(splitSegment), 1);
 end
 
-% First make the controls match the requested start and goal states. After
-% splitting, keep each piece's source segment for later checks and reports.
+% First make the controls match the requested start and goal states. Split
+% only selected segments and keep each piece's source for checks and reports.
 controlPoint_units = bmtpEngine.motion.imposeEndpointControls(controlPoint_units, segmentTime_s, ...
     solverRequest.InitialState, solverRequest.GoalState);
 [controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units, sourceSegmentIndex] = ...
