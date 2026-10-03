@@ -835,14 +835,14 @@ function testTimedHomotopyPrecedesDelayedDeparture(testCase)
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
     % The direct departure family waits for the rising obstacle and arrives
-    % at 10.7597406907 s. A valid curved timed homotopy is physically earlier
+    % at 10.7600046331 s. A valid curved timed homotopy is physically earlier
     % and must win even though its spatial path is slightly longer.
-    verifyLessThan(testCase,result.ArrivalTime_s,10.7597406907);
-    % The shortening pass finds a 12.4631-unit polygon for this homotopy, but
-    % preparing it stretches the clock to 8.5534113220 s, later than the
-    % retained 13.0600-unit motion at 8.5463 s. Arrival wins: the shorter
+    verifyLessThan(testCase,result.ArrivalTime_s,10.7600046331);
+    % The shortening pass finds a 12.4646-unit polygon for this homotopy, but
+    % preparing it stretches the clock to 8.5742483337 s, later than the
+    % retained 13.1152-unit motion at 8.5547 s. Arrival wins: the shorter
     % polygon is refused and the retained homotopy stays under 13.5 units.
-    verifyLessThan(testCase,result.ArrivalTime_s,8.5534113220);
+    verifyLessThan(testCase,result.ArrivalTime_s,8.5742483337);
     verifyFalse(testCase,result.Diagnostics.SolverDiagnostics.TravelRefinementAccepted);
     verifyLessThan(testCase,result.MotionLength_units,13.5);
     verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"timeExpandedVisibilityGraph");

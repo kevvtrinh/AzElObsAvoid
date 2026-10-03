@@ -9,10 +9,9 @@ function [result, resultFullRange] = exampleGroundKeepOutAreaSlew(exampleOverrid
 %     that moves through the mounted-sensor frame as the satellite passes.
 %   - Taken from RegressionTest_singleSatelliteAreaSlewAvoidance (pass over
 %     the central US, 1020 km, 45 deg inclination) with no STK required.
-%   - With default controls, workspaces give different motions; route corner offset =
-%     largest workspace side / 64 (1.26 deg local, 5.47 deg full). BMTP also gets
-%     the workspace. Full-range motion dips below the local elevation bound;
-%     neither plan reaches its own workspace limits.
+%   - Route corners sit on the prepared obstacle outline, so both workspaces
+%     give nearly the same motion (about 53 deg). Neither plan reaches its
+%     own workspace limits or the local elevation bound with default controls.
 %   - Requires Aerospace Toolbox (lla2ecef and angle2dcm).
 %**************************************************************************
 % INPUTS

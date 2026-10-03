@@ -20,7 +20,7 @@ function nodes_units = createTimedVisibilityNodes( ...
 %   - limits (scalar struct)
 %       Workspace limits.
 %   - candidateOffset_units (positive scalar)
-%       Distance beyond the sampled boundary used to place candidate points.
+%       Tiny numerical separation beyond the sampled boundary for candidate points.
 %**************************************************************************
 % OUTPUTS
 %   - nodes_units (N-by-2 numeric array)
@@ -33,8 +33,8 @@ function nodes_units = createTimedVisibilityNodes( ...
 
 %% Section 1: Place Candidate Points Outside The Sampled Boundary
 
-% Offset only the shape used to place route points. This gives BMTP room
-% to turn without changing the protected geometry used for collision checks.
+% Offset route points only for numerical separation from the boundary.
+% Keep the protected geometry unchanged for collision checks.
 offsetBoundaryShape = combinedSampleShape;
 if ~isempty(combinedSampleShape.Vertices)
     offsetBoundaryShape = polybuffer(combinedSampleShape, candidateOffset_units, "JointType", "miter");

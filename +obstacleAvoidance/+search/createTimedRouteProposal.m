@@ -65,15 +65,12 @@ end
 
 allPositions_units    = [initialState.position_units; goalState.position_units; combinedSampleShape.Vertices];
 coordinateScale_units = bmtpEngine.validation.createCoordinateTolerances(allPositions_units);
-% Place candidate points away from corners to give BMTP room to turn.
-% turning distance scale = maximum speed^2 / maximum acceleration.
-% Limit that contribution using the workspace size, with a small minimum
-% offset for numerical separation. This places points; it does not change
-% the protected obstacle shapes used for collision checks.
-turningDistanceScale_units = max(limits.maxVelocity_units_s .^ 2 ./ limits.maxAcceleration_units_s2);
-workspaceOffsetScale_units = max([diff(limits.xInterval_units), diff(limits.yInterval_units)]) / 64;
-candidateOffset_units      = max([1e-3, 256 * eps(coordinateScale_units), ...
-    min(turningDistanceScale_units, workspaceOffsetScale_units)]);
+% Place points on the prepared, already margined obstacle outline, pushed
+% out only by a tiny numerical separation so no point is exactly on an edge.
+% Turning room comes from BMTP's motion, not from moving the route corners.
+% This places points without changing the protected obstacle shapes used
+% for collision checks.
+candidateOffset_units = max(1e-3, 256 * eps(coordinateScale_units));
 nodes_units = obstacleAvoidance.search.createTimedVisibilityNodes( ...
     combinedSampleShape, initialState.position_units, goalState.position_units, limits, candidateOffset_units);
 % The combined shapes can hide a stationary boundary that becomes useful
