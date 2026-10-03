@@ -506,12 +506,10 @@ function testFailedWrappedTimedTimedSearchRetainsValidatedBestSoFar(testCase)
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
-    % Exact polynomial sizing removed a control-bound stretch from the
-    % departure motion (11.613388881629 s before). At the earlier clock the
-    % timed subproblem reports a clean infeasibility (coneprog -2) instead
-    % of the numerical breakdown (-10) it used to hit. Either way the
-    % validated departure motion must stay selected.
-    verifyEqual(testCase, result.ArrivalTime_s, 11.613388695819829, 'AbsTol', 1e-10);
+    % Miter-joined margins (e803888) extend the protected corners slightly,
+    % so the departure arrives at 11.6134668007 s (square joins gave
+    % 11.6133886958 s). The failed timed search must retain this validated motion.
+    verifyEqual(testCase, result.ArrivalTime_s, 11.6134668006798, 'AbsTol', 1e-10);
     verifyEqual(testCase, [result.Diagnostics.Attempts.Kind], ...
         ["analyticDeparture", "timedVisibility"]);
     verifyTrue(testCase, result.Diagnostics.Attempts(1).Selected);
@@ -658,9 +656,10 @@ function testWrappedBestSoFarRefinementRetainsValidatedDeparture(testCase)
 
     verifyTrue(testCase,result.Success,result.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    % Exact polynomial sizing removed a 2.3e-8 s control-bound stretch
-    % (10.1400889258125 s before).
-    verifyEqual(testCase,result.ArrivalTime_s,10.140088902645401,'AbsTol',1e-8);
+    % Miter-joined margins (e803888) extend the protected corners slightly,
+    % so the departure arrives at 10.1437500676 s (square joins gave
+    % 10.1400889026 s). The failed refinement must retain this validated motion.
+    verifyEqual(testCase,result.ArrivalTime_s,10.1437500676454,'AbsTol',1e-8);
     verifyFalse(testCase,isfield(result.Diagnostics, 'FixedArrivalTrialTime_s'));
     verifyTrue(testCase,result.Diagnostics.TemporalSearch.BestSoFar);
     verifyEqual(testCase,result.Diagnostics.TemporalSearch.TrialTime_s,7.5,'AbsTol',1e-12);

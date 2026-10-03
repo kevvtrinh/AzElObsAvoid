@@ -1215,13 +1215,16 @@ function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
     figureCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
     handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', 'off', ...
         'ShowVisibilityGraphs', true, 'ShowSearchEdges', true));
-    nodeMarkers = findobj(handles.VisibilityAxes, 'DisplayName', 'Visibility node');
+    nodeMarkers = findobj(handles.VisibilityAxes, 'DisplayName', 'Visibility nodes (sampled)');
     nodePoints_units = [nodeMarkers.XData(:), nodeMarkers.YData(:)];
-    % Each marker must be where its first incident edge, in drawing order
-    % (accepted rows first), folded as the edges are drawn, ends at it.
+    % Compare all folded positions, including repeated positions, without
+    % relying on scatter order; these graphs fit below the 80-node cap.
+    % Each node follows its first incident edge (accepted rows first),
+    % folded as the edges are drawn, to the edge's endpoint.
     graph = result.Diagnostics.VisibilityGraph;
     nodes_units = graph.NodePosition_units;
     edges = [graph.AcceptedNodeIndex; graph.RejectedNodeIndex];
+    expectedNodePoints_units = zeros(size(nodes_units));
     for nodeIndex = 1:size(nodes_units, 1)
         edgeRow = find(any(edges == nodeIndex, 2), 1);
         verifyNotEmpty(testCase, edgeRow);
@@ -1231,8 +1234,9 @@ function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
         end
         foldedEdge_units = obstacleAvoidance.plotting.createWrappedSpatialPath( ...
             nodes_units([otherNode(1), nodeIndex], :), [0, 360; -90, 90], ["both", "false"]);
-        verifyEqual(testCase, nodePoints_units(nodeIndex, :), foldedEdge_units(end, :), 'AbsTol', 1e-9);
+        expectedNodePoints_units(nodeIndex, :) = foldedEdge_units(end, :);
     end
+    verifyEqual(testCase, sortrows(nodePoints_units), sortrows(expectedNodePoints_units), 'AbsTol', 1e-9);
     verifyTrue(testCase, any(abs(nodePoints_units(:, 1) - 360) < 1e-9));
 
     % Explicit coordinates: nodes at 350, 360 and 370 with an accepted edge
@@ -1244,9 +1248,9 @@ function testVisibilityNodesOnASeamStayOnTheirEdges(testCase)
     synthetic.Diagnostics.VisibilityGraph.RejectedNodeIndex  = [2, 3];
     syntheticHandles = obstacleAvoidance.plotting.plotTrajectory(synthetic, struct('FigureVisible', 'off', ...
         'ShowVisibilityGraphs', true, 'ShowSearchEdges', true));
-    syntheticMarkers = findobj(syntheticHandles.VisibilityAxes, 'DisplayName', 'Visibility node');
-    verifyEqual(testCase, [syntheticMarkers.XData(:), syntheticMarkers.YData(:)], ...
-        [350, 0; 360, 0; 10, 0], 'AbsTol', 1e-9);
+    syntheticMarkers = findobj(syntheticHandles.VisibilityAxes, 'DisplayName', 'Visibility nodes (sampled)');
+    verifyEqual(testCase, sortrows([syntheticMarkers.XData(:), syntheticMarkers.YData(:)]), ...
+        [10, 0; 350, 0; 360, 0], 'AbsTol', 1e-9);
 end
 
 function testExpandedPlotDrawsTargetOverThePlannedWindow(testCase)
