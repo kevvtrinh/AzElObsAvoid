@@ -96,30 +96,22 @@ if solverRequest.Options.GoalTimeMode == "fixedArrival"
     routeWasResampled     = true;
 elseif solverRequest.UsesVariableClock
     % For earliest arrival, the solver may adjust individual segment durations.
-    if isfield(solverRequest.Coverage, 'BreakTime_s')
-        % Preserve every route point when adding curve segments. Two equal
-        % positions at different progress values describe a wait, so both stay.
-        routeProgress       = double(solverRequest.Seed.tau(:));
-        minimumSegmentCount = max(20, originalSegmentCount * solverRequest.SplitCount);
-        segmentCountByEdge  = allocateSegmentsByWeight(diff(routeProgress), ...
-            minimumSegmentCount);
-        segmentProgress             = subdivideEdges(routeProgress, segmentCountByEdge);
-        relativeSegmentDuration     = diff(segmentProgress) / mean(diff(segmentProgress));
-        endpointControlTime_s        = solverRequest.MotionHorizon_s * diff(segmentProgress);
-        segmentCount                = numel(endpointControlTime_s);
-        controlPointProgress        = segmentProgress(1:end - 1) + ...
-            diff(segmentProgress) .* ((0:curveDegree) / curveDegree);
-        interpolatedPositions_units = interp1( ...
-            solverRequest.Seed.tau, route_units, controlPointProgress(:), 'linear');
-        controlPoint_units          = reshape(interpolatedPositions_units, segmentCount, curveDegree + 1, 2);
-        routeWasResampled            = true;
-    else
-        [controlPoint_units, endpointControlTime_s, segmentCount] = ...
-            createCurveWithoutAssignedTimes( ...
-            route_units, solverRequest, divideRouteByLength, interpolationFractions);
-        relativeSegmentDuration = endpointControlTime_s(:) / mean(endpointControlTime_s);
-        routeWasResampled       = false;
-    end
+    % Preserve every route point when adding curve segments. Two equal
+    % positions at different progress values describe a wait, so both stay.
+    routeProgress       = double(solverRequest.Seed.tau(:));
+    minimumSegmentCount = max(20, originalSegmentCount * solverRequest.SplitCount);
+    segmentCountByEdge  = allocateSegmentsByWeight(diff(routeProgress), ...
+        minimumSegmentCount);
+    segmentProgress             = subdivideEdges(routeProgress, segmentCountByEdge);
+    relativeSegmentDuration     = diff(segmentProgress) / mean(diff(segmentProgress));
+    endpointControlTime_s        = solverRequest.MotionHorizon_s * diff(segmentProgress);
+    segmentCount                = numel(endpointControlTime_s);
+    controlPointProgress        = segmentProgress(1:end - 1) + ...
+        diff(segmentProgress) .* ((0:curveDegree) / curveDegree);
+    interpolatedPositions_units = interp1( ...
+        solverRequest.Seed.tau, route_units, controlPointProgress(:), 'linear');
+    controlPoint_units          = reshape(interpolatedPositions_units, segmentCount, curveDegree + 1, 2);
+    routeWasResampled            = true;
 
     % Start with the route's assigned travel times. A route alone has not
     % yet passed the motion limits. Stretching it now would change which
