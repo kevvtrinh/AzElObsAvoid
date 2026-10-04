@@ -76,22 +76,15 @@ if isempty(previousPreparation)
         'DeltaX_units',                                    {cell(intervalCount, 1)}, ...
         'DeltaY_units',                                    {cell(intervalCount, 1)}, ...
         'MatchingTopology',                                false(intervalCount, 1), ...
-        'IntervalGeometryModel',                           strings(intervalCount, 1), ...
         'IntervalHasExactPartition',                       false(intervalCount, 1), ...
         'IntervalIsStationary',                            false(intervalCount, 1), ...
         'IntervalUsesMovingCells',                         false(intervalCount, 1), ...
         'IntervalUsesEndpointHull',                        false(intervalCount, 1), ...
         'IntervalIsUnsupported',                           false(intervalCount, 1), ...
-        'IntervalPartitionReused',                         false(intervalCount, 1), ...
-        'IntervalMovingCellUncoveredProtectedArea_units2', zeros(intervalCount, 2), ...
-        'IntervalEndpointHullAddedArea_units2',            zeros(intervalCount, 1), ...
-        'IntervalProofReason',                             strings(intervalCount, 1), ...
         'SpanStartSampleIndex',                            (1:intervalCount).', ...
         'SpanEndSampleIndex',                              (2:sampleCount).', ...
-        'MergedIntervalCount',                             0, ...
         'CandidateSpanEndSampleIndex',                     findCandidateSpanEnds(obstacle, usesUnbufferedSourceIndex), ...
         'IntervalSpeedBound_units_s',                      Inf(intervalCount, 1), ...
-        'SampleSpeedBound_units_s',                        Inf(sampleCount, 1), ...
         'IsTimeInvariant',                                 false);
     % Identical coordinates at every sample establish a static shape.
     % Multiple samples still limit its active time range; one applies at all times.
@@ -213,28 +206,12 @@ if ~stopAtUnsupported || ~any(neededIntervals & preparation.IntervalPrepared & .
     preparation = prepareSamples(preparation, obstacle, find(neededSamples).', sampleResults);
 end
 
-%% Section 4: Update Cached Motion Bounds And Static Status
+%% Section 4: Update Static Status
 
-% At a sample, use the larger speed bound from its two neighboring intervals.
-preparation.SampleSpeedBound_units_s = max([0; preparation.IntervalSpeedBound_units_s], ...
-    [preparation.IntervalSpeedBound_units_s; 0]);
-% An interval enclosure can occupy more space than its endpoint shapes.
-% These shapes can jump at sample times, so do not assume a finite speed there.
-enclosureIntervalIndices = find(preparation.IntervalUsesMovingCells | ...
-    preparation.IntervalUsesEndpointHull);
-preparation.SampleSpeedBound_units_s(unique( ...
-    [enclosureIntervalIndices; enclosureIntervalIndices + 1])) = Inf;
 staticIntervals = preparation.IntervalIsStationary | ...
     (preparation.MatchingTopology & preparation.IntervalSpeedBound_units_s == 0);
 preparation.IsTimeInvariant = preparation.IsTimeInvariant || ...
     (all(preparation.IntervalPrepared) && all(staticIntervals));
-if preparation.IsTimeInvariant
-    preparation.SampleSpeedBound_units_s(:) = 0;
-end
-mergedSpanSampleIndex = unique([preparation.SpanStartSampleIndex, ...
-    preparation.SpanEndSampleIndex], 'rows', 'stable');
-preparation.MergedSpanTime_s = reshape(time_s(mergedSpanSampleIndex), ...
-    size(mergedSpanSampleIndex));
 obstacle.InternalPreparation = preparation;
 end
 
@@ -276,7 +253,7 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
     end
     if isempty(intervalPreparation)
         [interpolationIsVerified, alignedUpper_units, startRegions_units, endRegions_units, ...
-            geometryModel, hasExactPartition, partitionReused] = ...
+            hasExactPartition] = ...
             obstacleAvoidance.obstacles.alignVerifiedSingleRing( ...
             createBoundarySample(lowerX_units, lowerY_units, preparation.SampleShapes{intervalIndex}), ...
             createBoundarySample(upperX_units, upperY_units, preparation.SampleShapes{finalSampleIndex}), ...
@@ -284,7 +261,7 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
             createIntervalCheckOptions(preserveAlignment, onlyCheckTranslation, false));
     else
         [interpolationIsVerified, alignedUpper_units, startRegions_units, endRegions_units, ...
-            geometryModel, hasExactPartition, partitionReused] = intervalPreparation{:};
+            hasExactPartition] = intervalPreparation{:};
     end
     if ~interpolationIsVerified && finalSampleIndex > intervalIndex + 1
         % Equal vertex velocities suggested merging these intervals, but
@@ -296,7 +273,7 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
         upperX_units     = obstacle.x_units{finalSampleIndex};
         upperY_units     = obstacle.y_units{finalSampleIndex};
         [interpolationIsVerified, alignedUpper_units, startRegions_units, endRegions_units, ...
-            geometryModel, hasExactPartition, partitionReused] = ...
+            hasExactPartition] = ...
             obstacleAvoidance.obstacles.alignVerifiedSingleRing( ...
             createBoundarySample(lowerX_units, lowerY_units, preparation.SampleShapes{intervalIndex}), ...
             createBoundarySample(upperX_units, upperY_units, preparation.SampleShapes{finalSampleIndex}), ...
@@ -307,10 +284,8 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
     intervalUsesMovingCells  = false;
     intervalUsesEndpointHull = false;
     intervalIsUnsupported    = false;
-    intervalProofReason      = "";
 
-    preparation.MatchingTopology(intervalIndex)        = interpolationIsVerified;
-    preparation.IntervalPartitionReused(intervalIndex) = partitionReused;
+    preparation.MatchingTopology(intervalIndex) = interpolationIsVerified;
     if interpolationIsVerified
         % Each vertex follows a straight line between its matched positions.
         % speed = distance between positions / time between samples.
@@ -330,7 +305,6 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
         sampleShapesAreEqual = compareShapes(firstShape, lastShape);
         if sampleShapesAreEqual
             shape                = firstShape;
-            geometryModel        = "staticEquivalentSamples";
             intervalIsStationary = true;
         else
             % Build regions covering the motion of the original boundary,
@@ -348,8 +322,6 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
                 % both supplied shapes, including their safety margins.
                 uncoveredArea_units2 = [area(subtract(firstShape, movingCellShape)), ...
                     area(subtract(lastShape, movingCellShape))];
-                preparation.IntervalMovingCellUncoveredProtectedArea_units2(intervalIndex, :) = ...
-                    uncoveredArea_units2;
                 % Allow only area differences on the scale of floating-point
                 % roundoff when comparing the two polygon constructions.
                 areaTolerance_units2 = 4096 * eps(max([1, area(firstShape), area(lastShape)]));
@@ -357,30 +329,25 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
             end
             if movingCellsSupported
                 shape         = movingCellShape;
-                geometryModel = "movingConvexCells";
                 preparation.IntervalStartRegions_units{intervalIndex} = movingCellRegions_units;
                 preparation.IntervalEndRegions_units{intervalIndex}   = movingCellRegions_units;
                 intervalUsesMovingCells = true;
             else
                 % With no usable moving-cell enclosure, surround both sample
                 % boundaries with a convex hull, like a taut rubber band.
-                % This may block extra space; record its added area below.
+                % This may block extra space between the supplied shapes.
                 lowerProtected_units = [lowerX_units, lowerY_units];
                 upperProtected_units = [upperX_units, upperY_units];
-                [hullSupported, endpointHullShape, endpointHullRegions_units, addedArea_units2] = ...
+                [hullSupported, endpointHullShape, endpointHullRegions_units] = ...
                     obstacleAvoidance.obstacles.buildEndpointHullCell( ...
                     lowerProtected_units, upperProtected_units, firstShape, lastShape);
                 if hullSupported
                     shape         = endpointHullShape;
-                    geometryModel = "endpointConvexHull";
                     preparation.IntervalStartRegions_units{intervalIndex} = endpointHullRegions_units;
                     preparation.IntervalEndRegions_units{intervalIndex}   = endpointHullRegions_units;
-                    preparation.IntervalEndpointHullAddedArea_units2(intervalIndex) = addedArea_units2;
                     intervalUsesEndpointHull = true;
                 else
                     shape                 = polyshape();
-                    geometryModel         = "unsupportedContinuousDeformation";
-                    intervalProofReason   = "degenerateEndpointGeometry";
                     intervalIsUnsupported = true;
                 end
             end
@@ -421,19 +388,14 @@ function preparation = prepareSourceInterval(preparation, obstacle, intervalInde
         preparation.MatchingTopology(spanIntervalIndices) = true;
         preparation.IntervalSpeedBound_units_s(spanIntervalIndices) = ...
             preparation.IntervalSpeedBound_units_s(intervalIndex);
-        preparation.IntervalPartitionReused(intervalIndex + 1:finalSampleIndex - 1) = true;
         preparation.SpanStartSampleIndex(spanIntervalIndices) = intervalIndex;
         preparation.SpanEndSampleIndex(spanIntervalIndices)   = finalSampleIndex;
-        preparation.MergedIntervalCount = preparation.MergedIntervalCount + numel(spanIntervalIndices) - 1;
     end
-    preparation.IntervalGeometryModel(classifiedIntervalIndices)     = geometryModel;
     preparation.IntervalHasExactPartition(classifiedIntervalIndices) = hasExactPartition;
     preparation.IntervalIsStationary(classifiedIntervalIndices)      = intervalIsStationary;
     preparation.IntervalUsesMovingCells(classifiedIntervalIndices)   = intervalUsesMovingCells;
     preparation.IntervalUsesEndpointHull(classifiedIntervalIndices)  = intervalUsesEndpointHull;
     preparation.IntervalIsUnsupported(classifiedIntervalIndices)     = intervalIsUnsupported;
-    preparation.IntervalProofReason(classifiedIntervalIndices)       = ...
-        intervalProofReason;
     preparation.IntervalPrepared(intervalIndex) = true;
 end
 
@@ -482,7 +444,7 @@ function preparedResults = prepareIntervalBatch(lowerX_units, lowerY_units, uppe
             continue;
         end
         try
-            intervalPreparation = cell(1, 7);
+            intervalPreparation = cell(1, 5);
             [intervalPreparation{:}, needsPreviousInterval] = ...
                 obstacleAvoidance.obstacles.alignVerifiedSingleRing( ...
                 createBoundarySample(lowerX_units{batchIndex}, lowerY_units{batchIndex}, ...

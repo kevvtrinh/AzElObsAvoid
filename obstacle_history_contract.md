@@ -26,27 +26,26 @@ seam sliver rather than the other 71 vertices. Equal sides remove the
 interior run. Crossings are recomputed iteratively, fewest removed vertices
 first; equal repair counts use the smaller first edge index, then the
 smaller second edge index. If that leaves fewer than three distinct vertices,
-the whole run is removed and recorded. The rule uses the supplied ring order,
+the whole run is removed. The rule uses the supplied ring order,
 identically for both geometry roles, with no distance or area threshold.
 
 This is a declared repair of the supplied ring: a self-crossing ring has no
-unique supplied fill. Removed vertex counts and both removed and added area
-are reported per sample and role, relative to MATLAB's simplified fill of
-the pre-repair ring. Added area must not be described as removed area. The
-repair does not replace a concave ring with its convex hull. Equal zigzags
+unique supplied fill. Returned coordinates show the retained vertices;
+normalization no longer reports removed counts or area changes. The repair
+does not replace a concave ring with its convex hull. Equal zigzags
 at every sample preserve equal counts and index correspondence; different
 repairs can destroy correspondence. Three distinct vertices alone still do
 not prove a valid polygon.
 
 Original and protected histories follow the same normalization rules and stay
 distinct. An absolute safety margin is rebuilt from original geometry, never
-added repeatedly to protected geometry. `NormalizationDiagnostics` records
-removed-run and duplicate counts by role, `RemovedZigzagVertexCountBySample`,
-`RemovedZigzagAreaBySample_units2`, `AddedZigzagAreaBySample_units2`, the
-`selfCrossingZigzagRemoved` reason, and affected
-sample indices/times. Lists contain at most one entry per history sample.
-Canonical rebuilds preserve these diagnostics for the same time history;
-diagnostics are informational and never determine obstacle occupancy.
+added repeatedly to protected geometry. `NormalizationDiagnostics` is retired,
+including `Version`, `SourceTime_s`, `Roles`, `RemovedRegionCount`,
+`RemovedDuplicateVertexCount`, `AffectedSampleIndex`, `AffectedSampleTime_s`,
+`RemovedZigzagVertexCountBySample`, `RemovedZigzagAreaBySample_units2`,
+`AddedZigzagAreaBySample_units2`, and `Reasons`.
+Canonical rebuilds return the normalized histories without those reports;
+normalization and occupancy rules are unchanged.
 
 At a sample time, its normalized protected geometry is supplied. An empty
 sample does not clear either neighboring interval. Between samples, the current
@@ -78,8 +77,7 @@ the map's image even if it folds. Every boundary source vertex must
 participate; an omitted vertex that later moves would invalidate that
 argument. This is an explicit conservative interval model, with
 over-approximation determined by vertex displacement and by the
-square-versus-buffer margin. It is not an exact moving polygon and is never
-reported as interpolated topology.
+square-versus-buffer margin. It is not an exact moving polygon.
 
 The moving-cell union is then covered at the interval's own resolution so that
 coastline-scale detail does not multiply solver cells: the union is clipped
@@ -98,9 +96,10 @@ cell count follows the enclosure's shape rather than the grid.
 
 Preparation still independently checks both supplied protected sample
 shapes against the moving-cell enclosure, using the existing endpoint area-proof
-roundoff tolerance. Failure discards that candidate geometry and records the
-uncovered areas in `IntervalMovingCellUncoveredProtectedArea_units2`. It does not
-enlarge the given moving cells, shrink protection, or replace the samples.
+roundoff tolerance. Failure discards that candidate geometry.
+`IntervalMovingCellUncoveredProtectedArea_units2` is retired; the same area
+calculation still decides coverage. It does not enlarge the given moving
+cells, shrink protection, or replace the samples.
 Failed moving-cell coverage, unequal original counts, and an unavailable single-ring
 source map proceed to the endpoint-hull model below.
 
@@ -117,25 +116,25 @@ sample's hull occupies the complete interval. Thus emptiness never clears a
 neighboring interval. The endpoint-hull fallback requires each nonempty ring
 to have at least three distinct vertices and a positive-area hull. In
 particular, when both endpoints are degenerate and an earlier model is
-unavailable, this fallback rejects the interval with
-`IntervalProofReason` equal to `degenerateEndpointGeometry` and the
-stable planner outcome `unsupportedObstacleInterpolation`. Earlier models keep
-their existing acceptance rules. Both-empty intervals retain the existing
+unavailable, this fallback marks `IntervalIsUnsupported` and returns the
+stable planner outcome `unsupportedObstacleInterpolation`.
+`IntervalProofReason` is retired; rejection and messages are unchanged.
+Earlier models keep their existing acceptance rules. Both-empty intervals retain the existing
 empty stationary model.
 
 The hull is identical at both interval ends, but supplied sample geometry
 is unchanged at sample times. `IntervalUsesEndpointHull` is the typed behavior
 flag; `MatchingTopology`, `IntervalHasExactPartition`, `IntervalUsesMovingCells`,
 `IntervalIsStationary`, and `IntervalIsUnsupported` are all false for this
-model. A successful enclosure leaves `IntervalProofReason` empty.
+model.
 `createTimeCells` consumes the typed flag and emits the same single convex
 region at both cell endpoints.
-Preparation records `IntervalEndpointHullAddedArea_units2`, hull area minus
-the union area of the two protected end shapes, computed by polygon subtraction.
-The endpoint-hull producer requires a finite, nonnegative value before
-accepting the model; `createTimeCells` consumes only its geometry and typed flag.
-The enclosure can fill gaps between disconnected rings and concavities; this
-added area is the reported cost of unknown correspondence.
+`IntervalEndpointHullAddedArea_units2` is retired. The endpoint-hull producer
+still calculates hull area outside the union of the two protected endpoint
+shapes, using polygon subtraction, and requires that area to be finite and
+nonnegative before accepting the hull. `createTimeCells` consumes only geometry
+and the typed flag. The enclosure can fill gaps between disconnected rings
+and concavities, so its geometry remains conservative.
 
 Vertex correspondence between samples is reported per obstacle in
 `vertexCorrespondence`. The generic constructor normalizes that declaration
@@ -149,10 +148,10 @@ prevents correlation from undoing a supplied rotation by a cyclic index shift.
 The retained name reports provenance and does not select later behavior.
 
 For a proven moving-cell interval, cells are static over its absolute active
-interval, interior point queries return their union and union-boundary edges,
-`TopologyIsInterpolated` is false, and the interior speed bound is zero.
-Sample-time queries retain the normalized protected sample, with an infinite
-speed bound at a possible enclosure discontinuity. Closed-interval cells
+interval. Interior point queries return their union and union-boundary edges,
+and `IntervalSpeedBound_units_s` is zero.
+Sample-time queries retain the normalized protected sample. The enclosure can
+change discontinuously at a sample time. Closed-interval cells
 conservatively include those samples; sample shapes are not overwritten to
 make queries equal. This explicitly rejects D4's premise. Temporal visibility
 checks the stationary union over the traversed part of its lifetime. Plots,
@@ -174,15 +173,17 @@ complete span; its restrictions prove every constituent interval with the
 same partition. A span without that proof is not merged. The supplied
 sample geometry remains supplied at each retained sample time.
 
-`IntervalGeometryModel` retains the reported model name. Preparation also emits
+`IntervalGeometryModel` and `IntervalPartitionReused` are retired. Preparation emits
 `IntervalHasExactPartition`, `IntervalIsStationary`, `IntervalUsesMovingCells`,
 `IntervalUsesEndpointHull`, and `IntervalIsUnsupported`; geometry, search,
-and planner branches consume those logical facts rather than the reported name.
+and planner branches consume those logical facts. Partition reuse still
+uses the preceding exact end regions without recording a reuse diagnostic.
 Exact partition and conservative enclosure consumers read
 `IntervalStartRegions_units` and `IntervalEndRegions_units`.
 
-`MergedSpanTime_s` and `MergedIntervalCount` expose the preparation-only
-reduction. `RejectedMergeSpanSampleIndex` is no longer recorded; a span without
+`MergedSpanTime_s` and `MergedIntervalCount` are retired; retained
+`SpanStartSampleIndex` and `SpanEndSampleIndex` still determine the geometry.
+`RejectedMergeSpanSampleIndex` is no longer recorded; a span without
 a shared exact partition still uses its original intervals. Cells use proven
 span boundaries, and interior queries use the merged affine motion; search
 time layers keep every
@@ -199,17 +200,35 @@ extends this coverage without discarding earlier prepared entries. Exact point
 queries prepare that sample, or both bracketing samples and their interval.
 Single-sample static obstacles remain active at every time.
 
-Preparation version is now 14 because the prepared-record fields
-`IntervalMovingCellCount`, `IntervalMovingCellTiming_s`, and
-`RejectedMergeSpanSampleIndex` were removed. Saved version-13 preparations
-are rebuilt from source geometry instead of being reused or extended. Newly
-built preparations omit these fields; geometry, typed flags, and source
-matching are unchanged.
+Preparation version remains 14. Saved version-13 preparations still rebuild.
+Retiring `IntervalGeometryModel`, `IntervalPartitionReused`,
+`IntervalMovingCellUncoveredProtectedArea_units2`, `MergedIntervalCount`,
+`MergedSpanTime_s`, `IntervalProofReason`, `IntervalEndpointHullAddedArea_units2`,
+and `SampleSpeedBound_units_s` does not change geometry, typed flags, interval
+speed bounds, span indices, or source matching. A saved version-14 preparation can
+therefore be reused or extended safely, including one that still carries the
+old diagnostic fields. Newly built preparations omit them. No version bump or
+field-stripping migration is needed for this diagnostic-only change.
+
+Prepared occupancy queries no longer read or populate `QueryGeometryCache`
+or `QueryGeometryCacheCapacity`. Each group of points at the same time uses
+one fresh prepared boundary query. Legacy incoming cache fields are ignored,
+so the search no longer needs to strip them from its local obstacle copies.
+
+`preparedShapeAtTime` no longer accepts `classifyBoundary` or returns
+`HasOrderedSingleRegion`, `IsConvex`, `OutwardSign`,
+`VertexSpeedBound_units_s`, or `TopologyIsInterpolated`. Retained details
+are `Active`, `x_units`, `y_units`, `UsesMovingCells`, and `LowerSampleIndex`.
+`SampleSpeedBound_units_s` is retired; no tracked production, example, or test
+reads it. The owner's git-ignored `output/static-u/verifyNextLessons.m:58` still
+reads it and will be updated in his lesson pass. Retained
+`IntervalSpeedBound_units_s` still controls the zero-speed shape reuse calculation.
+These query details are calculated on demand and require no preparation
+version change.
 
 `SamplePrepared` and `IntervalPrepared` distinguish cached entries from entries
-not yet requested. Unprepared neighboring intervals give a sample an infinite
-speed bound unless the complete history is known to be static. Public queries
-prepare their requested times; internal prepared queries reject missing
+not yet requested. Unprepared intervals retain an infinite interval speed bound.
+Public queries prepare their requested times; internal prepared queries reject missing
 coverage. Planning, validation, and plotting request their physical window;
 independent validation rebuilds preparation from source geometry.
 

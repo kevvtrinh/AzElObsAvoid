@@ -42,8 +42,10 @@ function testConsecutiveTranslationsReuseExactPartition(testCase)
         cellfun(@(v)v(:,2),frames,'UniformOutput',false),0);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[0,4]);
     preparation=prepared.InternalPreparation;
-    verifyEqual(testCase,preparation.IntervalPartitionReused, ...
-        [false;true;true;false]);
+    for intervalIndex = 2:3
+        verifyEqual(testCase, preparation.IntervalStartRegions_units{intervalIndex}, ...
+            preparation.IntervalEndRegions_units{intervalIndex - 1});
+    end
     for intervalIndex=1:4
         startShape=unionRegions(preparation.IntervalStartRegions_units{intervalIndex});
         endShape=unionRegions(preparation.IntervalEndRegions_units{intervalIndex});
@@ -92,8 +94,6 @@ function testConcaveDeformationUsesExactMovingPartition(testCase)
     lower=[0,0;2,0;2,2;1,0.5;0,2]; upper=lower; upper(4,:)=[0.5,1];
     prepared=preparePair(lower,circshift(upper,2));
     verifyTrue(testCase,prepared.InternalPreparation.MatchingTopology);
-    verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
-        "linearCorrespondingConvexPartition");
     verifyTrue(testCase,prepared.InternalPreparation.IntervalHasExactPartition);
     verifyFalse(testCase,prepared.InternalPreparation.IntervalUsesMovingCells);
     verifyFalse(testCase,prepared.InternalPreparation.IntervalIsUnsupported);
@@ -159,13 +159,7 @@ function testContainmentClassificationMatchesBooleanReference(testCase)
             lastShape  = polyshape(last, 'Simplify', false);
             tolerance  = 512 * eps(max([1, area(firstShape), area(lastShape)]));
             equivalent = area(xor(firstShape, lastShape)) <= tolerance;
-            if equivalent
-                expected = "staticEquivalentSamples";
-            else
-                expected = "endpointConvexHull";
-            end
             preparation = prepared.InternalPreparation;
-            verifyEqual(testCase, preparation.IntervalGeometryModel, expected);
             verifyEqual(testCase, preparation.IntervalIsStationary, equivalent);
             verifyEqual(testCase, preparation.IntervalUsesEndpointHull, ~equivalent);
             verifyFalse(testCase, preparation.IntervalIsUnsupported);
@@ -247,17 +241,18 @@ function testProperCrossingZigzagHasDeclaredRepair(testCase)
     obstacle=obstacleAvoidance.obstacles.createObstacle('fold',[0;1], ...
         {ring(:,1);ring(:,1)+0.25},{ring(:,2);ring(:,2)},0);
     verifyEqual(testCase,cellfun(@numel,obstacle.x_units),[6;6]);
-    diagnostics=obstacle.NormalizationDiagnostics;
-    verifyTrue(testCase,any(diagnostics.Reasons=="selfCrossingZigzagRemoved"));
-    verifyEqual(testCase,diagnostics.RemovedZigzagVertexCountBySample,2*ones(2,2));
-    verifyEqual(testCase,diagnostics.AffectedSampleIndex,[1;2]);
-    verifyEqual(testCase,diagnostics.AffectedSampleTime_s,[0;1]);
+    expected = ring([1,4:8],:);
+    for sampleIndex = 1:2
+        expectedSample = expected + [(sampleIndex - 1) * 0.25,0];
+        verifyEqual(testCase,[obstacle.x_units{sampleIndex},obstacle.y_units{sampleIndex}],expectedSample);
+        verifyEqual(testCase,[obstacle.originalX_units{sampleIndex},obstacle.originalY_units{sampleIndex}],expectedSample);
+    end
     rebuilt=obstacleAvoidance.obstacles.createObstacle(obstacle);
-    verifyEqual(testCase,rebuilt.NormalizationDiagnostics,diagnostics);
+    verifyEqual(testCase,rebuilt,obstacle);
     % A four-vertex bow tie leaves fewer than three vertices: remove the run.
     bow=obstacleAvoidance.obstacles.createObstacle('empty fold',0,[0;2;0;2],[0;2;2;0]);
     verifyEmpty(testCase,bow.x_units{1});
-    verifyEqual(testCase,bow.NormalizationDiagnostics.RemovedRegionCount,[1,1]);
+    verifyEmpty(testCase,bow.y_units{1});
 end
 
 function testSmallInteriorFoldKeepsTheSameVertices(testCase)
@@ -299,9 +294,7 @@ function testClosingCopyRemovalRemainsExact(testCase)
             expected_units(end, :) = [];
         end
         verifyEqual(testCase, [obstacle.x_units{1}, obstacle.y_units{1}], expected_units);
-        verifyEqual(testCase, obstacle.NormalizationDiagnostics.RemovedDuplicateVertexCount, ...
-            duplicateCount * ones(1, 2));
-        verifyEqual(testCase, obstacle.NormalizationDiagnostics.RemovedZigzagVertexCountBySample, [0, 0]);
+        verifyEqual(testCase, [obstacle.originalX_units{1}, obstacle.originalY_units{1}], expected_units);
     end
 end
 
@@ -317,20 +310,19 @@ function testRepairedSourceIndexCountChangeReportsEndpointHulls(testCase)
         cellfun(@(frame) frame(:, 2), frames_units, 'UniformOutput', false), ...
         0, struct('vertexCorrespondence', 'sourceIndex'));
     verifyEqual(testCase, cellfun(@numel, obstacle.x_units), [7; 6; 7]);
-    verifyEqual(testCase, obstacle.NormalizationDiagnostics.RemovedZigzagVertexCountBySample, ...
-        [0, 0; 2, 2; 0, 0]);
+    verifyEqual(testCase, [obstacle.x_units{2}, obstacle.y_units{2}], folded_units(2:7, :) + [0.1, 0]);
+    verifyEqual(testCase, [obstacle.originalX_units{2}, obstacle.originalY_units{2}], ...
+        folded_units(2:7, :) + [0.1, 0]);
     prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     preparation = prepared.InternalPreparation;
     verifyTrue(testCase, prepared.UsesSourceIndex);
     verifyEqual(testCase, prepared.vertexCorrespondence, "sourceIndex");
-    verifyEqual(testCase, preparation.IntervalGeometryModel, repmat("endpointConvexHull", 2, 1));
     verifyEqual(testCase, preparation.IntervalUsesEndpointHull, true(2, 1));
     verifyEqual(testCase, preparation.MatchingTopology, false(2, 1));
     verifyEqual(testCase, preparation.IntervalHasExactPartition, false(2, 1));
     verifyEqual(testCase, preparation.IntervalUsesMovingCells, false(2, 1));
     verifyEqual(testCase, preparation.IntervalIsStationary, false(2, 1));
     verifyEqual(testCase, preparation.IntervalIsUnsupported, false(2, 1));
-    verifyEqual(testCase, preparation.IntervalProofReason, strings(2, 1));
     for intervalIndex = 1:2
         cells = obstacleAvoidance.obstacles.createTimeCells(prepared, intervalIndex - 1, intervalIndex);
         verifyEqual(testCase, cells.Regions_units, cells.EndRegions_units);
@@ -356,7 +348,6 @@ function testMovingCellsContainUnprovableCorrespondingRing(testCase)
         prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
         preparation=prepared.InternalPreparation;
         if margin_units==0
-            verifyEqual(testCase,preparation.IntervalGeometryModel,"movingConvexCells");
             verifyFalse(testCase,preparation.MatchingTopology);
             verifyTrue(testCase,preparation.IntervalUsesMovingCells);
             verifyFalse(testCase,preparation.IntervalIsUnsupported);
@@ -374,11 +365,9 @@ function testMovingCellsContainUnprovableCorrespondingRing(testCase)
             polygon=polyshape((1-tau)*lower+tau*aligned,'Simplify',false);
             if margin_units>0, polygon=polybuffer(polygon,margin_units,'JointType','square'); end
             verifyLessThan(testCase,area(subtract(polygon,enclosure)),1e-11);
-            [queried,geometry]=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,tau);
+            queried=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,tau);
             if tau>0 && tau<1 && margin_units==0
                 verifyEqual(testCase,area(xor(queried,enclosure)),0);
-                verifyFalse(testCase,geometry.TopologyIsInterpolated);
-                verifyEqual(testCase,geometry.VertexSpeedBound_units_s,0);
             elseif tau==0 || tau==1
                 verifyEqual(testCase,area(xor(queried,preparation.SampleShapes{1+tau})),0);
             end
@@ -392,11 +381,14 @@ function testMovingCellsDoNotBecomeAnExactTranslationPartition(testCase)
     source=obstacleAvoidance.obstacles.createObstacle('mixed models',[0;1;2], ...
         {first(:,1);second(:,1);third(:,1)},{first(:,2);second(:,2);third(:,2)},0);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
-    verifyEqual(testCase,prepared.InternalPreparation.IntervalGeometryModel, ...
-        ["movingConvexCells";"linearCorrespondingConvexPartition"]);
-    verifyFalse(testCase,prepared.InternalPreparation.IntervalPartitionReused(2));
+    preparation = prepared.InternalPreparation;
+    verifyEqual(testCase, preparation.IntervalUsesMovingCells, [true; false]);
+    verifyEqual(testCase, preparation.MatchingTopology, [false; true]);
+    verifyEqual(testCase, preparation.IntervalHasExactPartition, [false; true]);
     actual=unionRegions(prepared.InternalPreparation.IntervalStartRegions_units{2});
     verifyLessThan(testCase,area(xor(actual,polyshape(second,'Simplify',false))),1e-12);
+    endShape = unionRegions(preparation.IntervalEndRegions_units{2});
+    verifyLessThan(testCase, area(xor(endShape, polyshape(third, 'Simplify', false))), 1e-12);
 end
 
 function testRootTwoMarginSquaresContainSquareJoinProtection(testCase)
@@ -426,10 +418,12 @@ function testRootTwoMarginSquaresContainSquareJoinProtection(testCase)
         {lower(:,1);upper(:,1)},{lower(:,2);upper(:,2)},0.1);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(source);
     preparation=prepared.InternalPreparation;
-    verifyNotEqual(testCase,preparation.IntervalGeometryModel,"unsupportedContinuousDeformation");
-    verifyNotEqual(testCase,preparation.IntervalProofReason,"movingCellsExcludeProtectedSample");
-    if preparation.IntervalGeometryModel=="movingConvexCells"
-        verifyLessThanOrEqual(testCase,max(preparation.IntervalMovingCellUncoveredProtectedArea_units2), ...
+    verifyFalse(testCase,preparation.IntervalIsUnsupported);
+    if preparation.IntervalUsesMovingCells
+        enclosure = preparation.IntervalUnionShapes{1};
+        uncoveredArea_units2 = cellfun(@(shape) area(subtract(shape, enclosure)), ...
+            preparation.SampleShapes);
+        verifyLessThanOrEqual(testCase,max(uncoveredArea_units2), ...
             4096*eps(max(1,area(preparation.SampleShapes{1}))));
         enclosure=unionRegions(preparation.IntervalStartRegions_units{1});
         for tau=[0,0.5,1]
@@ -467,14 +461,12 @@ function testMovingObstacleDeclaresSourceIndexCorrespondence(testCase)
     verifyTrue(testCase,preparation.IntervalPrepared(1));
     % Buffered protected rings carry no index order, so the only faithful
     % model here is the moving-cell enclosure built from the original rings.
-    verifyEqual(testCase,preparation.IntervalGeometryModel(1),"movingConvexCells");
-    [enclosure,geometry]=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,0.5);
+    verifyTrue(testCase,preparation.IntervalUsesMovingCells(1));
+    enclosure=obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,0.5);
     for tau=[0.25,0.5,0.75]
         polygon=polybuffer(polyshape((1-tau)*lower+tau*upper,'Simplify',false),0.05,'JointType','square');
         verifyLessThan(testCase,area(subtract(polygon,enclosure)),1e-10);
     end
-    verifyFalse(testCase,geometry.TopologyIsInterpolated && ...
-        preparation.IntervalGeometryModel(1)=="movingConvexCells");
 end
 
 function testReportedModelMutationDoesNotSelectBehavior(testCase)
@@ -489,8 +481,6 @@ function testReportedModelMutationDoesNotSelectBehavior(testCase)
 
     mutated = prepared;
     mutated.vertexCorrespondence = "nonsense";
-    mutated.InternalPreparation.IntervalGeometryModel(:) = "nonsense";
-    mutated.InternalPreparation.IntervalProofReason(:) = "nonsense";
 
     referenceCells = obstacleAvoidance.obstacles.createTimeCells(prepared, 0, 1);
     mutatedCells   = obstacleAvoidance.obstacles.createTimeCells(mutated, 0, 1);
@@ -542,8 +532,6 @@ function testRedundantAffineKeyframesUseIdenticalCellsAndMotion(testCase)
     sparse=obstacleAvoidance.obstacles.createObstacle('affine',times_s([1,end]), ...
         dense.x_units([1,end]),dense.y_units([1,end]));
     prepared=obstacleAvoidance.obstacles.prepareObstacles(dense);
-    verifyEqual(testCase,prepared.InternalPreparation.MergedSpanTime_s,[0,16]);
-    verifyEqual(testCase,prepared.InternalPreparation.MergedIntervalCount,15);
     verifyEqual(testCase,prepared.time_s,times_s);
     verifyEqual(testCase,obstacleAvoidance.obstacles.createTimeCells(prepared,0,16), ...
         obstacleAvoidance.obstacles.createTimeCells(sparse,0,16));
@@ -564,26 +552,15 @@ function testRedundantAffineKeyframesUseIdenticalCellsAndMotion(testCase)
 end
 
 function verifyCrossingRepair(testCase, ring_units, expected_units, removedVertexCount)
-    % Compare returned coordinates and both area directions against the
-    % declared simplified pre-repair fill, separately for each geometry role.
+    % Verify the exact retained vertices and removed count in both histories.
     obstacle = obstacleAvoidance.obstacles.createObstacle( ...
         'crossing fold', 0, ring_units(:, 1), ring_units(:, 2), 0);
     verifyEqual(testCase, [obstacle.x_units{1}, obstacle.y_units{1}], expected_units);
     verifyEqual(testCase, [obstacle.originalX_units{1}, obstacle.originalY_units{1}], expected_units);
-    diagnostics = obstacle.NormalizationDiagnostics;
-    verifyEqual(testCase, diagnostics.RemovedZigzagVertexCountBySample, removedVertexCount * ones(1, 2));
-    verifyEqual(testCase, diagnostics.RemovedRegionCount, [0, 0]);
-    verifyEqual(testCase, diagnostics.RemovedDuplicateVertexCount, [0, 0]);
-    warningState = warning('off', 'MATLAB:polyshape:repairedBySimplify');
-    restoreWarning = onCleanup(@() warning(warningState));
-    beforeShape = polyshape(ring_units, 'Simplify', true, 'KeepCollinearPoints', true);
-    afterShape = polyshape(expected_units, 'Simplify', true, 'KeepCollinearPoints', true);
-    verifyEqual(testCase, diagnostics.RemovedZigzagAreaBySample_units2, ...
-        area(subtract(beforeShape, afterShape)) * ones(1, 2));
-    verifyEqual(testCase, diagnostics.AddedZigzagAreaBySample_units2, ...
-        area(subtract(afterShape, beforeShape)) * ones(1, 2));
+    verifyEqual(testCase, size(ring_units, 1) - numel(obstacle.x_units{1}), removedVertexCount);
+    verifyEqual(testCase, size(ring_units, 1) - numel(obstacle.originalX_units{1}), removedVertexCount);
     rebuilt = obstacleAvoidance.obstacles.createObstacle(obstacle);
-    verifyEqual(testCase, rebuilt.NormalizationDiagnostics, diagnostics);
+    verifyEqual(testCase, rebuilt, obstacle);
 end
 
 function prepared=preparePair(lower,upper)

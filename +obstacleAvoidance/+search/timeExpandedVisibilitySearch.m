@@ -124,16 +124,6 @@ end
 
 % Keep one prepared obstacle history for all route checks in this search.
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles, [initialState.time_s, goalState.time_s]);
-% Layer times are unique, so no queried shape would be reused here.
-% A supplied map is a shared handle: reading it could reuse saved shapes,
-% and writing it would change the caller's map. Strip its fields locally.
-cacheFieldNames = {'QueryGeometryCache', 'QueryGeometryCacheCapacity'};
-for obstacleIndex = 1:numel(obstacles)
-    preparation                                = obstacles(obstacleIndex).InternalPreparation;
-    preparation                                = rmfield( ...
-        preparation, cacheFieldNames(isfield(preparation, cacheFieldNames)));
-    obstacles(obstacleIndex).InternalPreparation = preparation;
-end
 maximumCacheBytes = 300 * 1024 ^ 2;
 % Check each static obstacle only during the times it exists. Use its
 % prepared boundary, which already includes the safety margin.

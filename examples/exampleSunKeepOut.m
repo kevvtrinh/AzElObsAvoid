@@ -6,7 +6,7 @@ function result = exampleSunKeepOut(exampleOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Rebuild the owner's Sun keep-out scenario without STK and plan the
-%     original fixed-arrival slew. Print normalization and validation results.
+%     original fixed-arrival slew. Print returned geometry and validation results.
 %   - This is the owner's reported crash case: a native access violation in
 %     libmwpolyfun on R2024b 24.2.0.2712019. On R2024b Update 4
 %     (24.2.0.2833386), it plans successfully in about 250 s at about 3.3 GB
@@ -79,7 +79,6 @@ obstacles = obstacleAvoidance.obstacles.createObstacle( ...
     'Sun keep-out', sunKeepOut.time_s, sunKeepOut.az_deg, sunKeepOut.el_deg, ...
     0, struct('vertexCorrespondence', 'sourceIndex'));
 vertexCountBySample = cellfun(@numel, obstacles.x_units);
-normalization       = obstacles.NormalizationDiagnostics;
 shortSliceTimes_s   = obstacles.time_s(vertexCountBySample < 3);
 fprintf('Sun samples: %d, time [%.2f %.2f] s, step %.2f s.\n', ...
     numel(time_s), time_s(1), time_s(end), time_s(2) - time_s(1));
@@ -88,14 +87,6 @@ fprintf('Sun center: az [%.9f %.9f] deg, el [%.9f %.9f] deg.\n', ...
 fprintf('Normalized vertices per slice: min=%d, max=%d.\n', ...
     min(vertexCountBySample), max(vertexCountBySample));
 
-% Diagnostics list protected and original geometry separately. With zero
-% margin they match; printing each role avoids counting removals twice.
-for roleIndex = 1:numel(normalization.Roles)
-    fprintf('Normalization (%s): removed duplicates=%d, removed zigzags=%d.\n', ...
-        normalization.Roles(roleIndex), ...
-        normalization.RemovedDuplicateVertexCount(roleIndex), ...
-        sum(normalization.RemovedZigzagVertexCountBySample(:, roleIndex)));
-end
 fprintf('Slice times with fewer than 3 vertices (s): %s.\n', ...
     mat2str(shortSliceTimes_s.', 12));
 

@@ -41,23 +41,36 @@ function testPreparationRetainsSourceAndCanonicalizesTwoSpans(testCase)
     [obstacle,initial,goal,~]=createVietnamBoundaryScenario();
     prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[initial.time_s,goal.time_s]);
     preparation=prepared.InternalPreparation;
-    verifyEqual(testCase,preparation.MergedSpanTime_s,[2770,2910;2910,3000]);
-    verifyEqual(testCase,preparation.MergedIntervalCount,918);
     verifyTrue(testCase,all(preparation.IntervalPrepared));
+    acceptedSpanSampleIndices = unique( ...
+        [preparation.SpanStartSampleIndex, preparation.SpanEndSampleIndex], 'rows');
+    verifyEqual(testCase, prepared.time_s(acceptedSpanSampleIndices), [2770, 2910; 2910, 3000]);
     verifyEqual(testCase,prepared.x_units,obstacle.x_units);
     verifyEqual(testCase,prepared.y_units,obstacle.y_units);
-    verifyEqual(testCase,obstacle.NormalizationDiagnostics.RemovedZigzagVertexCountBySample,5*ones(921,2));
+    % Each source anchor has 280 vertices after its exact closing copy is
+    % removed. The repaired history keeps 275 supplied vertices per sample.
+    source = readtable(fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+        'examples', 'data', 'vietnamBoundaryPoints.csv'));
+    anchorTimes_s = unique(source.time_s);
+    for anchorTime_s = anchorTimes_s.'
+        rows = source(source.time_s == anchorTime_s, :);
+        sourceVertices = [rows.az_deg, rows.el_deg];
+        if isequal(sourceVertices(1,:),sourceVertices(end,:))
+            sourceVertices(end,:) = [];
+        end
+        verifyEqual(testCase,size(sourceVertices,1),280);
+    end
+    verifyEqual(testCase,280 - cellfun(@numel,obstacle.x_units),5*ones(921,1));
+    verifyEqual(testCase,280 - cellfun(@numel,obstacle.originalX_units),5*ones(921,1));
 end
 
 function testExactDeformationIsNeverReplacedByAConvexHull(testCase)
     [obstacle,initial,goal,limits]=createVietnamBoundaryScenario();
     prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle,[initial.time_s,goal.time_s]);
-    models=prepared.InternalPreparation.IntervalGeometryModel;
-    verifyEqual(testCase,models,repmat("linearCorrespondingConvexPartition",920,1));
     verifyTrue(testCase,all(prepared.InternalPreparation.IntervalHasExactPartition));
     verifyFalse(testCase,any(prepared.InternalPreparation.IntervalUsesMovingCells));
     verifyFalse(testCase,any(prepared.InternalPreparation.IntervalIsUnsupported));
-    verifyFalse(testCase,any(contains(models,"ConvexHull",'IgnoreCase',true)));
+    verifyFalse(testCase,any(prepared.InternalPreparation.IntervalUsesEndpointHull));
     cells=obstacleAvoidance.obstacles.createTimeCells(prepared,2770,3000);
     verifyEqual(testCase,unique(cells.ActiveTimeInterval_s,'rows'),[2770,2910;2910,3000]);
     result=planner(prepared,initial,goal,limits,struct('GoalTimeMode','fixedArrival','WrapX',false));

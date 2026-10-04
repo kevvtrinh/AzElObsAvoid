@@ -72,20 +72,6 @@ for obstacleIndex = 1:numel(obstacles)
         continue;
     end
 
-    % Reuse shapes for repeated times. The cache belongs to this obstacle
-    % and preparation checks that it still matches the supplied boundaries.
-    obstacleShapeCache = [];
-    cacheIsAvailable   = isfield(obstacle.InternalPreparation, 'QueryGeometryCache');
-    if cacheIsAvailable
-        obstacleShapeCache = obstacle.InternalPreparation.QueryGeometryCache;
-    end
-    cachedShapeDetails = cell(size(queryTimes_s));
-    if cacheIsAvailable
-        timeCacheKeys = num2cell(queryTimes_s);
-        timeIsCached  = isKey(obstacleShapeCache, timeCacheKeys);
-        cachedShapeDetails(timeIsCached) = values(obstacleShapeCache, timeCacheKeys(timeIsCached));
-    end
-
     % Points at the same time share one shape calculation.
     for timeIndex = 1:numel(queryTimes_s)
         pointIndicesToCheck = find(time_s == queryTimes_s(timeIndex) & ~occupied);
@@ -95,19 +81,8 @@ for obstacleIndex = 1:numel(obstacles)
         % At a sample time, use its supplied protected boundary. Between
         % samples, the prepared model provides an interpolated boundary or
         % an enclosure covering the obstacle over that interval.
-        if ~isempty(cachedShapeDetails{timeIndex})
-            shapeDetails = cachedShapeDetails{timeIndex};
-        else
-            [~, shapeDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-                obstacle, queryTimes_s(timeIndex), true, false);
-            if cacheIsAvailable && ...
-                    obstacleShapeCache.Count < obstacle.InternalPreparation.QueryGeometryCacheCapacity
-                obstacleShapeCache(queryTimes_s(timeIndex)) = struct( ...
-                    'Active',  shapeDetails.Active, ...
-                    'x_units', shapeDetails.x_units, ...
-                    'y_units', shapeDetails.y_units); %#ok<AGROW> Cache capacity checked above.
-            end
-        end
+        [~, shapeDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
+            obstacle, queryTimes_s(timeIndex), true);
         % An obstacle outside its active history, or with no boundary at
         % this time, cannot block these points.
         if ~shapeDetails.Active

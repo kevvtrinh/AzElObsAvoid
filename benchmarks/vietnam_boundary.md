@@ -14,8 +14,9 @@ convex-hull substitution. Relative to MATLAB's simplified original fill,
 the repair **adds** 0.34087064 to 0.79924373 square units and removes zero
 area. The three anchor additions are 0.79924373, 0.48124398, and 0.34087064.
 The previous description of these quantities as removed area was incorrect.
-Per-sample counts and both added/removed areas remain visible in
-`NormalizationDiagnostics` through canonical rebuilds.
+`NormalizationDiagnostics` is retired. Per-sample removal counts can be checked
+from the 280 source vertices and the 275 returned vertices; added and removed
+areas must be calculated from the source and returned geometry.
 
 All 920 intervals have the exact `linearCorrespondingConvexPartition` model.
 Preparation preserves the complete supplied time and coordinate history but
@@ -36,10 +37,12 @@ substitutes a newly aligned long-span motion.
 addpath(pwd,fullfile(pwd,'examples'),fullfile(pwd,'trajectory'));
 [obstacle,initialState,goalState,limits] = createVietnamBoundaryScenario();
 prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle,[2770,3000]);
-assert(all(prepared.InternalPreparation.IntervalGeometryModel == ...
-    "linearCorrespondingConvexPartition"));
-assert(isequal(prepared.InternalPreparation.MergedSpanTime_s, ...
-    [2770,2910;2910,3000]));
+preparation = prepared.InternalPreparation;
+assert(all(preparation.MatchingTopology & preparation.IntervalHasExactPartition));
+assert(~any(preparation.IntervalUsesMovingCells | preparation.IntervalUsesEndpointHull));
+spanSampleIndices = unique( ...
+    [preparation.SpanStartSampleIndex, preparation.SpanEndSampleIndex], 'rows');
+assert(isequal(prepared.time_s(spanSampleIndices), [2770,2910;2910,3000]));
 result = planner(prepared,initialState,goalState,limits, ...
     struct('GoalTimeMode','fixedArrival','WrapX',false));
 assert(result.Success);
@@ -70,8 +73,11 @@ moving-cell union, and a rotated unit square with 0.1-unit protection reproduces
 0.000655552753962 square units missing from its margin-square hull. A square
 join of distance `d` reaches at most `d*sqrt(2)` from the source, so the
 moving cells now use half-width `sqrt(2)*safetyMargin_units`. With that
-margin the explicit endpoint containment check passes on every US interval
-(uncovered area at roundoff), and `testBoundedCorrespondence` keeps both the
+margin the explicit endpoint containment check passes for accepted moving-cell
+intervals (uncovered area at roundoff). At HEAD 3feaae0 the reduced outline uses
+endpoint hulls for all 48 intervals, [0,5] through [235,240] s;
+`testDeformingUSOutline` retains the failing no-hull
+expectation. `testBoundedCorrespondence` keeps both the
 counterexample for half-width `d` and the proof for `d*sqrt(2)`.
 
 Two further changes were required for the US history. Circular correlation
@@ -90,7 +96,9 @@ outline at 100 vertices with `MaximumOutlineVertices`, a deterministic
 Douglas-Peucker reduction in the example helper that keeps the smallest
 tolerance meeting the cap and splits any chord that crosses the far shore
 (the raw reduction folded the outline at the Chesapeake Bay mouth). The
-reduced outline is the supplied obstacle; the planner treats it exactly.
+reduced coordinates are the supplied source samples. Preparation covers all 48
+intervals with the endpoint hull; no moving-cell interval is accepted. The plan
+still succeeds and passes independent validation.
 
 Two computation-only changes then removed most of the remaining time
 without changing any enclosure. The cover pieces are replaced by the exact
@@ -108,4 +116,7 @@ branch): wall 83.03 s, planner 61.93 s, arrival 25.8355 s, length
 40.5138437, independent validation passed, every U.S. interval
 `movingCellCorrespondingConvexCells`. The same run planned the Vietnam slew in
 20.16 s (arrival 3000 s, length 113.137085, 546 cells; example wall
-30.66 s). `testDeformingUSOutline` keeps the U.S. case supported and exact.
+30.66 s). These are historical measurements. At HEAD 3feaae0 the reduced
+outline remains supported and independently valid, but its test fails the
+no-hull expectation, the discarded moving-cell candidate's endpoint-coverage
+expectation, and the unchanged 18.5752 s arrival pin.

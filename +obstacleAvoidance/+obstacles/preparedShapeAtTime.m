@@ -1,11 +1,11 @@
 function [protectedShape, shapeDetails] = preparedShapeAtTime( ...
-    obstacle, requestedTime_s, geometryOnly, classifyBoundary)
+    obstacle, requestedTime_s, geometryOnly)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [protectedShape, shapeDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
 %       obstacle, requestedTime_s)
 %   [protectedShape, shapeDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-%       obstacle, requestedTime_s, geometryOnly, classifyBoundary)
+%       obstacle, requestedTime_s, geometryOnly)
 %**************************************************************************
 % PURPOSE
 %   - Return the protected obstacle shape at the requested time, using
@@ -18,14 +18,12 @@ function [protectedShape, shapeDetails] = preparedShapeAtTime( ...
 %       Time at which the obstacle shape is needed.
 %   - geometryOnly (logical scalar, optional; default false)
 %       Whether to omit polyshape construction when possible.
-%   - classifyBoundary (logical scalar, optional; default true)
-%       Whether to check for one ordered boundary loop and no inward corners.
 %**************************************************************************
 % OUTPUTS
 %   - protectedShape (polyshape or empty array)
 %       Protected shape, or empty when geometryOnly omits construction.
 %   - shapeDetails (scalar struct)
-%       Protected vertices, speed bound, and boundary properties. An
+%       Protected vertices and the prepared interval used. An
 %       unprepared, unsupported, or unknown interval throws an error.
 %**************************************************************************
 % UNITS
@@ -36,9 +34,6 @@ function [protectedShape, shapeDetails] = preparedShapeAtTime( ...
 
 if nargin < 3
     geometryOnly = false;
-end
-if nargin < 4
-    classifyBoundary = true;
 end
 
 obstaclePreparation = obstacle.InternalPreparation;
@@ -51,7 +46,7 @@ requestedTimeIsOutsideHistory = numel(sampleTimes_s) > 1 && ...
     (requestedTime_s < sampleTimes_s(1) || requestedTime_s > sampleTimes_s(end));
 if isempty(sampleTimes_s) || requestedTimeIsOutsideHistory
     shapeDetails = createBoundaryDetails( ...
-        zeros(0, 1), zeros(0, 1), 0, false, false, 0, classifyBoundary);
+        zeros(0, 1), zeros(0, 1), false, 0);
     if ~geometryOnly
         protectedShape = polyshape();
     end
@@ -92,12 +87,10 @@ end
 x_units = double(obstacle.x_units{intervalStartSampleIndex}(:));
 y_units = double(obstacle.y_units{intervalStartSampleIndex}(:));
 
-topologyIsInterpolated = true;
-usesMovingCells        = false;
+usesMovingCells = false;
 
 % Reuse a recorded boundary exactly when its sample time was requested.
 if intervalStartSampleIndex == intervalEndSampleIndex
-    vertexSpeedBound_units_s = obstaclePreparation.SampleSpeedBound_units_s(intervalStartSampleIndex);
     if ~geometryOnly
         protectedShape = obstaclePreparation.SampleShapes{intervalStartSampleIndex};
     end
@@ -129,13 +122,10 @@ elseif obstaclePreparation.IntervalIsUnsupported(intervalStartSampleIndex)
 elseif obstaclePreparation.IntervalIsStationary(intervalStartSampleIndex) || ...
         obstaclePreparation.IntervalUsesMovingCells(intervalStartSampleIndex) || ...
         obstaclePreparation.IntervalUsesEndpointHull(intervalStartSampleIndex)
-    % These models use a fixed shape covering the whole interval. Its
-    % boundary does not move, so its speed bound is zero.
+    % These models use a fixed shape covering the whole interval.
     protectedShape = obstaclePreparation.IntervalUnionShapes{intervalStartSampleIndex};
     [x_units, y_units] = boundary(protectedShape);
-    vertexSpeedBound_units_s = 0;
-    topologyIsInterpolated   = false;
-    usesMovingCells          = obstaclePreparation.IntervalUsesMovingCells(intervalStartSampleIndex);
+    usesMovingCells = obstaclePreparation.IntervalUsesMovingCells(intervalStartSampleIndex);
 else
     error('preparedShapeAtTime:UnknownGeometryModel', ...
         'The prepared obstacle interval has an unknown geometry model.');
@@ -154,57 +144,18 @@ if nargout < 2
     return;
 end
 shapeDetails = createBoundaryDetails( ...
-    x_units, y_units, vertexSpeedBound_units_s, topologyIsInterpolated, usesMovingCells, ...
-    intervalStartSampleIndex, classifyBoundary);
+    x_units, y_units, usesMovingCells, intervalStartSampleIndex);
 end
 
 %% Section 4: Local Functions
 
-function shapeDetails = createBoundaryDetails(x_units, y_units, vertexSpeedBound_units_s, ...
-        topologyIsInterpolated, usesMovingCells, intervalStartSampleIndex, classifyBoundary)
-    % Describe the boundary without changing its vertices or loop order.
-    % Boundaries with NaN separators need general polygon checks.
-    vertexIsFinite        = isfinite(x_units) & isfinite(y_units);
-    hasEnoughVertices     = nnz(vertexIsFinite) >= 3;
-    hasSingleBoundaryLoop = classifyBoundary && hasEnoughVertices && all(vertexIsFinite);
-    boundaryIsConvex      = false;
-    outwardNormalSign     = NaN;
-    if hasSingleBoundaryLoop
-        vertices_units     = [x_units(:), y_units(:)];
-        nextVertices_units = circshift(vertices_units, -1, 1);
-        areaTerms_units2   = vertices_units(:, 1) .* nextVertices_units(:, 2) - ...
-            vertices_units(:, 2) .* nextVertices_units(:, 1);
-
-        % Signed area identifies clockwise versus counterclockwise order.
-        % Ignore area smaller than the rounding tolerance when classifying it.
-        signedDoubleArea_units2 = sum(areaTerms_units2);
-        areaTolerance_units2    = 64 * eps * max(1, sum(abs(areaTerms_units2)));
-        hasSingleBoundaryLoop   = abs(signedDoubleArea_units2) > areaTolerance_units2;
-        if hasSingleBoundaryLoop
-            % A convex loop turns the same way at every corner. Allow tiny
-            % rounding differences around zero for points on a straight edge.
-            edgeVectors_units        = nextVertices_units - vertices_units;
-            nextEdgeVectors_units    = circshift(edgeVectors_units, -1, 1);
-            turnCrossProducts_units2 = edgeVectors_units(:, 1) .* nextEdgeVectors_units(:, 2) - ...
-                edgeVectors_units(:, 2) .* nextEdgeVectors_units(:, 1);
-            turnTolerance_units2 = 64 * eps * max(1, max(abs(turnCrossProducts_units2)));
-            boundaryIsConvex     = all(turnCrossProducts_units2 >= -turnTolerance_units2) || ...
-                all(turnCrossProducts_units2 <= turnTolerance_units2);
-
-            % +1 selects the left side of an edge; -1 selects the right.
-            % For a counterclockwise boundary, the outside is on the right.
-            outwardNormalSign = -sign(signedDoubleArea_units2);
-        end
-    end
+function shapeDetails = createBoundaryDetails(x_units, y_units, usesMovingCells, intervalStartSampleIndex)
+    % Report protected coordinates and the prepared interval used by snapshots.
+    hasEnoughVertices = nnz(isfinite(x_units) & isfinite(y_units)) >= 3;
     shapeDetails = struct( ...
-        "Active",                   hasEnoughVertices, ...
-        "x_units",                  double(x_units(:)), ...
-        "y_units",                  double(y_units(:)), ...
-        "VertexSpeedBound_units_s", vertexSpeedBound_units_s, ...
-        "HasOrderedSingleRegion",   hasSingleBoundaryLoop, ...
-        "IsConvex",                 boundaryIsConvex, ...
-        "OutwardSign",              outwardNormalSign, ...
-        "TopologyIsInterpolated",   topologyIsInterpolated, ...
-        "UsesMovingCells",          usesMovingCells, ...
-        "LowerSampleIndex",         intervalStartSampleIndex);
+        "Active",           hasEnoughVertices, ...
+        "x_units",          double(x_units(:)), ...
+        "y_units",          double(y_units(:)), ...
+        "UsesMovingCells",  usesMovingCells, ...
+        "LowerSampleIndex", intervalStartSampleIndex);
 end

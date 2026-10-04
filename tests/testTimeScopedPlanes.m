@@ -668,7 +668,6 @@ function testMovingDetourWithNonzeroEndpointVelocity(testCase)
     verifyLessThan(testCase,result.Diagnostics.Polynomial.SegmentCount,80);
     % Eighty identical-velocity source intervals are one exact affine cell.
     verifyEqual(testCase,result.Diagnostics.SeparationProof.SolverRegionCount,1);
-    verifyEqual(testCase,result.Diagnostics.PreparedObstacles.InternalPreparation.MergedIntervalCount,79);
     verifyGreaterThan(testCase,result.Diagnostics.SolverDiagnostics.TrajectorySocpCount,0);
 end
 

@@ -79,7 +79,8 @@ function testCompletePreparationReuseAndSourceChanges(testCase)
     partial = obstacleAvoidance.obstacles.prepareObstacles(source,[0,2]);
     % A touched redundant span is proven in full, independent of query window.
     verifyTrue(testCase,partial.InternalPreparation.SamplePrepared(end));
-    verifyEqual(testCase,partial.InternalPreparation.MergedSpanTime_s,[0,10]);
+    verifyEqual(testCase, partial.InternalPreparation.SpanStartSampleIndex, [1; 1]);
+    verifyEqual(testCase, partial.InternalPreparation.SpanEndSampleIndex, [3; 3]);
     changedVelocity=source;
     changedVelocity.x_units{end}=changedVelocity.x_units{end}+1;
     changedVelocity.originalX_units{end}=changedVelocity.originalX_units{end}+1;
@@ -129,23 +130,17 @@ function testExactSampleIdentityCacheRefresh(testCase)
     verifyFalse(testCase,prepared.InternalPreparation.SamplesExactlyEqual);
 end
 
-function testGeometryQueryCacheCapacityAndSourceRefresh(testCase)
+function testGeometryQueriesAndSourceRefresh(testCase)
     box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     source = obstacleAvoidance.obstacles.createObstacle('moving',[0;2], ...
         {box(:,1);box(:,1)+2},{box(:,2);box(:,2)},0);
     prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
-    prepared.InternalPreparation.QueryGeometryCache = containers.Map('KeyType','double','ValueType','any');
-    prepared.InternalPreparation.QueryGeometryCacheCapacity = 2;
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         prepared,[0,1,2],[0,0,0],[0,1,2]),[true,true,true]);
-    cache = prepared.InternalPreparation.QueryGeometryCache;
-    verifyEqual(testCase,cache.Count,uint64(2));
-    verifyFalse(testCase,isKey(cache,2));
-    % Mix cached times with an uncached time after reaching the capacity.
+    % Repeated times must still evaluate each supplied point.
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         prepared,[2,0,1,2],[0,0,0,0],[2,0,1,2]),[true,true,true,true]);
-    verifyEqual(testCase,cache.Count,uint64(2));
-    % A geometry hit still checks the new points and the requested boundary policy.
+    % Check new points using the requested boundary policy.
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         prepared,[1.5,3],[0,0],1,struct('BoundaryIsOccupied',false)),[false,false]);
     changed = prepared;
@@ -153,10 +148,8 @@ function testGeometryQueryCacheCapacityAndSourceRefresh(testCase)
     changed.originalX_units = cellfun(@(x)x+10,changed.originalX_units,'UniformOutput',false);
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         changed,[0,10],[0,0],0),[false,true]);
-    prepared.InternalPreparation.QueryGeometryCache = containers.Map('KeyType','double','ValueType','any');
     verifyFalse(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(prepared,0.5,0,-1));
-    verifyEqual(testCase,prepared.InternalPreparation.QueryGeometryCache.Count,uint64(1));
-    % Changing the active interval must invalidate an inactive cached boundary too.
+    % Changing the active interval must refresh an inactive boundary too.
     prepared.time_s = [-2;2];
     verifyTrue(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(prepared,0.5,0,-1));
 end
@@ -167,11 +160,7 @@ function testOccupancyBoundaryAndBlockingContract(testCase)
     moving = obstacleAvoidance.obstacles.createObstacle('moving',[0;2], ...
         {box(:,1)+3;box(:,1)+5},{box(:,2);box(:,2)},0);
     obstacles = obstacleAvoidance.obstacles.combineObstacles({fixed,moving,moving});
-    cachedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
-    for obstacleIndex = 1:numel(cachedObstacles)
-        cachedObstacles(obstacleIndex).InternalPreparation.QueryGeometryCache = containers.Map('KeyType','double','ValueType','any');
-        cachedObstacles(obstacleIndex).InternalPreparation.QueryGeometryCacheCapacity = 2;
-    end
+    preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
     x_units = repmat([0,0.5,1,3,5],2,1);
     y_units = zeros(size(x_units));
     time_s = repmat([0;2],1,5);
@@ -183,10 +172,10 @@ function testOccupancyBoundaryAndBlockingContract(testCase)
         verifyEqual(testCase,occupied,expected);
         verifyEqual(testCase,blocking,expectedBlocking);
         for repeat = 1:2
-            [cachedOccupied,cachedBlocking] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-                cachedObstacles,x_units,y_units,time_s,struct('BoundaryIsOccupied',boundaryOccupied));
-            verifyEqual(testCase,cachedOccupied,occupied);
-            verifyEqual(testCase,cachedBlocking,blocking);
+            [preparedOccupied,preparedBlocking] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+                preparedObstacles,x_units,y_units,time_s,struct('BoundaryIsOccupied',boundaryOccupied));
+            verifyEqual(testCase,preparedOccupied,occupied);
+            verifyEqual(testCase,preparedBlocking,blocking);
         end
     end
     verifyEqual(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
@@ -201,25 +190,16 @@ function testBoundaryOnlyGeometryPreservesPreparedModel(testCase)
     box = [-2,-2;2,-2;2,2;-2,2];
     concave = [0,0;3,0;3,1;1,1;1,3;0,3];
     hole = [box;NaN,NaN;-1,-1;-1,1;1,1;1,-1];
-    classificationFields = {'HasOrderedSingleRegion','IsConvex','OutwardSign'};
     for boundary = {box,concave,hole}
         vertices = boundary{1};
         obstacle = obstacleAvoidance.obstacles.createObstacle('boundary',[0;2], ...
             {vertices(:,1);vertices(:,1)+2},{vertices(:,2);vertices(:,2)+1},0);
         obstacle = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
         for time_s = [-1,0,0.75,2,3]
-            [shape,~] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s);
+            [shape,shapeDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s);
             verifyEqual(testCase,obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s),shape);
-            [~,classified] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true);
-            [~,boundaryOnly] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true,false);
-            verifyEqual(testCase,rmfield(boundaryOnly,classificationFields), ...
-                rmfield(classified,classificationFields));
-            verifyFalse(testCase,boundaryOnly.HasOrderedSingleRegion);
-            verifyFalse(testCase,boundaryOnly.IsConvex);
-            if isequal(vertices,box) && time_s>=0 && time_s<=2
-                verifyTrue(testCase,classified.HasOrderedSingleRegion);
-                verifyTrue(testCase,classified.IsConvex);
-            end
+            [~,boundaryOnly] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle,time_s,true);
+            verifyEqual(testCase,boundaryOnly,shapeDetails);
         end
     end
 end

@@ -33,7 +33,6 @@ function testSubEpsilonVelocityDriftIsNotMergedAway(testCase)
     obstacle = obstacleAvoidance.obstacles.createObstacle('drifting square', time_s, xByTime, yByTime, 0);
     prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle, [0 2e12]);
     verifyEqual(testCase, prepared.InternalPreparation.SpanEndSampleIndex, [2; 3]);
-    verifyEqual(testCase, prepared.InternalPreparation.MergedIntervalCount, 0);
 
     cells  = obstacleAvoidance.obstacles.createTimeCells(prepared, 1e12, 2e12);
     region = cells.Regions_units{1};
@@ -43,7 +42,6 @@ function testSubEpsilonVelocityDriftIsNotMergedAway(testCase)
     affine   = obstacleAvoidance.obstacles.createObstacle('affine square', time_s, affineX, yByTime, 0);
     prepared = obstacleAvoidance.obstacles.prepareObstacles(affine, [0 2e12]);
     verifyEqual(testCase, prepared.InternalPreparation.SpanEndSampleIndex, [3; 3]);
-    verifyEqual(testCase, prepared.InternalPreparation.MergedIntervalCount, 1);
 end
 
 function testThinWallCrossingIsNotPromotedBySampling(testCase)

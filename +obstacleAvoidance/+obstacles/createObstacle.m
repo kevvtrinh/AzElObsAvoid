@@ -40,7 +40,7 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %**************************************************************************
 % OUTPUTS
 %   - obstacleData (scalar or column struct array)
-%       Original and protected histories plus normalization diagnostics.
+%       Original and protected histories with the declared vertex correspondence.
 %       Invalid input throws an error.
 %**************************************************************************
 % UNITS
@@ -143,8 +143,7 @@ function obstacle = normalizeObstacleRecord(obstacleRecord, reuseOriginals)
     yHistoryIsValid = iscell(obstacleRecord.y_units) && numel(obstacleRecord.y_units) == sampleCount;
     requireCondition(xHistoryIsValid && yHistoryIsValid, "createObstacle:InvalidBoundary", ...
         "x_units and y_units must be cell arrays matching time_s.");
-    [xHistory_units, yHistory_units, protectedRemovalCounts, ...
-        protectedSampleWasChanged, protectedRepairDetails] = normalizeBoundaryHistory( ...
+    [xHistory_units, yHistory_units] = normalizeBoundaryHistory( ...
         obstacleRecord.x_units, obstacleRecord.y_units, sampleCount, "protected");
 
     % Keep original boundaries separate: later margin changes must start from
@@ -167,12 +166,8 @@ function obstacle = normalizeObstacleRecord(obstacleRecord, reuseOriginals)
         if protectedIsOriginal
             originalXHistory_units   = xHistory_units;
             originalYHistory_units   = yHistory_units;
-            originalRemovalCounts    = protectedRemovalCounts;
-            originalSampleWasChanged = protectedSampleWasChanged;
-            originalRepairDetails    = protectedRepairDetails;
         else
-            [originalXHistory_units, originalYHistory_units, originalRemovalCounts, ...
-                originalSampleWasChanged, originalRepairDetails] = normalizeBoundaryHistory( ...
+            [originalXHistory_units, originalYHistory_units] = normalizeBoundaryHistory( ...
                 obstacleRecord.originalX_units, obstacleRecord.originalY_units, sampleCount, "original");
         end
     else
@@ -181,62 +176,6 @@ function obstacle = normalizeObstacleRecord(obstacleRecord, reuseOriginals)
         if hasOriginalX
             originalXHistory_units = obstacleRecord.originalX_units;
             originalYHistory_units = obstacleRecord.originalY_units;
-        end
-        originalRemovalCounts    = [0, 0];
-        originalSampleWasChanged = false(sampleCount, 1);
-        originalRepairDetails    = zeros(sampleCount, 3);
-    end
-
-    % Record what changed at each sample, separately for protected and original
-    % boundaries. These measurements explain normalization to the caller.
-    affectedSampleIndices    = find(protectedSampleWasChanged | originalSampleWasChanged);
-    normalizationDiagnostics = struct( ...
-        'Version',                          1, ...
-        'SourceTime_s',                     time_s, ...
-        'Roles',                            ["protected", "original"], ...
-        'RemovedRegionCount',               [protectedRemovalCounts(1), originalRemovalCounts(1)], ...
-        'RemovedDuplicateVertexCount',      [protectedRemovalCounts(2), originalRemovalCounts(2)], ...
-        'AffectedSampleIndex',              affectedSampleIndices, ...
-        'AffectedSampleTime_s',             time_s(affectedSampleIndices), ...
-        'RemovedZigzagVertexCountBySample', [protectedRepairDetails(:, 1), originalRepairDetails(:, 1)], ...
-        'RemovedZigzagAreaBySample_units2', [protectedRepairDetails(:, 2), originalRepairDetails(:, 2)], ...
-        'AddedZigzagAreaBySample_units2',   [protectedRepairDetails(:, 3), originalRepairDetails(:, 3)], ...
-        'Reasons',                          ["fewerThanThreeDistinctVertices", ...
-                                              "exactDuplicateOrClosure", ...
-                                              "selfCrossingZigzagRemoved"]);
-    % Keep a record of removed or corrected vertices when rebuilding an
-    % obstacle or changing its margin. These notes do not change the geometry
-    % checks or determine which points are occupied.
-    if isfield(obstacleRecord, 'NormalizationDiagnostics')
-        previousDiagnostics      = obstacleRecord.NormalizationDiagnostics;
-        requiredDiagnosticFields = {'Version', 'SourceTime_s', 'RemovedRegionCount', ...
-            'RemovedDuplicateVertexCount', 'AffectedSampleIndex'};
-        previousDiagnosticsMatchSampleTimes = isstruct(previousDiagnostics) && isscalar(previousDiagnostics) && ...
-            all(isfield(previousDiagnostics, requiredDiagnosticFields)) && ...
-            isequal(previousDiagnostics.Version, 1) && isequal(previousDiagnostics.SourceTime_s, time_s);
-        if previousDiagnosticsMatchSampleTimes
-            for fieldName = ["RemovedRegionCount", "RemovedDuplicateVertexCount"]
-                validateattributes(previousDiagnostics.(fieldName), {'numeric'}, ...
-                    {'real', 'finite', 'size', [1, 2], 'integer', 'nonnegative'});
-                normalizationDiagnostics.(fieldName) = ...
-                    normalizationDiagnostics.(fieldName) + previousDiagnostics.(fieldName);
-            end
-            repairFieldNames = ["RemovedZigzagVertexCountBySample", ...
-                "RemovedZigzagAreaBySample_units2", "AddedZigzagAreaBySample_units2"];
-            for fieldName = repairFieldNames
-                if isfield(previousDiagnostics, fieldName)
-                    validateattributes(previousDiagnostics.(fieldName), {'numeric'}, ...
-                        {'real', 'finite', 'size', [sampleCount, 2], 'nonnegative'});
-                    normalizationDiagnostics.(fieldName) = ...
-                        normalizationDiagnostics.(fieldName) + previousDiagnostics.(fieldName);
-                end
-            end
-            validateattributes(previousDiagnostics.AffectedSampleIndex, {'numeric'}, ...
-                {'real', 'finite', 'integer', 'positive', '<=', sampleCount});
-            affectedSampleIndices = union(affectedSampleIndices, previousDiagnostics.AffectedSampleIndex(:));
-
-            normalizationDiagnostics.AffectedSampleIndex  = affectedSampleIndices;
-            normalizationDiagnostics.AffectedSampleTime_s = time_s(affectedSampleIndices);
         end
     end
 
@@ -279,21 +218,15 @@ function obstacle = normalizeObstacleRecord(obstacleRecord, reuseOriginals)
         "originalY_units",          {originalYHistory_units}, ...
         "safetyMargin_units",       safetyMargin_units, ...
         "status",                   status, ...
-        "NormalizationDiagnostics", normalizationDiagnostics, ...
         "vertexCorrespondence",     vertexCorrespondence, ...
         "UsesSourceIndex",          usesSourceIndex);
 end
 
-function [xHistory_units, yHistory_units, removalCounts, sampleWasChanged, sampleRepairDetails] = ...
-        normalizeBoundaryHistory(xInput_units, yInput_units, sampleCount, boundaryRole)
+function [xHistory_units, yHistory_units] = normalizeBoundaryHistory( ...
+        xInput_units, yInput_units, sampleCount, boundaryRole)
     % Check each boundary sample, keeping original/protected error labels distinct.
-    % removalCounts = [removed rings, removed duplicate vertices].
-    % Repair columns = [removed vertex count, removed area, added area].
     xHistory_units       = reshape(xInput_units, [], 1);
     yHistory_units       = reshape(yInput_units, [], 1);
-    removalCounts        = [0, 0];
-    sampleWasChanged     = false(sampleCount, 1);
-    sampleRepairDetails  = zeros(sampleCount, 3);
     sizeMismatchErrorIds = ["createObstacle:BoundarySizeMismatch", ...
         "createObstacle:OriginalBoundarySizeMismatch"];
     coordinateFieldNames = ["x_units", "y_units"; "originalX_units", "originalY_units"];
@@ -308,19 +241,16 @@ function [xHistory_units, yHistory_units, removalCounts, sampleWasChanged, sampl
         x_units = double(xHistory_units{sampleIndex}(:));
         y_units = double(yHistory_units{sampleIndex}(:));
 
-        [x_units, y_units, sampleRemovalCounts, repairDetails] = ...
+        [x_units, y_units] = ...
             normalizeBoundarySample(x_units, y_units, sampleIndex, boundaryRole);
         xHistory_units{sampleIndex} = x_units;
         yHistory_units{sampleIndex} = y_units;
-        removalCounts                      = removalCounts + sampleRemovalCounts;
-        sampleWasChanged(sampleIndex)      = any(sampleRemovalCounts > 0) || repairDetails(1) > 0;
-        sampleRepairDetails(sampleIndex, :) = repairDetails;
     end
 end
 
-function [x_units, y_units, removalCounts, repairDetails] = normalizeBoundarySample( ...
+function [x_units, y_units] = normalizeBoundarySample( ...
         x_units, y_units, sampleIndex, boundaryRole)
-    % Remove exact duplicates and crossing folds, recording every removal.
+    % Remove exact duplicates and crossing folds, keeping supplied coordinates.
     % A ring is one polygon boundary; paired nonfinite rows separate rings.
     xIsFinite = isfinite(x_units);
     yIsFinite = isfinite(y_units);
@@ -331,8 +261,8 @@ function [x_units, y_units, removalCounts, repairDetails] = normalizeBoundarySam
     ringStartIndices  = find(finiteRunChange == 1);
     ringEndIndices    = find(finiteRunChange == -1) - 1;
     retainedRowsByRing = cell(numel(ringStartIndices), 1);
-    repairDetails     = [0, 0, 0];
-    removalCounts     = [0, 0];
+    removedZigzagVertexCount = 0;
+    removalCounts           = [0, 0];
     for ringIndex = 1:numel(ringStartIndices)
         % Remove only exactly repeated neighbors. Distinct nearby vertices
         % may describe a narrow feature and must remain.
@@ -351,11 +281,10 @@ function [x_units, y_units, removalCounts, repairDetails] = normalizeBoundarySam
         end
 
         % Crossing edges do not form a simple boundary. Remove the detected
-        % folds and keep measurements of the resulting area changes.
-        [retainedVertexIndices, changedArea_units2] = ...
-            removeCrossingZigzags([x_units(ringRowIndices), y_units(ringRowIndices)]);
-        repairDetails = repairDetails + ...
-            [numel(ringRowIndices) - numel(retainedVertexIndices), changedArea_units2];
+        % folds without replacing the retained coordinates.
+        retainedVertexIndices = removeCrossingZigzags([x_units(ringRowIndices), y_units(ringRowIndices)]);
+        removedZigzagVertexCount = removedZigzagVertexCount + ...
+            (numel(ringRowIndices) - numel(retainedVertexIndices));
         ringRowIndices           = ringRowIndices(retainedVertexIndices);
         hasThreeDistinctVertices = numel(ringRowIndices) >= 3;
         if hasThreeDistinctVertices
@@ -375,7 +304,7 @@ function [x_units, y_units, removalCounts, repairDetails] = normalizeBoundarySam
     end
 
     % Preserve the original ring order and separators when no vertices changed.
-    if ~any(removalCounts) && repairDetails(1) == 0 && any(xIsFinite)
+    if ~any(removalCounts) && removedZigzagVertexCount == 0 && any(xIsFinite)
         return;
     end
 
@@ -404,12 +333,10 @@ function [x_units, y_units, removalCounts, repairDetails] = normalizeBoundarySam
     y_units = normalizedY_units;
 end
 
-function [retainedVertexIndices, changedArea_units2] = removeCrossingZigzags(points_units)
+function retainedVertexIndices = removeCrossingZigzags(points_units)
     % Remove folds where non-neighboring edges cross through each other.
     % Touching or collinear edges are kept; only strict crossings are repaired.
     retainedVertexIndices = (1:size(points_units, 1)).';
-    changedArea_units2    = [0, 0];
-    shapeBeforeRepair     = [];
     while numel(retainedVertexIndices) >= 3
         vertices_units    = points_units(retainedVertexIndices, :);
         vertexCount       = size(vertices_units, 1);
@@ -479,17 +406,6 @@ function [retainedVertexIndices, changedArea_units2] = removeCrossingZigzags(poi
         if isempty(edgePairs)
             break;
         end
-        if isempty(shapeBeforeRepair)
-            % A crossing boundary has no single obvious interior. Use MATLAB's
-            % simplified polygon as the reference for reporting area changes.
-            % Build it only once, and only when a repair is actually needed.
-            warningState      = warning('off', 'MATLAB:polyshape:repairedBySimplify');
-            restoreWarning    = onCleanup(@()warning(warningState));
-            shapeBeforeRepair = polyshape(points_units, ...
-                'Simplify', true, 'KeepCollinearPoints', true);
-            clear restoreWarning;
-        end
-
         % A crossing splits the ring into two loops. Remove the side with
         % fewer vertices: edges 1 and 72 of a 73-point ring remove the
         % 2-vertex seam sliver, not the other 71 vertices. Equal sides remove
@@ -510,17 +426,6 @@ function [retainedVertexIndices, changedArea_units2] = removeCrossingZigzags(poi
             % closing edge joining j back to i+1. Keep supplied coordinates.
             retainedVertexIndices = retainedVertexIndices(interiorVertexIndices);
         end
-    end
-
-    % Report removed and added areas separately so neither change is hidden.
-    if ~isempty(shapeBeforeRepair) && numel(retainedVertexIndices) < size(points_units, 1)
-        shapeAfterRepair = polyshape();
-        if numel(retainedVertexIndices) >= 3
-            shapeAfterRepair = polyshape(points_units(retainedVertexIndices, :), ...
-                'Simplify', true, 'KeepCollinearPoints', true);
-        end
-        changedArea_units2 = [area(subtract(shapeBeforeRepair, shapeAfterRepair)), ...
-            area(subtract(shapeAfterRepair, shapeBeforeRepair))];
     end
 end
 

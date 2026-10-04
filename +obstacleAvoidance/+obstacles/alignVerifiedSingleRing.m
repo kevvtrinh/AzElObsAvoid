@@ -1,10 +1,10 @@
 function [verified, alignedEndVertices_units, startRegions_units, endRegions_units, ...
-    geometryModel, hasExactPartition, partitionReused, dependsOnPrevious] = alignVerifiedSingleRing( ...
+    hasExactPartition, dependsOnPrevious] = alignVerifiedSingleRing( ...
     startSample, endSample, reusableStartRegions_units, proofRequest)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [verified, alignedEndVertices_units, startRegions_units, endRegions_units, ...
-%       geometryModel, hasExactPartition, partitionReused, dependsOnPrevious] = ...
+%       hasExactPartition, dependsOnPrevious] = ...
 %       obstacleAvoidance.obstacles.alignVerifiedSingleRing( ...
 %       startSample, endSample, reusableStartRegions_units, proofRequest)
 %**************************************************************************
@@ -38,11 +38,9 @@ function [verified, alignedEndVertices_units, startRegions_units, endRegions_uni
 %   - startRegions_units, endRegions_units (cell columns)
 %       Convex pieces of the verified partition at the interval start and
 %       end; empty when one convex boundary represents the whole obstacle.
-%   - geometryModel (string)
-%       Name of the verified motion model.
-%   - hasExactPartition, partitionReused, dependsOnPrevious (logical scalars)
-%       Whether the partition is exact, was reused from the preceding
-%       interval, or must wait for it.
+%   - hasExactPartition, dependsOnPrevious (logical scalars)
+%       Whether the partition is exact, or the check must wait for the
+%       preceding interval so it can reuse that interval's regions.
 %**************************************************************************
 % UNITS
 %   - Coordinate units; each vertex row is [x y].
@@ -75,9 +73,7 @@ alignedEndVertices_units = zeros(0, 2);
 startRegions_units       = cell(0, 1);
 endRegions_units         = cell(0, 1);
 
-geometryModel       = "";
-hasExactPartition   = false;
-partitionReused     = false;
+hasExactPartition = false;
 
 startVertexIsFinite = all(isfinite(startVertices_units), 2);
 endVertexIsFinite   = all(isfinite(endVertices_units), 2);
@@ -100,13 +96,10 @@ if isequal(startVertexIsFinite, endVertexIsFinite) && nnz(startVertexIsFinite) >
         startRegions_units       = reusableStartRegions_units;
         if isempty(startRegions_units)
             startRegions_units = obstacleAvoidance.geometry.convexRegions(startShape);
-        else
-            partitionReused = true;
         end
         endRegions_units = cellfun(@(region) region + finiteVertexDisplacements_units(1, :), ...
             startRegions_units, 'UniformOutput', false);
         verified          = true;
-        geometryModel     = "linearCorrespondingConvexPartition";
         hasExactPartition = true;
         return;
     end
@@ -145,14 +138,11 @@ if vertexMotionIsTranslation
     startRegions_units = reusableStartRegions_units;
     if isempty(startRegions_units)
         startRegions_units = obstacleAvoidance.geometry.convexRegions(startShape);
-    else
-        partitionReused = true;
     end
     endRegions_units = cellfun(@(region) region + vertexDisplacement_units(1, :), ...
         startRegions_units, 'UniformOutput', false);
     verified = ~isempty(startRegions_units);
     if verified
-        geometryModel     = "linearCorrespondingConvexPartition";
         hasExactPartition = true;
         return;
     end
@@ -164,7 +154,6 @@ boundaryStaysConvex = remainsStrictlyConvex( ...
     startVertices_units, alignedEndVertices_units, coordinateScale_units);
 verified = boundaryStaysConvex;
 if verified
-    geometryModel = "linearCorrespondingVertices";
     return;
 end
 
@@ -186,7 +175,6 @@ end
     coordinateScale_units, boundaryMotionIsVerified);
 verified = partitionIsVerified && (affineMotionIsVerified || boundaryMotionIsVerified);
 if verified
-    geometryModel     = "linearCorrespondingConvexPartition";
     hasExactPartition = true;
     return;
 end

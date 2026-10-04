@@ -25,10 +25,15 @@ function testReducedOutlineIsSupportedAndValid(testCase)
     verifyEqual(testCase,string(outline.vertexCorrespondence),"sourceIndex");
     preparation = outline.InternalPreparation;
     verifyTrue(testCase,all(preparation.IntervalPrepared));
-    verifyFalse(testCase,any(preparation.IntervalGeometryModel=="unsupportedContinuousDeformation"));
-    verifyFalse(testCase,any(contains(preparation.IntervalGeometryModel,"ConvexHull",'IgnoreCase',true)));
-    verifyLessThanOrEqual(testCase,max(preparation.IntervalMovingCellUncoveredProtectedArea_units2,[],'all'), ...
-        4096*eps(max(1,max(cellfun(@area,preparation.SampleShapes)))));
+    verifyFalse(testCase,any(preparation.IntervalIsUnsupported));
+    verifyFalse(testCase, any(preparation.IntervalUsesEndpointHull));
+    for intervalIndex = find(preparation.IntervalUsesMovingCells).'
+        enclosure = preparation.IntervalUnionShapes{intervalIndex};
+        endpointShapes = preparation.SampleShapes(intervalIndex:intervalIndex + 1);
+        uncoveredArea_units2 = cellfun(@(shape) area(subtract(shape, enclosure)), endpointShapes);
+        verifyLessThanOrEqual(testCase,max(uncoveredArea_units2), ...
+            4096*eps(max(1,max(cellfun(@area,preparation.SampleShapes)))));
+    end
     verifyEqual(testCase,result.ArrivalTime_s,18.5752,'RelTol',0.01);
     verifyLessThanOrEqual(testCase,abs(result.MotionLength_units/40.5138437-1),0.01);
     verifyGreaterThan(testCase,result.Diagnostics.SeparationProof.MinimumSignedGap_units,0);

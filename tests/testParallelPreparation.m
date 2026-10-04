@@ -11,7 +11,7 @@ function tests = testParallelPreparation
 %**************************************************************************
 % OUTPUTS
 %   - tests (function-based test array)
-%       Exact equality includes all preparation and normalization fields.
+%       Exact equality includes all returned preparation and obstacle fields.
 %**************************************************************************
 % UNITS
 %   - Geometry uses coordinate units; time uses seconds.
@@ -43,7 +43,6 @@ function testTranslationReuseAndNonzeroMargin(testCase)
     for margin_units = [0, 0.125]
         source = createHistory(margin_units, false);
         prepared = compareBuilds(testCase, source, [0, 64], false, false);
-        verifyTrue(testCase, any(prepared.InternalPreparation.IntervalPartitionReused));
         verifyEqual(testCase, prepared.safetyMargin_units, margin_units);
     end
 end
@@ -63,10 +62,12 @@ function testSmallHistoryAndMergedSpans(testCase)
     source = createHistory(0.125, false);
     source.time_s = (0:64).' .^ 2;
     prepared = compareBuilds(testCase, source, [0, 64 ^ 2], false, false);
-    verifyGreaterThan(testCase, prepared.InternalPreparation.MergedIntervalCount, 0);
+    verifyTrue(testCase, any(prepared.InternalPreparation.SpanEndSampleIndex > ...
+        prepared.InternalPreparation.SpanStartSampleIndex + 1));
     source = createMergedSpanHistory();
     prepared = compareBuilds(testCase, source, [0, source.time_s(end)], false, true);
-    verifyGreaterThan(testCase, prepared.InternalPreparation.MergedIntervalCount, 0);
+    verifyTrue(testCase, any(prepared.InternalPreparation.SpanEndSampleIndex > ...
+        prepared.InternalPreparation.SpanStartSampleIndex + 1));
 end
 
 function testEarlyStopPreservesSampleCoverage(testCase)

@@ -72,11 +72,9 @@ function testRingSplitOccupiesFragmentsAndGap(testCase)
     verifyTrue(testCase, validation.Passed, validation.Message);
     % The hull spans x=[-2,2], so a valid crossing must detour past an end.
     verifyGreaterThan(testCase, max(abs(result.position_units(:, 1))), 2);
-    addedArea_units2 = preparation.IntervalEndpointHullAddedArea_units2(1);
-    verifyGreaterThan(testCase, addedArea_units2, 0);
     endpointUnion = union(preparation.SampleShapes{1}, preparation.SampleShapes{2});
-    verifyEqual(testCase, addedArea_units2, ...
-        area(subtract(preparation.IntervalUnionShapes{1}, endpointUnion)));
+    addedArea_units2 = area(subtract(preparation.IntervalUnionShapes{1}, endpointUnion));
+    verifyGreaterThan(testCase, addedArea_units2, 0);
 end
 
 function testTwoDeformingRingsAndAddedArea(testCase)
@@ -99,7 +97,8 @@ function testTwoDeformingRingsAndAddedArea(testCase)
     verifyTrue(testCase, groupIsCovered(regions_units, [lowerLeft_units; upperLeft_units]));
     verifyTrue(testCase, groupIsCovered(regions_units, [lowerRight_units; upperRight_units]));
 
-    addedArea_units2 = preparation.IntervalEndpointHullAddedArea_units2(1);
+    endpointUnion = union(preparation.SampleShapes{1}, preparation.SampleShapes{2});
+    addedArea_units2 = area(subtract(preparation.IntervalUnionShapes{1}, endpointUnion));
     verifyTrue(testCase, isfinite(addedArea_units2));
     verifyGreaterThanOrEqual(testCase, addedArea_units2, 0);
     cells = obstacleAvoidance.obstacles.createTimeCells(prepared, 0, 4);
@@ -132,8 +131,6 @@ function testDegenerateEndpointRemainsUnsupported(testCase)
     prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     verifyTrue(testCase, prepared.InternalPreparation.IntervalIsUnsupported);
     verifyFalse(testCase, prepared.InternalPreparation.IntervalUsesEndpointHull);
-    verifyEqual(testCase, prepared.InternalPreparation.IntervalProofReason, ...
-        "degenerateEndpointGeometry");
 end
 
 function verifyCrossSampleSegments(testCase, lower_units, upper_units)
@@ -197,8 +194,6 @@ function verifyEndpointHullModel(testCase, preparation)
     verifyFalse(testCase, preparation.IntervalUsesMovingCells(1));
     verifyFalse(testCase, preparation.IntervalIsStationary(1));
     verifyFalse(testCase, preparation.IntervalIsUnsupported(1));
-    verifyEqual(testCase, preparation.IntervalGeometryModel(1), "endpointConvexHull");
-    verifyEqual(testCase, preparation.IntervalProofReason(1), "");
 end
 
 function covered = groupIsCovered(regions_units, vertices_units)
