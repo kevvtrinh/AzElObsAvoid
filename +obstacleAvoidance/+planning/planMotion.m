@@ -39,19 +39,9 @@ planningEnvironment = struct('preparedObstacles', ...
 
 % Start with empty route and attempt fields so an obstacle or endpoint
 % failure returns the usual result fields. Route search fills these in later.
-visibilityGraph = struct( ...
-    'NodePosition_units',     zeros(0, 2), ...
-    'AcceptedNodeIndex',      zeros(0, 2), ...
-    'RejectedNodeIndex',      zeros(0, 2), ...
-    'Route_units',            zeros(0, 2), ...
-    'RouteLength_units',      Inf, ...
-    'IsConnected',            false, ...
-    'ExpandedCount',          0, ...
-    'GraphIsFullyEnumerated', false, ...
-    'SearchKind',             "notSearched");
 emptyAttempts = repmat(obstacleAvoidance.planning.createAttemptRecord(0, ""), 0, 1);
 result        = obstacleAvoidance.planning.createEmptyResult( ...
-    planningEnvironment.preparedObstacles, request, visibilityGraph, emptyAttempts, 0);
+    planningEnvironment.preparedObstacles, request, [], emptyAttempts, 0);
 
 % Check whether obstacle geometry can be treated as fixed for the whole request.
 % Use time-dependent planning if an obstacle changes or its samples do not
@@ -95,31 +85,9 @@ obstacleSnapshot = obstacleAvoidance.obstacles.snapshot( ...
 % every input to the check is unchanged; otherwise, run the checks again.
 reuseEndpointValidation = false;
 if ~isempty(parentRequest) && parentRequest.EndpointValidation.Feasible
-    % Collect the options and endpoint values used by the earlier check.
-    endpointValidationOptions = struct( ...
-        'GoalTimeMode',           request.options.GoalTimeMode, ...
-        'WrapX',                  request.options.WrapX, ...
-        'WrapY',                  request.options.WrapY, ...
-        'ArrivalTimeTolerance_s', request.options.ArrivalTimeTolerance_s);
-    initialEndpointState = struct( ...
-        'time_s',                request.initialState.time_s, ...
-        'position_units',        request.initialState.position_units, ...
-        'velocity_units_s',      request.initialState.velocity_units_s, ...
-        'acceleration_units_s2', request.initialState.acceleration_units_s2);
-    goalEndpointState = struct( ...
-        'time_s',                request.goalState.time_s, ...
-        'position_units',        request.goalState.position_units, ...
-        'velocity_units_s',      request.goalState.velocity_units_s, ...
-        'acceleration_units_s2', request.goalState.acceleration_units_s2);
-    % The key is a record of the inputs, not a new feasibility check.
-    % Compare it with the saved record before trusting the earlier result.
-    endpointValidationKey = struct();
-    endpointValidationKey.PreparedObstacles = planningEnvironment.preparedObstacles;
-    endpointValidationKey.RequestHorizon_s  = requestedInterval_s;
-    endpointValidationKey.InitialState      = initialEndpointState;
-    endpointValidationKey.GoalState         = goalEndpointState;
-    endpointValidationKey.Limits            = request.limits;
-    endpointValidationKey.Options           = endpointValidationOptions;
+    endpointValidationKey = obstacleAvoidance.planning.createEndpointValidationKey( ...
+        planningEnvironment.preparedObstacles, request.initialState, request.goalState, ...
+        request.limits, request.options);
     reuseEndpointValidation = isequaln(parentRequest.EndpointValidation.Key, endpointValidationKey);
 end
 
@@ -184,31 +152,17 @@ if obstaclesNeedTimedChecks
             'ActiveTimeInterval_s', timedRegions.ActiveTimeInterval_s, ...
             'EndRegions_units',     {timedRegions.EndRegions_units});
     end
-    planningEnvironment = struct( ...
-        'preparedObstacles', planningEnvironment.preparedObstacles, ...
-        'snapshot',          obstacleSnapshot, ...
-        'vertexVisibility',  vertexVisibility, ...
-        'regions_units',     {regions_units}, ...
-        'coverage',          coverage);
 else
-    % An obstacle may be split into several smaller regions. Collect all
-    % of them into one list so BMTP checks every part of every obstacle.
-    regionCount     = sum(arrayfun(@(obstacle) numel(obstacle.Regions_units), obstacleSnapshot));
-    regions_units   = cell(regionCount, 1);
-    nextRegionIndex = 1;
-    for obstacleIndex = 1:numel(obstacleSnapshot)
-        obstacleRegionCount             = numel(obstacleSnapshot(obstacleIndex).Regions_units);
-        regionRowIndices                = nextRegionIndex:nextRegionIndex + obstacleRegionCount - 1;
-        regions_units(regionRowIndices) = obstacleSnapshot(obstacleIndex).Regions_units;
-        nextRegionIndex                 = nextRegionIndex + obstacleRegionCount;
-    end
-    planningEnvironment = struct( ...
-        'preparedObstacles', planningEnvironment.preparedObstacles, ...
-        'snapshot',          obstacleSnapshot, ...
-        'vertexVisibility',  vertexVisibility, ...
-        'regions_units',     {regions_units}, ...
-        'coverage',          struct('ExactRegionCount', numel(regions_units)));
+    % Collect every static region; an empty snapshot stays a 0-by-1 cell array.
+    regions_units = vertcat(cell(0, 1), obstacleSnapshot.Regions_units);
+    coverage      = struct('ExactRegionCount', numel(regions_units));
 end
+planningEnvironment = struct( ...
+    'preparedObstacles', planningEnvironment.preparedObstacles, ...
+    'snapshot',          obstacleSnapshot, ...
+    'vertexVisibility',  vertexVisibility, ...
+    'regions_units',     {regions_units}, ...
+    'coverage',          coverage);
 
 %% Section 4: Choose The Planning Method
 
@@ -232,42 +186,44 @@ end
 
 function result = planFixedArrivalStatic(result, planningEnvironment, request, totalTimer)
     % Static obstacles need one visibility route followed by BMTP and validation.
-    motionGoalState = request.goalState;
+    result = planStaticRoute(result, planningEnvironment, request, ...
+        "The initial visibility graph contains no start-to-goal route.");
+    result.Diagnostics.ElapsedTime_s = toc(totalTimer);
+end
 
-    % For static obstacles, find a collision-free route between the endpoints.
+function [result, motionCandidate, solverDiagnostics] = planStaticRoute( ...
+        result, planningEnvironment, request, noRouteMessage)
+    % Share the static route, BMTP motion, and independent validation stages.
+    motionCandidate   = [];
+    solverDiagnostics = [];
     visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
         planningEnvironment.vertexVisibility, ...
         request.initialState.position_units, request.goalState.position_units);
     visibilityGraph.SearchKind = "initialSpatialSnapshot";
-    result.Diagnostics.VisibilityGraph     = visibilityGraph;
+    result.Diagnostics.VisibilityGraph = visibilityGraph;
     if ~visibilityGraph.IsConnected
-        result.Message                   = "The initial visibility graph contains no start-to-goal route.";
-        result.TerminationReason         = "noVisibilityRoute";
-        result.Diagnostics.FailureStage  = "search";
-        result.Diagnostics.FailureKind   = "noSpatialRoute";
-        result.Diagnostics.ElapsedTime_s = toc(totalTimer);
+        result.Message                  = noRouteMessage;
+        result.TerminationReason        = "noVisibilityRoute";
+        result.Diagnostics.FailureStage = "search";
+        result.Diagnostics.FailureKind  = "noSpatialRoute";
         return
     end
 
-    % Use route distance to define progress from 0 to 1 along the starting path.
-    % Example: two equal-length edges give tau = [0; 0.5; 1]. These are not seconds.
-    route_units      = visibilityGraph.Route_units;
-    edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
-    startingPath     = struct('position_units', route_units, ...
-        'tau', [0; cumsum(edgeLength_units)] / sum(edgeLength_units));
-    motionRequest = struct( ...
-        'initialState', request.initialState, ...
-        'goalState',    motionGoalState, ...
-        'limits',       request.limits, ...
-        'options',      request.options);
+    startingPath = struct( ...
+        'position_units', visibilityGraph.Route_units, ...
+        'tau',            routeTau(visibilityGraph.Route_units));
     [motionCandidate, solverDiagnostics] = bmtpEngine.solve( ...
-        startingPath, planningEnvironment, motionRequest, struct());
-
-    % Assemble the returned motion and check it with the independent validator.
+        startingPath, planningEnvironment, request, struct());
     result = obstacleAvoidance.planning.finalizeCandidate( ...
         planningEnvironment.preparedObstacles, request, visibilityGraph, result, ...
         motionCandidate, solverDiagnostics, struct());
-    result.Diagnostics.ElapsedTime_s = toc(totalTimer);
+end
+
+function tau = routeTau(route_units)
+    % Use route distance for progress from 0 to 1, not time in seconds.
+    % Two equal-length edges give tau = [0; 0.5; 1].
+    edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
+    tau              = [0; cumsum(edgeLength_units)] / sum(edgeLength_units);
 end
 
 function result = planEarliestArrival(result, planningEnvironment, request, totalTimer, ...
@@ -330,11 +286,10 @@ function arrivalPlanningProgress = runStaticSpatialStage(arrivalPlanningProgress
     % This branch ends after that attempt, whether it succeeds or fails.
     attemptTimer    = tic;
     result          = arrivalPlanningProgress.Result;
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-        planningEnvironment.vertexVisibility, ...
-        request.initialState.position_units, request.goalState.position_units);
-    visibilityGraph.SearchKind = "initialSpatialSnapshot";
-    result.Diagnostics.VisibilityGraph = visibilityGraph;
+    [result, motionCandidate, solverDiagnostics] = planStaticRoute( ...
+        result, planningEnvironment, request, ...
+        "The exhaustive static visibility graph has no route.");
+    visibilityGraph = result.Diagnostics.VisibilityGraph;
     attempt = obstacleAvoidance.planning.createAttemptRecord(1, "spatialVisibility");
     attempt.EarliestPossibleArrival_s = earliestPossibleArrival_s;
     attempt.GraphConnected            = visibilityGraph.IsConnected;
@@ -343,26 +298,12 @@ function arrivalPlanningProgress = runStaticSpatialStage(arrivalPlanningProgress
     attempt.RouteLength_units         = visibilityGraph.RouteLength_units;
     attempt.ExpandedCount             = visibilityGraph.ExpandedCount;
     if visibilityGraph.IsConnected
-        route_units      = visibilityGraph.Route_units;
-        edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
-        startingPath     = struct( ...
-            'position_units', route_units, ...
-            'tau',            [0; cumsum(edgeLength_units)] / sum(edgeLength_units));
         attempt.SolverAttempted = true;
-        [motionCandidate, solverDiagnostics] = bmtpEngine.solve(startingPath, planningEnvironment, ...
-            request, struct());
-        result = obstacleAvoidance.planning.finalizeCandidate( ...
-            planningEnvironment.preparedObstacles, request, visibilityGraph, result, ...
-            motionCandidate, solverDiagnostics, struct());
         attempt          = populateMotionAttempt(attempt, result, motionCandidate, solverDiagnostics);
         attempt.Selected = result.Success;
     else
         attempt.FailureStage = "search";
         attempt.FailureKind  = "noSpatialRoute";
-        result.Message                  = "The exhaustive static visibility graph has no route.";
-        result.TerminationReason        = "noVisibilityRoute";
-        result.Diagnostics.FailureStage = attempt.FailureStage;
-        result.Diagnostics.FailureKind  = attempt.FailureKind;
     end
     attempt.ElapsedTime_s = toc(attemptTimer);
     arrivalPlanningProgress.Result = result;
@@ -506,7 +447,6 @@ function arrivalPlanningProgress = applyEarliestAttempt(arrivalPlanningProgress,
     else
         attempt.NextMethodAllowed  = ...
             obstacleAvoidance.planning.nextMethodAllowed(attemptResult);
-        attempt.NextMethodReason   = attempt.FailureKind;
         attempt.NextAttemptAllowed = attempt.NextMethodAllowed;
 
         if hasValidatedMotion
@@ -569,13 +509,11 @@ function attempt = populateMotionAttempt(attempt, attemptResult, motionCandidate
         solverDiagnostics, "MaximumAlternatingIterations", NaN);
     attempt.IterationCount              = readDiagnosticScalar(solverDiagnostics, "IterationCount", 0);
     attempt.CandidateSuccess            = motionCandidate.Success;
-    attempt.OptimizerFeasible           = readLogicalField(motionCandidate, "OptimizerFeasible");
-    attempt.OptimizerIterateUnavailable = readLogicalField( ...
-        motionCandidate, "OptimizerIterateUnavailable");
-    attempt.AlternativeGuideEligible    = readLogicalField( ...
-        motionCandidate, "AlternativeGuideEligible");
-    attempt.FailureStage                = readStringField(motionCandidate, "FailureStage");
-    attempt.FailureKind                 = readStringField(motionCandidate, "FailureKind");
+    attempt.OptimizerFeasible           = motionCandidate.OptimizerFeasible;
+    attempt.OptimizerIterateUnavailable = motionCandidate.OptimizerIterateUnavailable;
+    attempt.AlternativeGuideEligible    = motionCandidate.AlternativeGuideEligible;
+    attempt.FailureStage                = motionCandidate.FailureStage;
+    attempt.FailureKind                 = motionCandidate.FailureKind;
     attempt.Success                     = attemptResult.Success;
     if isfield(attemptResult, 'ArrivalTime_s') && ...
             isnumeric(attemptResult.ArrivalTime_s) && ...
@@ -599,15 +537,13 @@ function attempt = createTimedAttemptRecord(attemptIndex, timedResult, timedAcce
         timedResult.Diagnostics.SolverDiagnostics, "MaximumAlternatingIterations", NaN);
     attempt.IterationCount              = readDiagnosticScalar( ...
         timedResult.Diagnostics.SolverDiagnostics, "IterationCount", 0);
-    attempt.CandidateSuccess            = readLogicalField( ...
-        timedResult.Diagnostics.SolverDiagnostics, "Accepted");
-    attempt.OptimizerFeasible           = readLogicalField(timedResult.Diagnostics, "OptimizerFeasible");
-    attempt.OptimizerIterateUnavailable = readLogicalField( ...
-        timedResult.Diagnostics, "OptimizerIterateUnavailable");
-    attempt.AlternativeGuideEligible    = readLogicalField( ...
-        timedResult.Diagnostics, "AlternativeGuideEligible");
-    attempt.FailureStage                = readStringField(timedResult.Diagnostics, "FailureStage");
-    attempt.FailureKind                 = readStringField(timedResult.Diagnostics, "FailureKind");
+    attempt.CandidateSuccess = isfield(timedResult.Diagnostics.SolverDiagnostics, 'Accepted') && ...
+        logical(timedResult.Diagnostics.SolverDiagnostics.Accepted);
+    attempt.OptimizerFeasible           = timedResult.Diagnostics.OptimizerFeasible;
+    attempt.OptimizerIterateUnavailable = timedResult.Diagnostics.OptimizerIterateUnavailable;
+    attempt.AlternativeGuideEligible    = timedResult.Diagnostics.AlternativeGuideEligible;
+    attempt.FailureStage                = timedResult.Diagnostics.FailureStage;
+    attempt.FailureKind                 = timedResult.Diagnostics.FailureKind;
     attempt.Success                     = timedAccepted;
     attempt.ElapsedTime_s               = max(0, timedResult.Diagnostics.ElapsedTime_s - priorElapsedTime_s);
 end
@@ -704,10 +640,9 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
         else
             route_units         = visibilityGraph.Route_units;
             previousRoute_units = route_units;
-            edgeLength_units    = vecnorm(diff(route_units, 1, 1), 2, 2);
             startingPath        = struct( ...
                 'position_units',               route_units, ...
-                'tau',                          [0; cumsum(edgeLength_units)] / sum(edgeLength_units), ...
+                'tau',                          routeTau(route_units), ...
                 'MaximumAlternatingIterations', snapshotProbeIterationLimit);
             attempt.SolverAttempted = true;
             [motionCandidate, solverDiagnostics, directMotion] = bmtpEngine.solve( ...
@@ -721,10 +656,9 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
             attempt.CandidateSuccess            = motionCandidate.Success;
             attempt.OptimizerFeasible           = motionCandidate.OptimizerFeasible;
             attempt.OptimizerIterateUnavailable = motionCandidate.OptimizerIterateUnavailable;
-            attempt.AlternativeGuideEligible    = readLogicalField( ...
-                motionCandidate, "AlternativeGuideEligible");
-            attempt.FailureStage                = readStringField(motionCandidate, "FailureStage");
-            attempt.FailureKind                 = readStringField(motionCandidate, "FailureKind");
+            attempt.AlternativeGuideEligible    = motionCandidate.AlternativeGuideEligible;
+            attempt.FailureStage                = motionCandidate.FailureStage;
+            attempt.FailureKind                 = motionCandidate.FailureKind;
             attempt.Success                     = attemptResult.Success;
 
             if attemptResult.Success
@@ -768,22 +702,6 @@ function result = planFixedArrivalDynamic(result, planningEnvironment, request, 
     timedAttempt.Selected = timedAccepted;
     timedResult.Diagnostics.Attempts  = [attempts; timedAttempt];
     result                = timedResult;
-end
-
-function fieldValue = readLogicalField(resultRecord, fieldName)
-    % Read an optional true/false field; use false when the field is missing.
-    fieldValue = false;
-    if isstruct(resultRecord) && isscalar(resultRecord) && isfield(resultRecord, fieldName)
-        fieldValue = logical(resultRecord.(fieldName));
-    end
-end
-
-function fieldValue = readStringField(resultRecord, fieldName)
-    % Read an optional text field; use empty text when the field is missing.
-    fieldValue = "";
-    if isstruct(resultRecord) && isscalar(resultRecord) && isfield(resultRecord, fieldName)
-        fieldValue = string(resultRecord.(fieldName));
-    end
 end
 
 function fieldValue = readDiagnosticScalar(resultRecord, fieldName, defaultValue)

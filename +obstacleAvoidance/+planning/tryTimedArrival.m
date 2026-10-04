@@ -68,7 +68,6 @@ result = obstacleAvoidance.planning.createEmptyResult( ...
 result.Message    = "The timed search has not completed.";
 result.Diagnostics.Validation = struct( ...
     "Passed", false, "Message", "No timed motion is available.");
-result.MotionLength_units                          = Inf;
 result.Diagnostics.IntegratedSquaredJerk_units2_s5 = Inf;
 result.Diagnostics.MaximumConstraintViolation      = Inf;
 result.Diagnostics.OptimizerFeasible               = false;

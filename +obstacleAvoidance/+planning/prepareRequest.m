@@ -67,8 +67,8 @@ end
 suppliedLimits    = limits;
 suppliedGoalState = goalState;
 
-initialState = normalizeState(initialState, defaultInitialState, "initialState", true);
-goalState    = normalizeState(goalState, defaultGoalState, "goalState", false);
+initialState = normalizeState(initialState, defaultInitialState, "initialState");
+goalState    = normalizeState(goalState, defaultGoalState, "goalState");
 
 requestTimeIsInvalid = goalState.time_s <= initialState.time_s;
 
@@ -300,7 +300,7 @@ function [initialState, goalState, limits, options] = createDefaults()
         "MaxArrivalCandidates",              4096);
 end
 
-function state = normalizeState(state, defaults, argumentName, evaluateTargetPosition)
+function state = normalizeState(state, defaults, argumentName)
     % Fill missing state fields with defaults and check the supplied values.
 
     if ~isstruct(state) || ~isscalar(state)
@@ -327,12 +327,8 @@ function state = normalizeState(state, defaults, argumentName, evaluateTargetPos
     validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
     hasTargetMotion = isfield(state, 'targetMotion') && ~isempty(state.targetMotion);
 
-    if hasTargetMotion && evaluateTargetPosition
-        state.position_units = obstacleAvoidance.input.targetPositionAtTime(state.targetMotion, state.time_s);
-    end
-
     % When position is deferred, the main function calculates it from the target path.
-    positionIsDeferred = hasTargetMotion && ~evaluateTargetPosition;
+    positionIsDeferred = hasTargetMotion;
     stateFieldNames    = ["position_units", "velocity_units_s", "acceleration_units_s2"];
 
     for fieldName = stateFieldNames
