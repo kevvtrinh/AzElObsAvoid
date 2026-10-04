@@ -73,3 +73,8 @@ compact benchmark because of its size; its changing source boundary now
 carries an exact proven correspondence and is covered by
 `testExampleContracts/testDenseMovingGeometryContracts` and the maintained example harness
 (see `benchmarks/vietnam_boundary.md`).
+
+The fixed-clock pipeline and outcome-schema regressions run in
+`testArrivalPlanning/testFixedArrivalPipelineAndSchemaContracts`. Goal-window,
+transit, clock-bound, collision, and obstacle-lifetime search cases run in
+`testTimedVisibility` through four named contract functions.
