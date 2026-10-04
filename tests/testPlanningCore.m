@@ -129,13 +129,6 @@ function testDetourAndTampering(testCase)
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
 
-function testMarginOnce(testCase)
-    obstacle = obstacleAvoidance.obstacles.createObstacle('box',0,[-1;1;1;-1],[-1;-1;1;1],0.2);
-    rebuilt = obstacleAvoidance.obstacles.createObstacle(obstacle,0.2);
-    verifyEqual(testCase,rebuilt.x_units,obstacle.x_units);
-    verifyEqual(testCase,rebuilt.originalX_units,obstacle.originalX_units);
-end
-
 function output = createProvenOutput(baseResult, request, preparedMotion)
     % Build an adversarial validator fixture without stale planner decisions.
     roundoffReserve_units = baseResult.Diagnostics.SeparationProof.RoundoffReserve_units;

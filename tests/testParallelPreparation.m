@@ -1,28 +1,100 @@
 function tests = testParallelPreparation
-%% Section 0: Header & Readme
-% SYNTAX
-%   results = runtests('tests/testParallelPreparation.m')
-%**************************************************************************
-% PURPOSE
-%   - Compare complete serial and parallel preparation records.
-%**************************************************************************
-% INPUTS
-%   - MATLAB function-based test framework.
-%**************************************************************************
-% OUTPUTS
-%   - tests (function-based test array)
-%       Exact equality includes all returned preparation and obstacle fields.
-%**************************************************************************
-% UNITS
-%   - Geometry uses coordinate units; time uses seconds.
-%**************************************************************************
+% Compare complete serial and parallel preparation records.
+% Run with runtests('tests/testParallelPreparation.m').
 tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
-    root = fileparts(fileparts(mfilename('fullpath')));
-    addpath(root, fullfile(root, 'trajectory'));
-    testCase.TestData.Root = root;
+    rootFolder = fileparts(fileparts(mfilename('fullpath')));
+    addpath(rootFolder, fullfile(rootFolder, 'trajectory'));
+    testCase.TestData.Root = rootFolder;
+end
+
+function setup(testCase)
+    testCase.TestData.ProfilerStatus = profile('status');
+    testCase.TestData.Blockers = {};
+end
+
+function teardown(testCase)
+    % Cancel only this test's jobs, leaving the shared pool idle again.
+    for blocker = testCase.TestData.Blockers
+        cancel(blocker{1});
+        wait(blocker{1});
+    end
+    restoreProfiler(testCase.TestData.ProfilerStatus);
+end
+
+function testSyntheticParallelPreparationContracts(testCase)
+    requireIdlePool(testCase);
+    histories = {createHistory(0, false), createHistory(0.125, false), createHistory(0, true)};
+    runCases(testCase, { ...
+        @(testCase) translationReuseAndNonzeroMargin(testCase, histories); ...
+        @(testCase) ringCountChangesAndCacheExtension(testCase, histories{3}); ...
+        @(testCase) smallHistoryAndMergedSpans(testCase, histories); ...
+        @(testCase) earlyStopPreservesSampleCoverage(testCase, histories{3}); ...
+        @(testCase) workerErrorsKeepSerialIdentifierAndMessage(testCase, histories{3})});
+end
+
+function translationReuseAndNonzeroMargin(testCase, histories)
+    expectedMargins_units = [0, 0.125];
+    for historyIndex = 1:2
+        source = histories{historyIndex};
+        prepared = compareBuilds(testCase, source, [0, 64], false, false);
+        verifyEqual(testCase, prepared.safetyMargin_units, expectedMargins_units(historyIndex));
+    end
+end
+
+function ringCountChangesAndCacheExtension(testCase, source)
+    prepared = compareBuilds(testCase, source, [0, 40], false, false);
+    verifyTrue(testCase, any(prepared.InternalPreparation.IntervalUsesEndpointHull));
+    compareBuilds(testCase, prepared, [0, 64], false, false);
+end
+
+function smallHistoryAndMergedSpans(testCase, histories)
+    source = histories{1};
+    compareBuilds(testCase, source, [0, 2], false, false);
+    source = histories{2};
+    source.time_s = (0:64).' .^ 2;
+    prepared = compareBuilds(testCase, source, [0, 64 ^ 2], false, false);
+    verifyTrue(testCase, any(prepared.InternalPreparation.SpanEndSampleIndex > ...
+        prepared.InternalPreparation.SpanStartSampleIndex + 1));
+    source = createMergedSpanHistory();
+    prepared = compareBuilds(testCase, source, [0, source.time_s(end)], false, true);
+    verifyTrue(testCase, any(prepared.InternalPreparation.SpanEndSampleIndex > ...
+        prepared.InternalPreparation.SpanStartSampleIndex + 1));
+end
+
+function earlyStopPreservesSampleCoverage(testCase, source)
+    for sampleIndex = 17:18
+        source.x_units{sampleIndex} = [0; 1; 2] * sampleIndex;
+        source.y_units{sampleIndex} = [0; 0; 0];
+        source.originalX_units{sampleIndex} = source.x_units{sampleIndex};
+        source.originalY_units{sampleIndex} = source.y_units{sampleIndex};
+    end
+    prepared = compareBuilds(testCase, source, [0, 64], true, false);
+    verifyTrue(testCase, any(prepared.InternalPreparation.IntervalIsUnsupported));
+    verifyFalse(testCase, prepared.InternalPreparation.SamplePrepared(end));
+end
+
+function workerErrorsKeepSerialIdentifierAndMessage(testCase, source)
+    prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
+    previous = prepared.InternalPreparation;
+    previous.IntervalPrepared(:) = false;
+    previous.SamplePrepared(:) = false;
+    % Malformed internal input reaches the sample worker. Public construction
+    % normally rejects this before preparation; exercise error transport here.
+    source.y_units{9}(end) = [];
+    pool = backgroundPool;
+    blocker = parfeval(pool, @pause, 0, 600);
+    testCase.TestData.Blockers{end + 1} = blocker;
+    blockerCleanup = onCleanup(@() cancel(blocker));
+    assert(pool.Busy, 'testParallelPreparation:PoolNotBusy', 'The serial guard was not engaged.');
+    serialError = capturePreparationError(source, previous);
+    clear blockerCleanup;
+    wait(blocker);
+    parallelError = capturePreparationError(source, previous);
+    verifyNotEmpty(testCase, serialError);
+    verifyEqual(testCase, parallelError, serialError);
 end
 
 function testDenseWindowsAndWholeHistory(testCase)
@@ -38,73 +110,6 @@ function testDenseWindowsAndWholeHistory(testCase)
     end
 end
 
-function testTranslationReuseAndNonzeroMargin(testCase)
-    requireIdlePool(testCase);
-    for margin_units = [0, 0.125]
-        source = createHistory(margin_units, false);
-        prepared = compareBuilds(testCase, source, [0, 64], false, false);
-        verifyEqual(testCase, prepared.safetyMargin_units, margin_units);
-    end
-end
-
-function testRingCountChangesAndCacheExtension(testCase)
-    requireIdlePool(testCase);
-    source = createHistory(0, true);
-    prepared = compareBuilds(testCase, source, [0, 40], false, false);
-    verifyTrue(testCase, any(prepared.InternalPreparation.IntervalUsesEndpointHull));
-    compareBuilds(testCase, prepared, [0, 64], false, false);
-end
-
-function testSmallHistoryAndMergedSpans(testCase)
-    requireIdlePool(testCase);
-    source = createHistory(0, false);
-    compareBuilds(testCase, source, [0, 2], false, false);
-    source = createHistory(0.125, false);
-    source.time_s = (0:64).' .^ 2;
-    prepared = compareBuilds(testCase, source, [0, 64 ^ 2], false, false);
-    verifyTrue(testCase, any(prepared.InternalPreparation.SpanEndSampleIndex > ...
-        prepared.InternalPreparation.SpanStartSampleIndex + 1));
-    source = createMergedSpanHistory();
-    prepared = compareBuilds(testCase, source, [0, source.time_s(end)], false, true);
-    verifyTrue(testCase, any(prepared.InternalPreparation.SpanEndSampleIndex > ...
-        prepared.InternalPreparation.SpanStartSampleIndex + 1));
-end
-
-function testEarlyStopPreservesSampleCoverage(testCase)
-    requireIdlePool(testCase);
-    source = createHistory(0, true);
-    for sampleIndex = 17:18
-        source.x_units{sampleIndex} = [0; 1; 2] * sampleIndex;
-        source.y_units{sampleIndex} = [0; 0; 0];
-        source.originalX_units{sampleIndex} = source.x_units{sampleIndex};
-        source.originalY_units{sampleIndex} = source.y_units{sampleIndex};
-    end
-    prepared = compareBuilds(testCase, source, [0, 64], true, false);
-    verifyTrue(testCase, any(prepared.InternalPreparation.IntervalIsUnsupported));
-    verifyFalse(testCase, prepared.InternalPreparation.SamplePrepared(end));
-end
-
-function testWorkerErrorsKeepSerialIdentifierAndMessage(testCase)
-    requireIdlePool(testCase);
-    source = createHistory(0, true);
-    prepared = obstacleAvoidance.obstacles.prepareObstacles(source);
-    previous = prepared.InternalPreparation;
-    previous.IntervalPrepared(:) = false;
-    previous.SamplePrepared(:) = false;
-    % Malformed internal input reaches the sample worker. Public construction
-    % normally rejects this before preparation; exercise error transport here.
-    source.y_units{9}(end) = [];
-    pool = backgroundPool;
-    blocker = parfeval(pool, @pause, 0, 600);
-    blockerCleanup = onCleanup(@() cancel(blocker));
-    serialError = capturePreparationError(source, previous);
-    clear blockerCleanup;
-    wait(blocker);
-    parallelError = capturePreparationError(source, previous);
-    verifyNotEmpty(testCase, serialError);
-    verifyEqual(testCase, parallelError, serialError);
-end
-
 function errorDetails = capturePreparationError(source, previous)
     errorDetails = strings(0, 1);
     try
@@ -116,28 +121,40 @@ function errorDetails = capturePreparationError(source, previous)
 end
 
 function prepared = compareBuilds(testCase, source, timeRange_s, stopAtUnsupported, expectDispatch)
-    % One pending background job exercises the production busy-pool guard;
-    % no option, label, or replacement implementation selects the reference.
-    % expectDispatch profiles the idle-pool build, so a history that quietly
-    % stayed serial cannot pass as a parallel comparison.
+    % A cancellable job selects the production busy-pool serial guard.
+    % Cancel it before a fresh idle build of the same source and query.
     pool = backgroundPool;
     blocker = parfeval(pool, @pause, 0, 600);
+    testCase.TestData.Blockers{end + 1} = blocker;
     blockerCleanup = onCleanup(@() cancel(blocker));
     assert(pool.Busy, 'testParallelPreparation:PoolNotBusy', 'The serial guard was not engaged.');
     serial = obstacleAvoidance.obstacles.prepareObstacles(source, timeRange_s, stopAtUnsupported);
     clear blockerCleanup;
     wait(blocker);
+    profilerStatus = profile('status');
+    profilerCleanup = onCleanup(@() restoreProfiler(profilerStatus));
     if expectDispatch
-        profile('on');
+        dispatchHitsBefore = countDispatchHits(profile('info'));
+        % Resume preserves measurements already collected by the caller.
+        profile('resume');
     end
     prepared = obstacleAvoidance.obstacles.prepareObstacles(source, timeRange_s, stopAtUnsupported);
     if expectDispatch
         profile('off');
-        verifyGreaterThan(testCase, countDispatchHits(profile('info')), 0, ...
-            'The parallel build never reached a parfeval dispatch line.');
+        verifyGreaterThan(testCase, countDispatchHits(profile('info')) - dispatchHitsBefore, 0, ...
+            'The fresh parallel build never reached a parfeval dispatch line.');
     end
+    clear profilerCleanup;
     verifyTrue(testCase, isequaln(serial, prepared), ...
         'Complete returned obstacle records must be bit-identical.');
+end
+
+function restoreProfiler(profilerStatus)
+    if strcmp(profilerStatus.ProfilerStatus, 'on')
+        profile('resume');
+    else
+        profile('off');
+    end
 end
 
 function hitCount = countDispatchHits(profileInfo)

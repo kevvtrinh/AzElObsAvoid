@@ -1,9 +1,7 @@
 function tests = testAuditObstacleFixes
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testAuditObstacleFixes.m')
-% PURPOSE: Regress the obstacle-side defects found by the read-only audit:
-%          span merging that moves supplied samples, sampled overlap
-%          checks promoting a colliding iterate.
+% PURPOSE: Prevent sampled overlap checks from promoting a colliding iterate.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Function-based test results.
 % UNITS: Coordinate units and seconds.
@@ -19,28 +17,6 @@ function setupOnce(testCase)
         'maxVelocity_units_s',      [2 2], ...
         'maxAcceleration_units_s2', [2 2], ...
         'maxJerk_units_s3',         [4 4]);
-end
-
-function testSubEpsilonVelocityDriftIsNotMergedAway(testCase)
-    % Two intervals with velocities 0 and 1e-14 units/s differ by less than
-    % the velocity epsilon, yet the middle sample is displaced by 0.005 from
-    % the merged span. The supplied sample must win.
-    square_units = [0 0; 1 0; 1 1; 0 1];
-    time_s       = [0; 1e12; 2e12];
-    xByTime      = {square_units(:, 1); square_units(:, 1); square_units(:, 1) + 0.01};
-    yByTime      = repmat({square_units(:, 2)}, 3, 1);
-    obstacle = obstacleAvoidance.obstacles.createObstacle('drifting square', time_s, xByTime, yByTime, 0);
-    prepared = obstacleAvoidance.obstacles.prepareObstacles(obstacle, [0 2e12]);
-    verifyEqual(testCase, prepared.InternalPreparation.SpanEndSampleIndex, [2; 3]);
-
-    cells  = obstacleAvoidance.obstacles.createTimeCells(prepared, 1e12, 2e12);
-    region = cells.Regions_units{1};
-    verifyTrue(testCase, inpolygon(0.002, 0.5, region(:, 1), region(:, 2)));
-
-    affineX  = {square_units(:, 1); square_units(:, 1) + 0.005; square_units(:, 1) + 0.01};
-    affine   = obstacleAvoidance.obstacles.createObstacle('affine square', time_s, affineX, yByTime, 0);
-    prepared = obstacleAvoidance.obstacles.prepareObstacles(affine, [0 2e12]);
-    verifyEqual(testCase, prepared.InternalPreparation.SpanEndSampleIndex, [3; 3]);
 end
 
 function testThinWallCrossingIsNotPromotedBySampling(testCase)

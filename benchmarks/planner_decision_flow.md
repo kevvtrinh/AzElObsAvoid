@@ -206,7 +206,7 @@ deterministic comparison fields.
 
 | Decision | Representative fixture | Evidence checked | Disposition |
 | --- | --- | --- | --- |
-| Unsupported continuous obstacle interpolation | `testBoundedCorrespondence/testUnsupportedGeometryReturnsStablePlannerOutcome` | Returns `unsupportedObstacleInterpolation` before search; no convex hull or weakened geometry. `exampleVietnamBoundarySlew` and `exampleMovingDeformingUSOutlineVisibility` left this branch when exact spans and moving cells were added (see `benchmarks/vietnam_boundary.md`) | Required safety boundary |
+| Unsupported continuous obstacle interpolation | `testObstaclePreparation/testConservativeIntervalModelContracts`, `testCorePlots/testObstacleAndExpandedPlotContracts` | Degenerate endpoint preparation remains unsupported and cannot claim endpoint-hull support. The public unsupported outcome remains `unsupportedObstacleInterpolation` before search; validation and geometry are not weakened. `exampleVietnamBoundarySlew` and `exampleMovingDeformingUSOutlineVisibility` left this branch when exact spans and moving cells were added (see `benchmarks/vietnam_boundary.md`) | Required safety boundary |
 | Endpoint occupied | `testCoreContracts/testPublicOutcomeAndClockContracts` | Returns `endpointBlocked` with no motion | Required safety boundary |
 | Terminal reachable set contained by an obstacle | `testCoreContracts/testPublicOutcomeAndClockContracts` | Returns `terminalReachabilityBlocked` | Required sufficient infeasibility proof |
 | Endpoint derivative or workspace violation | `testCoreContracts/testPublicOutcomeAndClockContracts` | Stable endpoint reason before search | Required physical-input boundary |
