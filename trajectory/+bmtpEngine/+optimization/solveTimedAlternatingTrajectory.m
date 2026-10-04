@@ -44,29 +44,17 @@ function [result, diagnostics] = solveTimedAlternatingTrajectory( ...
 % For ratios [1 2], the second segment always lasts twice as long as the first.
 segmentCount      = warmStart.SegmentCount;
 segmentTimeRatios = warmStart.SegmentRatio(:);
-hasFixedArrival   = solverRequest.Options.GoalTimeMode == "fixedArrival";
-if hasFixedArrival
-    maximumStepDuration_s = [];
-    minimumStepDuration_s = 0;
-    stepSegmentRatio      = [];
-    stepSegmentTime_s     = warmStart.SegmentTime_s(:);
-else
-    maximumStepDuration_s = solverRequest.MotionHorizon_s;
-    minimumStepDuration_s = solverRequest.MinimumMotionDuration_s;
-    stepSegmentRatio      = segmentTimeRatios;
-    stepSegmentTime_s     = [];
-end
 emptyPlane        = bmtpEngine.separation.createEmptyPlane();
 
-selectedControl_units      = zeros(0, solverRequest.Degree + 1, 2);
-selectedSegmentTime_s      = NaN;
-selectedPlanes             = repmat(emptyPlane, 0, 0);
-selectedPairs              = [];
-selectedPairCount          = 0;
-selectedCollisionPairCount = 0;
-selectedSolverMessage      = "";
-selectedSolverOutput       = struct();
-lastSolverOutput           = struct();
+selectedControl_units = zeros(0, solverRequest.Degree + 1, 2);
+selectedSegmentTime_s = NaN;
+selectedPlanes        = repmat(emptyPlane, 0, 0);
+selectedPairs         = [];
+selectedPairCount     = 0;
+selectedSolverMessage = "";
+selectedSolverOutput  = struct();
+lastSolverOutput      = struct();
+
 previousUnverifiedPairs    = false(segmentCount, numel(solverRequest.Regions_units));
 lastAttemptMessage         = "The time-scoped alternating iteration limit was reached.";
 failureStage               = "optimization";
@@ -102,17 +90,16 @@ savedTrajectoryConstraints = struct();
 for iterationIndex = 1:solverRequest.MaximumAlternatingIterations
     diagnostics.IterationCount = iterationIndex;
     trajectoryStep             = struct( ...
-        'Formulation',             "scaledClock", ...
-        'SegmentCount',            segmentCount, ...
-        'Planes',                  separatingPlanes, ...
-        'RoundoffReserve_units',   roundoffReserve_units, ...
-        'MaximumMotionDuration_s', maximumStepDuration_s, ...
-        'FixedClock',              hasFixedArrival, ...
-        'MinimumMotionDuration_s', minimumStepDuration_s, ...
-        'SegmentRatio',            stepSegmentRatio, ...
-        'SegmentTime_s',           stepSegmentTime_s, ...
+        'Formulation',               "scaledClock", ...
+        'SegmentCount',              segmentCount, ...
+        'Planes',                    separatingPlanes, ...
+        'RoundoffReserve_units',     roundoffReserve_units, ...
+        'MaximumMotionDuration_s',   solverRequest.MotionHorizon_s, ...
+        'FixedClock',                false, ...
+        'MinimumMotionDuration_s',   solverRequest.MinimumMotionDuration_s, ...
+        'SegmentRatio',              segmentTimeRatios, ...
         'IntrinsicVariationEnabled', false, ...
-        'ConstraintBase',          savedTrajectoryConstraints);
+        'ConstraintBase',            savedTrajectoryConstraints);
     [trialControl_units, trialSegmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
         bmtpEngine.optimization.solveTrajectoryStep(solverRequest, trajectoryStep);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
@@ -161,14 +148,13 @@ for iterationIndex = 1:solverRequest.MaximumAlternatingIterations
             retainedDuration_s = sum(selectedSegmentTime_s);
         end
         if trialDuration_s < retainedDuration_s
-            selectedControl_units      = trialControl_units;
-            selectedSegmentTime_s      = trialSegmentTime_s;
-            selectedPlanes             = trialPlanes;
-            selectedPairs              = trialPairs;
-            selectedPairCount          = nnz(trialPairs);
-            selectedCollisionPairCount = nnz(unverifiedPairs);
-            selectedSolverMessage      = "A complete time-scoped feasible iterate was retained.";
-            selectedSolverOutput       = solverOutput;
+            selectedControl_units = trialControl_units;
+            selectedSegmentTime_s = trialSegmentTime_s;
+            selectedPlanes        = trialPlanes;
+            selectedPairs         = trialPairs;
+            selectedPairCount     = nnz(trialPairs);
+            selectedSolverMessage = "A complete time-scoped feasible iterate was retained.";
+            selectedSolverOutput  = solverOutput;
         end
         arrivalImprovementReachedTolerance = ...
             retainedDuration_s - trialDuration_s <= solverRequest.Options.ArrivalTimeTolerance_s;
@@ -220,7 +206,8 @@ end
 % only when no candidate was retained.
 if ~isempty(selectedControl_units)
     diagnostics.ApplicablePairCount     = selectedPairCount;
-    diagnostics.FinalCollisionPairCount = selectedCollisionPairCount;
+    % A retained trial passed every obstacle pair.
+    diagnostics.FinalCollisionPairCount = 0;
     diagnostics.Converged               = selectedSolverOutput.OptimizationConverged;
 
     solverMessage        = selectedSolverMessage;

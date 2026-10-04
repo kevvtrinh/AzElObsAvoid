@@ -11,8 +11,7 @@ function solverTotals = accumulateConicDiagnostics(solverTotals, solveOutput)
 %   - solverTotals (scalar struct)
 %       Counts and solver time accumulated by previous calls.
 %   - solveOutput (scalar struct)
-%       Output for the latest solver stage. A directly calculated analytic
-%       solution contributes no coneprog calls or solver time.
+%       Output for the latest numerical solver stage.
 %**************************************************************************
 % OUTPUTS
 %   - solverTotals (scalar struct)
@@ -32,11 +31,6 @@ if nargin == 0
 end
 
 %% Section 2: Add The Latest Numerical-Solver Work
-
-usesAnalyticSolution = isfield(solveOutput, 'IsAnalytic') && solveOutput.IsAnalytic;
-if usesAnalyticSolution
-    return
-end
 
 % Some stages report several solver calls together. Use their supplied
 % count; an output without SolveCount represents one call.

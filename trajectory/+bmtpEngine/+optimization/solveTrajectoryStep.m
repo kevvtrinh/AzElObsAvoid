@@ -260,9 +260,7 @@ sharedConstraintInputs = struct( ...
     "Limits",           constraintLimits, ...
     "VariableCount",    decisionVariableCount, ...
     "SegmentRatio",     segmentTimeRatios);
-if formulation.KeepJerkTimesInKey
-    sharedConstraintInputs.JerkTimes_s = jerkObjectiveTime_s;
-end
+sharedConstraintInputs.JerkTimes_s = jerkObjectiveTime_s;
 canReuseSharedConstraints = isstruct(savedTrajectoryConstraints) && isscalar(savedTrajectoryConstraints) && ...
     isfield(savedTrajectoryConstraints, 'Key') && isequaln(savedTrajectoryConstraints.Key, sharedConstraintInputs);
 if ~canReuseSharedConstraints
@@ -276,9 +274,7 @@ if ~canReuseSharedConstraints
         "beq", equalityValues, ...
         "lb",  lowerBounds, ...
         "ub",  upperBounds);
-    if formulation.KeepJerkTimesInKey
-        savedTrajectoryConstraints.jerkMap = jerkControlMap;
-    end
+    savedTrajectoryConstraints.jerkMap = jerkControlMap;
     savedTrajectoryConstraints.Key = sharedConstraintInputs;
 else
     inequalityMatrix = savedTrajectoryConstraints.A;
@@ -537,7 +533,6 @@ solverOutput.ReturnedSolveIndex             = returnedSolveIndex;
 solverOutput.LastAttemptExitFlag            = lastAttemptExitFlag;
 solverOutput.TerminatedAfterRetainedIterate = returnedSolveIndex > 0 && ...
     returnedSolveIndex < solveCount;
-solverOutput.AttemptedLoadedPlanePairCount  = nnz(attemptedPlanePairs);
 % Finite values from a stalled solve remain a candidate for full motion
 % checks. A solver status alone cannot establish physical feasibility.
 iterateIsUsable = bmtpEngine.optimization.hasUsableConicIterate(solverValues, exitFlag);
@@ -565,64 +560,50 @@ end
 %% Section 7: Local Functions
 
 function formulation = resolveFormulation(formulationName, solverRequest, hasFixedSegmentTimes)
-    % Set the numerical choices together so the solve never selects by name.
-    physicalClock = struct();
-    scaledClock   = struct();
-    % The physical clock uses tight solver tolerances; the scaled clock uses its tested defaults.
-    physicalClock.SolverOptions = solverRequest.TrajectoryOptions;
-    scaledClock.SolverOptions   = solverRequest.TimedTrajectoryOptions;
-    % The scaled clock keeps time powers near one; the physical clock uses seconds.
-    physicalClock.ScaleTimePowers = false;
-    scaledClock.ScaleTimePowers   = true;
-    % The physical clock leaves jerk roundoff room unless its smoothing cost is active.
-    physicalClock.ReserveJerkLimit = true;
-    scaledClock.ReserveJerkLimit   = false;
-    % The physical clock fixes endpoint controls; the scaled clock uses equality rows.
-    physicalClock.PinEndpointControls = true;
-    scaledClock.PinEndpointControls   = false;
-    % Only the physical fixed clock has clearance slack variables.
-    physicalClock.UseClearanceSlack = true;
-    scaledClock.UseClearanceSlack   = false;
-    % Only physical whole-segment fixed-clock lines may be reduced.
-    physicalClock.RemoveRedundantLines = true;
-    scaledClock.RemoveRedundantLines   = false;
-    % Physical fixed-clock line rows use twice the reserve; scaled rows use it once.
-    physicalClock.LineRowReserveFactor = 1 + hasFixedSegmentTimes;
-    scaledClock.LineRowReserveFactor   = 1;
-    % Physical violation checks use twice the reserve; scaled checks use it once.
-    physicalClock.ViolationReserveFactor = 2;
-    scaledClock.ViolationReserveFactor   = 1;
-    % Physical variable clocks load all lines; scaled clocks defer sets above 2048.
-    physicalClock.MaximumFullyLoadedPairCount = Inf;
-    scaledClock.MaximumFullyLoadedPairCount   = 2048;
-    % The scaled clock retains a usable iterate if the next line round fails.
-    physicalClock.KeepLastUsableIterate = false;
-    scaledClock.KeepLastUsableIterate   = true;
-    % The scaled variable clock accepts lines that cover only part of a segment.
-    physicalClock.AllowPartialScopesWithVariableClock = false;
-    scaledClock.AllowPartialScopesWithVariableClock   = true;
-    % The physical variable clock reserves unused edge bounds; the scaled clock does not.
-    physicalClock.ReserveEdgeBoundsAtVariableClock = true;
-    scaledClock.ReserveEdgeBoundsAtVariableClock   = false;
-    % The scaled fixed clock includes time-power cones even with pinned powers.
-    physicalClock.IncludeTimePowerConesAtFixedClock = false;
-    scaledClock.IncludeTimePowerConesAtFixedClock   = true;
-    % Physical constraint keys include jerk times; scaled keys omit them.
-    physicalClock.KeepJerkTimesInKey = true;
-    scaledClock.KeepJerkTimesInKey   = false;
-    % Only the scaled clock has a lower arrival bound and a scalar-time request.
-    physicalClock.AllowMinimumDuration = false;
-    scaledClock.AllowMinimumDuration   = true;
-    physicalClock.AllowCommonSegmentTime = false;
-    scaledClock.AllowCommonSegmentTime   = true;
-    % Intrinsic jerk variation belongs to physical-clock quintic refinement.
-    physicalClock.AllowJerkVariation = true;
-    scaledClock.AllowJerkVariation   = false;
-
+    % Build only the selected clock's numerical choices. The solve reads
+    % these fields without choosing again by formulation name.
     if formulationName == "physicalClock"
-        formulation = physicalClock;
+        % Physical seconds use tight tolerances, pinned endpoint controls,
+        % clearance slack, and optional jerk smoothing. Fixed-clock line rows
+        % use twice the reserve; variable clocks load every line.
+        formulation = struct( ...
+            'SolverOptions',                       solverRequest.TrajectoryOptions, ...
+            'ScaleTimePowers',                     false, ...
+            'ReserveJerkLimit',                    true, ...
+            'PinEndpointControls',                 true, ...
+            'UseClearanceSlack',                   true, ...
+            'RemoveRedundantLines',                true, ...
+            'LineRowReserveFactor',                1 + hasFixedSegmentTimes, ...
+            'ViolationReserveFactor',              2, ...
+            'MaximumFullyLoadedPairCount',         Inf, ...
+            'KeepLastUsableIterate',               false, ...
+            'AllowPartialScopesWithVariableClock', false, ...
+            'ReserveEdgeBoundsAtVariableClock',    true, ...
+            'IncludeTimePowerConesAtFixedClock',   false, ...
+            'AllowMinimumDuration',                false, ...
+            'AllowCommonSegmentTime',              false, ...
+            'AllowJerkVariation',                  true);
     else
-        formulation = scaledClock;
+        % Scaled time powers stay near one with the tested default tolerances.
+        % Large variable-clock line sets are loaded as needed; partial scopes
+        % and a lower arrival bound are allowed. Retain the last usable iterate.
+        formulation = struct( ...
+            'SolverOptions',                       solverRequest.TimedTrajectoryOptions, ...
+            'ScaleTimePowers',                     true, ...
+            'ReserveJerkLimit',                    false, ...
+            'PinEndpointControls',                 false, ...
+            'UseClearanceSlack',                   false, ...
+            'RemoveRedundantLines',                false, ...
+            'LineRowReserveFactor',                1, ...
+            'ViolationReserveFactor',              1, ...
+            'MaximumFullyLoadedPairCount',         2048, ...
+            'KeepLastUsableIterate',               true, ...
+            'AllowPartialScopesWithVariableClock', true, ...
+            'ReserveEdgeBoundsAtVariableClock',    false, ...
+            'IncludeTimePowerConesAtFixedClock',   true, ...
+            'AllowMinimumDuration',                true, ...
+            'AllowCommonSegmentTime',              true, ...
+            'AllowJerkVariation',                  false);
     end
 end
 

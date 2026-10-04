@@ -1,10 +1,10 @@
-function [plane, exitFlag, lineDiagnostics] = solveSeparatingLine(controlPoint_units, vertices_units, ...
+function [plane, exitFlag] = solveSeparatingLine(controlPoint_units, vertices_units, ...
     separationTarget_units, roundoffReserve_units, obstacleGeometry)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [plane, exitFlag, lineDiagnostics] = bmtpEngine.separation.solveSeparatingLine( ...
+%   [plane, exitFlag] = bmtpEngine.separation.solveSeparatingLine( ...
 %       controlPoint_units, vertices_units, separationTarget_units, roundoffReserve_units)
-%   [plane, exitFlag, lineDiagnostics] = bmtpEngine.separation.solveSeparatingLine( ...
+%   [plane, exitFlag] = bmtpEngine.separation.solveSeparatingLine( ...
 %       controlPoint_units, vertices_units, separationTarget_units, ...
 %       roundoffReserve_units, obstacleGeometry)
 %**************************************************************************
@@ -37,9 +37,6 @@ function [plane, exitFlag, lineDiagnostics] = solveSeparatingLine(controlPoint_u
 %   - exitFlag (numeric scalar)
 %       1 means a direction was constructed; -2 means none was available.
 %       A value of 1 does not mean separation passed verification.
-%   - lineDiagnostics (scalar struct)
-%       IsAnalytic is true and TotalTime_s is zero; this direction search
-%       does not call a numerical optimization solver.
 %**************************************************************************
 % UNITS
 %   - Position, offsets, target, and reserve are coordinate units; normals
@@ -55,7 +52,7 @@ controlPointCount   = size(controlPoint_units, 1);
 % Fraction weights and every pair of curve controls depend only on the
 % curve degree. Cache them for later calls with the same control count.
 persistent cachedControlPointCount cachedControlFractions cachedProductFractions ...
-    cachedSecondControlIndices cachedFirstControlIndices cachedEmptyPlane cachedLineDiagnostics
+    cachedSecondControlIndices cachedFirstControlIndices cachedEmptyPlane
 if isempty(cachedControlPointCount) || cachedControlPointCount ~= controlPointCount
     cachedControlPointCount = controlPointCount;
     cachedControlFractions  = (0:controlPointCount - 1)' / (controlPointCount - 1);
@@ -64,11 +61,7 @@ if isempty(cachedControlPointCount) || cachedControlPointCount ~= controlPointCo
         find(tril(true(controlPointCount), -1));
 end
 if isempty(cachedEmptyPlane)
-    cachedEmptyPlane      = bmtpEngine.separation.createEmptyPlane();
-    cachedLineDiagnostics = struct( ...
-        'TotalTime_s', 0, ...
-        'IsAnalytic',  true, ...
-        'message',     'Convex supporting-axis subproblem.');
+    cachedEmptyPlane = bmtpEngine.separation.createEmptyPlane();
 end
 controlFractions     = cachedControlFractions;
 productFractions     = cachedProductFractions;
@@ -151,10 +144,9 @@ if any(directionIsProvable)
 end
 [selectedGap_units, directionIndex] = max(controlGaps_units);
 
-plane           = cachedEmptyPlane;
-plane.ExitFlag  = -2;
-exitFlag        = -2;
-lineDiagnostics = cachedLineDiagnostics;
+plane          = cachedEmptyPlane;
+plane.ExitFlag = -2;
+exitFlag       = -2;
 if isempty(selectedGap_units)
     return
 end

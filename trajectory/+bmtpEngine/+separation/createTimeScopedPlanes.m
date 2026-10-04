@@ -48,8 +48,7 @@ function [separatingPlanes, regionActiveBySegment, allRequiredLinesVerified, lin
 %       ActivePairCount counts pairs needing a line. CheckedPairCount counts
 %       pairs visited, VerifiedPairCount counts those proved separated, and
 %       UnavailablePairCount counts solves with no usable line. VerifiedPairs
-%       marks both verified and inactive pairs true. SocpCount counts
-%       numerical line solves; SolverTime_s totals their reported time.
+%       marks both verified and inactive pairs true.
 %**************************************************************************
 % UNITS
 %   - Positions and margins use coordinate units; durations and absolute
@@ -97,8 +96,6 @@ verifiedPairs        = ~regionActiveBySegment;
 checkedPairCount     = 0;
 verifiedPairCount    = 0;
 unavailablePairCount = 0;
-socpCount            = 0;
-solverTime_s         = 0;
 stopRequested        = false;
 for segmentIndex = 1:segmentCount
     for regionIndex = reshape(find(regionActiveBySegment(segmentIndex, :)), 1, [])
@@ -135,18 +132,12 @@ for segmentIndex = 1:segmentCount
             plane              = bmtpEngine.separation.verifySeparatingLine( ...
                 plane, segmentControlPoint_units, obstacleVertices_units, roundoffReserve_units, separationTarget_units);
         else
-            % Solve a fresh line. Count only numerical solves in SocpCount;
-            % an analytic line does not use the numerical solver.
-            [plane, exitFlag, lineOutput] = bmtpEngine.separation.solveSeparatingLine( ...
+            % Find a fresh line directly from the curve and obstacle edges.
+            [plane, exitFlag] = bmtpEngine.separation.solveSeparatingLine( ...
                 segmentControlPoint_units, obstacleVertices_units, separationTarget_units, ...
                 roundoffReserve_units, separatingLineGeometry);
-            plane.TimeFraction  = overlapFractions;
-            lineIsAvailable     = exitFlag > 0 && plane.Active;
-            usedNumericalSolver = ~(isfield(lineOutput, 'IsAnalytic') && lineOutput.IsAnalytic);
-            socpCount           = socpCount + usedNumericalSolver;
-            if usedNumericalSolver && isfield(lineOutput, 'TotalTime_s')
-                solverTime_s = solverTime_s + lineOutput.TotalTime_s;
-            end
+            plane.TimeFraction = overlapFractions;
+            lineIsAvailable    = exitFlag > 0 && plane.Active;
         end
         separatingPlanes(segmentIndex, regionIndex) = plane;
         verifiedPairs(segmentIndex, regionIndex)    = plane.Verified;
@@ -171,7 +162,5 @@ lineReport = struct( ...
     'CheckedPairCount',     checkedPairCount, ...
     'VerifiedPairCount',    verifiedPairCount, ...
     'UnavailablePairCount', unavailablePairCount, ...
-    'VerifiedPairs',        verifiedPairs, ...
-    'SocpCount',            socpCount, ...
-    'SolverTime_s',         solverTime_s);
+    'VerifiedPairs',        verifiedPairs);
 end

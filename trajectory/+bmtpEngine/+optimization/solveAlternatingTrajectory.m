@@ -101,17 +101,15 @@ if allRequiredLinesAvailable
             'ConstraintBase',            savedTrajectoryConstraints);
         [trialControl_units, trialSegmentTime_s, exitFlag, solverOutput, savedTrajectoryConstraints] = ...
             bmtpEngine.optimization.solveTrajectoryStep(solverRequest, trajectoryStep);
-        diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
-        diagnostics.ConicSolver         = bmtpEngine.optimization.accumulateConicDiagnostics( ...
+        diagnostics.TrajectorySocpCount    = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
+        diagnostics.ConicSolver            = bmtpEngine.optimization.accumulateConicDiagnostics( ...
             diagnostics.ConicSolver, solverOutput);
         diagnostics.IntrinsicJerkVariation = solverOutput.IntrinsicJerkVariation;
-        if isfield(solverOutput, 'ConstraintGenerationApplied') && ...
-                solverOutput.ConstraintGenerationApplied
-            diagnostics.LoadedPlanePairCount           = solverOutput.LoadedPlanePairCount;
-            diagnostics.ConstraintGenerationRoundCount = solverOutput.ConstraintGenerationRoundCount;
-            diagnostics.ConstraintGenerationComplete   = solverOutput.ConstraintGenerationComplete;
-            diagnostics.MaximumPlaneConstraintResidual = solverOutput.MaximumPlaneConstraintResidual;
-        end
+
+        diagnostics.LoadedPlanePairCount           = solverOutput.LoadedPlanePairCount;
+        diagnostics.ConstraintGenerationRoundCount = solverOutput.ConstraintGenerationRoundCount;
+        diagnostics.ConstraintGenerationComplete   = solverOutput.ConstraintGenerationComplete;
+        diagnostics.MaximumPlaneConstraintResidual = solverOutput.MaximumPlaneConstraintResidual;
         if isfield(solverOutput, 'MaximumClearanceSlack_units')
             diagnostics.MaximumClearanceSlack_units = solverOutput.MaximumClearanceSlack_units;
         end
@@ -128,10 +126,8 @@ if allRequiredLinesAvailable
         % original lines must still be checked, and maximum slack + maximum
         % row violation must fit within the reserved trajectory-side gap
         % before those rows establish separation.
-        allLineConstraintsProved = isfield(solverOutput, 'ConstraintGenerationApplied') && ...
-            solverOutput.ConstraintGenerationApplied && solverOutput.ConstraintGenerationComplete && ...
+        allLineConstraintsProved = solverOutput.ConstraintGenerationComplete && ...
             solverOutput.RetainedPlaneCount == solverOutput.OriginalPlaneCount && ...
-            isfield(solverOutput, 'MaximumClearanceSlack_units') && ...
             ~isempty(solverOutput.MaximumClearanceSlack_units) && ...
             solverOutput.MaximumClearanceSlack_units + ...
             max(0, solverOutput.MaximumPlaneConstraintResidual) <= roundoffReserve_units;
@@ -253,7 +249,7 @@ function [separatingPlanes, regionActiveBySegment, allRequiredLinesAvailable, ve
     % Check or rebuild the line for every applicable curve/obstacle pair,
     % stopping at the first failed existing-line check or unavailable
     % replacement line. Pairs whose time intervals do not overlap count as
-    % passed. Count any numerical line solves toward this solve's totals.
+    % passed.
     lineUpdate = struct( ...
         'Planes',             separatingPlanes, ...
         'VerifyExisting',     verifyExistingLines, ...
@@ -269,8 +265,4 @@ function [separatingPlanes, regionActiveBySegment, allRequiredLinesAvailable, ve
     else
         allRequiredLinesAvailable = lineReport.UnavailablePairCount == 0;
     end
-    diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + lineReport.SocpCount;
-    diagnostics.ConicSolver    = bmtpEngine.optimization.accumulateConicDiagnostics( ...
-        diagnostics.ConicSolver, struct('SolveCount', lineReport.SocpCount, ...
-        'TotalTime_s', lineReport.SolverTime_s));
 end

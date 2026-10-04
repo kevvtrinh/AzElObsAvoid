@@ -27,7 +27,7 @@ route_units = double(solverRequest.Seed.position_units);
 route_units([1 end], :) = [solverRequest.InitialState.position_units; solverRequest.GoalState.position_units];
 
 divideRouteByLength = solverRequest.Options.GoalTimeMode == "earliestArrival" && ...
-    ~isfield(solverRequest.Coverage, 'ActiveTimeInterval_s') && solverRequest.SplitCount > 1;
+    ~isfield(solverRequest.Coverage, 'ActiveTimeInterval_s');
 if divideRouteByLength
     route_units = removeRedundantRouteVertices(route_units);
 end
@@ -194,7 +194,7 @@ function [controlPoint_units, segmentTime_s, segmentCount] = createCurveWithoutA
     controlPoint_units = (1 - interpolationFractions) .* segmentStart_units + ...
         interpolationFractions .* segmentEnd_units;
     segmentTime_s = bmtpEngine.motion.findRequiredSegmentTime(controlPoint_units, solverRequest.Limits);
-    if solverRequest.SplitCount > 1 && ~divideRouteByLength
+    if ~divideRouteByLength
         % Split each Bezier curve exactly: the path stays the same, while the
         % solver gains more segments it can adjust during optimization.
         subdivisionCount         = solverRequest.SplitCount;

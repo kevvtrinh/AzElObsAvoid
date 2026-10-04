@@ -66,7 +66,6 @@ result                = retainedResult;
 result.PreparedMotion = retainedPreparedMotion;
 result.Proof          = retainedProof;
 selectedLength_units  = retainedLength_units;
-selectedArrival_s     = retainedArrival_s;
 separatingPlanes      = retainedResult.Planes;
 
 if ~isfield(diagnostics, 'TrajectorySocpCount')
@@ -75,14 +74,9 @@ end
 if ~isfield(diagnostics, 'PlaneSocpCount')
     diagnostics.PlaneSocpCount = 0;
 end
-diagnostics.TravelRefinementAttempted           = true;
 diagnostics.TravelRefinementAccepted            = false;
 diagnostics.TravelRefinementInitialLength_units = retainedLength_units;
 diagnostics.TravelRefinementFinalLength_units   = retainedLength_units;
-diagnostics.TravelRefinementInitialDuration_s   = retainedArrival_s - initialTime_s;
-diagnostics.TravelRefinementFinalDuration_s     = retainedArrival_s - initialTime_s;
-diagnostics.TravelRefinementExitFlag            = NaN;
-diagnostics.TravelRefinementOptimizationConverged = false;
 
 %% Section 2: Solve At The Retained Clock And Check Each Proposal
 
@@ -116,8 +110,6 @@ for refinementIndex = 1:refinementAttemptLimit
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
     diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
         diagnostics.ConicSolver, solverOutput);
-    diagnostics.TravelRefinementExitFlag = refinementExitFlag;
-    diagnostics.TravelRefinementOptimizationConverged = solverOutput.OptimizationConverged;
     % The full prepared check below is the authority on every proposal, so
     % no solver-side status short-circuits it here.
     if ~bmtpEngine.optimization.hasUsableConicIterate(refinedControl_units, refinementExitFlag)
@@ -151,7 +143,6 @@ for refinementIndex = 1:refinementAttemptLimit
             result.Proof              = refinedProof;
             result.SolverMessage      = "A travel-shortened feasible iterate was retained.";
             selectedLength_units      = refinedLength_units;
-            selectedArrival_s         = refinedPreparedMotion.FinalTime_s;
             diagnostics.TravelRefinementAccepted = true;
             break
         end
@@ -195,8 +186,7 @@ for refinementIndex = 1:refinementAttemptLimit
             squeeze(retainedControl_units(segmentIndex, :, :)), ...
             solverRequest.Regions_units{regionIndex}, separationTarget_units, ...
             roundoffReserve_units, solverRequest.TrajectoryOptions);
-        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
-            ~(isfield(planeOutput, 'IsAnalytic') && planeOutput.IsAnalytic);
+        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
         diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
             diagnostics.ConicSolver, planeOutput);
         if (planeExitFlag <= 0 && planeExitFlag ~= -7) || ~plane.Active || ~plane.Verified
@@ -229,5 +219,4 @@ diagnostics.ApplicablePairCount                = nnz(result.TaggedPairs);
 diagnostics.TaggedPairCount                    = nnz(result.TaggedPairs);
 diagnostics.SolverMessage                      = result.SolverMessage;
 diagnostics.TravelRefinementFinalLength_units  = selectedLength_units;
-diagnostics.TravelRefinementFinalDuration_s    = selectedArrival_s - initialTime_s;
 end

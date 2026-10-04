@@ -130,11 +130,6 @@ for iterationIndex = 1:maximumIterationCount
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + solverOutput.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
             diagnostics.ConicSolver, solverOutput);
-        if isfield(diagnostics, 'HorizonRelaxedStepCount')
-            diagnostics.HorizonRelaxedStepCount = diagnostics.HorizonRelaxedStepCount + 1;
-        else
-            diagnostics.HorizonRelaxedStepCount = 1;
-        end
     end
     % Record why this attempt stopped so the caller can decide whether a
     % different route is allowed. A numerical failure must not be hidden.
@@ -220,8 +215,7 @@ for iterationIndex = 1:maximumIterationCount
         [plane, planeExitFlag, planeOutput] = bmtpEngine.separation.solveMaximumMarginLine( ...
             squeeze(separationReferenceControl_units(segmentIndex, :, :)), solverRequest.Regions_units{regionIndex}, ...
             separationTarget_units, roundoffReserve_units, solverRequest.TrajectoryOptions);
-        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ...
-            ~(isfield(planeOutput, 'IsAnalytic') && planeOutput.IsAnalytic);
+        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
         diagnostics.ConicSolver = bmtpEngine.optimization.accumulateConicDiagnostics( ...
             diagnostics.ConicSolver, planeOutput);
         planeUpdateFailed = (planeExitFlag <= 0 && planeExitFlag ~= -7) || ~plane.Active;
@@ -258,12 +252,11 @@ if ~isempty(bestControl_units)
         diagnostics, separationTarget_units, roundoffReserve_units);
 else
     % Preserve the arrival loop's no-candidate result and diagnostics.
-    diagnostics.TravelRefinementAttempted = false;
-    diagnostics.TravelRefinementAccepted  = false;
-    diagnostics.ApplicablePairCount       = nnz(bestPlanePairs);
-    diagnostics.FinalCollisionPairCount   = 0;
-    diagnostics.TaggedPairCount           = nnz(bestPlanePairs);
-    diagnostics.SolverMessage             = lastAttemptMessage;
+    diagnostics.TravelRefinementAccepted = false;
+    diagnostics.ApplicablePairCount      = nnz(bestPlanePairs);
+    diagnostics.FinalCollisionPairCount  = 0;
+    diagnostics.TaggedPairCount          = nnz(bestPlanePairs);
+    diagnostics.SolverMessage            = lastAttemptMessage;
     selectedResult = bmtpEngine.optimization.createOptimizationResult( ...
         lastAttemptMessage, failureStage, failureKind, alternativeGuideEligible, ...
         bestControl_units, bestSegmentTime_s, bestSeparatingPlanes, bestPlanePairs);
