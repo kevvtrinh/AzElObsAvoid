@@ -72,7 +72,7 @@ for obstacleIndex = 1:numel(canonicalObstacles)
     neededSamples  = sampleTime_s >= timeRange_s(1) & sampleTime_s <= timeRange_s(2);
     neededIntervals = find(sampleTime_s(1:end - 1) < timeRange_s(2) & sampleTime_s(2:end) > timeRange_s(1));
     neededSamples([neededIntervals; neededIntervals + 1]) = true;
-    if numel(sampleTime_s) == 1
+    if isscalar(sampleTime_s)
         neededSamples(1) = true;
     end
     boundaryX_units = vertcat(obstacle.x_units{neededSamples});
@@ -143,19 +143,11 @@ function requireMirroredMatching(obstacle, timeRange_s)
     end
     % The source was normalized before copying, so repeated closing
     % vertices are already removed before checking the same rings.
-    % The declared rule is authoritative; the derived flag may be absent.
-    declaresVertexOrder = isfield(obstacle, 'vertexCorrespondence') && ...
-        ~isempty(obstacle.vertexCorrespondence) && string(obstacle.vertexCorrespondence) == "sourceIndex";
-    if ~isfield(obstacle, 'vertexCorrespondence') || isempty(obstacle.vertexCorrespondence)
-        declaresVertexOrder = isfield(obstacle, 'UsesSourceIndex') && obstacle.UsesSourceIndex;
-    end
-    if declaresVertexOrder
+    if obstacle.UsesSourceIndex
         return
     end
-    ringSets = {obstacle.x_units, obstacle.y_units};
-    if all(isfield(obstacle, {'originalX_units', 'originalY_units'}))
-        ringSets(2, :) = {obstacle.originalX_units, obstacle.originalY_units};
-    end
+    ringSets = {obstacle.x_units, obstacle.y_units; ...
+        obstacle.originalX_units, obstacle.originalY_units};
     for ringSetIndex = 1:size(ringSets, 1)
         xHistory_units = ringSets{ringSetIndex, 1};
         yHistory_units = ringSets{ringSetIndex, 2};

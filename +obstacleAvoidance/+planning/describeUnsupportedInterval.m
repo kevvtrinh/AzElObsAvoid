@@ -51,18 +51,6 @@ for obstacleIndex = 1:numel(preparedObstacles)
         'proven exact continuous interpolation.'], ...
         obstacleIndex, obstacleName, intervalTime_s(1), intervalTime_s(2));
 
-    % Include a more specific explanation if preparation recorded one.
-    hasProofReason = isfield(obstaclePreparation, 'IntervalProofReason');
-    if hasProofReason
-        proofReason = obstaclePreparation.IntervalProofReason(unsupportedIntervalIndex);
-        if proofReason == "movingCellsExcludeProtectedSample"
-            % The calculated region misses part of a supplied obstacle shape
-            % with its safety margin, so it cannot safely represent that shape.
-            message = message + ...
-                " The given moving-cell margin-square enclosure excludes " + ...
-                "supplied protected sample area.";
-        end
-    end
     return
 end
 end
