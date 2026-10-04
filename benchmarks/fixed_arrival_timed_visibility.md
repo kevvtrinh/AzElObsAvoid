@@ -71,5 +71,5 @@ spatial-proof path, plus random case 26 with a static obstacle for the timed-gui
 path. The Vietnam boundary fixture is intentionally excluded from this
 compact benchmark because of its size; its changing source boundary now
 carries an exact proven correspondence and is covered by
-`testVietnamBoundary` and the maintained example harness
+`testExampleContracts/testDenseMovingGeometryContracts` and the maintained example harness
 (see `benchmarks/vietnam_boundary.md`).

@@ -76,7 +76,7 @@ moving cells now use half-width `sqrt(2)*safetyMargin_units`. With that
 margin the explicit endpoint containment check passes for accepted moving-cell
 intervals (uncovered area at roundoff). At HEAD 3feaae0 the reduced outline uses
 endpoint hulls for all 48 intervals, [0,5] through [235,240] s;
-`testDeformingUSOutline` retains the failing no-hull
+`testExampleContracts/testReducedOutlineIsSupportedAndValid` retains the failing no-hull
 expectation. `testBoundedCorrespondence` keeps both the
 counterexample for half-width `d` and the proof for `d*sqrt(2)`.
 

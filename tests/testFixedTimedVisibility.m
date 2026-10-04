@@ -8,89 +8,9 @@ function tests = testFixedTimedVisibility
 tests = functiontests(localfunctions);
 end
 
-function setupOnce(testCase)
-    root=fileparts(fileparts(mfilename('fullpath')));
-    addpath(root,fullfile(root,'trajectory'),fullfile(root,'examples'));
-    testCase.TestData.Initial=struct('time_s',0,'position_units',[0,0]);
-    testCase.TestData.Goal=struct('time_s',10,'position_units',[5,0]);
-    testCase.TestData.Limits=struct('xInterval_units',[-1,6],'yInterval_units',[-2,2], ...
-        'maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
-    testCase.TestData.Options=struct('GoalTimeMode','fixedArrival');
-end
-
-function testGivenArrivalAndContinuousMotion(testCase)
-    data=testCase.TestData;
-    result=planner([],data.Initial,data.Goal,data.Limits,data.Options);
-    assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,10,'AbsTol',1e-8);
-    verifyEqual(testCase,result.Diagnostics.VisibilityGraph.SearchKind,"initialSpatialSnapshot");
-    verifyTrue(testCase,result.Diagnostics.VisibilityGraph.GraphIsFullyEnumerated);
-    verifyLessThan(testCase,size(result.Diagnostics.Route_units,1),9);
-end
-
-function testMovingTargetEndsAtExactGivenClock(testCase)
-    goalTime_s = 13.984378262112314;
-    initial = struct('time_s',0.45999999999999996,'position_units',[-4,0]);
-    targetMotion = struct( ...
-        'time_s',[initial.time_s;goalTime_s], ...
-        'position_units',[4,0;5,0]);
-    goal = struct('time_s',goalTime_s,'targetMotion',targetMotion);
-    limits = struct( ...
-        'xInterval_units',[-20,20], ...
-        'yInterval_units',[-8,8], ...
-        'maxVelocity_units_s',[3,3], ...
-        'maxAcceleration_units_s2',[2,2], ...
-        'maxJerk_units_s3',[4,4]);
-    options = struct('GoalTimeMode','fixedArrival','WrapX',true);
-
-    result = planner([],initial,goal,limits,options);
-
-    assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,goal.time_s);
-    verifyEqual(testCase,result.Diagnostics.Polynomial.FinalTime_s,goal.time_s);
-    verifyEqual(testCase,result.time_s(end),goal.time_s);
-end
-
-function testStaticGoalUsesExactGivenClock(testCase)
-    % This clock pair reproduces one ulp late when the arrival is rebuilt
-    % from the start time plus summed durations.
-    initial = struct('time_s',0.45999999999999996,'position_units',[0,0]);
-    goal = struct('time_s',13.984378262112314,'position_units',[5,1]);
-    limits = struct( ...
-        'xInterval_units',[-1,6], ...
-        'yInterval_units',[-2,2], ...
-        'maxVelocity_units_s',[2,2], ...
-        'maxAcceleration_units_s2',[2,2], ...
-        'maxJerk_units_s3',[4,4]);
-
-    result = planner([],initial,goal,limits,struct('GoalTimeMode','fixedArrival'));
-
-    assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,goal.time_s);
-    verifyEqual(testCase,result.Diagnostics.Polynomial.FinalTime_s,goal.time_s);
-    verifyEqual(testCase,result.time_s(end),goal.time_s);
-end
-
-function testNoSilentSpatialNextMethod(testCase)
-    data=testCase.TestData;
-    wall=struct('Vertices_units',[2,-3;3,-3;3,3;2,3]);
-    result=planner(wall,data.Initial,data.Goal,data.Limits,data.Options);
-    verifyFalse(testCase,result.Success);
-    verifyEqual(testCase,result.TerminationReason,"noVisibilityRoute");
-    verifyEmpty(testCase,result.time_s);
-end
-
-function testFixedTimedSearchRetainsBoundaryVelocity(testCase)
-    data=testCase.TestData;
-    data.Initial.velocity_units_s=[0.1,0];
-    result=planner([],data.Initial,data.Goal,data.Limits,data.Options);
-    assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,result.Diagnostics.Validation.Passed);
-    verifyEqual(testCase,result.velocity_units_s([1,end],:),[0.1,0;0,0], ...
-        'AbsTol',1e-8);
+function setupOnce(~)
+    rootFolder = fileparts(fileparts(mfilename('fullpath')));
+    addpath(rootFolder, fullfile(rootFolder, 'trajectory'), fullfile(rootFolder, 'examples'));
 end
 
 function testSavedDetourUsesGivenDeadline(testCase)

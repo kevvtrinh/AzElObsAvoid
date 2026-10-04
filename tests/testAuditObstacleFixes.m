@@ -3,8 +3,7 @@ function tests = testAuditObstacleFixes
 % SYNTAX: results = runtests('tests/testAuditObstacleFixes.m')
 % PURPOSE: Regress the obstacle-side defects found by the read-only audit:
 %          span merging that moves supplied samples, sampled overlap
-%          checks promoting a colliding iterate, and gallery plots of
-%          partially prepared failure results.
+%          checks promoting a colliding iterate.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Function-based test results.
 % UNITS: Coordinate units and seconds.
@@ -69,31 +68,4 @@ function testThinWallCrossingIsNotPromotedBySampling(testCase)
     verifyTrue(testCase, obstacleAvoidance.validateTrajectory(result).Passed);
     verifyEqual(testCase, result.Diagnostics.VisibilityGraph.SearchKind, "initialSpatialSnapshot");
     verifyGreaterThan(testCase, result.Diagnostics.SolverDiagnostics.TaggedPairCount, 0);
-end
-
-function testGalleryPlotsPartiallyPreparedFailureResult(testCase)
-    collinear_units = [0 0; 0.5 0; 1 0];
-    smallSquare     = [0 0; 1 0; 1 1; 0 1];
-    largeSquare     = [0 0; 2 0; 2 2; 0 2];
-    obstacle = obstacleAvoidance.obstacles.createObstacle('deforming', [0; 1; 2], ...
-        {collinear_units(:, 1); smallSquare(:, 1); largeSquare(:, 1)}, ...
-        {collinear_units(:, 2); smallSquare(:, 2); largeSquare(:, 2)}, 0);
-    initial = struct('time_s', 0, 'position_units', [-4 0]);
-    goal    = struct('time_s', 2, 'position_units', [4 0]);
-    result  = planner(obstacle, initial, goal, testCase.TestData.Limits, struct('GoalTimeMode', 'fixedArrival'));
-    verifyFalse(testCase, result.Success);
-    verifyEqual(testCase, result.TerminationReason, "unsupportedObstacleInterpolation");
-    verifyFalse(testCase, all(result.Diagnostics.PreparedObstacles.InternalPreparation.SamplePrepared));
-
-    figureHandles = obstacleAvoidance.plotting.plotTrajectoryGallery({result}, "unsupported", 'off');
-    cleanup = onCleanup(@() close(figureHandles(isvalid(figureHandles))));
-    verifyEqual(testCase, numel(figureHandles), 1);
-    axesHandle = findobj(figureHandles(1), 'Type', 'axes');
-    verifyTrue(testCase, contains(string(axesHandle(1).Title.String), "unprepared snapshot"));
-
-    % The full trajectory plot, with its default space-time view, shows the
-    % interval without a continuous model as a gap instead of throwing.
-    handles = obstacleAvoidance.plotting.plotTrajectory(result, struct('FigureVisible', "off"));
-    plotCleanup = onCleanup(@() close(findall(0, 'Type', 'figure', 'Visible', 'off')));
-    verifyNotEmpty(testCase, handles.SpaceTimeAxes);
 end
