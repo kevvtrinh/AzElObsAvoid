@@ -56,7 +56,7 @@ inputUsesRecordForm = isstruct(obstacleInput) || iscell(obstacleInput) || ...
     (isnumeric(obstacleInput) && isempty(obstacleInput));
 if inputUsesRecordForm && nargin == 1
     % Check one existing record without applying another safety margin.
-    obstacleData = normalizeObstacleRecord(obstacleInput);
+    obstacleData = normalizeObstacleRecord(obstacleInput, false);
     return;
 elseif inputUsesRecordForm && nargin >= 2 && nargin <= 3
     % A supplied margin replaces the old margin, using original boundaries.
@@ -113,15 +113,16 @@ rawObstacle = struct( ...
     "safetyMargin_units",   0, ...
     "status",               repmat("visible", sampleCount, 1), ...
     "vertexCorrespondence", vertexCorrespondence);
-obstacleData = normalizeObstacleRecord(rawObstacle);
+obstacleData = normalizeObstacleRecord(rawObstacle, false);
 obstacleData = applySafetyMargin(obstacleData, safetyMargin_units, verbose);
 end
 
 %% Section 3: Local Functions
 
-function obstacle = normalizeObstacleRecord(obstacleRecord)
+function obstacle = normalizeObstacleRecord(obstacleRecord, reuseOriginals)
     % Validate one record and use column vectors throughout its histories.
     % Rebuild the output fields so old prepared geometry cannot survive changes.
+    % Margin construction can reuse originals normalized just before the offset.
     requiredFields          = {'targetName', 'time_s', 'x_units', 'y_units', 'status'};
     recordHasRequiredFields = isstruct(obstacleRecord) && isscalar(obstacleRecord) && ...
         all(isfield(obstacleRecord, requiredFields));
@@ -153,7 +154,7 @@ function obstacle = normalizeObstacleRecord(obstacleRecord)
     requireCondition(~xor(hasOriginalX, hasOriginalY), ...
         "createObstacle:IncompleteOriginalBoundary", ...
         "originalX_units and originalY_units must both be present or absent.");
-    if hasOriginalX
+    if hasOriginalX && ~reuseOriginals
         originalXIsValid = iscell(obstacleRecord.originalX_units) && ...
             numel(obstacleRecord.originalX_units) == sampleCount;
         originalYIsValid = iscell(obstacleRecord.originalY_units) && ...
@@ -175,10 +176,12 @@ function obstacle = normalizeObstacleRecord(obstacleRecord)
                 obstacleRecord.originalX_units, obstacleRecord.originalY_units, sampleCount, "original");
         end
     else
-        % Without separate originals, these coordinates are the original shape.
-        % A nonzero stored margin requires originals and is rejected below.
         originalXHistory_units   = xHistory_units;
         originalYHistory_units   = yHistory_units;
+        if hasOriginalX
+            originalXHistory_units = obstacleRecord.originalX_units;
+            originalYHistory_units = obstacleRecord.originalY_units;
+        end
         originalRemovalCounts    = [0, 0];
         originalSampleWasChanged = false(sampleCount, 1);
         originalRepairDetails    = zeros(sampleCount, 3);
@@ -551,27 +554,33 @@ function obstacles = applySafetyMargin(obstacles, safetyMargin_units, verbose)
     for obstacleIndex = 1:numel(obstacles)
         obstacle             = obstacles(obstacleIndex);
         sampleCount          = numel(obstacle.time_s);
-        protectedX_units     = cell(sampleCount, 1);
-        protectedY_units     = cell(sampleCount, 1);
-        vertexCount          = numel(vertcat(obstacle.originalX_units{:}));
-        useBackgroundWorkers = false;
-        if safetyMargin_units > 0 && vertexCount >= 500000 && exist("backgroundPool", "builtin") == 5
-            workerPool           = backgroundPool;
-            useBackgroundWorkers = workerPool.NumWorkers > 1 && ~workerPool.Busy;
-        end
-        if useBackgroundWorkers
-            futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
-            for sampleIndex = 1:sampleCount
-                futures(sampleIndex) = parfeval(workerPool, @addMarginToSample, 2, ...
-                    obstacle.originalX_units{sampleIndex}, ...
-                    obstacle.originalY_units{sampleIndex}, safetyMargin_units);
-            end
-            [protectedX_units, protectedY_units] = fetchOutputs(futures, "UniformOutput", false);
+        if safetyMargin_units == 0
+            protectedX_units = obstacle.originalX_units;
+            protectedY_units = obstacle.originalY_units;
         else
-            for sampleIndex = 1:sampleCount
-                [protectedX_units{sampleIndex}, protectedY_units{sampleIndex}] = addMarginToSample( ...
-                    obstacle.originalX_units{sampleIndex}, ...
-                    obstacle.originalY_units{sampleIndex}, safetyMargin_units);
+            % Buffer writes use fresh cells rather than sharing the originals.
+            protectedX_units     = cell(sampleCount, 1);
+            protectedY_units     = cell(sampleCount, 1);
+            vertexCount          = numel(vertcat(obstacle.originalX_units{:}));
+            useBackgroundWorkers = false;
+            if vertexCount >= 500000 && exist("backgroundPool", "builtin") == 5
+                workerPool           = backgroundPool;
+                useBackgroundWorkers = workerPool.NumWorkers > 1 && ~workerPool.Busy;
+            end
+            if useBackgroundWorkers
+                futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
+                for sampleIndex = 1:sampleCount
+                    futures(sampleIndex) = parfeval(workerPool, @addMarginToSample, 2, ...
+                        obstacle.originalX_units{sampleIndex}, ...
+                        obstacle.originalY_units{sampleIndex}, safetyMargin_units);
+                end
+                [protectedX_units, protectedY_units] = fetchOutputs(futures, "UniformOutput", false);
+            else
+                for sampleIndex = 1:sampleCount
+                    [protectedX_units{sampleIndex}, protectedY_units{sampleIndex}] = addMarginToSample( ...
+                        obstacle.originalX_units{sampleIndex}, ...
+                        obstacle.originalY_units{sampleIndex}, safetyMargin_units);
+                end
             end
         end
         if verbose
@@ -585,7 +594,7 @@ function obstacles = applySafetyMargin(obstacles, safetyMargin_units, verbose)
             % No offset changed the vertices; the originals already passed checks.
             obstacles(obstacleIndex) = obstacle;
         else
-            obstacles(obstacleIndex) = normalizeObstacleRecord(obstacle);
+            obstacles(obstacleIndex) = normalizeObstacleRecord(obstacle, true);
         end
     end
 end
@@ -593,14 +602,8 @@ end
 function [protectedX_units, protectedY_units] = addMarginToSample(x_units, y_units, safetyMargin_units)
     % Offset edges meet at a miter corner instead of a short diagonal edge.
     % The margin is measured from each edge; a corner can extend farther.
-    % A zero margin keeps the original coordinates and vertex order.
     x_units = double(x_units(:));
     y_units = double(y_units(:));
-    if safetyMargin_units == 0
-        protectedX_units = x_units;
-        protectedY_units = y_units;
-        return;
-    end
     x_units(~isfinite(x_units)) = NaN;
     y_units(~isfinite(y_units)) = NaN;
     if nnz(isfinite(x_units) & isfinite(y_units)) < 3

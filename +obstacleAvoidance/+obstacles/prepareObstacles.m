@@ -50,12 +50,13 @@ end
 
 % A version mismatch means the saved preparation uses a different format or
 % calculation. Rebuild it even if the obstacle inputs are unchanged.
-preparationVersion = 13;
+preparationVersion = 14;
 
 %% Section 2: Reuse Or Prepare Each Obstacle For The Requested Times
 
 for obstacleIndex = 1:numel(obstacles)
     previousPreparation  = [];
+    sourceSnapshot       = [];
     preparationIsCurrent = false;
 
     % Compare every input used by preparation, including protected and
@@ -77,11 +78,11 @@ for obstacleIndex = 1:numel(obstacles)
         end
     else
         normalizedObstacle = obstacleAvoidance.obstacles.createObstacle(obstacles(obstacleIndex));
+        sourceSnapshot     = createSourceSnapshot(normalizedObstacle);
     end
 
     % Keep valid partial results and prepare the missing times. If the
     % inputs changed, previous preparation is empty and the work starts anew.
-    sourceSnapshot   = createSourceSnapshot(normalizedObstacle);
     preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
         normalizedObstacle, preparationVersion, sourceSnapshot, timeRange_s, ...
         previousPreparation, stopAtUnsupported);

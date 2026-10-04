@@ -48,7 +48,7 @@ function [verified, alignedEndVertices_units, startRegions_units, endRegions_uni
 %   - Coordinate units; each vertex row is [x y].
 %**************************************************************************
 
-%% Section 1: Check The Samples And Verification Controls
+%% Section 1: Read The Normalized Samples And Verification Controls
 
 startX_units = startSample.X_units;
 startY_units = startSample.Y_units;
@@ -60,17 +60,6 @@ endShape     = endSample.Shape;
 preserveAlignment = proofRequest.PreserveAlignment;
 translationOnly   = proofRequest.TranslationOnly;
 deferTranslation  = proofRequest.DeferTranslation;
-
-validateattributes(startX_units, {'numeric'}, {'real', 'vector'});
-validateattributes(startY_units, {'numeric'}, {'real', 'numel', numel(startX_units)});
-validateattributes(endX_units, {'numeric'}, {'real', 'vector'});
-validateattributes(endY_units, {'numeric'}, {'real', 'numel', numel(endX_units)});
-validateattributes(startShape, {'polyshape'}, {'scalar'});
-validateattributes(endShape, {'polyshape'}, {'scalar'});
-validateattributes(reusableStartRegions_units, {'cell'}, {});
-validateattributes(preserveAlignment, {'logical'}, {'scalar'});
-validateattributes(translationOnly, {'logical'}, {'scalar'});
-validateattributes(deferTranslation, {'logical'}, {'scalar'});
 
 %% Section 2: Check Translation With The Supplied Vertex Order
 
@@ -134,13 +123,6 @@ if ~samplesHaveOneBoundary || translationOnly
     return;
 end
 
-% Identical boundaries need no reordering.
-if isequal(startVertices_units, endVertices_units)
-    alignedEndVertices_units = endVertices_units;
-    verified      = true;
-    geometryModel = "linearCorrespondingVertices";
-    return;
-end
 if preserveAlignment
     alignedEndVertices_units = endVertices_units;
 else
@@ -591,24 +573,14 @@ function verified = remainsStrictlyConvex(startVertices_units, endVertices_units
         obstacleAvoidance.geometry.cross2d(startEdgeVectors_units, nextEdgeVectorChanges_units);
     quadraticCoefficients_units2 = obstacleAvoidance.geometry.cross2d( ...
         edgeVectorChanges_units, nextEdgeVectorChanges_units);
-    verified = true;
-    for vertexIndex = 1:size(startVertices_units, 1)
-        % Check the endpoints and the fraction where the quadratic's slope
-        % is zero. Together these include its minimum and maximum turns.
-        checkFractions = [0; 1];
-        if quadraticCoefficients_units2(vertexIndex) ~= 0
-            turningPointFraction = -linearCoefficients_units2(vertexIndex) / ...
-                (2 * quadraticCoefficients_units2(vertexIndex));
-            if turningPointFraction > 0 && turningPointFraction < 1
-                checkFractions(end + 1, 1) = turningPointFraction; %#ok<AGROW>
-            end
-        end
-        turnCrossProducts_units2 = constantCoefficients_units2(vertexIndex) + ...
-            linearCoefficients_units2(vertexIndex) * checkFractions + ...
-            quadraticCoefficients_units2(vertexIndex) * checkFractions .^ 2;
-        if any(boundaryDirection * turnCrossProducts_units2 <= turnTolerance_units2)
-            verified = false;
-            return;
-        end
-    end
+    % Check both endpoints and each turn's interior turning point. If there
+    % is no interior turning point, repeat the start fraction in that column.
+    turningPointFractions = -linearCoefficients_units2 ./ (2 * quadraticCoefficients_units2);
+    hasInteriorTurningPoint = quadraticCoefficients_units2 ~= 0 & ...
+        turningPointFractions > 0 & turningPointFractions < 1;
+    turningPointFractions(~hasInteriorTurningPoint) = 0;
+    checkFractions = [zeros(size(turningPointFractions)), ones(size(turningPointFractions)), turningPointFractions];
+    turnCrossProducts_units2 = constantCoefficients_units2 + ...
+        linearCoefficients_units2 .* checkFractions + quadraticCoefficients_units2 .* checkFractions .^ 2;
+    verified = ~any(boundaryDirection * turnCrossProducts_units2 <= turnTolerance_units2, 'all');
 end

@@ -84,11 +84,6 @@ for obstacleIndex = 1:numel(preparedObstacles)
             % The hull of both endpoint shapes is occupied for the whole span.
             intervalStartRegions_units = obstaclePreparation.IntervalStartRegions_units{firstIntervalIndex};
             intervalEndRegions_units   = intervalStartRegions_units;
-            addedArea_units2           = obstaclePreparation.IntervalEndpointHullAddedArea_units2(firstIntervalIndex);
-            if ~isfinite(addedArea_units2) || addedArea_units2 < 0
-                error('createTimeCells:InvalidEndpointHullDiagnostic', ...
-                    'The endpoint hull added-area diagnostic must be finite and nonnegative.');
-            end
         elseif obstaclePreparation.MatchingTopology(firstIntervalIndex) && ...
                 obstaclePreparation.IntervalSpeedBound_units_s(firstIntervalIndex) == 0
             % This interval can be stationary even if the obstacle moves at

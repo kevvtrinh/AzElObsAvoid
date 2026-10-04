@@ -40,7 +40,7 @@ obstacleSnapshot = struct( ...
     'Regions_units',           {});
 for obstacleIndex = 1:numel(obstacles)
     [protectedShape, shapeDetails] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-        obstacles(obstacleIndex), time_s);
+        obstacles(obstacleIndex), time_s, false, false);
     if isempty(protectedShape.Vertices)
         % An obstacle outside its active time range has no occupied area.
         % The snapshot includes only obstacles with a nonempty shape here.

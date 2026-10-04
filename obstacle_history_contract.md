@@ -132,7 +132,8 @@ model. A successful enclosure leaves `IntervalProofReason` empty.
 region at both cell endpoints.
 Preparation records `IntervalEndpointHullAddedArea_units2`, hull area minus
 the union area of the two protected end shapes, computed by polygon subtraction.
-`createTimeCells` reads it and rejects a nonfinite or negative diagnostic.
+The endpoint-hull producer requires a finite, nonnegative value before
+accepting the model; `createTimeCells` consumes only its geometry and typed flag.
 The enclosure can fill gaps between disconnected rings and concavities; this
 added area is the reported cost of unknown correspondence.
 
@@ -156,10 +157,11 @@ conservatively include those samples; sample shapes are not overwritten to
 make queries equal. This explicitly rejects D4's premise. Temporal visibility
 checks the stationary union over the traversed part of its lifetime. Plots,
 snapshots, occupancy queries, time cells, and independent source-rebuilt
-validation all use this same interpretation. Preparation records candidate
-face counts before/after union and partition/hull/union/repartition timings
-in `IntervalMovingCellCount` and `IntervalMovingCellTiming_s`, including rejected
-candidates; timing and provenance never select planner behavior.
+validation all use this same interpretation. Preparation no longer records
+`IntervalMovingCellCount` or `IntervalMovingCellTiming_s`; moving-cell construction
+returns only support status, enclosure shape, and convex regions. Two-output
+calls remain valid. These removed counts and timings had no consumers and
+never selected planner behavior.
 
 Preparation also canonicalizes redundant corresponding keyframes without
 editing `time_s`, `x_units`, or `y_units`. Consecutive velocities must agree
@@ -180,9 +182,10 @@ Exact partition and conservative enclosure consumers read
 `IntervalStartRegions_units` and `IntervalEndRegions_units`.
 
 `MergedSpanTime_s` and `MergedIntervalCount` expose the preparation-only
-reduction. `RejectedMergeSpanSampleIndex` records spans
-without a shared exact partition. Cells use proven span boundaries and
-interior queries use the merged affine motion; search time layers keep every
+reduction. `RejectedMergeSpanSampleIndex` is no longer recorded; a span without
+a shared exact partition still uses its original intervals. Cells use proven
+span boundaries, and interior queries use the merged affine motion; search
+time layers keep every
 supplied keyframe, exactly as for unmerged histories. Source
 interval model and coverage arrays remain indexed by the supplied history.
 Any query window touching a candidate span prepares its complete span so that
@@ -195,6 +198,13 @@ endpoints of each overlapping source interval. Reusing a source-checked cache
 extends this coverage without discarding earlier prepared entries. Exact point
 queries prepare that sample, or both bracketing samples and their interval.
 Single-sample static obstacles remain active at every time.
+
+Preparation version is now 14 because the prepared-record fields
+`IntervalMovingCellCount`, `IntervalMovingCellTiming_s`, and
+`RejectedMergeSpanSampleIndex` were removed. Saved version-13 preparations
+are rebuilt from source geometry instead of being reused or extended. Newly
+built preparations omit these fields; geometry, typed flags, and source
+matching are unchanged.
 
 `SamplePrepared` and `IntervalPrepared` distinguish cached entries from entries
 not yet requested. Unprepared neighboring intervals give a sample an infinite
