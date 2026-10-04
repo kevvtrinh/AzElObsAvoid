@@ -1,15 +1,15 @@
 function preparedMotion = createMotion(solverRequest, controlPoint_units, segmentTime_s, ...
-        suppliedPowerCoefficients_units, splitSegment, splitProgress)
+        suppliedPowerCoefficients_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   preparedMotion = bmtpEngine.motion.createMotion(solverRequest, controlPoint_units, segmentTime_s)
 %   preparedMotion = bmtpEngine.motion.createMotion(solverRequest, controlPoint_units, segmentTime_s, ...
-%       suppliedPowerCoefficients_units, splitSegment, splitProgress)
+%       suppliedPowerCoefficients_units)
 %**************************************************************************
 % PURPOSE
 %   - Turn proposed Bezier controls and segment times into one motion for
-%     later checks. Match the requested start and goal states, optionally split
-%     segments, and keep one polynomial for validation and output.
+%     later checks. Match the requested start and goal states and keep
+%     one polynomial for validation and output.
 %   - When arrival time can change, lengthen the segment times together if
 %     the curve needs more time to meet the motion-rate limits.
 %**************************************************************************
@@ -26,11 +26,6 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %       Position polynomial for each axis, ordered as constant, u, u^2,
 %       and so on, with segment fraction u from 0 to 1. A fully finite axis
 %       takes priority over converted controls; an axis with NaN uses them.
-%   - splitSegment (S-by-1 logical array, optional)
-%       True for each segment to split into two; defaults to no split.
-%       Separation refinement splits on demand in checkMotionWithSubdivision.
-%   - splitProgress (S-by-1 numeric array, optional)
-%       Where to split each selected segment, between 0 and 1; defaults to 0.5.
 %**************************************************************************
 % OUTPUTS
 %   - preparedMotion (scalar struct)
@@ -47,25 +42,18 @@ function preparedMotion = createMotion(solverRequest, controlPoint_units, segmen
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Set Endpoint States And Split The Input Curve
+%% Section 1: Set Endpoint States
 
 if nargin < 4
     suppliedPowerCoefficients_units = [];
 end
-if nargin < 5
-    splitSegment = false(size(controlPoint_units, 1), 1);
-end
-if nargin < 6
-    splitProgress = repmat(0.5, numel(splitSegment), 1);
-end
 
-% First make the controls match the requested start and goal states. Split
-% only selected segments and keep each piece's source for checks and reports.
+% First make the controls match the requested start and goal states.
+% Each prepared segment keeps its input row for checks and reports.
 controlPoint_units = bmtpEngine.motion.imposeEndpointControls(controlPoint_units, segmentTime_s, ...
     solverRequest.InitialState, solverRequest.GoalState);
-[controlPoint_units, segmentTime_s, suppliedPowerCoefficients_units, sourceSegmentIndex] = ...
-    bmtpEngine.motion.subdivideMotion(controlPoint_units, segmentTime_s, ...
-    suppliedPowerCoefficients_units, splitSegment, splitProgress);
+segmentTime_s      = segmentTime_s(:);
+sourceSegmentIndex = (1:size(controlPoint_units, 1)).';
 
 %% Section 2: Size Durations And Respect The Arrival Mode
 

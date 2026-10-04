@@ -217,7 +217,8 @@ function motionCheck = checkAllCurveObstaclePairs(controlPoint_units, regions_un
 
         % For a new curve segment, try the previous segment's directions
         % against every static region. Reposition and verify those lines
-        % against this curve before reusing any of them.
+        % against this curve before reusing any of them. Static regions have
+        % the same vertices at both ends of the interval.
         if obstaclesAreStatic && regionCount > 0 && segmentIndex > 1
             normalByEndpointAndRegion = reshape([previousSegmentPlanes.Normal], 2, 2, regionCount);
             startNormals             = reshape(normalByEndpointAndRegion(1, :, :), 2, regionCount).';
@@ -226,8 +227,11 @@ function motionCheck = checkAllCurveObstaclePairs(controlPoint_units, regions_un
                 [regionCount, 1], @min);
             offsetCells = num2cell(repmat(separationTarget_units - obstacleSideBounds_units, 1, 2), 2);
             [previousSegmentPlanes.Offset_units] = offsetCells{:};
-            previousSegmentPlanes = bmtpEngine.separation.verifyStaticSeparatingLines( ...
-                previousSegmentPlanes, segmentControlPoint_units, regions_units, ...
+            assert(numel(previousSegmentPlanes) == regionCount, ...
+                'bmtpEngine:InvalidPlaneBatch', ...
+                'Every static source region requires a plane.');
+            previousSegmentPlanes = bmtpEngine.separation.verifyMovingSeparatingLines( ...
+                previousSegmentPlanes, segmentControlPoint_units, regions_units, regions_units, ...
                 roundoffReserve_units, separationTarget_units);
             separationIsVerified = [previousSegmentPlanes.Verified];
             separatingPlanes(segmentIndex, :) = previousSegmentPlanes;

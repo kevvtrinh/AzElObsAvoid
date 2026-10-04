@@ -2,7 +2,7 @@ function tests = testPolynomialSubdivision
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testPolynomialSubdivision.m')
 % PURPOSE: Check that proof subdivision preserves the exported motion
-%   after endpoint/continuity repair, including unequal spans and nonmidpoint cuts.
+%   after endpoint/continuity repair, including unequal spans and selective cuts.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Independent validation and physical p/v/a/jerk preservation checks.
 % UNITS: Coordinate units and seconds.
@@ -57,7 +57,7 @@ function setupOnce(testCase)
     end
     testCase.TestData.Request = request;
     testCase.TestData.Motion = bmtpEngine.motion.createMotion( ...
-        request, controls_units, durations_s, [], false(3, 1));
+        request, controls_units, durations_s);
 end
 
 function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
@@ -95,18 +95,17 @@ function testPreparedCurveSurvivesSelectiveSubdivision(testCase)
         % The quintic export repairs this residual. Later proof must
         % preserve that repaired curve instead of projecting these controls again.
         if degree==5, controls_units(2,1,1)=controls_units(2,1,1)+1e-6; end
-        source = bmtpEngine.motion.createMotion(request, controls_units, durations_s, [], true(3, 1));
+        source = bmtpEngine.motion.createMotion(request, controls_units, durations_s);
         original=resultWithPreparedMotion(base,request,source,roundoffReserve_units,target_units);
         assertTrue(testCase,obstacleAvoidance.validateTrajectory(original).Passed);
         verifyTrue(testCase, all(isfinite(source.GivenPower_units), 'all'));
-        verifyEqual(testCase, source.SourceSegmentIndex, repelem((1:3).', 2));
+        verifyEqual(testCase, source.SourceSegmentIndex, (1:3).');
         changed = source;
-        splitFractions = [0.31; 0.5; 0.73];
         for refinementIndex = 1:3
             splitSegment = changed.SourceSegmentIndex ~= 2;
             [~, changed.SegmentTime_s, changed.GivenPower_units, parentSegmentIndex] = ...
                 bmtpEngine.motion.subdivideMotion(changed.ControlPoint_units, changed.SegmentTime_s, ...
-                changed.GivenPower_units, splitSegment, splitFractions(changed.SourceSegmentIndex));
+                changed.GivenPower_units, splitSegment);
             changed.SourceSegmentIndex = changed.SourceSegmentIndex(parentSegmentIndex);
             changed.ControlPoint_units = bmtpEngine.motion.powerToBernstein(changed.GivenPower_units);
         end
@@ -182,7 +181,7 @@ function testSuppliedZeroCoefficientsSurviveSubdivision(testCase)
     coefficients_units(1, :, 4) = [0.25, -0.2];
     controls_units = bmtpEngine.motion.powerToBernstein(coefficients_units);
     [splitControls_units, durations_s, splitCoefficients_units, parentSegmentIndex] = ...
-        bmtpEngine.motion.subdivideMotion(controls_units, 2, coefficients_units, true, 0.37);
+        bmtpEngine.motion.subdivideMotion(controls_units, 2, coefficients_units, true);
     verifyEqual(testCase, parentSegmentIndex, [1; 1]);
     verifyEqual(testCase, splitCoefficients_units(:, :, 5:end), zeros(2, 2, 5));
     polynomial = bmtpEngine.motion.createPowerPolynomial( ...
@@ -203,12 +202,11 @@ function testSuppliedZeroCoefficientsSurviveSubdivision(testCase)
     % converts its controls. Splitting must not manufacture coefficients.
     coefficients_units(1, 2, :) = NaN;
     [~, ~, splitCoefficients_units] = bmtpEngine.motion.subdivideMotion( ...
-        controls_units, 2, coefficients_units, true, 0.37);
+        controls_units, 2, coefficients_units, true);
     verifyTrue(testCase, all(isnan(splitCoefficients_units(:, 2, :)), 'all'));
 
     % A mask, duration list or coefficient array that does not match the
-    % segment count, or a split fraction outside (0, 1), is refused rather
-    % than silently dropping segments.
+    % segment count is refused rather than silently dropping segments.
     twoSegments_units = repmat(controls_units, 2, 1);
     verifyError(testCase, @() bmtpEngine.motion.subdivideMotion(twoSegments_units, [2; 2], [], false), ...
         'subdivideMotion:InvalidInput');
@@ -216,12 +214,8 @@ function testSuppliedZeroCoefficientsSurviveSubdivision(testCase)
         'subdivideMotion:InvalidInput');
     verifyError(testCase, @() bmtpEngine.motion.subdivideMotion(twoSegments_units, [2; 2], coefficients_units, [true; false]), ...
         'subdivideMotion:InvalidInput');
-    verifyError(testCase, @() bmtpEngine.motion.subdivideMotion(twoSegments_units, [2; 2], [], [true; false], [1; 0.5]), ...
-        'subdivideMotion:InvalidSplitProgress');
-    verifyError(testCase, @() bmtpEngine.motion.subdivideMotion(controls_units, 2, [], true, NaN), ...
-        'subdivideMotion:InvalidSplitProgress');
-    % A fraction that leaves one piece no time at all is refused too.
-    verifyError(testCase, @() bmtpEngine.motion.subdivideMotion(controls_units, realmin, [], true, realmin), ...
+    % Even a midpoint cut must leave each half with positive time.
+    verifyError(testCase, @() bmtpEngine.motion.subdivideMotion(controls_units, realmin * eps, [], true), ...
         'subdivideMotion:InvalidSplitProgress');
 end
 

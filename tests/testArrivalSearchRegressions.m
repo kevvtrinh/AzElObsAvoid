@@ -37,9 +37,13 @@ function testStaticSceneRetainsFreePointWait(testCase)
         'far static obstacle',0,{farBox_units(:,1)},{farBox_units(:,2)},0);
     nodes_units = [0,0;4,0];
     edgeCost_units = [0,4;4,0];
-    initial = struct('time_s',0,'position_units',nodes_units(1,:));
-    goal = struct('time_s',2,'position_units',nodes_units(2,:));
-    limits = struct('maxVelocity_units_s',[10,10]);
+    initial = struct('time_s',0,'position_units',nodes_units(1,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    goal = struct('time_s',2,'position_units',nodes_units(2,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    % Keep acceleration and jerk ramps below the search clock precision.
+    limits = struct('maxVelocity_units_s', [10,10], ...
+        'maxAcceleration_units_s2', [1e30, 1e30], 'maxJerk_units_s3', [1e60, 1e60]);
     options = struct('GoalTimeMode',"fixedArrival");
     [route_units,routeTime_s] = ...
         obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
@@ -162,9 +166,13 @@ function testFiniteLivedStaticObstacleDoesNotDowngradeAnotherWall(testCase)
     obstacles = obstacleAvoidance.obstacles.combineObstacles({wall;remote});
     nodes_units = [-1,0;2,0;0.1,1.5];
     edgeCost_units = hypot(nodes_units(:,1)-nodes_units(:,1).',nodes_units(:,2)-nodes_units(:,2).');
-    initial = struct('time_s',0,'position_units',nodes_units(1,:));
-    goal = struct('time_s',4,'position_units',nodes_units(2,:));
-    limits = struct('maxVelocity_units_s',[4,4]);
+    initial = struct('time_s',0,'position_units',nodes_units(1,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    goal = struct('time_s',4,'position_units',nodes_units(2,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    % Keep acceleration and jerk ramps below the search clock precision.
+    limits = struct('maxVelocity_units_s', [4,4], ...
+        'maxAcceleration_units_s2', [1e30, 1e30], 'maxJerk_units_s3', [1e60, 1e60]);
     [route_units,routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
         nodes_units,edgeCost_units,obstacles,initial,goal,limits,(0:0.5:4).', ...
         struct('GoalTimeMode',"earliestArrival"));
@@ -185,9 +193,13 @@ function testPartiallyActiveStaticObstacleIsCheckedOnItsSubInterval(testCase)
         {blocker_units(:,1);blocker_units(:,1)},{blocker_units(:,2);blocker_units(:,2)},0);
     nodes_units = [0,0;4,0];
     edgeCost_units = [0,4;4,0];
-    initial = struct('time_s',0,'position_units',nodes_units(1,:));
-    goal = struct('time_s',4,'position_units',nodes_units(2,:));
-    limits = struct('maxVelocity_units_s',[2,2]);
+    initial = struct('time_s',0,'position_units',nodes_units(1,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    goal = struct('time_s',4,'position_units',nodes_units(2,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    % Keep acceleration and jerk ramps below the search clock precision.
+    limits = struct('maxVelocity_units_s', [2,2], ...
+        'maxAcceleration_units_s2', [1e30, 1e30], 'maxJerk_units_s3', [1e60, 1e60]);
     [route_units,routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
         nodes_units,edgeCost_units,blocker,initial,goal,limits,(0:4).', ...
         struct('GoalTimeMode',"fixedArrival"));

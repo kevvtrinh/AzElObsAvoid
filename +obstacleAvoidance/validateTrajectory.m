@@ -661,10 +661,14 @@ function separationIsVerified = verifySeparationProof(result, positionPower_unit
     for segmentIndex = 1:size(reportedActivePairs, 1)
         if ~usesTimedRegions
             % For static regions, each line must separate the whole curve
-            % segment from its obstacle. Check all regions together.
-            checkedSeparatingLines = bmtpEngine.separation.verifyStaticSeparatingLines( ...
+            % segment from its obstacle. Check all regions together, using
+            % identical vertices at both ends of each static interval.
+            assert(numel(separationProof.Planes(segmentIndex, :)) == numel(regions_units), ...
+                'bmtpEngine:InvalidPlaneBatch', ...
+                'Every static source region requires a plane.');
+            checkedSeparatingLines = bmtpEngine.separation.verifyMovingSeparatingLines( ...
                 separationProof.Planes(segmentIndex, :), squeeze(controlPoint_units(segmentIndex, :, :)), ...
-                regions_units, roundoffReserve_units, requiredSeparation_units);
+                regions_units, regions_units, roundoffReserve_units, requiredSeparation_units);
             if ~all([checkedSeparatingLines.Verified])
                 separationIsVerified = false;
                 return

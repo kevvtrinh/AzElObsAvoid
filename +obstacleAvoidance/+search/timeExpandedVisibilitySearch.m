@@ -42,8 +42,7 @@ function [route_units, routeTime_s, timedSearchDetails] = timeExpandedVisibility
 %   - routeTime_s (N-by-1 numeric array)
 %       Time at each route point, or empty if the search finds no route.
 %   - timedSearchDetails (scalar struct)
-%       Search counts, the selected period when the goal stays clear, and
-%       an additional route allowing a later arrival within that period.
+%       Search counts and the selected period when the goal stays clear.
 %       GoalWindowPreviousLayerTime_s is the layer just before that period:
 %       waiting at the goal from that layer to the period start was not
 %       clear. It is NaN when the period starts at the first layer. It is not
@@ -62,35 +61,17 @@ layerTimes_s          = unique([initialState.time_s; sampleTimes_s(:); goalState
 layerTimes_s          = layerTimes_s(layerTimes_s >= initialState.time_s & layerTimes_s <= goalState.time_s);
 layerCount            = numel(layerTimes_s);
 nodeCount             = size(nodePosition_units, 1);
-initialPosition_units = nodePosition_units(1, :);
-goalPosition_units    = nodePosition_units(2, :);
-if isfield(initialState, 'position_units')
-    initialPosition_units = initialState.position_units;
-end
-if isfield(goalState, 'position_units')
-    goalPosition_units = goalState.position_units;
-end
-% Even without obstacles, distance / maximum speed limits how early the
-% vehicle can arrive. Use acceleration and jerk limits too when available.
-displacement_units       = abs(goalPosition_units - initialPosition_units);
-minimumDuration_s        = max(displacement_units ./ limits.maxVelocity_units_s);
+initialPosition_units = initialState.position_units;
+goalPosition_units    = goalState.position_units;
+% Even without obstacles, the endpoint motion limits bound the arrival time.
+minimumDuration_s        = obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
 minimumGoalArrivalTime_s = initialState.time_s + minimumDuration_s;
-
-endpointFieldNames           = {'position_units', 'velocity_units_s', 'acceleration_units_s2'};
-hasEndpointMotionValues      = all(isfield(initialState, endpointFieldNames)) && all(isfield(goalState, endpointFieldNames));
-hasAccelerationAndJerkLimits = all(isfield(limits, {'maxAcceleration_units_s2', 'maxJerk_units_s3'}));
-if hasEndpointMotionValues && hasAccelerationAndJerkLimits
-    minimumDuration_s        = obstacleAvoidance.input.minimumTravelTime(initialState, goalState, limits);
-    minimumGoalArrivalTime_s = initialState.time_s + minimumDuration_s;
-end
-% A fixed-arrival route gives BMTP a binding clock. If both endpoint motion
-% fields and limits are available, account for the time needed to leave or
-% reach rest. Earliest-arrival BMTP may scale the whole proposed clock.
-fixedClockHasMotionLimits = options.GoalTimeMode ~= "earliestArrival" && ...
-    hasEndpointMotionValues && hasAccelerationAndJerkLimits;
-startIsAtRest = fixedClockHasMotionLimits && ...
+% A fixed-arrival route gives BMTP a binding clock. Account for the time
+% needed to leave or reach rest. Earliest-arrival BMTP may scale that clock.
+usesFixedClock = options.GoalTimeMode ~= "earliestArrival";
+startIsAtRest = usesFixedClock && ...
     all(initialState.velocity_units_s == 0) && all(initialState.acceleration_units_s2 == 0);
-goalIsAtRest = fixedClockHasMotionLimits && ...
+goalIsAtRest = usesFixedClock && ...
     all(goalState.velocity_units_s == 0) && all(goalState.acceleration_units_s2 == 0);
 % Net displacement from a resting start has the same lower time bound on
 % every route to a node. It does not depend on which route the search keeps.
@@ -110,9 +91,7 @@ end
 % Allow for roundoff when comparing large absolute times.
 timeTolerance_s                = 256 * eps(max(1, max(abs(layerTimes_s))));
 goalLayerIsEligible            = layerTimes_s >= minimumGoalArrivalTime_s - timeTolerance_s;
-hasGoalVelocityAndAcceleration = all(isfield(goalState, ...
-    {'velocity_units_s', 'acceleration_units_s2'}));
-if options.GoalTimeMode == "fixedArrival" && hasGoalVelocityAndAcceleration && ...
+if options.GoalTimeMode == "fixedArrival" && ...
         any([goalState.velocity_units_s, goalState.acceleration_units_s2] ~= 0)
     % A goal with nonzero velocity or acceleration cannot be reached early
     % and held still. Require arrival at the specified goal time.
@@ -266,8 +245,8 @@ selectedGoalEdgeStartLayerIndex = 0;
 selectedGoalEdgeStartNodeIndex  = 0;
 selectedGoalArrivalLayerIndex   = 0;
 if isEarliestArrival
-    % Process possible arrivals in time order. Continue through the first
-    % reachable goal wait window when a later route in that window is needed.
+    % Process possible arrivals in time order. Keep the existing wait-window
+    % stopping rule to preserve search counts; no later route is returned.
     % Every move advances time, so the search cannot loop backward.
     % Edge-check columns: departure layer, source node, target node, last
     % allowed arrival layer, edge length, ordering index, last proven blocked layer.
@@ -299,19 +278,8 @@ end
 if isEarliestArrival
     firstGoalLayerIndex = find(nodeIsReachable(:, 2) & goalLayerIsEligible, 1, "first");
     goalLayerIndex      = firstGoalLayerIndex;
-    % Keep a later-arrival route within the same clear goal window to give
-    % BMTP more timing room. The selected earliest route remains separate.
-    waitRouteGoalLayerIndex = firstGoalLayerIndex;
-    if ~isempty(firstGoalLayerIndex)
-        waitRouteGoalLayerIndex = double(waitWindowEndLayerIndex(firstGoalLayerIndex, 2));
-        if waitRouteGoalLayerIndex == layerCount
-            waitRouteGoalLayerIndex = firstGoalLayerIndex;
-        end
-    end
     [route_units, routeTime_s] = reconstructTimedRoute( ...
         nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
-    [waitRoute_units, waitRouteTime_s] = reconstructTimedRoute( ...
-        nodePosition_units, layerTimes_s, parentLayerIndex, parentNodeIndex, waitRouteGoalLayerIndex, 2);
 else
     goalLayerIndex = zeros(0, 1);
     route_units    = zeros(0, 2);
@@ -328,8 +296,6 @@ else
         end
         goalLayerIndex = layerCount;
     end
-    waitRoute_units = route_units;
-    waitRouteTime_s = routeTime_s;
 end
 selectedGoalWindowStartTime_s = NaN;
 selectedGoalWindowEndTime_s   = NaN;
@@ -358,9 +324,7 @@ timedSearchDetails = struct( ...
     "SelectedGoalWindowStartTime_s", selectedGoalWindowStartTime_s, ...
     "SelectedGoalWindowEndTime_s",   selectedGoalWindowEndTime_s, ...
     "GoalWindowPreviousLayerTime_s", goalWindowPreviousLayerTime_s, ...
-    "MinimumGoalArrivalTime_s",      minimumGoalArrivalTime_s, ...
-    "WaitRoute_units",               waitRoute_units, ...
-    "WaitRouteTime_s",               waitRouteTime_s);
+    "MinimumGoalArrivalTime_s",      minimumGoalArrivalTime_s);
 
 %% Section 6: Search Steps And Shared Collision Checks
 
@@ -454,9 +418,9 @@ function applyPendingNodeArrivals(layerIndex)
 end
 
 function goalWaitWindowIsComplete = hasReachedGoalWaitWindowEnd(layerIndex)
-    % After the first eligible goal arrival, finish its clear wait window
-    % so a later-arrival route is available to BMTP. If the window already
-    % reaches the request deadline, the first arrival is enough.
+    % After the first eligible goal arrival, preserve the existing stopping
+    % rule and search counts. Extra layers affect counts and runtime only.
+    % If the clear window reaches the deadline, the first arrival is enough.
     goalWaitWindowIsComplete = false;
     firstGoalLayerIndex      = find( ...
         nodeIsReachable(1:layerIndex, 2) & goalLayerIsEligible(1:layerIndex), 1, "first");

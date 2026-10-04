@@ -57,7 +57,7 @@ for original in (project / 'trajectory/+bmtpEngine').rglob('*.m'):
         text = add_before_main_end(text, 'staticULessonTrace.RefinementResult = result;\nstaticULessonTrace.RefinementDiagnostics = diagnostics;')
     if name == '+motion/createMotion.m':
         anchor = '% First make the controls match'
-        text = text.replace(anchor, "global staticULessonTrace\npreparationRecord = struct('Controls_units', controlPoint_units, 'Times_s', segmentTime_s, ...\n    'Split', splitSegment, 'SplitProgress', splitProgress, 'GivenPower_units', suppliedPowerCoefficients_units);\n\n" + anchor, 1)
+        text = text.replace(anchor, "global staticULessonTrace\npreparationRecord = struct('Controls_units', controlPoint_units, 'Times_s', segmentTime_s, ...\n    'GivenPower_units', suppliedPowerCoefficients_units);\n\n" + anchor, 1)
         text = add_before_main_end(text, 'preparationRecord.Prepared = preparedMotion;\nstaticULessonTrace.Preparations{end + 1} = preparationRecord;')
     target = destination / relative
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -23,20 +23,23 @@ function setupOnce(~)
     addpath(root,fullfile(root,'trajectory'));
 end
 
-function testReachableFirstWindowAddsOnlyItsSafeGoalWait(testCase)
+function testReachableFirstWindowRetainsItsSafeGoalInterval(testCase)
     blocker=createGoalBlocker(4,3);
     nodes_units=[0,0;4,0];
     costs_units=[0,4;4,0];
-    initial=struct('time_s',0,'position_units',nodes_units(1,:));
-    goal=struct('time_s',10,'position_units',nodes_units(2,:));
-    limits=struct('maxVelocity_units_s',[4,4]);
+    initial=struct('time_s',0,'position_units',nodes_units(1,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    goal=struct('time_s',10,'position_units',nodes_units(2,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    limits=struct('maxVelocity_units_s', [4,4], ...
+        'maxAcceleration_units_s2', [1e30, 1e30], 'maxJerk_units_s3', [1e60, 1e60]);
     options=struct('GoalTimeMode',"earliestArrival");
     [route_units,routeTime_s,record]=obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
         nodes_units,costs_units,blocker,initial,goal,limits,(0:10).',options);
     verifyEqual(testCase,routeTime_s,[0;1]);
     verifyEqual(testCase,route_units,[0,0;4,0],'AbsTol',1e-12);
-    verifyEqual(testCase,record.WaitRouteTime_s,[0;1;2]);
-    verifyEqual(testCase,record.WaitRoute_units,[0,0;4,0;4,0],'AbsTol',1e-12);
+    verifyEqual(testCase,record.SelectedGoalWindowStartTime_s,0);
+    verifyEqual(testCase,record.SelectedGoalWindowEndTime_s,2);
     verifyLessThan(testCase,routeTime_s(end),goal.time_s);
 end
 
@@ -47,9 +50,12 @@ function testMissedFirstWindowWaitsAtNearestSafeNode(testCase)
     costs_units(1:4:end)=0;
     costs_units(1,3)=8; costs_units(3,1)=8;
     costs_units(2,3)=2; costs_units(3,2)=2;
-    initial=struct('time_s',0,'position_units',nodes_units(1,:));
-    goal=struct('time_s',10,'position_units',nodes_units(2,:));
-    limits=struct('maxVelocity_units_s',[8,8]);
+    initial=struct('time_s',0,'position_units',nodes_units(1,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    goal=struct('time_s',10,'position_units',nodes_units(2,:), ...
+        'velocity_units_s', [0, 0], 'acceleration_units_s2', [0, 0]);
+    limits=struct('maxVelocity_units_s', [8,8], ...
+        'maxAcceleration_units_s2', [1e30, 1e30], 'maxJerk_units_s3', [1e60, 1e60]);
     options=struct('GoalTimeMode',"earliestArrival");
     [route_units,routeTime_s]=obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
         nodes_units,costs_units,blocker,initial,goal,limits,(0:10).',options);
