@@ -94,6 +94,12 @@ if requestTimeIsInvalid
     error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
 end
 
+% Finite endpoint times can still overflow when subtracted, for example
+% -1e308 to 1e308 seconds. Reject that duration before planning begins.
+if ~isfinite(goalState.time_s - initialState.time_s)
+    error("planner:InvalidMotionDuration", "The requested motion duration must be finite.");
+end
+
 if ~isempty(goalState.targetMotion)
     goalState.position_units = targetPosition_units;
 end

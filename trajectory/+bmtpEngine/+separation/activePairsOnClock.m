@@ -31,13 +31,7 @@ function regionActiveBySegment = activePairsOnClock(segmentBoundaryTime_s, cover
 %   - Boundary and activity times are absolute seconds.
 %**************************************************************************
 
-%% Section 1: Check Inputs And Find Positive Shared Time
-
-validateattributes(segmentBoundaryTime_s, {'numeric'}, {'real', 'finite', 'column', 'nonempty'});
-validateattributes(coverage, {'struct'}, {'scalar'});
-validateattributes(regionCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
-assert(numel(segmentBoundaryTime_s) >= 2, 'bmtpEngine:InvalidSegmentClock', ...
-    'The segment clock must contain at least two boundaries.');
+%% Section 1: Find Positive Shared Time
 
 segmentCount = numel(segmentBoundaryTime_s) - 1;
 if ~isfield(coverage, 'ActiveTimeInterval_s')
@@ -46,8 +40,6 @@ if ~isfield(coverage, 'ActiveTimeInterval_s')
 end
 
 regionActiveIntervals_s = coverage.ActiveTimeInterval_s;
-validateattributes(regionActiveIntervals_s, {'numeric'}, ...
-    {'real', 'finite', 'size', [regionCount, 2]});
 % For each pair, the later start and earlier end delimit shared time.
 % The strict comparison excludes intervals that only touch at an endpoint.
 sharedStartTime_s = max(segmentBoundaryTime_s(1:end - 1), regionActiveIntervals_s(:, 1).');

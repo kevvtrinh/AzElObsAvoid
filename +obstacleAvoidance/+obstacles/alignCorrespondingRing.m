@@ -18,17 +18,13 @@ function alignedNextVertices_units = alignCorrespondingRing(referenceVertices_un
 % OUTPUTS
 %   - alignedNextVertices_units (N-by-2 numeric array)
 %       Next sample with only its starting vertex and boundary direction changed.
-%       Invalid input throws an error.
 %**************************************************************************
 % UNITS
 %   - Both boundary samples use the same coordinate units.
 %**************************************************************************
 
-%% Section 1: Check The Two Boundary Samples
+%% Section 1: Reuse An Identical Boundary Sample
 
-validateattributes(referenceVertices_units, {'numeric'}, {'real', 'finite', 'ncols', 2});
-validateattributes(nextVertices_units, {'numeric'}, {'real', 'finite', 'size', size(referenceVertices_units)});
-assert(size(referenceVertices_units, 1) >= 3, 'alignCorrespondingRing:InvalidRing', 'A ring needs three vertices.');
 alignedNextVertices_units = nextVertices_units;
 if isequal(referenceVertices_units, nextVertices_units)
     return

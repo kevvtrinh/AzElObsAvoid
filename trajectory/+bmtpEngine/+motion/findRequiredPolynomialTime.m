@@ -31,23 +31,11 @@ function requiredTime_s = findRequiredPolynomialTime(positionPower_units, segmen
 %     and jerk limits use units/s, units/s^2, and units/s^3.
 %**************************************************************************
 
-%% Section 1: Check Polynomial, Durations, And Limits
+%% Section 1: Read Segment Count And Motion Limits
 
-validateattributes(positionPower_units, {'numeric'}, {'nonempty', 'real', 'finite'}, ...
-    mfilename, 'positionPower_units');
-segmentCount = size(positionPower_units, 1);
-assert(size(positionPower_units, 2) == 2, 'findRequiredPolynomialTime:InvalidPositionPower', ...
-    'Position coefficients must have two axes in the second dimension.');
-validateattributes(segmentTime_s, {'numeric'}, ...
-    {'column', 'numel', segmentCount, 'real', 'finite', 'positive'}, mfilename, 'segmentTime_s');
-requiredLimitFields = {'maxVelocity_units_s', 'maxAcceleration_units_s2', 'maxJerk_units_s3'};
-assert(isstruct(limits) && isscalar(limits) && all(isfield(limits, requiredLimitFields)), ...
-    'findRequiredPolynomialTime:InvalidLimits', ...
-    'Limits must provide per-axis maximum velocity, acceleration, and jerk.');
+segmentCount     = size(positionPower_units, 1);
 motionRateLimits = [limits.maxVelocity_units_s; ...
     limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-validateattributes(motionRateLimits, {'numeric'}, ...
-    {'size', [3, 2], 'real', 'finite', 'positive'}, mfilename, 'limits');
 
 %% Section 2: Size Each Segment From Its Exact Polynomial Peaks
 

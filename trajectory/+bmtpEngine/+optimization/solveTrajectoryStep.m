@@ -28,11 +28,17 @@ function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajec
 %       ConstraintBase (matching saved constraints or struct()). A fixed
 %       clock also requires SegmentTime_s (S-by-1 positive physical times)
 %       and empty MaximumMotionDuration_s and SegmentRatio.
+%       physicalClock ignores MinimumMotionDuration_s. A variable
+%       physicalClock requires rest endpoints and whole-segment planes
+%       (TimeFraction [0, 1]). scaledClock requires
+%       IntrinsicVariationEnabled = false.
 %**************************************************************************
 % OUTPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Solved control points, or an empty array on expected solve failure.
-%       Invalid input throws an error.
+%       Fixed segment times outside 1e-9 to 1e9 s throw an error. The
+%       engine's four callers build the other step-record fields; those
+%       fields are not rechecked here.
 %   - segmentTime_s (numeric scalar or S-element numeric array)
 %       Segment durations. A fixed clock returns the supplied SegmentTime_s;
 %       a variable scaledClock step with [] SegmentRatio returns one common
@@ -49,14 +55,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, solverOutput, savedTrajec
 %   - Position is coordinate units and time is seconds.
 %**************************************************************************
 
-%% Section 1: Validate Inputs And Resolve The Formulation
+%% Section 1: Resolve The Formulation
 
-validateattributes(trajectoryStep, {'struct'}, {'scalar'});
-requiredStepFields = ["Formulation", "SegmentCount", "Planes", "RoundoffReserve_units", ...
-    "MaximumMotionDuration_s", "MinimumMotionDuration_s", "SegmentRatio", "FixedClock", ...
-    "IntrinsicVariationEnabled", "ConstraintBase"];
-assert(all(isfield(trajectoryStep, requiredStepFields)), 'bmtpEngine:InvalidStep', ...
-    'A trajectory step declares every one of: %s.', strjoin(requiredStepFields, ', '));
 formulationName             = string(trajectoryStep.Formulation);
 segmentCount                = trajectoryStep.SegmentCount;
 separatingPlanes            = trajectoryStep.Planes;
@@ -68,51 +68,15 @@ hasFixedSegmentTimes        = trajectoryStep.FixedClock;
 allowJerkVariationObjective = trajectoryStep.IntrinsicVariationEnabled;
 savedTrajectoryConstraints  = trajectoryStep.ConstraintBase;
 
-assert(isscalar(formulationName) && any(formulationName == ["physicalClock", "scaledClock"]), ...
-    'bmtpEngine:InvalidStep', 'Formulation must be physicalClock or scaledClock.');
-validateattributes(segmentCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-validateattributes(separatingPlanes, {'struct'}, {'2d'});
-assert(size(separatingPlanes, 1) == segmentCount && isfield(separatingPlanes, 'Active'), ...
-    'bmtpEngine:InvalidStep', 'Planes must have SegmentCount rows and an Active field.');
-validateattributes(roundoffReserve_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
-validateattributes(hasFixedSegmentTimes, {'logical'}, {'scalar'});
-validateattributes(allowJerkVariationObjective, {'logical'}, {'scalar'});
-validateattributes(savedTrajectoryConstraints, {'struct'}, {'scalar'});
 formulation = resolveFormulation(formulationName, solverRequest, hasFixedSegmentTimes);
-assert(formulation.AllowJerkVariation || ~allowJerkVariationObjective, ...
-    'bmtpEngine:InvalidStep', 'scaledClock cannot enable intrinsic jerk variation.');
 if hasFixedSegmentTimes
-    assert(isfield(trajectoryStep, 'SegmentTime_s'), 'bmtpEngine:InvalidStep', ...
-        'A fixed clock requires SegmentTime_s.');
-    assert(isempty(maximumMotionDuration_s) && isempty(segmentTimeRatios), ...
-        'bmtpEngine:InvalidStep', ...
-        'A fixed clock requires empty MaximumMotionDuration_s and SegmentRatio.');
-    validateattributes(minimumMotionDuration_s, {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'nonnegative'});
-    assert(minimumMotionDuration_s == 0, 'bmtpEngine:InvalidStep', ...
-        'A fixed clock requires MinimumMotionDuration_s = 0.');
-    segmentTimeRatios = trajectoryStep.SegmentTime_s;
-    validateattributes(segmentTimeRatios, {'numeric'}, ...
-        {'real', 'finite', 'positive', 'size', [segmentCount, 1]});
+    segmentTimeRatios        = trajectoryStep.SegmentTime_s;
     returnsCommonSegmentTime = false;
 else
-    if formulation.ScaleTimePowers
-        validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
-    else
-        validateattributes(maximumMotionDuration_s, {'numeric'}, {'real', 'scalar', 'positive'});
-    end
-    validateattributes(minimumMotionDuration_s, {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'nonnegative', '<=', maximumMotionDuration_s});
-    assert(formulation.AllowMinimumDuration || minimumMotionDuration_s == 0, ...
-        'bmtpEngine:InvalidStep', 'physicalClock requires MinimumMotionDuration_s = 0.');
     returnsCommonSegmentTime = isempty(segmentTimeRatios);
-    assert(~returnsCommonSegmentTime || formulation.AllowCommonSegmentTime, ...
-        'bmtpEngine:InvalidStep', 'Only scaledClock accepts an empty SegmentRatio.');
     if returnsCommonSegmentTime
         segmentTimeRatios = ones(segmentCount, 1);
     end
-    validateattributes(segmentTimeRatios, {'numeric'}, ...
-        {'real', 'finite', 'positive', 'numel', segmentCount});
 end
 if formulation.ScaleTimePowers
     % The scaled formulation always used a column of doubles.
@@ -129,17 +93,8 @@ controlVariableCount   = segmentCount * (degree + 1) * 2;
 originalPlaneCount     = nnz([separatingPlanes.Active]);
 hasPartialSegmentLines = false;
 if ~isempty(separatingPlanes)
-    lineTimeFractions = reshape([separatingPlanes.TimeFraction], 2, []).';
-    validateattributes(lineTimeFractions, {'numeric'}, ...
-        {'real', 'finite', 'ncols', 2, '>=', 0, '<=', 1});
-    assert(all(lineTimeFractions(:, 1) < lineTimeFractions(:, 2)), ...
-        'bmtpEngine:InvalidPlaneTimeScope', ...
-        'Every plane time scope must have positive duration.');
+    lineTimeFractions      = reshape([separatingPlanes.TimeFraction], 2, []).';
     hasPartialSegmentLines = any(lineTimeFractions ~= [0, 1], 'all');
-    assert(hasFixedSegmentTimes || ~hasPartialSegmentLines || ...
-        formulation.AllowPartialScopesWithVariableClock, ...
-        'bmtpEngine:InvalidPlaneTimeScope', ...
-        'Partial plane time scopes require a fixed trajectory clock.');
 end
 % A line that applies from 2 to 3 s cannot replace one that applies from
 % 5 to 6 s. Remove redundant lines only when they cover whole segments.
@@ -155,14 +110,6 @@ useJerkVariationObjective = allowJerkVariationObjective && hasFixedSegmentTimes 
     degree == 5 && segmentCount > 8;
 start_units         = initialState.position_units;
 goal_units          = goalState.position_units;
-if formulation.PinEndpointControls
-    endpointMotionRates = [initialState.velocity_units_s, initialState.acceleration_units_s2, ...
-        goalState.velocity_units_s, goalState.acceleration_units_s2];
-    % Nonzero endpoint rates require an actual fixed duration.
-    assert(hasFixedSegmentTimes || all(endpointMotionRates == 0), ...
-        'bmtpEngine:NonrestRelaxedClock', ...
-        'Nonzero boundary states require physical fixed durations.');
-end
 
 %% Section 2: Build Endpoint, Join, And Motion-Limit Constraints
 
@@ -577,13 +524,10 @@ function formulation = resolveFormulation(formulationName, solverRequest, hasFix
             'ViolationReserveFactor',              2, ...
             'MaximumFullyLoadedPairCount',         Inf, ...
             'KeepLastUsableIterate',               false, ...
-            'AllowPartialScopesWithVariableClock', false, ...
             'ReserveEdgeBoundsAtVariableClock',    true, ...
-            'IncludeTimePowerConesAtFixedClock',   false, ...
-            'AllowMinimumDuration',                false, ...
-            'AllowCommonSegmentTime',              false, ...
-            'AllowJerkVariation',                  true);
+            'IncludeTimePowerConesAtFixedClock',   false);
     else
+        % Callers pass one of the two literal names, so this is scaledClock.
         % Scaled time powers stay near one with the tested default tolerances.
         % Large variable-clock line sets are loaded as needed; partial scopes
         % and a lower arrival bound are allowed. Retain the last usable iterate.
@@ -598,12 +542,8 @@ function formulation = resolveFormulation(formulationName, solverRequest, hasFix
             'ViolationReserveFactor',              1, ...
             'MaximumFullyLoadedPairCount',         2048, ...
             'KeepLastUsableIterate',               true, ...
-            'AllowPartialScopesWithVariableClock', true, ...
             'ReserveEdgeBoundsAtVariableClock',    false, ...
-            'IncludeTimePowerConesAtFixedClock',   true, ...
-            'AllowMinimumDuration',                true, ...
-            'AllowCommonSegmentTime',              true, ...
-            'AllowJerkVariation',                  false);
+            'IncludeTimePowerConesAtFixedClock',   true);
     end
 end
 

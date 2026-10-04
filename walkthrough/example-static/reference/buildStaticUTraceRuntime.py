@@ -28,7 +28,7 @@ for original in (project / 'trajectory/+bmtpEngine').rglob('*.m'):
         anchor = 'requiredSeparation_units = maximumNormalLength * options.CollisionClearanceTolerance_units + roundoffReserve_units;'
         text = text.replace(anchor, anchor + '\nstaticULessonTrace.SeparationTarget_units = requiredSeparation_units;\nstaticULessonTrace.RoundoffReserve_units = roundoffReserve_units;')
     if name == '+optimization/solveTrajectoryStep.m':
-        anchor = 'validateattributes(trajectoryStep,'
+        anchor = 'formulationName             = string(trajectoryStep.Formulation);'
         text = text.replace(anchor, "global staticULessonTrace\nstepRecord = struct('Input', trajectoryStep, 'Rounds', {cell(0, 1)});\n" + anchor, 1)
         anchor = '    solveCount = solveCount + 1;'
         text = text.replace(anchor, "    stepRecord.Rounds{end + 1} = struct('Problem', solverProblem, ...\n        'Values', attemptedSolverValues, 'ExitFlag', attemptedExitFlag);\n" + anchor)
