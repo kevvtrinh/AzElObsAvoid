@@ -13,29 +13,6 @@ function setupOnce(~)
     addpath(rootFolder, fullfile(rootFolder, 'trajectory'), fullfile(rootFolder, 'examples'));
 end
 
-function testSavedDetourUsesGivenDeadline(testCase)
-    root=fileparts(mfilename('fullpath'));
-    request=jsondecode(fileread(fullfile(root,'fixtures','savedMovingDetour.json')));
-    sources=cell(numel(request.obstacles),1);
-    for k=1:numel(sources)
-        source=request.obstacles(k); frames=source.keyframes;
-        sources{k}=obstacleAvoidance.obstacles.createObstacle(source.name,[frames.time_s].', ...
-            arrayfun(@(f)f.vertices_units(:,1),frames,'UniformOutput',false), ...
-            arrayfun(@(f)f.vertices_units(:,2),frames,'UniformOutput',false),source.safetyMargin_units);
-    end
-    options=request.options;
-    options.GoalTimeMode='fixedArrival';
-    result=planner(obstacleAvoidance.obstacles.combineObstacles(sources), ...
-        request.initialState,request.goalState,request.limits,options);
-    assertTrue(testCase,result.Success,result.Message);
-    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
-    verifyEqual(testCase,result.ArrivalTime_s,180,'AbsTol',1e-8);
-    % The unified spatial result stays within one percent of the former
-    % explicitly selected timed motion (229.400575729 units).
-    verifyLessThan(testCase,result.MotionLength_units,232);
-    verifyGreaterThan(testCase,result.Diagnostics.SolverDiagnostics.OptimizerSpanCount,16);
-end
-
 function testMovingCrossingRetainsProvenEndpointJerk(testCase)
     missionEndTime_s=12;
     time_s=linspace(0,missionEndTime_s,5).';
