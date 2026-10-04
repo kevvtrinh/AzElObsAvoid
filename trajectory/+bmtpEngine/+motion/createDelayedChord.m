@@ -72,10 +72,7 @@ progressSlopeControls     = bmtpEngine.motion.powerToBernstein(progressSlopeCoef
 minimumProgressSlope      = min(progressSlopeControls, [], 1).';
 maximumProgressSlope      = max(progressSlopeControls, [], 1).';
 
-endRegions_units = {};
-if isfield(solverRequest.Coverage, 'EndRegions_units')
-    endRegions_units = solverRequest.Coverage.EndRegions_units;
-end
+endRegions_units = solverRequest.Coverage.EndRegions_units;
 [~, roundoffReserve_units] = bmtpEngine.validation.createCoordinateTolerances(start_units, ...
     solverRequest.GoalState.position_units, solverRequest.Limits.xInterval_units, ...
     solverRequest.Limits.yInterval_units, solverRequest.Regions_units, endRegions_units);
@@ -93,12 +90,8 @@ clearanceProgressFraction        = requiredClearance_units * sum(abs(displacemen
 %% Section 2: Find Departure Delays Blocked By Each Moving Region
 
 for regionIndex = 1:numel(solverRequest.Regions_units)
-    % A timed region matters only during its active interval. Otherwise
-    % inspect the full requested motion horizon.
-    activeInterval_s = solverRequest.InitialState.time_s + [0, solverRequest.MotionHorizon_s];
-    if isfield(solverRequest.Coverage, 'ActiveTimeInterval_s')
-        activeInterval_s = solverRequest.Coverage.ActiveTimeInterval_s(regionIndex, :);
-    end
+    % A timed region matters only during its active interval.
+    activeInterval_s = solverRequest.Coverage.ActiveTimeInterval_s(regionIndex, :);
     regionVertices_units = bmtpEngine.separation.regionOnInterval( ...
         solverRequest.Regions_units{regionIndex}, solverRequest.Coverage, regionIndex, activeInterval_s);
 
