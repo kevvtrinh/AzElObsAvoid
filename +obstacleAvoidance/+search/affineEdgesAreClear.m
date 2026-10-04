@@ -52,14 +52,16 @@ if segmentCount == 0 || isempty(movingCellLookup.Cells.Regions_units)
     return
 end
 
-%% Section 2: Check One Segment Without Building Region Groups
+%% Section 2: Check One Segment Directly Or Group Segments By Region
 
-% With one segment, check its candidate regions in index order and stop at
-% the first one it touches. This gives the same result as Section 3 without
-% building the arrays that group several segments by region.
 if segmentCount == 1
-    candidateRegionIndices = selectCandidateRegions( ...
+    candidateRegionIndices = selectCandidateRegionsBatch( ...
         startNodeIndices, endNodeIndices, startTime_s, endTime_s, movingCellLookup);
+    if isempty(candidateRegionIndices)
+        return
+    end
+    % One segment needs no groups: check regions in index order and stop
+    % at its first touch.
     for regionIndex = reshape(sort(candidateRegionIndices), 1, [])
         [touchesRegion, collisionTime_s] = checkSegmentsAgainstRegion( ...
             segmentStart_units, segmentEnd_units, startTime_s, endTime_s, ...
@@ -74,36 +76,18 @@ if segmentCount == 1
     return
 end
 
-%% Section 3: Group Several Segments By Region And Check Them Together
-
 % Collect every surviving segment/region pair, keeping both indices.
-if movingCellLookup.IsPrecomputed
-    % Gather saved node-pair lists once and filter all segments together.
-    [candidateRegionIndices, candidateSegmentIndices] = selectCandidateRegionsBatch( ...
-        startNodeIndices, endNodeIndices, startTime_s, endTime_s, movingCellLookup);
-else
-    regionIndicesBySegment = cell(segmentCount, 1);
-    segmentIndexBlocks     = cell(segmentCount, 1);
-    for segmentIndex = 1:segmentCount
-        regionIndicesBySegment{segmentIndex} = selectCandidateRegions( ...
-            startNodeIndices(segmentIndex), endNodeIndices(segmentIndex), ...
-            startTime_s, endTime_s, movingCellLookup);
-        segmentIndexBlocks{segmentIndex} = repmat(segmentIndex, ...
-            numel(regionIndicesBySegment{segmentIndex}), 1);
-    end
-    candidateRegionIndices  = vertcat(regionIndicesBySegment{:});
-    candidateSegmentIndices = vertcat(segmentIndexBlocks{:});
-end
+[candidateRegionIndices, candidateSegmentIndices] = selectCandidateRegionsBatch( ...
+    startNodeIndices, endNodeIndices, startTime_s, endTime_s, movingCellLookup);
 if isempty(candidateRegionIndices)
     return
 end
-
-% Check regions in index order so each segment keeps its first blocking
-% region. A segment already blocked is not checked again.
 [candidateRegionIndices, regionSortOrder] = sort(candidateRegionIndices);
 candidateSegmentIndices = candidateSegmentIndices(regionSortOrder);
 regionGroupStarts       = [1; 1 + find(diff(candidateRegionIndices) ~= 0)];
 regionGroupEnds         = [regionGroupStarts(2:end) - 1; numel(candidateRegionIndices)];
+% Check regions in index order so each segment keeps its first blocking
+% region. A segment already blocked is not checked again.
 for regionGroupIndex = 1:numel(regionGroupStarts)
     if ~any(isClear)
         break
@@ -125,109 +109,107 @@ for regionGroupIndex = 1:numel(regionGroupStarts)
 end
 end
 
-%% Section 4: Local Functions
-
-function regionIndices = selectCandidateRegions( ...
-        startNodeIndex, endNodeIndex, startTime_s, endTime_s, movingCellLookup)
-    % Read the node pair's candidate regions, then keep those this travel
-    % can meet. The saved box entry/exit fractions show where the segment
-    % can meet a region; keep the pair only when those fractions also
-    % overlap the region's active times. Passing this quick check still
-    % needs the full moving-boundary check.
-    if movingCellLookup.IsPrecomputed
-        pairIndex          = startNodeIndex + movingCellLookup.NodeCount * (endNodeIndex - 1);
-        regionIndices      = movingCellLookup.CellIndices{pairIndex};
-        boxEntryFractions  = movingCellLookup.QEnter{pairIndex};
-        boxExitFractions   = movingCellLookup.QExit{pairIndex};
-        activeStartTimes_s = movingCellLookup.ActiveStart_s{pairIndex};
-        activeEndTimes_s   = movingCellLookup.ActiveEnd_s{pairIndex};
-    else
-        % Large searches calculate the same entry on demand to limit memory use.
-        [regionIndices, boxEntryFractions, boxExitFractions, activeStartTimes_s, activeEndTimes_s] = ...
-            obstacleAvoidance.search.computePairCellEntry( ...
-            movingCellLookup.NodePosition_units(startNodeIndex, :), ...
-            movingCellLookup.NodePosition_units(endNodeIndex, :), ...
-            movingCellLookup.CellLower_units, movingCellLookup.CellUpper_units, ...
-            movingCellLookup.ActiveIntervals_s);
-    end
-    if isempty(regionIndices)
-        return
-    end
-
-    % Entries are ordered by start time. Ignore regions that start after
-    % travel ends, then remove those that stop before travel begins.
-    lastStartedRegionOffset = obstacleAvoidance.search.sortedUpperBound(activeStartTimes_s, endTime_s);
-    candidateCacheIndices   = (1:lastStartedRegionOffset).';
-    candidateCacheIndices   = candidateCacheIndices(activeEndTimes_s(candidateCacheIndices) >= startTime_s);
-    regionIndices           = regionIndices(candidateCacheIndices);
-    if isempty(regionIndices)
-        return
-    end
-    activeIntervals_s   = movingCellLookup.Cells.ActiveTimeInterval_s(regionIndices, :);
-    overlapStart_s      = max(startTime_s, activeIntervals_s(:, 1));
-    overlapEnd_s        = min(endTime_s, activeIntervals_s(:, 2));
-    traversalDuration_s = endTime_s - startTime_s;
-    if traversalDuration_s > 0
-        % Convert time-rounding uncertainty to a path fraction. Widen the
-        % quick check so rounding cannot discard a possible collision.
-        absoluteTimeScale_s = max([ ...
-            repmat(max(abs([startTime_s, endTime_s])), numel(regionIndices), 1), ...
-            abs(activeIntervals_s)], [], 2);
-        timeRoundingFraction = 512 * eps(max(1, absoluteTimeScale_s)) / traversalDuration_s;
-        timeRoundingFraction(~isfinite(timeRoundingFraction)) = Inf;
-        overlapStartFractions = (overlapStart_s - startTime_s) / traversalDuration_s - timeRoundingFraction;
-        overlapEndFractions   = (overlapEnd_s - startTime_s) / traversalDuration_s + timeRoundingFraction;
-    else
-        overlapStartFractions = zeros(size(overlapStart_s));
-        overlapEndFractions   = zeros(size(overlapEnd_s));
-    end
-    pathCouldMeetRegion = overlapStart_s <= overlapEnd_s & ...
-        boxExitFractions(candidateCacheIndices) >= overlapStartFractions & ...
-        boxEntryFractions(candidateCacheIndices) <= overlapEndFractions;
-    regionIndices = regionIndices(pathCouldMeetRegion);
-end
+%% Section 3: Local Functions
 
 function [regionIndices, segmentIndices] = selectCandidateRegionsBatch( ...
         startNodeIndices, endNodeIndices, startTime_s, endTime_s, movingCellLookup)
-    % Apply the single-segment filters to all stored node-pair lists together.
+    % Read each segment's candidate regions and keep those this travel can
+    % meet. The box entry/exit fractions show where the segment can meet a region;
+    % keep the pair only when they also overlap the region's active times.
+    % Passing this quick check still needs the full moving-boundary check.
     % Keep segment order and each list's order so grouping by region receives
-    % the same pairs in the same order as the per-segment loop.
+    % the same pairs whether the lists are saved or calculated on demand.
     segmentCount = numel(startNodeIndices);
-    pairIndices  = startNodeIndices(:) + movingCellLookup.NodeCount * (endNodeIndices(:) - 1);
-    regionLists  = movingCellLookup.CellIndices(pairIndices);
-    entryLists   = movingCellLookup.QEnter(pairIndices);
-    exitLists    = movingCellLookup.QExit(pairIndices);
-    startLists   = movingCellLookup.ActiveStart_s(pairIndices);
-    endLists     = movingCellLookup.ActiveEnd_s(pairIndices);
-    entryCounts  = cellfun(@numel, regionLists);
-    segmentIndices     = repelem((1:segmentCount).', entryCounts(:));
-    regionIndices      = vertcat(regionLists{:});
-    boxEntryFractions  = vertcat(entryLists{:});
-    boxExitFractions   = vertcat(exitLists{:});
-    activeStartTimes_s = vertcat(startLists{:});
-    activeEndTimes_s   = vertcat(endLists{:});
+    if segmentCount == 1
+        if movingCellLookup.IsPrecomputed
+            pairIndex         = startNodeIndices + movingCellLookup.NodeCount * (endNodeIndices - 1);
+            regionIndices     = movingCellLookup.CellIndices{pairIndex};
+            boxEntryFractions = movingCellLookup.QEnter{pairIndex};
+            boxExitFractions  = movingCellLookup.QExit{pairIndex};
+        else
+            [regionIndices, boxEntryFractions, boxExitFractions] = ...
+                obstacleAvoidance.search.computePairCellEntry( ...
+                movingCellLookup.NodePosition_units(startNodeIndices, :), ...
+                movingCellLookup.NodePosition_units(endNodeIndices, :), ...
+                movingCellLookup.CellLower_units, movingCellLookup.CellUpper_units, ...
+                movingCellLookup.ActiveIntervals_s);
+        end
+    elseif movingCellLookup.IsPrecomputed
+        pairIndices = startNodeIndices(:) + movingCellLookup.NodeCount * (endNodeIndices(:) - 1);
+        regionLists       = movingCellLookup.CellIndices(pairIndices);
+        regionIndices     = vertcat(regionLists{:});
+        boxEntryFractions = vertcat(movingCellLookup.QEnter{pairIndices});
+        boxExitFractions  = vertcat(movingCellLookup.QExit{pairIndices});
+    else
+        % Large searches calculate the same entries without storing every pair.
+        regionLists = cell(segmentCount, 1);
+        entryLists  = cell(segmentCount, 1);
+        exitLists   = cell(segmentCount, 1);
+        for segmentIndex = 1:segmentCount
+            [regionLists{segmentIndex}, entryLists{segmentIndex}, exitLists{segmentIndex}] = ...
+                obstacleAvoidance.search.computePairCellEntry( ...
+                movingCellLookup.NodePosition_units(startNodeIndices(segmentIndex), :), ...
+                movingCellLookup.NodePosition_units(endNodeIndices(segmentIndex), :), ...
+                movingCellLookup.CellLower_units, movingCellLookup.CellUpper_units, ...
+                movingCellLookup.ActiveIntervals_s);
+        end
+        regionIndices     = vertcat(regionLists{:});
+        boxEntryFractions = vertcat(entryLists{:});
+        boxExitFractions  = vertcat(exitLists{:});
+    end
     if isempty(regionIndices)
-        regionIndices  = zeros(0, 1);
-        segmentIndices = zeros(0, 1);
+        if nargout > 1
+            regionIndices  = zeros(0, 1);
+            segmentIndices = zeros(0, 1);
+        end
         return
     end
-    % Saved lists are ordered by start time. This comparison keeps exactly
-    % the entries before the single-segment path's sorted cut-off.
-    keep = activeStartTimes_s <= endTime_s & activeEndTimes_s >= startTime_s;
+    useSavedScalarList = segmentCount == 1 && movingCellLookup.IsPrecomputed;
+    if useSavedScalarList
+        % Saved lists have ascending starts, with NaNs last. Search only
+        % those starts to skip the late regions without gathering them.
+        % The <= test includes ties at travel end and excludes NaN starts.
+        cellActiveIntervals_s = movingCellLookup.Cells.ActiveTimeInterval_s;
+        lastMatchingIndex  = 0;
+        lastCandidateIndex = numel(regionIndices);
+        while lastMatchingIndex < lastCandidateIndex
+            % Round up so the two bounds can meet without repeating a probe.
+            middleIndex = ceil((lastMatchingIndex + lastCandidateIndex) / 2);
+            if cellActiveIntervals_s(regionIndices(middleIndex), 1) <= endTime_s
+                lastMatchingIndex = middleIndex;
+            else
+                lastCandidateIndex = middleIndex - 1;
+            end
+        end
+        keep = (1:lastMatchingIndex).';
+        keep = keep(cellActiveIntervals_s(regionIndices(keep), 2) >= startTime_s);
+    else
+        % Without a saved scalar list, test every candidate row.
+        % NaN comparisons are false: unknown start/end times stay excluded.
+        activeIntervals_s = movingCellLookup.Cells.ActiveTimeInterval_s(regionIndices, :);
+        keep              = activeIntervals_s(:, 1) <= endTime_s & activeIntervals_s(:, 2) >= startTime_s;
+    end
     regionIndices     = regionIndices(keep);
-    segmentIndices    = segmentIndices(keep);
-    boxEntryFractions = boxEntryFractions(keep);
-    boxExitFractions  = boxExitFractions(keep);
     if isempty(regionIndices)
+        if nargout > 1
+            segmentIndices = zeros(0, 1);
+        end
         return
     end
-    activeIntervals_s   = movingCellLookup.Cells.ActiveTimeInterval_s(regionIndices, :);
+
+    boxEntryFractions   = boxEntryFractions(keep);
+    boxExitFractions    = boxExitFractions(keep);
+    if useSavedScalarList
+        activeIntervals_s = cellActiveIntervals_s(regionIndices, :);
+    else
+        activeIntervals_s = activeIntervals_s(keep, :);
+    end
     overlapStart_s      = max(startTime_s, activeIntervals_s(:, 1));
     overlapEnd_s        = min(endTime_s, activeIntervals_s(:, 2));
     traversalDuration_s = endTime_s - startTime_s;
     if traversalDuration_s > 0
-        % Widen the quick time check by the same rounding allowance used
-        % for one segment, so it cannot discard a possible collision.
+        % Convert time-rounding uncertainty to a path fraction and widen the
+        % quick check so rounding cannot discard a possible collision.
         absoluteTimeScale_s = max([ ...
             repmat(max(abs([startTime_s, endTime_s])), numel(regionIndices), 1), ...
             abs(activeIntervals_s)], [], 2);
@@ -242,7 +224,19 @@ function [regionIndices, segmentIndices] = selectCandidateRegionsBatch( ...
     pathCouldMeetRegion = overlapStart_s <= overlapEnd_s & ...
         boxExitFractions >= overlapStartFractions & ...
         boxEntryFractions <= overlapEndFractions;
-    regionIndices  = regionIndices(pathCouldMeetRegion);
+    regionIndices = regionIndices(pathCouldMeetRegion);
+    if nargout < 2
+        return
+    end
+    if isempty(regionIndices)
+        segmentIndices = zeros(0, 1);
+        return
+    end
+
+    % Repeat each segment index by its list length to keep the same row order.
+    entryCounts    = cellfun(@numel, regionLists);
+    segmentIndices = repelem((1:segmentCount).', entryCounts(:));
+    segmentIndices = segmentIndices(keep);
     segmentIndices = segmentIndices(pathCouldMeetRegion);
 end
 

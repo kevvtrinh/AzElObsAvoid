@@ -51,9 +51,7 @@ nodePairCache = struct( ...
     'ActiveIntervals_s',  activeIntervals_s, ...
     'CellIndices',        {cell(0, 1)}, ...
     'QEnter',             {cell(0, 1)}, ...
-    'QExit',              {cell(0, 1)}, ...
-    'ActiveStart_s',      {cell(0, 1)}, ...
-    'ActiveEnd_s',        {cell(0, 1)});
+    'QExit',              {cell(0, 1)});
 if ~storeEveryPair
     return
 end
@@ -62,27 +60,22 @@ end
 
 % Keep start-to-end and end-to-start entries separate because the fractions
 % run in opposite directions. Region geometry and active times stay the same.
-regionIndicesByPair      = cell(pairCount, 1);
-boxEntryFractionsByPair  = cell(pairCount, 1);
-boxExitFractionsByPair   = cell(pairCount, 1);
-activeStartTimesByPair_s = cell(pairCount, 1);
-activeEndTimesByPair_s   = cell(pairCount, 1);
+regionIndicesByPair     = cell(pairCount, 1);
+boxEntryFractionsByPair = cell(pairCount, 1);
+boxExitFractionsByPair  = cell(pairCount, 1);
 for endNodeIndex = 1:nodeCount
     for startNodeIndex = 1:nodeCount
         pairIndex          = startNodeIndex + nodeCount * (endNodeIndex - 1);
         segmentStart_units = nodePosition_units(startNodeIndex, :);
         segmentEnd_units   = nodePosition_units(endNodeIndex, :);
         [regionIndicesByPair{pairIndex}, boxEntryFractionsByPair{pairIndex}, ...
-            boxExitFractionsByPair{pairIndex}, activeStartTimesByPair_s{pairIndex}, ...
-            activeEndTimesByPair_s{pairIndex}] = obstacleAvoidance.search.computePairCellEntry( ...
+            boxExitFractionsByPair{pairIndex}] = obstacleAvoidance.search.computePairCellEntry( ...
             segmentStart_units, segmentEnd_units, boxMinimum_units, boxMaximum_units, ...
             activeIntervals_s);
     end
 end
 
-nodePairCache.CellIndices   = regionIndicesByPair;
-nodePairCache.QEnter        = boxEntryFractionsByPair;
-nodePairCache.QExit         = boxExitFractionsByPair;
-nodePairCache.ActiveStart_s = activeStartTimesByPair_s;
-nodePairCache.ActiveEnd_s   = activeEndTimesByPair_s;
+nodePairCache.CellIndices = regionIndicesByPair;
+nodePairCache.QEnter      = boxEntryFractionsByPair;
+nodePairCache.QExit       = boxExitFractionsByPair;
 end

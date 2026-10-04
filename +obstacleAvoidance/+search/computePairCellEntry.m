@@ -1,9 +1,9 @@
-function [regionIndices, boxEntryFractions, boxExitFractions, activeStartTimes_s, activeEndTimes_s] = ...
+function [regionIndices, boxEntryFractions, boxExitFractions] = ...
     computePairCellEntry(segmentStart_units, segmentEnd_units, boxMinimum_units, ...
     boxMaximum_units, activeIntervals_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [regionIndices, boxEntryFractions, boxExitFractions, activeStartTimes_s, activeEndTimes_s] = ...
+%   [regionIndices, boxEntryFractions, boxExitFractions] = ...
 %       obstacleAvoidance.search.computePairCellEntry(segmentStart_units, segmentEnd_units, ...
 %       boxMinimum_units, boxMaximum_units, activeIntervals_s)
 %**************************************************************************
@@ -26,8 +26,6 @@ function [regionIndices, boxEntryFractions, boxExitFractions, activeStartTimes_s
 %       Indices of regions whose boxes may meet the segment.
 %   - boxEntryFractions, boxExitFractions (K-by-1 numeric)
 %       Start/end fractions in [0 1] of the possible box overlap.
-%   - activeStartTimes_s, activeEndTimes_s (K-by-1 numeric)
-%       Active time interval for each selected region.
 %**************************************************************************
 % UNITS
 %   - Positions use coordinate units; times use seconds. Segment fractions
@@ -84,8 +82,6 @@ if ~isempty(regionIndices)
         [activeIntervals_s(regionIndices, 1), regionIndices], [1, 2]);
     regionIndices = regionIndices(activationSortOrder);
 end
-boxEntryFractions  = max(0, entryFractions(regionIndices) - fractionRoundingAllowance(regionIndices));
-boxExitFractions   = min(1, exitFractions(regionIndices) + fractionRoundingAllowance(regionIndices));
-activeStartTimes_s = activeIntervals_s(regionIndices, 1);
-activeEndTimes_s   = activeIntervals_s(regionIndices, 2);
+boxEntryFractions = max(0, entryFractions(regionIndices) - fractionRoundingAllowance(regionIndices));
+boxExitFractions  = min(1, exitFractions(regionIndices) + fractionRoundingAllowance(regionIndices));
 end

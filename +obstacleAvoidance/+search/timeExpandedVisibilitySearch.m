@@ -124,14 +124,15 @@ end
 
 % Keep one prepared obstacle history for all route checks in this search.
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles, [initialState.time_s, goalState.time_s]);
-% Save shapes for repeated queries at the same time. Reduce the number
-% saved for large boundaries or many obstacles to limit memory use.
+% Layer times are unique, so no queried shape would be reused here.
+% A supplied map is a shared handle: reading it could reuse saved shapes,
+% and writing it would change the caller's map. Strip its fields locally.
+cacheFieldNames = {'QueryGeometryCache', 'QueryGeometryCacheCapacity'};
 for obstacleIndex = 1:numel(obstacles)
-    obstacles(obstacleIndex).InternalPreparation.QueryGeometryCache = containers.Map( ...
-        'KeyType', 'double', 'ValueType', 'any');
-    maximumBoundaryRowCount = max([1; cellfun(@numel, obstacles(obstacleIndex).x_units(:))]);
-    shapeCacheCapacity      = floor(2^14 / max(1, numel(obstacles)) / maximumBoundaryRowCount);
-    obstacles(obstacleIndex).InternalPreparation.QueryGeometryCacheCapacity = shapeCacheCapacity;
+    preparation                                = obstacles(obstacleIndex).InternalPreparation;
+    preparation                                = rmfield( ...
+        preparation, cacheFieldNames(isfield(preparation, cacheFieldNames)));
+    obstacles(obstacleIndex).InternalPreparation = preparation;
 end
 maximumCacheBytes = 300 * 1024 ^ 2;
 % Check each static obstacle only during the times it exists. Use its
@@ -997,9 +998,9 @@ function [route_units, routeTime_s] = reconstructTimedRoute( ...
     end
     layerPathIndices = goalLayerIndex;
     nodePathIndices  = goalNodeIndex;
-    while ~(layerPathIndices(1) == 1 && nodePathIndices(1) == 1)
-        priorLayerIndex = double(parentLayerIndex(layerPathIndices(1), nodePathIndices(1)));
-        priorNodeIndex  = double(parentNodeIndex(layerPathIndices(1), nodePathIndices(1)));
+    while ~(layerPathIndices(end) == 1 && nodePathIndices(end) == 1)
+        priorLayerIndex = double(parentLayerIndex(layerPathIndices(end), nodePathIndices(end)));
+        priorNodeIndex  = double(parentNodeIndex(layerPathIndices(end), nodePathIndices(end)));
         % Index 0 means no preceding state was saved. If this happens before
         % reaching the start, return no route rather than an incomplete route.
         if priorLayerIndex == 0 || priorNodeIndex == 0
@@ -1007,11 +1008,11 @@ function [route_units, routeTime_s] = reconstructTimedRoute( ...
             routeTime_s = zeros(0, 1);
             return
         end
-        layerPathIndices = [priorLayerIndex; layerPathIndices]; %#ok<AGROW>
-        nodePathIndices  = [priorNodeIndex; nodePathIndices]; %#ok<AGROW>
+        layerPathIndices = [layerPathIndices; priorLayerIndex]; %#ok<AGROW>
+        nodePathIndices  = [nodePathIndices; priorNodeIndex]; %#ok<AGROW>
     end
-    route_units = nodePosition_units(nodePathIndices, :);
-    routeTime_s = layerTimes_s(layerPathIndices);
+    route_units = nodePosition_units(flipud(nodePathIndices), :);
+    routeTime_s = layerTimes_s(flipud(layerPathIndices));
 end
 
 function [enclosureShapes, enclosureEdgeStart_units, enclosureEdgeEnd_units, activeTimeIntervals_s, remainingCells] = ...
